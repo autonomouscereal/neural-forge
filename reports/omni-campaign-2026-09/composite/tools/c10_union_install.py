@@ -167,6 +167,7 @@ Tests: test_c10_union_install.py (CPU, synthetic Chimera + synthetic form-E K3).
 from __future__ import annotations
 
 import argparse
+import c10_native_candidate_binding as native_candidate_binding
 import dataclasses
 import gc
 import hashlib
@@ -552,6 +553,7 @@ class Chart:
     layer_json_sha256: str | None = None
     fit_trunk_rows_key: str | None = None
     native_boundary_provenance: dict[str, Any] | None = None
+    native_candidate_binding: dict[str, Any] | None = None
 
     @property
     def k3_hidden(self) -> int:
@@ -576,6 +578,7 @@ class Chart:
     def record(self) -> dict[str, Any]:
         return {"path": self.path, "sha256": self.sha256, "arm": self.arm, "layer_json_sha256": self.layer_json_sha256,
                 "fit_trunk_rows_key": self.fit_trunk_rows_key,
+                "native_candidate_binding": self.native_candidate_binding,
                 "native_boundary_provenance": self.native_boundary_provenance,
                 "trunk_to_k3_shape": list(self.trunk_to_k3.shape), "k3_to_trunk_shape": list(self.k3_to_trunk.shape),
                 "input_bias_norm": float(self.bias_to_k3.norm()), "output_bias_norm": float(self.bias_to_trunk.norm()),
@@ -754,7 +757,8 @@ def native_chart_boundaries(doc: dict[str, Any], layer_json: str, k: int, arm: s
 
 
 def load_chart(charts_dir: str | None, k: int, k3_hidden: int, trunk_hidden: int, identity: bool,
-               arm: str = "ridge", *, fixture_root: str | None = None) -> Chart:
+               arm: str = "ridge", *, fixture_root: str | None = None,
+               candidate_ref: dict[str, str] | None = None, candidate_expected: dict[str, Any] | None = None) -> Chart:
     fixture = fixture_root_checked(fixture_root, [charts_dir] if charts_dir else [],
                                    hidden=trunk_hidden, source_hidden=k3_hidden, layers=k + 1)
     if charts_dir is None:
@@ -768,6 +772,31 @@ def load_chart(charts_dir: str | None, k: int, k3_hidden: int, trunk_hidden: int
         zero = torch.zeros(trunk_hidden)
         return Chart(k, "identity", sha256_tensor(eye), "identity", eye.clone(), zero.clone(), eye.clone(), zero.clone(),
                      native_boundary_provenance={"fixture": True, "fixture_root": fixture})
+    if candidate_ref is not None:
+        if fixture is not None or identity or arm != "ridge" or charts_dir is None or candidate_expected is None:
+            raise SystemExit("explicit native candidate binding requires non-fixture ridge charts and installed input identities")
+        from safetensors.torch import load_file
+        path = str(Path(charts_dir) / f"L{k:02d}" / "ridge.safetensors")
+        try:
+            binding = native_candidate_binding.read_binding(candidate_ref, candidate_expected, chart_path=Path(path))
+            observed = native_chart_boundaries(binding["document"], binding["candidate_path"], k, arm,
+                                                trunk_hidden=trunk_hidden, k3_hidden=k3_hidden)
+            native_candidate_binding.check_observed(binding, observed)
+        except ValueError as error:
+            raise SystemExit(str(error)) from error
+        tensors = load_file(path)
+        chart = chart_from_c17_tensors(k, path, binding["chart_sha256"], arm, tensors, k3_hidden, trunk_hidden,
+            layer_json_sha256=binding["candidate_sha256"], fit_trunk_rows_key="ffn_input",
+            native_boundary_provenance=observed, native_candidate_binding=binding)
+        if (set(tensors) != {"C_out", "C_in", "C_out_bias", "C_in_bias"}
+                or any(t.dtype != torch.float32 for t in tensors.values())
+                or bool(torch.count_nonzero(tensors["C_in_bias"])) or bool(torch.count_nonzero(tensors["C_out_bias"]))):
+            raise SystemExit("candidate serialization must retain four F32 tensors with exact zero chart biases")
+        try:
+            native_candidate_binding.verify_pins(binding["pins"])
+        except ValueError as error:
+            raise SystemExit(str(error)) from error
+        return chart
     # Capture provenance and chart coefficients are candidate evidence only.
     # No reviewed producer currently measures the exact installed computation
     # against the post-S3 host, accepted source and untouched held evidence.
@@ -1972,6 +2001,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="refuse when a dropped input-bias shift or the excluded output bias exceeds this relL2 "
                          "(0 disables the refusal; the numbers are recorded either way)")
     ap.add_argument("--alignment", default=None, help="alignment.json override (c17 table or {trunk_to_k3: {k: [l, ...]}})")
+    ap.add_argument("--native-chart-candidate", action="append", default=[],
+                    help="explicit owner-diagnostics development route: HOST_LAYER=ABSOLUTE_CANDIDATE_PATH@SHA256; no promotion or capability claim")
     ap.add_argument("--identity-charts", action="store_true", help="tests only: identity charts when widths agree")
     ap.add_argument("--synthetic-fixture-root", help="explicit marked CPU-only tiny unit-test workspace; never production")
     ap.add_argument("--evidence", required=True, help="the sealed omni-evidence manifest (qf_corpus schema)")
@@ -2040,6 +2071,7 @@ def guard_out(args: argparse.Namespace, out: Path) -> Path:
               ("--charts", args.charts), ("--evidence", args.evidence), ("--receipt", args.receipt),
               ("--alignment", args.alignment), ("--k3-config", args.k3_config), ("--parent-record", args.parent_record)]
     inputs.extend(_extra_paths(args))
+    inputs.extend(("--native-chart-candidate", p) for p in getattr(args, "native_candidate_metadata_paths", []))
     partial = Path(f"{out}.partial")
     for label, raw in inputs:
         if not raw:
@@ -2073,6 +2105,11 @@ def guard_out(args: argparse.Namespace, out: Path) -> Path:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     started = time.time()
+    try:
+        native_bindings = native_candidate_binding.parse_bindings(args.native_chart_candidate)
+    except ValueError as error:
+        raise SystemExit(str(error)) from error
+    args.native_candidate_metadata_paths = [ref["path"] for ref in native_bindings.values()]
     device = canonical_device(args.device)
     out = Path(args.out).absolute()
     trunk_dir = Path(args.trunk).absolute()
@@ -2164,10 +2201,21 @@ def main(argv: list[str] | None = None) -> int:
                          device=str(device), layers=n_layers)
     alignment, alignment_record = load_alignment(args.charts, args.alignment, wanted, n_layers)
     charts: dict[int, Chart] = {}
+    active_chart_layers = {k for k in range(n_layers) if alignment[k]}
+    if native_bindings and (set(native_bindings) != active_chart_layers or fixture):
+        raise SystemExit("explicit candidate bindings must cover every aligned host layer exactly once, without fixture mode")
     for k in range(n_layers):
         if alignment[k]:
             charts[k] = load_chart(args.charts, k, k3_hidden_size, h, args.identity_charts, args.chart_arm,
-                                   fixture_root=fixture)
+                                   fixture_root=fixture, candidate_ref=native_bindings.get(k),
+                                   candidate_expected={"host_layer": k,
+                                       "host_index_sha256": sha256_file(str(trunk_dir / INDEX_FILENAME)),
+                                       "host_config_sha256": sha256_file(str(trunk_dir / "config.json")),
+                                       "evidence_sha256": sha256_file(args.evidence), "source_layers": sorted(alignment[k]),
+                                       "installed_ffn_sha256": {str(l): sha256_file(k3_headers[l]["path"]) for l in alignment[k]}}
+                                       if k in native_bindings else None)
+            if charts[k].native_candidate_binding:
+                args.native_candidate_metadata_paths.extend(ref["path"] for ref in charts[k].native_candidate_binding["pins"])
             if not fixture:
                 provenance = charts[k].native_boundary_provenance
                 if (provenance["host_index_sha256"] != sha256_file(str(trunk_dir / INDEX_FILENAME))
@@ -2229,6 +2277,7 @@ def main(argv: list[str] | None = None) -> int:
         "charts": {str(k): c.sha256 for k, c in charts.items()}, "chart_arm": args.chart_arm,
         "chart_boundary_provenance": {str(k): c.native_boundary_provenance for k, c in charts.items()},
         "chart_layer_json_sha256": {str(k): c.layer_json_sha256 for k, c in charts.items()},
+        "native_candidate_bindings": {str(k): c.native_candidate_binding for k, c in charts.items() if c.native_candidate_binding},
         "synthetic_fixture": bool(fixture),
         "alignment": alignment_record.get("trunk_to_k3"), "alignment_sha256": alignment_record.get("sha256"),
         "extra_blocks": extra_records, "k3_channels": int(args.k3_channels), "group_size": int(args.group_size),
@@ -2324,11 +2373,21 @@ def main(argv: list[str] | None = None) -> int:
         metadata={**trunk_cfg.metadata, "c10_union_install": f"{TOOL_NAME} {TOOL_VERSION}",
                   "c10_k3_channels": str(args.k3_channels), "c10_trunk_intermediate_size": str(q)})
     child_cfg.validate()
+    for chart in charts.values():
+        if chart.native_candidate_binding:
+            try:
+                native_candidate_binding.verify_pins(chart.native_candidate_binding["pins"])
+            except ValueError as error:
+                raise SystemExit(str(error)) from error
     source_record = {"tool": TOOL_NAME, "tool_version": TOOL_VERSION, "trunk": str(trunk_dir),
                      "parent_trunk": str(parent_dir), "k3_dense": os.path.abspath(args.k3_dense),
                      "charts": os.path.abspath(args.charts) if args.charts else "identity", "chart_arm": args.chart_arm,
                      "evidence_manifest_sha256": evidence.manifest_sha256, "k3_channels": str(args.k3_channels),
-                     "trunk_source": trunk_doc.get("source")}
+                     "trunk_source": trunk_doc.get("source"),
+                     "native_candidate_binding": {"enabled": bool(native_bindings), "status": "candidate_only" if native_bindings else None,
+                         "production_install_eligible": False if native_bindings else None,
+                         "source_binding_policy": native_candidate_binding.OWNER_POLICY if native_bindings else None,
+                         "all_source_child_capability": "not_demonstrated", "training_eligibility": 0}}
     (out / OUT_MARKER).unlink(missing_ok=True)
     index = write_safetensors(state, out, config=child_cfg.to_manifest(), ledger=trunk_doc.get("ledger"),
                               source=source_record, chimera_commit=trunk_doc.get("chimera_commit"),
