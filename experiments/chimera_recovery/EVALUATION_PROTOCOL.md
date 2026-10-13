@@ -102,3 +102,25 @@ receipt SHA. The comparison publishes every before/after answer and outcome, bot
 count sets, and model identities. Report model correctness only after collecting
 and grading those actual runs; preparation or synthetic test results are not a
 baseline.
+
+`python -m experiments.chimera_recovery.text_eval_seed --screen SOURCE.jsonl
+--screen FROZEN_PROMPTS.json --out NEWDIR` prepares a standalone basic semantic
+diagnostic addendum: 24 arithmetic tasks, 12 distinct pure-function code tasks
+with 48 independently specified boundary cases, and 8 constrained JSON
+instruction tasks. It declares operator authorship on 2026-10-13. It screens
+each supplied source message and full text for exact normalized prompts and
+greater than 50% candidate 13-gram overlap, and rejects existing source-group
+identity collisions. Its bounded lexical screen does not establish semantic
+novelty. The actual preparation must include full normalized/train corpora,
+frozen evaluation inputs and excluded prompts, tool seeds and media fixtures.
+
+The instruction oracle accepts different JSON whitespace and object member
+order. It independently checks the required schema and value, rejects duplicate
+members and additional prose, and distinguishes booleans from integers. These
+format constraints apply because the tasks explicitly require JSON-only output.
+Arithmetic and code grading accept valid alternate reasoning/algorithms within
+their stated parsing and safe interpreter limits. Unsupported code is ungraded.
+Private `tasks.jsonl` retains oracles; model-facing `inputs.jsonl` excludes them.
+These are basic diagnostic tasks, with no IQ or general-intelligence claim.
+Freeze a combined holdout and the current grader SHA before baseline collection;
+retain prior tool-only manifests and report all three task routes separately.

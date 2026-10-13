@@ -541,6 +541,25 @@ def grade_semantics(task: dict, response: dict) -> dict:
         return grade_arithmetic(text, oracle)
     if kind == "python_function":
         return grade_code(text, oracle)
+    if kind == "instruction_json":
+        # Strict JSON is an explicit task requirement, not exact answer text:
+        # whitespace and object member order vary; duplicates/extra prose fail.
+        def unique_pairs(pairs):
+            result = {}
+            for key, value in pairs:
+                if key in result:
+                    raise ValueError("duplicate JSON member")
+                result[key] = value
+            return result
+        try:
+            value = json.loads(text, object_pairs_hook=unique_pairs,
+                               parse_constant=lambda _: (_ for _ in ()).throw(ValueError("nonfinite JSON")))
+            errors = check_eval_arguments(value, oracle["schema"])
+            passed = not errors and json_equivalent(value, oracle["expected"])
+            return {"status": "pass" if passed else "fail", "actual": value,
+                    "expected": oracle["expected"], "schema_errors": errors}
+        except (ValueError, TypeError, KeyError):
+            return {"status": "fail", "reason": "required_strict_json_missing_or_invalid"}
     if kind == "observed_values":
         expected = oracle["expected_values"]
         try:
