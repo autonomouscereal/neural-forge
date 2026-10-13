@@ -161,7 +161,51 @@ def geometry_proof(path, expected_sha, cache_sha, item_ids):
         raise Error('complete unique parent packer/layout diagnostic evidence required')
     return proof,{p['target']:p for p in targets}
 
-def prepare_cache(cache, manifest_sha, items_path, admission_path, admission_sha, proof_path, proof_sha,
+def encoded_sources(cache, expected_sha, items):
+    """Verify true36-frame encodes plus explicit zero-latent37th frame."""
+    import torch
+    from safetensors.torch import load_file
+    path=cache/'manifest.json';manifest=read(pinned({'path':str(path),'sha256':expected_sha}))
+    seal=cache/'manifest.json.sha256'
+    if (not seal.is_file() or seal.read_text().strip()!=expected_sha or manifest.get('kind')!='h3-encode' or
+            manifest.get('all_finite') is not True or manifest.get('teacher_integrity',{}).get('unchanged') is not True or
+            manifest.get('corpus',{}).get('sha256')!=R.sha(items) or manifest.get('dropped') or
+            manifest.get('kept')!=len(rows(items)) or
+            manifest.get('read_order')!=[s['file'] for s in manifest.get('shards',[])]):
+        raise Error('complete genuine clean encode source seal is required')
+    immutable_parent_integrity(manifest['teacher_integrity'])
+    result={}
+    for shard in manifest['shards']:
+        tensorpath=pinned({'path':shard['file'],'sha256':shard['sha256']},cache)
+        sidepath=pinned({'path':Path(shard['file']).with_suffix('.json').name,'sha256':shard['sidecar_sha256']},cache)
+        data=load_file(str(tensorpath));side=read(sidepath)
+        if side.get('finite') is not True or side.get('sha256')!=shard['sha256']:
+            raise Error('clean encode sidecar/tensor seal differs')
+        for index,item in enumerate(side['items']):
+            h3=item['h3_source_contract'];H.check_source_record(h3)
+            if (item.get('audio_latent_frames_encoded')!=36 or item.get('audio_latent_padded')!=1 or
+                    item['audio_meta'].get('cropped_samples')!=29333 or item['audio_meta'].get('padded_samples')!=0 or
+                    item.get('index')!=int(data['item_index'][index]) or item['index'] in result):
+                raise Error('actual encoder must record36encoded frames plus1explicit latent pad, without waveform padding')
+            video=data['x0_raw_video'][index:index+1].float();audio=data['x0_raw_audio'][index:index+1].float()
+            if (video.shape!=(1,24,7,6,6) or audio.shape!=(1,32,2,37) or
+                    not bool(torch.isfinite(video).all()) or not bool(torch.isfinite(audio).all()) or bool(audio[...,-1].any())):
+                raise Error('genuine encoder geometry/finite/zero-latent tail contract differs')
+            result[item['index']]={'item':item,'video_raw':video,'audio_raw':audio,
+                'source_manifest_sha256':expected_sha,'shard_sha256':shard['sha256'],'sidecar_sha256':shard['sidecar_sha256']}
+    if len(result)!=manifest['kept']:raise Error('actual encode sources must be traversed exactly once')
+    return result
+
+def immutable_parent_integrity(integrity):
+    before,after=integrity.get('before',{}),integrity.get('after',{})
+    if integrity.get('mode')!='full' or not before or set(before)!=set(after) or integrity.get('unchanged') is not True:
+        raise Error('actual full unchanged parent integrity evidence required')
+    for name,prior in before.items():
+        H.require_sha(prior.get('sha256'),'actual parent '+name)
+        if any(prior.get(k)!=after[name].get(k) for k in ('sha256','bytes','inode','mtime_ns')):
+            raise Error('actual parent identity or bytes changed during capture')
+
+def prepare_cache(cache, manifest_sha, encode_cache, items_path, admission_path, admission_sha, proof_path, proof_sha,
                   tokenizer, amendment_sha, out, *, aliases=None):
     import torch
     from safetensors.torch import load_file,save_file
@@ -171,6 +215,7 @@ def prepare_cache(cache, manifest_sha, items_path, admission_path, admission_sha
         raise Error('actual H3 source cache preflight/seal differs')
     manifest=read(cache/'manifest.json');items=rows(items_path)
     if H.sha(items_path)!=manifest['corpus']['sha256']:raise Error('teacher item file differs from sealed capture')
+    encoded=encoded_sources(encode_cache,manifest['encode_cache']['manifest_sha256'],items_path)
     parent_path=pinned({'path':str(admission_path),'sha256':admission_sha})
     admission=read(parent_path)
     if (admission.get('schema')!='recovery_audio_admission.v1' or admission.get('sealed') is not True or
@@ -207,6 +252,13 @@ def prepare_cache(cache, manifest_sha, items_path, admission_path, admission_sha
                 raise Error('teacher source/target must join a unique globally reviewed AV row')
             seen.add(target['target']);entry=av[ident];record=source[ident]
             contract=target['h3_source_contract'];H.check_source_record(contract)
+            encoded_item=encoded[target['item_index']]
+            joined=(tensors['item.index']==target['item_index']).nonzero().flatten()
+            if (joined.numel()!=1 or encoded_item['item']['id']!=ident or
+                    encoded_item['item']['h3_source_contract']!=contract or
+                    not torch.equal(tensors['item.x0_audio'][joined.item():joined.item()+1],encoded_item['audio_raw']) or
+                    not torch.equal(tensors['item.x0_video'][joined.item():joined.item()+1],encoded_item['video_raw'])):
+                raise Error('captured model-space clean source differs from exact genuine raw encode/zero-padding join')
             if (contract['source_row_sha256']!=entry['source_row_sha256'] or entry['source_row_sha256']!=R.digest(record) or
                     contract['source_group_id']!=record['provenance']['group_id'] or contract['split']!=entry['split'] or
                     contract['video_sha256']!=entry['asset_sha256'] or
@@ -246,8 +298,11 @@ def prepare_cache(cache, manifest_sha, items_path, admission_path, admission_sha
                     'audio_target':'captured v_audio_native; flat guided velocity divided by exact dual-clock slope',
                     'loss_audio_extra_slope':False,'packed_layout':'full_text|channel_major_stereo_audio|video_patches',
                     'bridge_clock_scope':proof['group_semantics'],'parent_PackedLayout_bitwise_equal':True,
-                    'latent_audio_frames':37,'source_audio_samples':contract['measured']['audio_samples'],
-                    'waveform_padding_samples':0,'latent_tail_scope':'retain actual VAE37frames; partial final nominal hop is not claimed as additional source time'},
+                    'latent_audio_frames':37,'audio_latent_frames_encoded':36,'audio_latent_padded':1,
+                    'encode_manifest_sha256':encoded_item['source_manifest_sha256'],'encode_shard_sha256':encoded_item['shard_sha256'],
+                    'raw_to_captured_model_space_bitwise_equal':True,'zero_latent_tail_bitwise_verified':True,
+                    'source_audio_samples':contract['measured']['audio_samples'],'waveform_padding_samples':0,
+                    'latent_tail_scope':'36actual encoded frames plus1explicit zero-latent parent-layout slot; no additional observed-time claim'},
                 'conditioning_contract':{'kind':'native_parent_chat_prompt','template_sha256':R.digest(tokenizer.chat_template),
                     'prompt_sha256':entry['prompt_sha256'],'reference_answer_in_inputs':False},'bitwise_reconstruction':True}
             R.ReadyObjectiveAdapter(receipt).bind('joint_av',batch,BANDS,parent_signs=SIGNS)
@@ -259,6 +314,7 @@ def prepare_cache(cache, manifest_sha, items_path, admission_path, admission_sha
     if len(seen)!=manifest['targets'] or seen!=set(diagnostics):raise Error('all sealed native targets must be traversed exactly once')
     result={'schema':'chimera_recovery.native_batches.v1','sealed':bool(accepted),'split':'train','heldout_groups_excluded':True,
         'complete_source_traversal':True,'corpus_sha256':admission_sha,'source_cache_manifest_sha256':manifest_sha,
+        'source_velocity_manifest':pin(cache/'manifest.json'),'source_encode_manifest':pin(encode_cache/'manifest.json'),
         'source_items':pin(items_path),'source_admission':pin(admission_path),'source':pin(source_path),
         'geometry_proof':pin(proof_path),'batches':accepted,'excluded_heldout_targets':excluded,
         'uncached_held_source_ids':sorted(i for i,r in av.items() if not r['train_admitted'] and i not in {v['id'] for v in items}),
@@ -266,13 +322,98 @@ def prepare_cache(cache, manifest_sha, items_path, admission_path, admission_sha
         'production_training_started':False,'production_training_ready':False}
     (stage/'manifest.json').write_bytes(R.canonical(result)+b'\n');stage.rename(out);return result
 
+def validate_batch(cpu_batch, receipt, manifest_root, *, aliases=None):
+    """Reconstruct a runtime batch from the genuine captured target and source.
+
+    The caller pins this helper and the native manifest in its resume identity.
+    SHA aliases only locate unchanged mounted originals; they cannot alter pins.
+    Validation is independent of the structural/signed ReadyObjectiveAdapter.
+    """
+    import torch
+    from safetensors.torch import load_file
+    root=Path(manifest_root); native=read(root/'manifest.json')
+    if (native.get('schema')!='chimera_recovery.native_batches.v1' or native.get('sealed') is not True or
+            native.get('adapter_kind')!='exact_h3_joint_native_dualclock_guided_velocity' or
+            native.get('complete_source_traversal') is not True or native.get('heldout_groups_excluded') is not True):
+        raise Error('sealed complete native H3 source manifest required')
+    matches=[]
+    for b in native['batches']:
+        p=pinned(b['teacher_receipt'],root,aliases)
+        if read(p)==receipt:matches.append(b)
+    if len(matches)!=1:raise Error('runtime receipt must join exactly one immutable native batch')
+    entry=matches[0]; tensorpath=pinned(entry['tensors'],root,aliases)
+    if receipt.get('cache_sha256')!=entry['tensors']['sha256'] or receipt.get('storage')!=entry['storage']:
+        raise Error('runtime storage/receipt tensor ownership differs')
+    saved=M.inflate_native_batch(load_file(str(tensorpath)),entry['storage'])
+    if (set(cpu_batch)!=set(saved) or any(cpu_batch[k].device.type!='cpu' or
+            not torch.equal(cpu_batch[k],saved[k]) for k in saved)):
+        raise Error('runtime batch changed from the immutable native source tensors')
+    admission_path=pinned(native['source_admission'],root,aliases);admission=read(admission_path)
+    if (admission.get('schema')!='recovery_audio_admission.v1' or admission.get('sealed') is not True or
+            admission.get('connected_groups_verified') is not True or admission.get('complete_source_traversal') is not True or
+            R.digest({k:v for k,v in admission.items() if k!='manifest_sha256'})!=admission.get('manifest_sha256') or
+            receipt.get('corpus_sha256')!=native['source_admission']['sha256']):
+        raise Error('runtime requires the unchanged globally screened H3 source admission')
+    sources={r['id']:r for r in rows(pinned(admission['sources']['source'],admission_path.parent,aliases))}
+    admissions={r['id']:r for r in rows(pinned(admission['outputs']['admission'],admission_path.parent,aliases))}
+    ident=entry['source_id'];original=sources[ident];eligible=admissions[ident];bound=receipt['source']
+    if (set(sources)!=set(admissions) or eligible.get('train_admitted') is not True or eligible['split']!='train' or
+            eligible.get('blockers') or eligible['route']!='joint_av' or bound['source_id']!=ident or
+            bound['source_row_sha256']!=R.digest(original) or bound['source_row_sha256']!=eligible['source_row_sha256'] or
+            entry['recovery_group_id']!=eligible['recovery_group_id'] or bound['recovery_group_id']!=eligible['recovery_group_id']):
+        raise Error('runtime source/group is held, excluded or changed')
+    velocity_path=pinned(native['source_velocity_manifest'],root,aliases);cache=velocity_path.parent;manifest=read(velocity_path)
+    if (native['source_velocity_manifest']['sha256']!=bound['manifest_sha256'] or
+            not H.preflight(cache,manifest['tool']['sha256'])['capture_contract_ok']):
+        raise Error('runtime captured teacher cache differs from the sealed source')
+    items_path=pinned(native['source_items'],root,aliases);items=rows(items_path)
+    if H.sha(items_path)!=manifest['corpus']['sha256']:raise Error('runtime teacher items changed')
+    encode_path=pinned(native['source_encode_manifest'],root,aliases)
+    clean=encoded_sources(encode_path.parent,manifest['encode_cache']['manifest_sha256'],items_path)
+    proof_path=pinned(native['geometry_proof'],root,aliases)
+    proof,diagnostics=geometry_proof(proof_path,bound['geometry_proof_sha256'],bound['manifest_sha256'],[i['id'] for i in items])
+    target_id=bound['target_index'];diagnostic=diagnostics[target_id]
+    shards=[s for s in manifest['shards'] if s['sha256']==bound['shard_sha256'] and s['sidecar_sha256']==bound['sidecar_sha256']]
+    if len(shards)!=1:raise Error('runtime target shard is ambiguous or changed')
+    shard=shards[0];data=load_file(str(pinned({'path':shard['file'],'sha256':shard['sha256']},cache)))
+    side=read(pinned({'path':str(Path(shard['file']).with_suffix('.json')),'sha256':shard['sidecar_sha256']},cache))
+    selected=[(i,t) for i,t in enumerate(side['targets']) if t['target']==target_id]
+    if len(selected)!=1:raise Error('runtime original captured target is ambiguous')
+    index,target=selected[0];item=items[target['item_index']];encoded=clean[target['item_index']]
+    joined=(data['item.index']==target['item_index']).nonzero().flatten()
+    if (item['id']!=ident or target['id']!=ident or diagnostic['id']!=ident or
+            target['h3_source_contract']['source_row_sha256']!=R.digest(original) or
+            target['h3_source_contract']!=encoded['item']['h3_source_contract'] or
+            item['prompt']!=original['messages'][0]['content']+SUFFIX or joined.numel()!=1 or
+            not torch.equal(data['item.x0_audio'][joined.item():joined.item()+1],encoded['audio_raw']) or
+            not torch.equal(data['item.x0_video'][joined.item():joined.item()+1],encoded['video_raw'])):
+        raise Error('runtime clean encode/teacher conditioning/source join changed')
+    pair=H.validate_pair(data,target,index,float(manifest['plan']['cfg']))
+    bridge=load_file(str(pinned({'path':'bridge_positions.safetensors','sha256':proof['bridge_positions_sha256']},proof_path.parent)))['native_media_positions']
+    reconstructed=H.pack_pair(pair,torch.tensor([diagnostic['prefix_ids']],dtype=torch.int64),bridge,media_token_id=M.MEDIA_PLACEHOLDER)
+    diag=M.inflate_native_batch(load_file(str(pinned({'path':diagnostic['diagnostic_file'],'sha256':diagnostic['sha256']},proof_path.parent))),diagnostic['storage'])
+    if (bound['diagnostic_sha256']!=diagnostic['sha256'] or set(reconstructed)!=set(diag) or
+            set(diag)!=set(cpu_batch) or any(not torch.equal(reconstructed[k],diag[k]) or
+            not torch.equal(cpu_batch[k],diag[k]) for k in diag)):
+        raise Error('runtime native tensors differ from the genuine captured parent packer/layout proof')
+    clock=receipt['h3_clock_contract']
+    if (clock.get('audio_latent_frames_encoded')!=36 or clock.get('audio_latent_padded')!=1 or
+            clock.get('encode_manifest_sha256')!=manifest['encode_cache']['manifest_sha256'] or
+            clock.get('zero_latent_tail_bitwise_verified') is not True or
+            clock.get('raw_to_captured_model_space_bitwise_equal') is not True or
+            receipt.get('parent_signs')!={'2':1.,'3':1.} or bound['cfg']!=manifest['plan']['cfg']):
+        raise Error('runtime native padding/signed teacher target contract changed')
+    R.ReadyObjectiveAdapter(receipt).bind('joint_av',cpu_batch,BANDS,parent_signs=SIGNS)
+    return {'verified':True,'target_index':target_id,'source_id':ident,'recovery_group_id':eligible['recovery_group_id'],
+            'supervised_units':1,'denominator_kind':'native_guided_pair_mean','adapter_sha256':H.sha(Path(__file__))}
+
 def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__);sub=p.add_subparsers(dest='command',required=True)
     s=sub.add_parser('prepare-source')
     for name in ('joint-admission','admission-helper','out'):s.add_argument('--'+name,type=Path,required=True)
     for name in ('joint-sha256','helper-sha256'):s.add_argument('--'+name,required=True)
     s=sub.add_parser('prepare-cache')
-    for name in ('cache','items','admission','proof','tokenizer-dir','out'):s.add_argument('--'+name,type=Path,required=True)
+    for name in ('cache','encode-cache','items','admission','proof','tokenizer-dir','out'):s.add_argument('--'+name,type=Path,required=True)
     for name in ('manifest-sha256','admission-sha256','proof-sha256','amendment-sha256'):s.add_argument('--'+name,required=True)
     s.add_argument('--aliases',type=Path)
     a=p.parse_args(argv)
@@ -282,7 +423,7 @@ def main(argv=None):
         D=module('recovery_h3_native_tokenizer',HERE/'audio_dialogue.py')
         for name,value in D.TOKENIZER_PINS.items():pinned({'path':str(a.tokenizer_dir/name),'sha256':value})
         tokenizer=AutoTokenizer.from_pretrained(a.tokenizer_dir,local_files_only=True,use_fast=True,trust_remote_code=False)
-        result=prepare_cache(a.cache,a.manifest_sha256,a.items,a.admission,a.admission_sha256,a.proof,a.proof_sha256,
+        result=prepare_cache(a.cache,a.manifest_sha256,a.encode_cache,a.items,a.admission,a.admission_sha256,a.proof,a.proof_sha256,
             tokenizer,a.amendment_sha256,a.out,aliases=read(a.aliases) if a.aliases else None)
     print(json.dumps({'sealed':result['sealed'],'accepted':len(result.get('batches',result.get('joint_av_train_ids',[]))),
                       'training_started':False}));return 0
