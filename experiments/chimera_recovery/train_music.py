@@ -63,9 +63,9 @@ class MusicBandEngine:
         self.lora_optimizer = torch.optim.AdamW(list(self.census.values()), lr=self.options["lora_lr"],
                                               betas=tuple(self.options["betas"]), eps=self.options["eps"], weight_decay=self.options["weight_decay"])
         lora_ownership = R.optimizer_ownership(self.census, self.lora_optimizer)
-        self.embed_full = model.band_embed.detach().float().cpu().clone()
+        self.embed_full = (model.band_embed_override if model.band_embed_override is not None else model.band_embed).detach().float().cpu().clone()
         self.embed_master = self.embed_full[self.offset:self.offset + self.rows]
-        self.head_master = model.band_head[self.offset:self.offset + self.rows].detach().float().cpu().clone()
+        self.head_master = (model._recovery_music_head_master if hasattr(model, "_recovery_music_head_master") else model.band_head[self.offset:self.offset + self.rows]).detach().float().cpu().clone()
         self.embed_optimizer = module.LazyRowAdam(self.embed_master, lr=self.options["band_lr"], betas=tuple(self.options["betas"]),
                                                 eps=self.options["eps"], weight_decay=self.options["weight_decay"])
         self.head_optimizer = module.LazyRowAdam(self.head_master, lr=self.options["band_lr"], betas=tuple(self.options["betas"]),
