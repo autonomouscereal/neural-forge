@@ -87,9 +87,20 @@ def flow_backward(module, hybrid, segment, target, mask, receipt, units, weight)
         raise Error("D4 flow requires explicit native x0/canonical velocity conversion")
     def loss(normed, context):
         return R.flow_velocity_loss(hybrid.emission(normed, context), target, segment["types"], mask, hybrid.bands,
-                                    target_kind=receipt["target_kind"], prediction_kind="x0",
-                                    noisy_features=segment["features"], sigma=segment["sigma"], noisy_feature_bands=allocation)
+                                    target_kind=receipt["target_kind"], param="x0",
+                                    x_t=segment["features"], sigma=segment["sigma"], noisy_feature_bands=allocation)
     return module.full_depth_forward_backward(hybrid, segment, loss, loss_scale=weight_value(weight))[0]
+
+
+def guided_backward(module, hybrid, batch, item, receipt, units, weight):
+    """Keep genuine producer head/sign semantics and original pair-mean loss."""
+    from . import train_media as T
+    count_matches(units, 1)
+    compute = R.ReadyObjectiveAdapter(receipt).bind(item["route"], batch, hybrid.bands,
+                parent_signs={int(k): v for k, v in item.get("parent_signs", {}).items()})
+    segment = T.make_segment(batch, media_placeholder=hybrid.media_placeholder)
+    return module.full_depth_forward_backward(hybrid, segment,
+        lambda normed, context: compute(hybrid.emission(normed, context)), loss_scale=weight_value(weight))[0]
 
 
 def music_backward(module, hybrid, batch, receipt, units, weight):
