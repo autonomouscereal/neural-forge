@@ -252,6 +252,7 @@ def capture_xd(module, engine, batches, root: Path, out: Path, device: str):
 
 
 class D3bEngine:
+    checkpoint_schema = SCHEMA
     def __init__(self, module, hybrid, unit: str, optimizer: dict[str, Any], identity: dict[str, Any], *, total_steps: int):
         import torch
         self.module, self.hybrid, self.options, self.identity = module, hybrid, optimizer_config(optimizer), identity
@@ -305,7 +306,7 @@ class D3bEngine:
             raise Error("checkpoint output exists; preserve exact resume artifact")
         out.parent.mkdir(parents=True, exist_ok=True)
         stage = Path(tempfile.mkdtemp(prefix=".d3b-checkpoint-", dir=out.parent))
-        state = {"schema": SCHEMA, "identity": self.identity, "ownership": self.ownership,
+        state = {"schema": self.checkpoint_schema, "identity": self.identity, "ownership": self.ownership,
                  "trainables": {name: tensor.detach().cpu() for name, tensor in self.census.items()},
                  "optimizer": self.optimizer.state_dict(), "step": self.step, "sampler_counter": self.sampler_counter,
                  "consecutive_skips": self.consecutive_skips, "skip_window": self.skip_window,
@@ -313,7 +314,7 @@ class D3bEngine:
                  "rng_cpu": torch.get_rng_state(), "rng_python": random.getstate(),
                  "rng_cuda": torch.cuda.get_rng_state_all() if self.hybrid.device.type == "cuda" else []}
         torch.save(state, stage / "state.pt")
-        (stage / "receipt.json").write_bytes(R.canonical({"schema": SCHEMA, "identity_sha256": R.digest(self.identity),
+        (stage / "receipt.json").write_bytes(R.canonical({"schema": self.checkpoint_schema, "identity_sha256": R.digest(self.identity),
             "state_sha256": R.sha(stage / "state.pt"), "step": self.step, "sampler_counter": self.sampler_counter,
             "trainable_census": self.ownership, "complete": True}) + b"\n")
         stage.rename(out)
@@ -324,7 +325,7 @@ class D3bEngine:
         if receipt.get("complete") is not True or R.sha(checkpoint / "state.pt") != receipt.get("state_sha256"):
             raise Error("checkpoint incomplete or digest changed")
         state = torch.load(checkpoint / "state.pt", map_location="cpu", weights_only=True)
-        if state["schema"] != SCHEMA or state["identity"] != self.identity or state["ownership"] != self.ownership:
+        if state["schema"] != self.checkpoint_schema or state["identity"] != self.identity or state["ownership"] != self.ownership:
             raise Error("exact resume refused changed base, data, objective/config, or optimizer census")
         if set(state["trainables"]) != set(self.census):
             raise Error("resume trainable inventory differs")
