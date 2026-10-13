@@ -85,6 +85,13 @@ def setup(tmp_path):
         sys.path.insert(0, str(Path(foundation) / 'src'))
     torch.set_num_threads(1)
     module = S.T.load_module(Path(source), 'd3_hybrid_speech_fixture')
+    # The baseline toy AV allocation reserves four audio feature columns for
+    # two emission columns. This standalone speaking fixture explicitly declares
+    # a two-channel native latent at feature20:22 and emission10:12; reserved
+    # feature22:24 stays unused. The genuine importer, units and full-depth
+    # engine remain unchanged. Production still requires exact32/32 allocation.
+    module.TINY_BANDS = dict(module.TINY_BANDS)
+    module.TINY_BANDS[3] = ((20, 22), (10, 12))
     built = module.build_tiny_child(tmp_path / 'tiny-base', seed=17)
     optimizer = {**S.OPTIMIZER, 'unit_lr': .001, 'bridge_lr': .001, 'emission_lr': .001, 'lora_lr': .001,
                  'warmup_steps': 0, 'min_lr_ratio': 1.}
