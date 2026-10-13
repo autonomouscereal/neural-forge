@@ -76,6 +76,83 @@ def test_trace_wrong_semantics_remains_context_but_pins_eos_and_holdout_fail_clo
     assert O.OBJECTIVE["w_ce"] == O.OBJECTIVE["w_eos"] == O.OBJECTIVE["w_ul"] == 0
 
 
+def tool_fixture(split='train', family='train-uppercase'):
+    """Operator-authored 2026 mechanism fixture; no benchmark/model score."""
+    tools=[{'type':'function','function':{'name':'local_text','parameters':{
+        'type':'object','properties':{'text':{'type':'string','maxLength':12}},
+        'required':['text'],'additionalProperties':False}}}]
+    result={'text':'ABC'}
+    observed={'call_id':'call-1','tool_name':'local_text','arguments':{'text':'abc'},
+              'result':result,'result_sha256':O.digest(result),'dispatch_group':0,'concurrent_dispatch':False}
+    identifier=split+'-episode'
+    record={'id':identifier,'split':split,'template_family':family,'calls':[observed]}
+    episode={'schema':'recovery_corpus.v1','id':identifier,'route':'tool_calling','tools':tools,'media':[],
+        'messages':[{'role':'system','content':'Use only the authentic local schema.'},
+                    {'role':'user','content':'Uppercase the literal abc through the local text function.'},
+                    {'role':'assistant','content':None,'tool_calls':[{'id':'call-1','type':'function',
+                        'function':{'name':'local_text','arguments':'{"text":"abc"}'}}]},
+                    {'role':'tool','tool_call_id':'call-1','content':json.dumps(result)},
+                    {'role':'assistant','content':'ABC is the recorded source outcome.'}],
+        'quality':{'train_ready':True,'tool_routes':['tool_call','tool_result']},
+        'provenance':{'split':split,'group_id':'family-'+family,'template_family':family,'case_id':identifier,
+            'source_ids':[identifier],'actual_tool_execution':True,'source_verified':True,
+            'execution_receipt_sha256':O.digest(record['calls']),'source_code_sha256':'c'*64,'tool_catalog_sha256':'d'*64}}
+    return episode,record
+
+
+def test_tool_source_history_requires_observed_results_and_valid_authentic_schema():
+    episode,record=tool_fixture()
+    assert len(O.source_tool_calls(episode,record))==1  # maxLength is an authentic supported constraint.
+    invalid=copy.deepcopy(episode)
+    invalid['messages'][2]['tool_calls'][0]['function']['arguments']='{"text":123}'
+    with pytest.raises(O.Error,match='schema/arguments'): O.source_tool_calls(invalid,record)
+    invalid=copy.deepcopy(episode); invalid['messages'][3]['content']='{"text":"WRONG"}'
+    with pytest.raises(O.Error,match='observed result'): O.source_tool_calls(invalid,record)
+    invalid=copy.deepcopy(episode); invalid['messages'].pop(3)
+    with pytest.raises(O.Error,match='incomplete'): O.source_tool_calls(invalid,record)
+    invalid=copy.deepcopy(episode); invalid['messages'].append(copy.deepcopy(invalid['messages'][3]))
+    with pytest.raises(O.Error,match='incomplete'): O.source_tool_calls(invalid,record)
+    invalid=copy.deepcopy(record); invalid['calls'].append(copy.deepcopy(invalid['calls'][0]))
+    with pytest.raises(O.Error,match='receipt mismatch'): O.source_tool_calls(episode,invalid)
+
+
+def test_tool_trace_cannot_inherit_historical_execution_or_different_schema():
+    seed,trace,expected=trace_fixture()
+    episode,_=tool_fixture()
+    seed['input']={'tools':episode['tools']}; trace['seed_sha256']=O.digest(seed)
+    with pytest.raises(O.Error,match='unobserved outcomes'): O.validate_trace(seed,trace,expected)
+    trace.update(native_tools_sha256=O.digest(episode['tools']),execution_scope='initial_assistant_only_no_tool_dispatch',tool_outcomes=[])
+    assert O.validate_trace(seed,trace,expected)[1]==[False,False,True,True]
+    for field,value in (('tool_outcomes',[{'result':'ABC'}]),('native_tools_sha256','e'*64),('execution_scope','unexecuted_multiturn')):
+        with pytest.raises(O.Error,match='unobserved outcomes'): O.validate_trace(seed,dict(trace,**{field:value}),expected)
+
+
+def test_tool_augmentation_preserves_input_schema_and_excludes_source_assistant_results(tmp_path):
+    train=tmp_path/'train.jsonl'; train.write_bytes(O.canonical(row('text','Compute the discounted total for nine crates each priced seventeen dollars after a five percent discount.'))+b'\n')
+    held=tmp_path/'held.jsonl'; held.write_bytes(O.canonical(row('held','Describe how a compiler allocates stack slots for local variables during register spilling.',split='test'))+b'\n')
+    exclusions=tmp_path/'excluded.jsonl'; exclusions.write_bytes(O.canonical({'id':'excluded','source_group_id':'excluded'})+b'\n')
+    base=tmp_path/'base'; O.prepare_prompts([train],[held],[exclusions],base,split_inventory=held)
+    episode,record=tool_fixture()
+    ready=tmp_path/'ready.jsonl'; ready.write_bytes(O.canonical(episode)+b'\n')
+    executions=tmp_path/'executions.jsonl'; executions.write_bytes(O.canonical(record)+b'\n')
+    report=tmp_path/'report.json'
+    report_data={'artifacts':{'ready.jsonl':O.pin(ready),'execution_receipts.jsonl':O.pin(executions)},
+                 'source_code_sha256':'c'*64,'tool_catalog_sha256':'d'*64}
+    write(report,report_data)
+    result=O.add_tool_prompts(base,ready,executions,report,tmp_path/'out',per_family=1)
+    seed=next(r for r in O.C.iter_jsonl(tmp_path/'out'/'prompts.jsonl') if r['route']=='tool_call')
+    assert seed['input']['tools']==episode['tools'] and seed['input']['messages']==episode['messages'][:2]
+    assert 'recorded source outcome' not in (tmp_path/'out'/'prompts.jsonl').read_text()
+    assert result['rows']==2 and result['maximum_sampled_tokens']==512 and result['actual_sampled_tokens']==0
+    held_episode,held_record=tool_fixture('test',episode['provenance']['template_family'])
+    ready.write_bytes(O.canonical(episode)+b'\n'+O.canonical(held_episode)+b'\n')
+    executions.write_bytes(O.canonical(record)+b'\n'+O.canonical(held_record)+b'\n')
+    report_data['artifacts']={'ready.jsonl':O.pin(ready),'execution_receipts.jsonl':O.pin(executions)}; write(report,report_data)
+    with pytest.raises(O.Error,match='crosses splits'):
+        O.add_tool_prompts(base,ready,executions,report,tmp_path/'forbidden')
+    assert not (tmp_path/'forbidden').exists()
+
+
 def test_onpolicy_objective_and_exact_sampler_lineage_not_offpolicy_alias():
     args = SimpleNamespace(structured_recovery=True, **O.OBJECTIVE)
     O.verify_objective(args)
