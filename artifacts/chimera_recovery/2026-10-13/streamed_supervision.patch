@@ -1,0 +1,75 @@
+--- a/streamed_kd_trainer.py
++++ b/streamed_kd_trainer.py
+@@ -1423,12 +1423,16 @@
+         with safe_open(str(path), framework="pt", device="cpu") as handle:
+             self.corpus_ids = handle.get_tensor(corpus.get("ids_key", "input_ids")).to(torch.int64)
+             keys = set(handle.keys())
++            self.corpus_assistant_mask = handle.get_tensor("assistant_mask") if "assistant_mask" in keys else None
+             #: the distill corpus (distill_corpus_build, k3_corpus_build layout) states its padding in-band as
+             #: `real_lengths`; qtext_teacher_cache reads only `lengths`, so a cache over such a file treats the
+             #: separator padding as real text.  The corpus is digest-checked above, so its own statement wins.
+             real_lengths = (handle.get_tensor("real_lengths").to(torch.int64).reshape(-1)
+                             if "real_lengths" in keys and "lengths" not in keys else None)
+         self.seq_len = int(self.corpus_ids.shape[1])
++        if self.corpus_assistant_mask is not None:
++            if self.corpus_assistant_mask.dtype != torch.bool or self.corpus_assistant_mask.shape != self.corpus_ids.shape:
++                raise TrainerError("corpus assistant_mask must be bool and match input_ids")
+         if real_lengths is not None and real_lengths.numel() != self.corpus_ids.shape[0]:
+             raise TrainerError(f"corpus {path}: real_lengths has {real_lengths.numel()} rows, input_ids {self.corpus_ids.shape[0]}")
+         self.index: dict[int, tuple[str, int, int, int]] = {}
+@@ -1485,7 +1489,10 @@
+         stored = torch.zeros(self.seq_len, dtype=torch.bool)
+         stored[pos] = True
+         stored[length:] = False  # a row cut to the corpus's real_lengths keeps no target on its padding
+-        return {"ids": ids, "length": length, "stored": stored, "topk_ids": topk_ids, "topk_logprobs": topk_lp}
++        assistant = None if self.corpus_assistant_mask is None else self.corpus_assistant_mask[row]
++        if assistant is not None and (bool(assistant[length:].any()) or not bool(assistant[:length].any())):
++            raise TrainerError("corpus assistant_mask supervises padding or no real assistant token")
++        return {"ids": ids, "length": length, "stored": stored, "topk_ids": topk_ids, "topk_logprobs": topk_lp, "assistant_mask": assistant}
+ 
+ 
+ class XtokTargets:
+@@ -1677,6 +1684,11 @@
+         if kind not in ("text", "k3", "onpolicy"):
+             raise TrainerError(f"source {item.get('name')}: kind {kind!r}")
+         cache = QTextCache(Path(item["qtext_cache"]), corpus_path=Path(item["corpus"]) if item.get("corpus") else None)
++        supervision = item.get("supervision")
++        if supervision not in (None, "all_tokens", "assistant_only"):
++            raise TrainerError("unknown supervision policy")
++        if (cache.corpus_assistant_mask is not None) != (supervision == "assistant_only"):
++            raise TrainerError("assistant-mask corpus and explicit assistant_only policy must agree")
+         xtok = None
+         row_ids = sorted(cache.index)
+         if kind == "k3":
+@@ -1709,6 +1721,7 @@
+         "sources": [{"name": s.name, "kind": s.kind, "qtext_manifest_sha256": s.cache.manifest_sha256,
+                      "corpus_sha256": s.cache.manifest["corpus"]["sha256"], "rows": s.rows,
+                      "length_source": s.cache.length_source, "rows_cut_to_real_lengths": s.cache.rows_cut_to_real_lengths,
++                     "supervision": "assistant_only" if s.cache.corpus_assistant_mask is not None else "all_tokens",
+                      "xtok_sha256": None if s.xtok is None else s.xtok.sha256,
+                      "xtok_pairs": None if s.xtok is None else s.xtok.pairs,
+                      "xtok_provenance": provenance.get(s.name)} for s in sources],
+@@ -1863,6 +1876,23 @@
+         cand = unlikelihood_candidates(ids, objective.ul_ngram, objective.ul_max_candidates)
+         cand = torch.where(next_valid.unsqueeze(-1), cand, torch.full_like(cand, -1))
+         targets["ul_ids"] = cand.reshape(batch * length, -1)
++    # Token t predicts t+1. Apply assistant ownership to ALL objective terms.
++    # Unmasked legacy sources retain their preregistered full-token objective.
++    supervised = torch.ones(batch, length, dtype=torch.bool)
++    for b, row in enumerate(rows):
++        if row.get("assistant_mask") is not None:
++            supervised[b].zero_()
++            supervised[b, :-1] = row["assistant_mask"][1:]
++            supervised[b] &= next_valid[b]
++    flat_supervised = supervised.reshape(-1)
++    for name in ("ce_w", "eos_w", "q_w", "k_w"):
++        if name in targets:
++            targets[name] = targets[name] * flat_supervised.to(targets[name].dtype)
++    targets["next_ids"] = torch.where(flat_supervised, targets["next_ids"], -1)
++    if "ul_ids" in targets:
++        targets["ul_ids"] = torch.where(flat_supervised[:, None], targets["ul_ids"], -1)
++    if "jsd" in targets:
++        targets["jsd"] &= flat_supervised
+     return ids, targets
+ 
+ 
