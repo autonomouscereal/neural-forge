@@ -156,6 +156,10 @@ def preflight(config_path: Path) -> dict[str, Any]:
                 raise Error("teacher cache route differs from accepted batch")
             if item.get("target_layout") != "emission" or item.get("input_layout") != "feature":
                 raise Error("accepted batch must state feature inputs and emission targets")
+            if R.route_name(item["route"]) == "joint_av":
+                verified["h3_source_validator"] = authenticate_h3_batch(item,
+                    load_native_batch(item, batches_path.parent, "cpu"), receipt, batches_path.parent,
+                    config.get("h3_source_validator"), root, aliases=config.get("h3_source_aliases"))
         verified["batches_path"] = str(batches_path)
         verified["batches"] = batches
     except (Error, KeyError, TypeError, ValueError, OSError) as error:
@@ -232,6 +236,29 @@ def load_native_batch(item: dict[str, Any], root: Path, device: str):
     from safetensors.torch import load_file
     stored = load_file(str(pinned_file(item["tensors"], root)), device=device)
     return C.inflate_native_batch(stored, item["storage"]) if item.get("storage") else stored
+
+
+def authenticate_h3_batch(item, batch, receipt, manifest_root, validator_pin, config_root, *, aliases=None):
+    """CPU source proof precedes H3 model/loss dispatch, with a pinned helper."""
+    if R.route_name(item["route"]) != "joint_av":
+        return None
+    if not isinstance(validator_pin, dict):
+        raise Error("genuine H3 source validator must be explicitly source-pinned")
+    path = pinned_file(validator_pin, config_root)
+    if path.name != "h3_native.py":
+        raise Error("H3 source validator must be the audited native capture adapter")
+    validator = load_module(path, "chimera_recovery_h3_source_dispatch")
+    if not callable(getattr(validator, "validate_batch", None)):
+        raise Error("H3 source validator lacks runtime reconstruction")
+    cpu = {key: value.detach().cpu() for key, value in batch.items()}
+    result = validator.validate_batch(cpu, receipt, Path(manifest_root), aliases=aliases)
+    if (not isinstance(result, dict) or result.get("verified") is not True or
+            result.get("source_id") != item.get("source_id") or
+            result.get("recovery_group_id") != item.get("recovery_group_id") or
+            result.get("supervised_units") != 1 or result.get("denominator_kind") != "native_guided_pair_mean" or
+            result.get("adapter_sha256") != validator_pin["sha256"]):
+        raise Error("H3 runtime source/group/denominator/helper ownership differs")
+    return {"path": str(path), "sha256": validator_pin["sha256"]}
 
 
 def capture_xd(module, engine, batches, root: Path, out: Path, device: str):
@@ -445,6 +472,8 @@ def train(config_path: Path, out: Path, resume: Path | None = None) -> dict[str,
                 "hybrid": hybrid.identity(), "preregistration": verified["preregistration"], "driver_sha256": check["driver_sha256"],
                 "objective_adapter_sha256": check["objective_adapter_sha256"], "optimizer": config["optimizer"], "unit": config["unit"],
                 "hybrid_module_sha256": config["hybrid_module"]["sha256"], "shared_r16": inherited, "native_state": native}
+    if "h3_source_validator" in verified:
+        identity["h3_source_validator"] = verified["h3_source_validator"]
     engine = D3bEngine(module, hybrid, config["unit"], config["optimizer"], identity, total_steps=config["steps"])
     if resume:
         engine.resume(resume)
@@ -471,6 +500,9 @@ def train(config_path: Path, out: Path, resume: Path | None = None) -> dict[str,
         item = batches[engine.sampler_counter]
         batch = load_native_batch(item, root, config["device"])
         receipt = read_json(pinned_file(item["teacher_receipt"], root))
+        if R.route_name(item["route"]) == "joint_av":
+            authenticate_h3_batch(item, batch, receipt, root, config.get("h3_source_validator"),
+                                  config_path.parent, aliases=config.get("h3_source_aliases"))
         compute = R.ReadyObjectiveAdapter(receipt).bind(item["route"], batch, hybrid.bands,
                                                     parent_signs={int(k): v for k, v in item.get("parent_signs", {}).items()})
         segment = make_segment(batch, media_placeholder=hybrid.media_placeholder)
