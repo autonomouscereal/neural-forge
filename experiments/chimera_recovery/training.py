@@ -111,7 +111,9 @@ def check_json_schema(value: Any, schema: dict[str, Any], where: str) -> None:
 
     Unimplemented constraints refuse instead of appearing schema conditioned.
     """
-    supported = {"type", "properties", "required", "additionalProperties", "items", "enum", "description", "title", "default"}
+    supported = {"type", "properties", "required", "additionalProperties", "items", "enum", "const",
+                 "description", "title", "default", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum",
+                 "minLength", "maxLength", "pattern", "minItems", "maxItems", "allOf", "if", "then", "else"}
     if set(schema) - supported:
         raise ReadinessError(f"{where}: unsupported JSON-schema keywords {sorted(set(schema) - supported)}")
     kind = schema.get("type")
@@ -124,6 +126,25 @@ def check_json_schema(value: Any, schema: dict[str, Any], where: str) -> None:
         raise ReadinessError(f"{where}: value violates type {kind!r}")
     if "enum" in schema and value not in schema["enum"]:
         raise ReadinessError(f"{where}: value not in enum")
+    if "const" in schema and (type(value) is not type(schema["const"]) or value != schema["const"]):
+        raise ReadinessError(f"{where}: value violates const")
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if not math.isfinite(value):
+            raise ReadinessError(f"{where}: nonfinite numeric argument")
+        for key, valid in (("minimum", lambda n: value >= n), ("maximum", lambda n: value <= n),
+                           ("exclusiveMinimum", lambda n: value > n), ("exclusiveMaximum", lambda n: value < n)):
+            if key in schema and not valid(schema[key]):
+                raise ReadinessError(f"{where}: value violates {key}")
+    if isinstance(value, str):
+        for key, valid in (("minLength", lambda n: len(value) >= n), ("maxLength", lambda n: len(value) <= n)):
+            if key in schema and not valid(schema[key]):
+                raise ReadinessError(f"{where}: value violates {key}")
+        if "pattern" in schema and re.search(schema["pattern"], value) is None:
+            raise ReadinessError(f"{where}: value violates pattern")
+    if isinstance(value, list):
+        for key, valid in (("minItems", lambda n: len(value) >= n), ("maxItems", lambda n: len(value) <= n)):
+            if key in schema and not valid(schema[key]):
+                raise ReadinessError(f"{where}: value violates {key}")
     if isinstance(value, dict):
         properties = schema.get("properties", {})
         missing = set(schema.get("required", [])) - set(value)
@@ -138,6 +159,20 @@ def check_json_schema(value: Any, schema: dict[str, Any], where: str) -> None:
     if isinstance(value, list) and "items" in schema:
         for i, item in enumerate(value):
             check_json_schema(item, schema["items"], f"{where}[{i}]")
+    for branch in schema.get("allOf", []):
+        check_json_schema(value, branch, where)
+    if "if" in schema:
+        try:
+            check_json_schema(value, schema["if"], where)
+        except ReadinessError as error:
+            # An unsupported condition cannot be interpreted as a false branch.
+            if "unsupported JSON-schema" in str(error):
+                raise
+            branch = schema.get("else")
+        else:
+            branch = schema.get("then")
+        if branch is not None:
+            check_json_schema(value, branch, where)
 
 
 def validate_messages(record: dict[str, Any]) -> dict[str, Any]:

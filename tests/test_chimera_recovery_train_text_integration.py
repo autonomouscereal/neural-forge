@@ -285,7 +285,7 @@ def test_actual_resume_refuses_same_size_raw_teacher_target_mutation(production_
     assert not module.load_peer_module("qtext_teacher_cache").verify_shard(cache / "shard-00000")["ok"]
     try:
         code, _, _ = run("target-seal-refused", ["--resume", str(safety / "ckpt-00000001")])
-    except RuntimeError as error:
+    except (RuntimeError, ValueError) as error:
         assert any(term in str(error).lower() for term in ("sha", "digest", "verify", "integrity", "shard"))
         code = 2
     assert code == 2, "metadata identity must not permit changed raw teacher targets on resume"

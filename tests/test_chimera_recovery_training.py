@@ -510,6 +510,22 @@ def test_streamed_patch_refuses_changed_baseline(tmp_path):
         t.streamed_supervision_patch(path)
 
 
+def test_authentic_tool_bounds_and_conditional_arguments_remain_enforced():
+    schema = {"type": "object", "properties": {"op": {"type": "string", "enum": ["read", "write"]},
+              "path": {"type": "string", "maxLength": 16, "pattern": "^[a-z]+[.]txt$"},
+              "content": {"type": "string", "maxLength": 32}, "n": {"type": "number", "minimum": 0, "maximum": 10}},
+              "required": ["op", "path"], "additionalProperties": False,
+              "allOf": [{"if": {"properties": {"op": {"const": "write"}}}, "then": {"required": ["content"]}}]}
+    t.check_json_schema({"op": "read", "path": "a.txt", "n": 3}, schema, "tool")
+    t.check_json_schema({"op": "write", "path": "a.txt", "content": "actual"}, schema, "tool")
+    for bad in ({"op": "write", "path": "a.txt"}, {"op": "read", "path": "../a.txt"},
+                {"op": "read", "path": "a.txt", "n": 11}, {"op": "write", "path": "a.txt", "content": "x" * 33}):
+        with pytest.raises(t.ReadinessError):
+            t.check_json_schema(bad, schema, "tool")
+    with pytest.raises(t.ReadinessError, match="unsupported"):
+        t.check_json_schema({}, {"if": {"$ref": "https://example.invalid/schema"}, "then": {"required": ["x"]}}, "tool")
+
+
 def test_exact_campaign_patch_masks_real_build_batch_if_supplied():
     source = os.environ.get("CHIMERA_STREAMED_BASELINE")
     if not source:

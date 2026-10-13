@@ -46,7 +46,7 @@ Prompt, tool-result and padding targets have zero CE, EOS, Qwen KD, K3 KD,
 unlikelihood and JSD weights. Keep text predictions within `[0, 248320)`.
 Never train the music/ledger bands on text examples.
 
-The initial structured tool recovery pass sets `ul_lambda=0`. Repeated JSON
+The initial structured tool recovery pass sets `w_ul=0` (`--w-ul 0`). Repeated JSON
 keys, function names and schema delimiters are legitimate syntax; generic
 repeat-token unlikelihood would penalize correct tool calls. Preserve the
 original unlikelihood setting for its original non-tool replay lane. A later
@@ -60,6 +60,14 @@ structured-chat pass is one deterministic pass over accepted training rows
 (seed 20261013), with its actual token budget calculated and sealed after
 packing. No upsampling may fabricate coverage of absent capabilities. Replay
 the existing disjoint text/long/K3 sets in D4 under their original contract.
+
+The structured lane removes right padding per micro-batch without truncating
+real context and divides summed objective losses by assistant prediction
+positions across the entire accumulation window. It supports one replica
+initially; the original replay lane retains its original normalization.
+Seal the exclusive row-plan digest and cursor, actual real/compute/supervised
+token counts, trainer/helper digests and the full amended document in resume
+identity. Record skipped positions separately from applied updates.
 
 ## C. Modality repair requirements
 
@@ -85,9 +93,18 @@ copied into ordinary conditioning features. Legitimate inpainting/editing
 context is explicitly role/mask limited. D3b keeps the preregistered
 guided-velocity MSE objective: production adapters must explicitly select
 the reviewed guided-velocity callback. The prepared D3 patch adds
-`--flow-objective guided_velocity --objective-adapter /path/to/training.py`
+`--flow-objective guided_velocity --objective-adapter /path/to/training.py
+--noisy-feature-bands /path/to/native_noisy_feature_bands.json`
 to its rate proof; the production driver must bind this same objective to
 sealed batches. Endpoint/x0 smoke tests do not establish this objective.
+The first D3b recovery pass uses explicitly amended AdamW settings: unit and
+interface-out learning rates `2e-5`, LoRA learning rate `1e-4`, betas
+`(0.9, 0.95)`, epsilon `1e-8`, weight decay `0`, gradient clip `1`, 20 warm-up
+steps and cosine decay to `0.1` of each starting rate, seed `20261013`.
+These are initial recovery choices adapted from the adjacent D1/D2 contracts,
+not measured optimum rates. Seal one pass over the accepted training batch
+manifest as the step budget; preserve the 25% decode review and stop-spending
+rule. Holdout batches never enter the optimizer sampler.
 Require native/hybrid forward and gradient parity, decoder contracts, finite
 targets, actual adapter/driver availability and parameter census before the
 affected route trains. Unready routes have executable prerequisite jobs and
