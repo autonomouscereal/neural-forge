@@ -37,6 +37,8 @@ def plan(runtime_candidate, lease_source, run_source, delta_source):
                 native_task="01a1326f-4f44-7ef0-a2fa-2a64a706fedc", active=False, production_ready=False,
                 required_host_gpu_indices=[0, 4], image_id=IMAGE, mounts=mounts,
                 clone_directory_sha256=CLONE_DIGEST, mem_available_launch_floor_gib=100, max_proof_age_seconds=45,
+                resource_policy=R.DEFAULT_RESOURCE_POLICY,
+                resource_policy_sha256=hashlib.sha256(R.canonical(R.DEFAULT_RESOURCE_POLICY) + b"\n").hexdigest(),
                 container_devices=["cuda:0", "cuda:1"], lease_proof_target="/lease/live.json", lease_mount_read_only=True,
                 container_id=None, allocation_group_id=None, container_name=None,
                 allocation_command_template=["C:/Python314/python.exe", "-B", "C:/Users/cereal/hermes.py", "run", "--gpus", "0", "4",
@@ -84,7 +86,14 @@ def portable_validator(raw):
 
 
 def prepare(baseline, source_manifest, source_sha, clone_receipt, registry_receipt, campaign_tools, campaign_ledger,
-            runtime_candidate, lease_source, run_source, delta_source, out):
+            runtime_candidate, lease_source, run_source, delta_source, out, resource_amendment=None, resource_amendment_sha256=None):
+    if bool(resource_amendment) != bool(resource_amendment_sha256):
+        raise R.Error("D1 resource amendment path/SHA must be selected together")
+    policy = R.DEFAULT_RESOURCE_POLICY
+    if resource_amendment:
+        policy = R.resource_policy_record(resource_amendment, resource_amendment_sha256)
+        if policy != R.RESOURCE_AMENDMENT:
+            raise R.Error("Explicit resource amendment must be the reviewed resource-only change")
     for path in (runtime_candidate, lease_source, run_source, delta_source):
         if not PurePosixPath(path).is_absolute() or ".." in PurePosixPath(path).parts or any(c in path for c in "\n\r"):
             raise R.Error("Explicit nonescaping absolute server paths required")
@@ -108,6 +117,7 @@ def prepare(baseline, source_manifest, source_sha, clone_receipt, registry_recei
              "tools/oc_seal.py": (campaign_ledger / "oc_seal.py").read_bytes(),
              "evidence/actual-clone-receipt.json": Path(clone_receipt).read_bytes(),
              "evidence/actual-registry-clone.json": Path(registry_receipt).read_bytes(),
+             "resource_policy.json": R.canonical(policy) + b"\n",
              "source_path_map.json": R.canonical(R.SOURCE_MAP) + b"\n"}
     for name, raw in files.items():
         if name.endswith(".py"):
@@ -115,6 +125,7 @@ def prepare(baseline, source_manifest, source_sha, clone_receipt, registry_recei
     candidate = dict(schema="chimera_recovery.d1_allocated_candidate.v1", prepared_date="2026-10-13",
                      image_id=IMAGE, clone_directory_sha256=CLONE_DIGEST, actual_counts=manifest["actual_counts"],
                      source_path_map=R.SOURCE_MAP, original_source_manifest_bytes_unchanged=True,
+                     resource_policy=policy,
                      successor=dict(manifest=str(PurePosixPath(manifest["dataset"]["path"]).parent / "manifest.json"),
                                     manifest_sha256=source_sha, seal_sha256=manifest["seal_sha256"],
                                     ids=manifest["dataset"]["path"], held_rows=manifest["actual_counts"]["held_rows"],
@@ -129,6 +140,8 @@ def prepare(baseline, source_manifest, source_sha, clone_receipt, registry_recei
     allocation_plan["candidate_receipt_sha256"] = hashlib.sha256(R.canonical(candidate) + b"\n").hexdigest()
     allocation_plan["root_controller_sha256"] = candidate["files"]["tools/d1_allocated_root.py"]
     allocation_plan["source_path_map_sha256"] = candidate["files"]["source_path_map.json"]
+    allocation_plan["resource_policy"] = policy
+    allocation_plan["resource_policy_sha256"] = candidate["files"]["resource_policy.json"]
     files["candidate_receipt.json"] = R.canonical(candidate) + b"\n"
     files["allocation_plan.json"] = R.canonical(allocation_plan) + b"\n"
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -149,6 +162,8 @@ def main():
         parser.add_argument("--" + key, type=Path, required=True)
     for key in ("source-sha", "runtime-candidate", "lease-source", "run-source", "delta-source"):
         parser.add_argument("--" + key, required=True)
+    parser.add_argument("--resource-amendment", type=Path)
+    parser.add_argument("--resource-amendment-sha256")
     print(json.dumps(prepare(**vars(parser.parse_args())), sort_keys=True))
 
 

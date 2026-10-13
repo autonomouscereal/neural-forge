@@ -57,9 +57,11 @@ class AllocatedTests(unittest.TestCase):
         self.value, self.rows, self.docker, self.cuda, self.host = fixture()
         self.now = datetime(2026, 10, 13, 20, 10, tzinfo=timezone.utc)
         (self.root / "source_path_map.json").write_bytes(R.canonical(R.SOURCE_MAP))
+        (self.root / "resource_policy.json").write_bytes(R.canonical(R.DEFAULT_RESOURCE_POLICY) + b"\n")
         self.value["source_path_map_sha256"] = R.sha(self.root / "source_path_map.json")
         candidate = dict(schema="chimera_recovery.d1_allocated_candidate.v1",
-                         files={"tools/d1_allocated_contract.py": R.sha(R.__file__), "source_path_map.json": self.value["source_path_map_sha256"]},
+                         files={"tools/d1_allocated_contract.py": R.sha(R.__file__), "source_path_map.json": self.value["source_path_map_sha256"],
+                                "resource_policy.json": self.value["resource_policy_sha256"]},
                          successor=dict(manifest_sha256="9" * 64))
         (self.root / "candidate_receipt.json").write_bytes(R.canonical(candidate) + b"\n")
         self.value["candidate_receipt_sha256"] = R.sha(self.root / "candidate_receipt.json")
@@ -126,6 +128,28 @@ class AllocatedTests(unittest.TestCase):
             R.attest(self.value, self.digest, self.rows, self.docker, self.cuda, host, self.now)
         host["phase"] = "training"
         self.assertTrue(R.attest(self.value, self.digest, self.rows, self.docker, self.cuda, host, self.now)["valid"])
+
+    def test_resource_amendment_only_relaxes_unused_cache_history_not_live_exclusion(self):
+        value = dict(self.value, resource_policy=R.RESOURCE_AMENDMENT,
+                     resource_policy_sha256=hashlib.sha256(R.canonical(R.RESOURCE_AMENDMENT) + b"\n").hexdigest())
+        host = dict(self.host, k3_passes_complete=False, k3_sealed_manifests=0)
+        self.assertTrue(R.attest(value, self.digest, self.rows, self.docker, self.cuda, host, self.now)["valid"])
+        for field, bad in (("k3_running", True), ("k3_running", None), ("mem_available_gib", 99.9),
+                           ("selected_gpu_queues_running", True), ("foreign_gpu_processes", [dict(pid=99)])):
+            with self.subTest(field=field, bad=bad), self.assertRaises(ValueError):
+                R.attest(value, self.digest, self.rows, self.docker, self.cuda, dict(host, **{field: bad}), self.now)
+        with self.assertRaisesRegex(ValueError, "legacy"):
+            R.attest(self.value, self.digest, self.rows, self.docker, self.cuda, host, self.now)
+
+    def test_resource_policy_missing_unknown_or_mutated_refuses(self):
+        for policy in (None, {"policy": "ignore_k3"}, dict(R.RESOURCE_AMENDMENT, retained_checks=[])):
+            with self.subTest(policy=policy), self.assertRaisesRegex(ValueError, "resource policy"):
+                R.verify_host(dict(self.value, resource_policy=policy), self.host)
+        path = self.root / "resource_policy.json"
+        path.write_bytes(R.canonical(R.RESOURCE_AMENDMENT) + b"\n")
+        self.assertEqual(R.resource_policy_record(path, R.sha(path)), R.RESOURCE_AMENDMENT)
+        with self.assertRaises(ValueError):
+            R.resource_policy_record(path, self.value["resource_policy_sha256"])
 
     def test_stale_future_naive_revoked_and_foreign_proof_reject(self):
         proof = self.proof()
