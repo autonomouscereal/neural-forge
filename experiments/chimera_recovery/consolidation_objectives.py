@@ -18,8 +18,8 @@ MUSIC = "music_code_band_kl"
 VISION = "text_answer_kd_plus_vit_feature_mse"
 AUDIO = "authored_audio_assistant_ce"
 SPEECH = "supervised_speech_rectified_flow"
-VOLUME = "supervised_volume_rectified_flow"
-OBJECTIVES = {TEXT, GUIDED, MUSIC, VISION, AUDIO, SPEECH, VOLUME}
+GEOMETRY = "supervised_geometry_rectified_flow"
+OBJECTIVES = {TEXT, GUIDED, MUSIC, VISION, AUDIO, SPEECH, GEOMETRY}
 
 
 def count_matches(expected, actual):
@@ -99,6 +99,39 @@ def guided_backward(module, hybrid, batch, item, receipt, units, weight):
     compute = R.ReadyObjectiveAdapter(receipt).bind(item["route"], batch, hybrid.bands,
                 parent_signs={int(k): v for k, v in item.get("parent_signs", {}).items()})
     segment = T.make_segment(batch, media_placeholder=hybrid.media_placeholder)
+    return module.full_depth_forward_backward(hybrid, segment,
+        lambda normed, context: compute(hybrid.emission(normed, context)), loss_scale=weight_value(weight))[0]
+
+
+def geometry_segment(batch, *, media_placeholder):
+    """Feed native progress to HY3D; canonical sigma stays loss-only metadata."""
+    from . import train_media as T
+    segment = T.make_segment({k: v for k, v in batch.items() if k != "charted_source_positions"},
+                             media_placeholder=media_placeholder)
+    segment["source_positions"] = {"hy3d": batch["charted_source_positions"]}
+    return segment
+
+
+def geometry_backward(module, hybrid, batch, compute, units, weight):
+    """Authenticated canonical velocity MSE, raw sign handled by source adapter.
+
+    GeometryFlowAdapter owns source/target reconstruction and the fixed -1 raw
+    head sign. No endpoint conversion or division by native progress occurs.
+    """
+    import torch
+    types, mask = batch["native_media_type_ids"], batch["native_media_loss_weights"]
+    if (hybrid.bands[7]["feature"] != (576, 640) or hybrid.bands[7]["emission"] != (320, 384)
+            or not torch.equal(mask, batch["native_media_loss_mask"])
+            or bool((types[mask != 0] != 7).any())):
+        raise Error("D4 geometry needs the authentic type7 64-channel latent allocation")
+    count_matches(units, scalar_flow_count(types, mask, {7: hybrid.bands[7]}))
+    canonical, progress = batch["native_media_canonical_sigma"], batch["native_media_noise_levels"]
+    owned = types == 7
+    if (canonical.shape != types.shape or progress.shape != types.shape
+            or not bool(torch.isfinite(canonical).all()) or bool(((canonical[owned] <= 0) | (canonical[owned] > 1)).any())
+            or not torch.equal(progress[owned], 1 - canonical[owned])):
+        raise Error("D4 geometry canonical sigma and native progress must remain separate exact fields")
+    segment = geometry_segment(batch, media_placeholder=hybrid.media_placeholder)
     return module.full_depth_forward_backward(hybrid, segment,
         lambda normed, context: compute(hybrid.emission(normed, context)), loss_scale=weight_value(weight))[0]
 

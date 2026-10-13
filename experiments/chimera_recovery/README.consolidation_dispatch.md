@@ -14,7 +14,7 @@ resource authority or evaluation.
 
 The config schema is `chimera_recovery.d4_dispatch_config.v1`, stage `D4`.
 It requires the frozen preregistration and selected dated amendment, actual
-accepted stages in `consolidation.STAGE_ORDER`, immutable registered D2 native
+accepted stages in the selected exact lineage-order amendment, immutable registered D2 native
 clone, exact pre-D2 source, authentic complete D2 r64/r32/gain bank binding, final
 `D3d_speech_flow` cumulative native/shared-r16 exports, actual replay catalog,
 per-owner prior-rate ledger and current helper/streamed-trainer source pins.
@@ -32,7 +32,17 @@ Compatible earlier cache preregistrations must be exact unchanged prefixes of
 the selected append-only amendment; producer receipts are not rewritten.
 
 Original budgets remain 2.5M short-text +0.5M long-text +1M Kimi real tokens,
-300 distinct pairs each vision/ACE/QIMG/HY3D/H3. Whole-row token overshoot needs
+300 distinct pairs each vision/ACE/QIMG/HY3D/H3 in the preserved frozen record.
+The additional `chimera_recovery.d4_replay_amendment.v1` explicitly replaces
+only the HY3D/H3 pair counts with all actual eligible source-cache batch IDs
+once, and adds all eligible ACE-LM batches in a distinct `music_code` lane.
+It replaces only `D3b.hy3d` with `D3b_geometry_supervised_flow` in the ordered
+lineage. Other original quotas and stages remain exact. The amendment requires
+root selection after reviewing actual full source manifests, IDs and counts.
+`prepare-replay-amendment --preregistration ... --amendment-sha256 ... --hy3d
+... --h3 ... --music-code ... --out <fresh.json>` creates an **unselected**
+review candidate only from genuine complete inventories; partial sources refuse.
+Whole-row token overshoot needs
 an exact selected dated declaration. Padding, assistant positions and flow
 scalar channels do not count as real input-token budget. Guided native pairs
 retain the original equal-modality pair mean (`supervised_units=1`), including
@@ -72,10 +82,15 @@ Current blockers are real: no accepted D2 or terminal D3 state exists; the full
 audio/speech reconstruction index is pending final source/cache seals; actual
 teacher-backed text replay tensors/catalog and full quotas are not supplied;
 current-base objective/gradient parity and production RAM/CUDA lease are absent.
-New supervised HY3D volume batches require their own audited geometry contract,
-canonical sigma versus native progress1−sigma, selected amendment and exact
-576:640→320:384 channels. This dispatcher deliberately refuses old guided/planar
-HY3D substitutes. Final registered native checkpoint publication/parity and
+Supervised geometry uses `GeometryFlowAdapter` and its original compact source
+schema; the raw head sign is handled by that adapter. Native progress1−sigma
+goes only to the bridge; canonical sigma never becomes a loss denominator.
+The loss owns only type7 latent rows/channels320:384, excluding image/time rows.
+Current small selected geometry source has eight boxes and four sigma pairs
+per source; its conditional/full-parent parity remains explicitly false.
+Genuine H3 guided pairs retain their source-specific signs, own-clock audio
+velocity and original native adapter without extra slope multiplication.
+This dispatcher refuses old guided/planar HY3D substitutes. Final registered native checkpoint publication/parity and
 held-out intelligence/media evaluation remain separate required work.
 
 Tests exercise actual tiny Hybrid forward/streamed gradients, raw signed guided
