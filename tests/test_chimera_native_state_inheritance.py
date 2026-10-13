@@ -133,6 +133,12 @@ def test_actual_native_media_music_vision_continuity_preserves_frozen_families_a
     target = torch.randn(1, 4, module.TINY.FEATURE, generator=torch.Generator().manual_seed(19))
     result = media.train_step(segment, lambda prediction: M.R.flow_velocity_loss(prediction, target, segment["types"], torch.ones(1, 4), donor.bands, param="x0", x_t=segment["features"], sigma=segment["sigma"], noisy_feature_bands={4: (6, 12)}))
     assert not result["skipped"] and not torch.equal(baseline, donor.forward(segment)["emission"])
+    media.save(tmp_path / "budget-checkpoint")
+    original_budget = media.total_steps
+    media.total_steps = 2
+    with pytest.raises(M.Error, match="exact resume refused"):
+        media.resume(tmp_path / "budget-checkpoint")
+    media.total_steps = original_budget
     source1 = export(media, "D3b")
     receiver = construct(44)
     identity = initialize(receiver, source1)

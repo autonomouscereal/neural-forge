@@ -312,7 +312,7 @@ class D3bEngine:
         stage = Path(tempfile.mkdtemp(prefix=".d3b-checkpoint-", dir=out.parent))
         state = {"schema": self.checkpoint_schema, "identity": self.identity, "ownership": self.ownership,
                  "trainables": {name: tensor.detach().cpu() for name, tensor in self.census.items()},
-                 "optimizer": self.optimizer.state_dict(), "step": self.step, "sampler_counter": self.sampler_counter,
+                 "optimizer": self.optimizer.state_dict(), "step": self.step, "sampler_counter": self.sampler_counter, "total_steps": self.total_steps,
                  "consecutive_skips": self.consecutive_skips, "skip_window": self.skip_window,
                  "decode_review_passed": self.decode_review_passed,
                  "rng_cpu": torch.get_rng_state(), "rng_python": random.getstate(),
@@ -329,7 +329,7 @@ class D3bEngine:
         if receipt.get("complete") is not True or R.sha(checkpoint / "state.pt") != receipt.get("state_sha256"):
             raise Error("checkpoint incomplete or digest changed")
         state = torch.load(checkpoint / "state.pt", map_location="cpu", weights_only=True)
-        if state["schema"] != self.checkpoint_schema or state["identity"] != self.identity or state["ownership"] != self.ownership:
+        if state["schema"] != self.checkpoint_schema or state["identity"] != self.identity or state["ownership"] != self.ownership or state.get("total_steps") != self.total_steps:
             raise Error("exact resume refused changed base, data, objective/config, or optimizer census")
         if set(state["trainables"]) != set(self.census):
             raise Error("resume trainable inventory differs")
