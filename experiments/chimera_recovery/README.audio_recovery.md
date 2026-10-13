@@ -55,7 +55,7 @@ python experiments/chimera_recovery/audio_cache.py prepare \
   --admission /work/audio-admission-derived-v1/manifest.json \
   --admission-sha256 ACTUAL_SOURCE_ADMISSION_SHA \
   --tokenizer-dir /model \
-  --charted-attention /work/chimera-omni/src/chimera_omni/nn/charted.py \
+  --charted-attention /work/chimera-omni/src/chimera_omni/modeling/charted.py \
   --amendment-sha256 ACTUAL_APPENDED_AMENDMENT_SHA \
   --out /work/native-audio-batches-v1
 python experiments/chimera_recovery/train_audio.py preflight \
@@ -85,3 +85,32 @@ Speech output requires its separate denoising/flow objective and source-sealed
 generation prompt contract. Native clean observations and assistant CE do not
 authorize a claim that the checkpoint can speak. Qwen/Fish speech codec IDs never
 enter Chimera's music band or H3's32-channel continuous bridge.
+
+For a complete globally admitted speech snapshot, use `encode-admitted-source`
+with the unchanged `source_ready.jsonl` and the speech producer's
+`global_admission/manifest.json`. This command also encodes validation/test rows
+for diagnostics. Their source admission remains false and native preparation
+excludes them from training batches. Speech candidates require independently
+checked exact ASR and official synthetic voice provenance. All retained rows
+must pass the actual full-coverage H3 encoder before a clean cache is sealed.
+
+```bash
+python experiments/chimera_recovery/audio_cache.py encode-admitted-source \
+  --source /work/speech-source-v1/source_ready.jsonl \
+  --admission /work/speech-source-v1/global_admission/manifest.json \
+  --admission-sha256 ACTUAL_FULL_GLOBAL_ADMISSION_SHA \
+  --stage-c /work/audio-cache-inputs-v1/stage_c_media_a.py \
+  --comfy-root /opt/ComfyUI \
+  --audio-vae /opt/ComfyUI/models/vae/minimax_h3_audio_vae_fp32.safetensors \
+  --out /work/clean-speech-cache-v1
+```
+
+The actual October13 procedural CPU audit passed all24 clean encodings and
+bitwise reconstruction of eight admitted native batches, owning344 assistant
+targets. Sixteen holdouts were excluded. Its native manifest SHA is
+`8b696ca30be5d25df784794669d088b0b13b74a43a70f253d96c8c337bf4049b`;
+the clean manifest SHA is
+`ae08c35f02458b9e36a19431e2d9ff9ffedaf29d4d3ed9118b2d00a9b0572b47`.
+This source-bound ingress audit did not run the current Chimera model. Adapter
+changes require a newly prepared immutable native cache, preserving that older
+proof rather than rebinding its adapter identity.
