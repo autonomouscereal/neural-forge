@@ -297,3 +297,25 @@ answer-cache converter and full-response evaluation. The available ACE/H3
 generators do not provide an authentic speech or sound-semantic teacher. The
 24 audio understanding rows remain explicitly blocked until such a teacher
 and a native audio-to-answer input contract exist.
+
+`train_audio.AudioCEEngine` prepares a distinct supervised clean-audio lane
+through the real full-depth hybrid. It uses authored assistant CE over exact
+text rows, normalized by actual answer targets, with no invented teacher logits
+or ViT feature targets. It owns the H3 unit, type3 input bridge columns480:512
+and type embedding row3, plus shared trunk LoRA; other units, emission and text
+head stay frozen. Its bounded H3 attention policy exposes only the authentic
+prompt and observed audio. All reference-answer rows are hidden from H3's joint
+attention, preventing a future answer from contaminating audio tokens and
+leaking into earlier causal answer positions. Checkpoints bind that read policy,
+objective, optimizer and exact sampler/Adam/RNG state.
+
+This engine supplies no production encoder or codec conversion. The existing
+32-channel H3 band cannot accept a raw16kHz mono waveform or another speech
+parent's codec by a guessed reshape. Preparation still requires full-coverage,
+no-trim clean encoding, resampling/channel provenance, actual latent layout and
+measured native/source positions. The joint same-mux22/24-second source does
+not establish that standalone contract. A dated distinct audio-CE objective and
+prompt-only H3 read-policy amendment, globally held-excluded source admission,
+exact response evaluation and sequential shared-adapter composition are required.
+Speech parents recovered from memory need their own audited mapping; this lane
+does not establish ASR or general sound understanding.
