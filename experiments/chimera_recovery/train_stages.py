@@ -59,6 +59,12 @@ def stage_data(stage, manifest_path, amendment_sha):
         raise Error(f"{stage} needs complete sealed admitted native {lane} batches; raw/partial teacher cache is insufficient")
     R.require_sha(data.get("corpus_sha256"), "admitted_corpus_sha256")
     R.require_sha(data.get("source_manifest_sha256"), "source_teacher_manifest_sha256")
+    if stage == "D3a":
+        # These manifest pins become the actual engine's resume identity.
+        # Checking sidecars alone would admit a config that fails only after
+        # the immutable base is opened and the hybrid is constructed.
+        for key in ("D2_child_sha256", "recaptured_host_cache_sha256", "host_write_target_sha256"):
+            R.require_sha(data.get(key), "D3a manifest " + key)
     if stage == "D3c":
         music = T.load_module(HERE / "music_cache.py", "chimera_recovery_music_stage_source")
         music.sealed_source(Path(data["source_cache"]), Path(data["source_items"]), data["source_manifest_sha256"])
@@ -103,6 +109,9 @@ def stage_data(stage, manifest_path, amendment_sha):
         else:
             for key in ("D2_child_sha256", "recaptured_host_cache_sha256", "teacher_cache_sha256", "host_write_target_sha256"):
                 R.require_sha(receipt.get(key), "D3a " + key)
+            if (any(receipt[key] != data[key] for key in ("D2_child_sha256", "recaptured_host_cache_sha256", "host_write_target_sha256")) or
+                    receipt["teacher_cache_sha256"] != data["source_manifest_sha256"]):
+                raise Error("D3a batch child/host/teacher/write target pins differ from manifest engine identity")
             if receipt.get("chart_out_objective") != "teacher_delta_host_write" or receipt.get("host_write_target_independent") is not True:
                 raise Error("D3a outward chart needs independent sealed write targets recaptured on this child")
     return data, {"admitted_groups": len(groups), "accepted_batches": len(ids)}
