@@ -47,6 +47,20 @@ def test_d3_receipts_refuse_changed_bytes_and_frozen_body(tmp_path):
         M.verify_preregistration({"path": doc.name, "sha256": M.R.sha(doc), "amendment_sha256": "a" * 64}, tmp_path)
 
 
+def test_authentic_frozen_preregistration_includes_boundary_newline(tmp_path):
+    source = os.environ.get("CHIMERA_PREREG_BASELINE", "C:/Users/cereal/Documents/ai training/neural-forge/reports/omni-campaign-2026-09/distill/PREREGISTRATION_OMNI_STAGE_D_v1.md")
+    if not Path(source).is_file():
+        pytest.skip("set CHIMERA_PREREG_BASELINE to the authentic campaign preregistration")
+    raw = Path(source).read_bytes().replace(b"\r\n", b"\n")
+    end = raw.find(b"\n## Amendments")
+    doc = tmp_path / "prereg.md"
+    amendment = b"\n## Amendments\n2026-10-13 guided_velocity recovery\n"
+    doc.write_bytes(raw[:end] + amendment)
+    result = M.verify_preregistration({"path": doc.name, "sha256": M.R.sha(doc),
+                                      "amendment_sha256": __import__("hashlib").sha256(amendment).hexdigest()}, tmp_path)
+    assert result["frozen_bytes"] == 15339 and result["frozen_sha256"] == M.FROZEN_BODY_SHA256
+
+
 def test_rolling_checkpoints_keep_two_and_do_not_touch_other_artifacts(tmp_path):
     for i in range(4):
         folder = tmp_path / f"checkpoint-safety-{i:08d}"
