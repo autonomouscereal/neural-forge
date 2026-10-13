@@ -278,11 +278,13 @@ def preflight(directory: Path, writer_sha256: str | None = None) -> dict[str, An
             if n < 1 or len(s.get("targets", [])) != n:
                 raise Refusal("target count differs between tensor/sidecar")
             vshape, ashape = h["x_t_video"]["shape"], h["x_t_audio"]["shape"]
-            if vshape != [n, 24, 7, 12, 12] or ashape != [n, 32, 2, 37]:
+            # Original H3 VAE measured on the pinned 96px/22-frame window:
+            # spatial downsampling is16x, yielding6x6 before2x2 patchification.
+            if vshape != [n, 24, 7, 6, 6] or ashape != [n, 32, 2, 37]:
                 raise Refusal("captured joint tensor geometry differs")
             ishape = h["item.index"]["shape"]
             if (len(ishape) != 1 or ishape[0] < 1 or
-                    h["item.x0_video"]["shape"] != [ishape[0], 24, 7, 12, 12] or
+                    h["item.x0_video"]["shape"] != [ishape[0], 24, 7, 6, 6] or
                     h["item.x0_audio"]["shape"] != [ishape[0], 32, 2, 37]):
                 raise Refusal("model-space source geometry differs")
             for key in ("v_video", "x0hat_video"):

@@ -185,10 +185,27 @@ def test_speaking_sampler_discards_any_input_feature_values_and_never_accepts_ta
     changed, same = S.sample_latents(engine, segment, prompt_length=6, seed=7)
     assert torch.equal(latent, changed) and receipt == same
     assert receipt['clean_target_supplied_to_sampler'] is False and receipt['decoded_waveform_ready'] is False
+    assert receipt['requested_native_audio_rows'] == 6
+    assert receipt['requested_latent_frames_per_channel'] is None and receipt['requested_duration_seconds'] is None
+    assert receipt['duration_predicted_by_model'] is False and receipt['audio_eos_predicted_by_model'] is False
     assert len(receipt['trajectory']) == 32 and receipt['trajectory'][-1]['next_sigma'] == 0.
     assert latent.shape == (1, 6, engine.hybrid.bands[3]['feature'][1] - engine.hybrid.bands[3]['feature'][0])
     with pytest.raises(TypeError):
         S.sample_latents(engine, segment, prompt_length=6, seed=7, clean_target=before)
+
+
+def test_speaking_sampler_declares_explicit_native_duration_and_refuses_invented_geometry():
+    receipt = S.sampling_duration(334, 32, 167)
+    assert receipt['requested_latent_frames_per_channel'] == 167
+    assert receipt['requested_duration_seconds'] == 4.175
+    assert receipt['requested_output_samples_per_channel'] == 133600
+    assert receipt['requested_sample_rate'] == 32000
+    assert receipt['duration_predicted_by_model'] is False and receipt['audio_eos_predicted_by_model'] is False
+    for rows, width, frames in ((334, 32, None), (334, 32, 166), (334, 2, 167), (334, 32, True), (4098, 32, 2049)):
+        with pytest.raises(S.Error, match='explicit T'):
+            S.sampling_duration(rows, width, frames)
+    with pytest.raises(S.Error, match='cannot claim physical'):
+        S.sampling_duration(6, 2, 3, fixture=True)
 
 
 def test_speaking_cumulative_native_adapter_keeps_both_interface_gradients_and_resume(tmp_path):

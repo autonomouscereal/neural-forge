@@ -24,8 +24,12 @@ def module():
     return torch, M
 
 
-def fixture(tmp_path):
+def fixture(tmp_path, *, native_features=False):
     torch, M = module()
+    if native_features:
+        # Retain real production bridge feature width when exercising the
+        # strict native batch admission; the remaining model is still tiny.
+        M.TINY.FEATURE = 6144
     built = M.build_tiny_child(tmp_path / "tiny", seed=91)
     T = M.trainer_module()
     ctx = dict(base_sha256=R.I.sha(built["dir"] / "config.json"), parent_config_sha256=R.I.sha(built["parent_config"] / "config.json"),
@@ -211,3 +215,26 @@ def test_train_only_immutable_replay_is_not_a_quality_claim(tmp_path):
     row["held"] = True
     with pytest.raises(R.Error, match="train-only"):
         R.replay_identity([row], dict(source=R.I.pin(source)), tmp_path)
+
+
+def test_actual_optimizer_gate_after_backward_prevents_revoked_update(tmp_path):
+    torch, M, _, construct = fixture(tmp_path)
+    union = construct()
+    rows, sources = replay(tmp_path, torch, M, union["hybrid"])
+    engine = R.UnionEngine(union, rows, sources, tmp_path, accumulation=2)
+    values = {name: value.detach().clone() for name, value in engine.census.items()}
+    calls = []
+    real = backward(torch, M)
+    def run(*args):
+        calls.append("backward")
+        return real(*args)
+    def revoked():
+        calls.append("gate")
+        raise R.Error("actual lease revoked before apply")
+    with pytest.raises(R.Error, match="lease revoked"):
+        engine.window(run, before_apply=revoked)
+    assert calls == ["backward", "backward", "gate"]
+    assert engine.step == engine.cursor == 0 and not engine.optimizer.state
+    assert all(torch.equal(value, values[name]) and value.grad is None for name, value in engine.census.items())
+    assert engine.window(real, before_apply=lambda: calls.append("admitted"))["applied"]
+    assert engine.cursor == 2 and engine.step == 1

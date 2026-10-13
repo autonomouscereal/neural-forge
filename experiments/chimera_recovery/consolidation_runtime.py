@@ -177,6 +177,7 @@ def construct_union(module, hybrid, original, d2, binding, native, shared, rates
     for name, value in joint.tensors.items():
         family = "D3.shared_lora" if name.startswith("d3.") else "D2.gain" if name.endswith(".gain") else "D2.k3_lora" if ".k3_" in name else "D2.lora"
         groups[family][name] = value
+    rates = rates(groups) if callable(rates) else rates
     optimizer, ownership = D.fresh_union_optimizer(groups, rates)
     return dict(hybrid=hybrid, groups=groups, optimizer=optimizer, ownership=ownership,
                 identity=dict(schema=SCHEMA, fixture=fixture, terminal_stage=TERMINAL,
@@ -242,8 +243,10 @@ class UnionEngine:
         if I.digest(self.rows) != self.identity["replay"]["row_order_sha256"]:
             raise Error("D4 ordered source rows changed")
 
-    def window(self, backward):
+    def window(self, backward, *, before_apply=None):
         import torch
+        if not self.identity["fixture"] and not callable(before_apply):
+            raise Error("D4 production requires a live update gate at the actual optimizer boundary")
         self.verify_sources()
         if self.cursor >= len(self.rows):
             raise Error("D4 exclusive replay already consumed")
@@ -289,6 +292,12 @@ class UnionEngine:
         norm = torch.nn.utils.clip_grad_norm_(list(self.census.values()), self.clip_norm)
         if not bool(torch.isfinite(norm)):
             return rejected("nonfinite_norm")
+        try:
+            if before_apply is not None:
+                before_apply()
+        except BaseException:
+            rejected("update_gate_refused")
+            raise
         self.optimizer.step()
         for name, value in self.census.items():
             if value.grad is not None:

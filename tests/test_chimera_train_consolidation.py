@@ -178,3 +178,21 @@ def test_future_production_d2_binding_absence_is_a_refusal(tmp_path):
     # No actual D2 has been run/accepted; absence must not be filled by fixture facts.
     with pytest.raises(D.Error, match="missing or changed"):
         D.verify_d2_source(dict(path=str(tmp_path / "nonexistent-D2.json"), sha256="a" * 64), tmp_path, None, None)
+
+
+def test_per_physical_leaf_rate_scales_real_adam_update_and_rejects_partial_ledger():
+    torch = pytest.importorskip("torch")
+    left, right = [torch.nn.Parameter(torch.ones(2, dtype=torch.float32)) for _ in range(2)]
+    groups = {"D3.unit": {"unit.one": left, "unit.two": right}}
+    rates = {"D3.unit": {"unit.one": .001, "unit.two": .002}}
+    optimizer, receipt = D.fresh_union_optimizer(groups, rates, require_complete=False)
+    (left.sum() + right.sum()).backward()
+    optimizer.step()
+    torch.testing.assert_close(left, torch.full_like(left, .9997), rtol=0, atol=1e-7)
+    torch.testing.assert_close(right, torch.full_like(right, .9994), rtol=0, atol=1e-7)
+    assert receipt["rate_ledger"]["unit.two"]["base_lr"] == "0.0006"
+    assert sum(len(group["params"]) for group in optimizer.param_groups) == 2
+    with pytest.raises(D.Error, match="exact physical census"):
+        D.fresh_union_optimizer(groups, {"D3.unit": {"unit.one": .001}}, require_complete=False)
+    with pytest.raises(D.Error, match="positive pinned"):
+        D.fresh_union_optimizer(groups, {"D3.unit": {"unit.one": .001, "unit.two": 0}}, require_complete=False)

@@ -37,9 +37,11 @@ def capture_unit_block(unit, outputs):
             delattr(unit, "block")
 
 
-def feature_forward_backward(module, model, segment, text_objective, unit_name, teacher_features):
+def feature_forward_backward(module, model, segment, text_objective, unit_name, teacher_features, *, loss_scale=1.):
     """Exact streamed backward with feature loss attached during unit recompute."""
     import torch
+    if type(loss_scale) not in (int, float) or not math.isfinite(loss_scale) or loss_scale <= 0:
+        raise Error("D3d loss_scale must be a finite positive whole-objective weight")
     if teacher_features.ndim != 3 or teacher_features.requires_grad or not bool(torch.isfinite(teacher_features).all()):
         raise Error("D3d requires detached finite packed teacher features [1,N,W]")
     placement = next(p for p in model.layout if p.container == unit_name)
@@ -54,7 +56,7 @@ def feature_forward_backward(module, model, segment, text_objective, unit_name, 
         text_loss = text_objective(model.final_norm(last), context)
     if not bool(torch.isfinite(text_loss)):
         raise Error("D3d text loss is not finite")
-    text_loss.backward()
+    (text_loss * loss_scale).backward()
     grad, feature_value, captures = last.grad, None, 0
     contexts = model.contexts(grad)
     for i in reversed(range(model.num_layers)):
@@ -76,7 +78,7 @@ def feature_forward_backward(module, model, segment, text_objective, unit_name, 
                 feature_loss = .1 * (actual.float() - teacher_features.to(actual.device).float()).square().mean()
                 if not bool(torch.isfinite(feature_loss)):
                     raise Error("D3d feature loss is not finite")
-                torch.autograd.backward((z, feature_loss), (grad, torch.ones_like(feature_loss)))
+                torch.autograd.backward((z, feature_loss), (grad, torch.ones_like(feature_loss) * loss_scale))
                 feature_value = float(feature_loss.detach())
             else:
                 z.backward(grad)
