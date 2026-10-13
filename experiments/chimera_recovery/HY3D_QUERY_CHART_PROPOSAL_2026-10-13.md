@@ -1,7 +1,10 @@
 # Clean geometry recovery chart proposal — not approved or native-ready
 
 The authored targets are genuine three-dimensional meshes. Actual ShapeVAE
-encoding and decoder geometry metrics remain separate proof obligations. The
+default-posterior encoding and native MC64 geometry were proved for one box,
+including repeated bitwise targets. Mode reconstructed that same parent surface
+poorly, so new target preparation must preserve native `posterior.sample()`.
+The complete 24-source warm session remains a separate source-level proof. The
 earlier image-to-shape teacher source was planar; it must not be relabeled as a
 physical geometry target or reused as supervision for these new source images.
 
@@ -27,7 +30,9 @@ on a fixed physical cube lattice. Do not assign clean mesh coordinates to these
 slots, infer them from labels, or copy one object's query chart to another.
 
 Before implementing that candidate, compare a source-blind ordinal chart against
-an explicitly position-free native branch using the same pinned clean targets.
+an explicitly position-free **media bridge** branch using the same pinned clean
+targets. The host trunk's sequential RoPE/recurrence still breaks original
+parent permutation symmetry in both branches; neither is parent parity.
 The latent set's permutation handling is part of the proposed representation:
 seeded target sampling alone gives reproducible labels but does not establish
 spatially aligned slots across objects. Any target-only sorting must permute
@@ -49,3 +54,65 @@ production adapter must bind the canonical alias and prove objective masking.
 This would be authored clean-latent supervised recovery, not guided parent KD.
 It must use a distinct cache schema, target-kind/policy, dated amendment and
 source seals. No existing guided trajectory receipt or D3b seal is rewritten.
+
+## Concrete proposed batch and preregistration contract
+
+This proposal is `hy3d_categorical_latent_slot_supervised_flow_2026-10-13.v1`.
+It remains unselected until the owner records its actual complete-sequence
+native proof and dated preregistration amendment. Parent chart parity and parent
+latent-set permutation parity are both explicitly false. No source latent XYZ,
+surface normals, decoded geometry, reference answer or clean latent enters
+generation conditioning or positions.
+
+The genuine native parent template supplies all user→assistant-generation-prefix
+IDs. Only actual user instructions are text inputs. Source assistant geometry
+metadata is retained in source provenance, never appended to this prefix.
+After the prefix come all 1,024 actual source-bound C11 image patch rows, the
+original HY3D time row, and 4,096 noisy latent rows. No arbitrary caption-only
+substitution or target-derived text is allowed. C11 patches are raw image inputs,
+not learned teacher targets; the actual 24-image CPU bitwise parity receipt is
+`reviews/2026-10-13-folding/recovery-preparation/geometry-conditioning-cpu-v1/proof.json`,
+SHA `61f3f6e03e44bf714fc8f3e82d2d5af50afea216f4fced563c3ef7fd3c459c18`.
+
+The proposed **bridge** coordinate convention is categorical latent slot
+`[(k+.5)/4096, 0, 0, 0]`, k0…4095. These coordinates are generated from row count
+alone and carry no physical spatial claim. The unchanged parent time row uses
+the actual `TIME_ROW_POSITION=[-1,-1,-1,-1]` from pinned s7 source. Image bridge
+positions are the actual C11 `[0,y/(gh-1),x/(gw-1),0]`. A full `[1,S,3]` source
+position tensor must separately scatter every real prefix, image, time and
+latent slot; its ordinal coordinates are a new observation convention, not
+clean encoder points. The proposed latent source coordinates are `[P+k,0,0]`
+for prefix text count P, with the time row explicitly marked as a sentinel.
+The exact image/source scatter must be validated against the native reader
+before the amendment is selected. The position-free bridge comparison uses
+zero latent bridge coordinates, while retaining the genuine time sentinel and
+image positions; it does not pretend to disable the host's sequence positions.
+
+For each admitted clean model-space target x0, a separately prescribed Gaussian
+noise draw forms `x_sigma=(1-sigma)*x0+sigma*epsilon`, 0<sigma≤1. Only x_sigma
+occupies type7 input band576:640. Emission320:384 receives `epsilon-x0`. This is
+authored waveform/geometry-supervised rectified flow, not guided teacher KD.
+The source parent time convention is t_native0=noise,1=data, so parent time is
+`1-sigma`; the existing folded unit's actual time-input conversion must be
+source-audited and numerically proved before the writer/driver is accepted.
+The time row and image rows have zero canonical media loss weight. All 4,096
+intended latent rows have weight1, with both input and emission bands checked
+and targets excluded from input bands. Full masks/indices/typeIDs/noise levels
+and `native_media_loss_weights` are mandatory, not just the legacy mask alias.
+
+The proposed training objective is flow weight1, guided/feature KD weight0 and
+text answer CE weight0 for this distinct generation stage. It uses the existing
+native HY3D unit, image ingress, bridge/emission path and preregistered trunk
+adapter scope, without a replacement fold. Source admission intersects full
+global group/frozen exclusion, per-source geometry-quality review, actual VAE
+target receipt, actual C11 parity and selected amendment; currently that final
+native intersection has not been granted. Source-eligible 8 train rows and all
+16 held rows stay distinct. New permutation augmentation, if selected, must
+permute x0, noise, noisy rows, velocity targets and loss masks together, never
+derive generation coordinates from query XYZ, and prove original decoded
+geometry invariance with actual parent execution before its own selection.
+
+The retained held families require before/after actual model geometry evaluation
+using fixed noise draws and native MC extraction, not cache-replay accuracy or
+finite tensors. The source corpus covers only small authored polyhedra; it does
+not establish natural-object, texture, arbitrary topology or full 3D competence.
