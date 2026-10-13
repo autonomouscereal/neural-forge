@@ -231,6 +231,14 @@ class TorchContractTests(unittest.TestCase):
         self.assertTrue(bool((batch["native_media_features"][0, :6, 384:480] == 0).all()))
         self.assertTrue(bool((batch["native_media_targets"][0, :6, 128:224] == 0).all()))
         self.assertNotEqual(batch["native_media_features"].data_ptr(), batch["native_media_targets"].data_ptr())
+        original_dtype = torch.get_default_dtype()
+        try:
+            torch.set_default_dtype(torch.float64)
+            typed = h3.pack_pair(pair, prefix, positions, media_token_id=11)
+            for field in ("native_media_noise_levels", "native_media_loss_mask", "native_media_loss_weights"):
+                self.assertEqual(typed[field].dtype, torch.float32)
+        finally:
+            torch.set_default_dtype(original_dtype)
         with self.assertRaises(h3.Refusal):
             h3.pack_pair(pair, prefix, positions[:, :-1], media_token_id=11)
 
