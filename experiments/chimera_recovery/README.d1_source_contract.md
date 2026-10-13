@@ -30,10 +30,19 @@ and a new source-bound cache namespace; an old cache cannot silently be reused
 against the new dataset. An optional argument receipt is included for this
 purpose; it is not a cache seal or a teacher-runtime proof.
 
-The local candidate artifact is under `reviews/2026-10-13-folding/
-recovery-preparation/d1-candidate-v3-source-successor`. Parent must run the
+The local successor artifact is under `reviews/2026-10-13-folding/
+recovery-preparation/d1-candidate-v4-source-successor`. Parent must run the
 source validator against actual host paths and the CPU dry run before promotion
 or production use. Preparing these files is not evidence of recovery quality.
+
+The shell accepts only one explicit `--dry-run` or `--check-gates` argument.
+No arguments, unknown arguments and `--run` refuse before status/output writes.
+Its inherited host CUDA0,4/flock mapping is not an allocator-owned runtime;
+production selection is deliberately disabled. The additive runtime template
+requires an exact live allocator lease, allocated container/image, two distinct
+physical GPU UUIDs and verified in-container ordinals0,1. Those missing bindings
+must be implemented by a reviewed allocator wrapper before production use;
+filling ordinary metadata with `active:true` would not prove ownership.
 
 Verification:
 

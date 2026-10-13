@@ -63,6 +63,17 @@ def launcher_candidate(raw, manifest, source_sha, runtime_manifest, runtime_cand
              "PRE=$CANDIDATE_ROOT/preflight\nLOG=$CANDIDATE_ROOT/d1.log\nSTATUS=$CANDIDATE_ROOT/d1_launch.status\n")
     text = text[:start] + block + text[end:]
     text = replace_once(text, "PYTHONPATH=$T:$OC/ledger:$EF/src", "PYTHONPATH=$CT:$T:$OC/ledger:$EF/src")
+    text = replace_once(text, 'DRY=0; CHECK=0\n[ "${1:-}" = "--dry-run" ] && DRY=1\n[ "${1:-}" = "--check-gates" ] && CHECK=1',
+                        'DRY=0; CHECK=0\n'
+                        '# CPU candidate only: legacy host CUDA0,4/flock is not an allocator-owned lease.\n'
+                        'if [ "$#" -ne 1 ]; then\n'
+                        '  echo "D1 candidate requires --dry-run or --check-gates; production launch is blocked pending an allocator-owned two-GPU container binding." >&2\n'
+                        '  exit 2\nfi\n'
+                        'case "$1" in\n'
+                        '  --dry-run) DRY=1 ;;\n'
+                        '  --check-gates) CHECK=1 ;;\n'
+                        '  *) echo "Unknown/unsupported D1 candidate argument: $1; production launch is blocked pending allocated runtime." >&2; exit 2 ;;\n'
+                        'esac')
     text = replace_once(text, 'mkdir -p "$PRE" "$Q/d1"', 'mkdir -p "$PRE"')
     text = replace_once(text, '--ids "$IDS" --lengths-key lengths --layers all',
                         '--ids "$IDS" --seq-len 4096 --lengths-key lengths --held-rows "$HELD_ROWS" --layers all\n'
@@ -131,10 +142,22 @@ def prepare(baseline, source_manifest, source_sha, runtime_manifest, runtime_can
     files["queues/d1_launch.sh"] = launcher_candidate((baseline / "queues/d1_launch.sh").read_bytes(), manifest, source_sha,
                                                        runtime_manifest, runtime_candidate, hashlib.sha256(validator).hexdigest(),
                                                        hashlib.sha256(trainer).hexdigest())
+    files["runtime_assignment.template.json"] = C.canonical(dict(
+        schema="chimera_recovery.d1_runtime_assignment.template.v1", active=False, production_ready=False,
+        lease_id=None, allocator_receipt=None, allocator_live_verification=None,
+        container=dict(name=None, immutable_id=None, runtime_image_sha256=None),
+        gpus=[dict(uuid=None, container_cuda_ordinal=0), dict(uuid=None, container_cuda_ordinal=1)],
+        required_gpu_count=2, launcher_scope="CPU dry-run/check-gates only",
+        required_bindings=["exact named live allocator lease and allocator receipt SHA", "exact allocated container identity and runtime image",
+                           "two distinct physical GPU UUIDs; actual in-container visibility must match", "native CUDA ordinals0,1 inside that exact container",
+                           "verify lease remains active immediately before updates; do not infer lease from legacy host flock",
+                           "pinned reviewed allocator wrapper; production selector deliberately disabled until implemented"],
+        blockers=["actual allocator-owned lease/container binding not supplied; host CUDA0,4 mapping is not sufficient"])) + b"\n"
     receipt = dict(schema="chimera_recovery.d1_candidate.v1", predecessor=PREDECESSOR, successor_manifest_sha256=source_sha,
                    successor_seal_sha256=manifest["seal_sha256"], runtime_manifest=runtime_manifest, runtime_candidate=runtime_candidate,
                    actual_counts=manifest["actual_counts"], files={key: hashlib.sha256(raw).hexdigest() for key, raw in files.items()},
-                   training_launched=False, runtime_source_changed=False,
+                   training_launched=False, runtime_source_changed=False, production_launch_enabled=False,
+                   allocator_runtime_binding_ready=False,
                    qtext_optional_corpus_args=["--corpus", manifest["dataset"]["path"], "--ids-key", "input_ids", "--lengths-key", "lengths"],
                    qtext_cache_scope="optional separate KD; no historical cache may be reused against successor SHA",
                    d1_teacher_scope="direct immutable parent hidden-state forwards; no qtext logit-cache dependency")
