@@ -193,6 +193,7 @@ def prepare_music(cache, items_path, admission_path, tokenizer, amendment_sha, o
     result = {"schema": "chimera_recovery.music_batches.v1", "stage": "D3c", "sealed": complete and bool(accepted),
               "complete_source_traversal": complete, "split": "train", "heldout_groups_excluded": True,
               "source_manifest_sha256": manifest_sha, "source_items_sha256": R.sha(items_path), "corpus_sha256": R.sha(admission_path),
+              "source_cache": str(cache.resolve()), "source_items": str(items_path.resolve()),
               "amendment_sha256": amendment_sha, "adapter_sha256": R.sha(Path(__file__)), "batches": accepted,
               "excluded": excluded, "quarantine": quarantine, "source_teacher": TEACHER, "capability_claim": "none"}
     (stage / "manifest.json").write_bytes(R.canonical(result) + b"\n")

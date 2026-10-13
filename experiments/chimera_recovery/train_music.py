@@ -43,6 +43,9 @@ class MusicBandEngine:
             raise Error("D3c needs an untied head, positive step budget and a fresh stage-specific hybrid")
         self.offset = model.music_band_begin - model.base_vocab
         self.rows = model.band_embed.shape[0] - self.offset
+        self.code_rows = identity.get("fixture_written_code_rows", self.rows) if identity.get("fixture") is True else 64000
+        if type(self.code_rows) is not int or not 1 <= self.code_rows <= self.rows:
+            raise Error("D3c written code rows must be within allocated music band")
         if identity.get("fixture") is not True:
             if self.rows != 65536 or model.music_band_begin != 252416 or model.base_vocab != 248320 or model.cfg.hidden_size != 5120:
                 raise Error("D3c production must own the exact frozen65536x5120 music-band contract")
@@ -59,7 +62,7 @@ class MusicBandEngine:
             raise Error("D3c requires all-layer LoRA trainables")
         self.lora_optimizer = torch.optim.AdamW(list(self.census.values()), lr=self.options["lora_lr"],
                                               betas=tuple(self.options["betas"]), eps=self.options["eps"], weight_decay=self.options["weight_decay"])
-        self.ownership = R.optimizer_ownership(self.census, self.lora_optimizer)
+        lora_ownership = R.optimizer_ownership(self.census, self.lora_optimizer)
         self.embed_full = model.band_embed.detach().float().cpu().clone()
         self.embed_master = self.embed_full[self.offset:self.offset + self.rows]
         self.head_master = model.band_head[self.offset:self.offset + self.rows].detach().float().cpu().clone()
@@ -68,6 +71,13 @@ class MusicBandEngine:
         self.head_optimizer = module.LazyRowAdam(self.head_master, lr=self.options["band_lr"], betas=tuple(self.options["betas"]),
                                                eps=self.options["eps"], weight_decay=self.options["weight_decay"])
         self.frozen_ledger_sha = R.tensor_sha256(self.embed_full[:self.offset])
+        self.frozen_reserved_sha = {"embed": R.tensor_sha256(self.embed_master[self.code_rows:]),
+                                    "head": R.tensor_sha256(self.head_master[self.code_rows:])}
+        self.ownership = {"lora": lora_ownership, "host_music_tables": {
+            "embed": {"shape": list(self.embed_master.shape), "active_code_rows": self.code_rows, "optimizer": "LazyRowAdam", "row_policy": "previous sampled codes only"},
+            "head": {"shape": list(self.head_master.shape), "active_code_rows": self.code_rows, "optimizer": "LazyRowAdam", "row_policy": "all written code rows per step"},
+            "reserved_rows_frozen": self.rows - self.code_rows, "frozen_ledger_sha256": self.frozen_ledger_sha,
+            "frozen_reserved_sha256": self.frozen_reserved_sha}}
         model.band_embed_override = self.embed_full
         self.step, self.sampler_counter, self.skips, self.total_steps = 0, 0, 0, total_steps
 
@@ -80,7 +90,7 @@ class MusicBandEngine:
                 topk_codes.ndim != 2 or topk_logprobs_band.shape != topk_codes.shape or
                 ids.shape[1] != prompt_length + n - 1 or not bool(torch.isfinite(topk_logprobs_band).all())):
             raise Error("D3c teacher forcing requires prompt + previous codes, with one teacher row per next-code position")
-        teacher_rows = 64000 if self.identity.get("fixture") is not True else self.rows
+        teacher_rows = self.code_rows
         if (bool(((ids[:, :prompt_length] < 0) | (ids[:, :prompt_length] >= self.model.base_vocab)).any()) or
                 bool(((ids[:, prompt_length:] < self.model.music_band_begin) | (ids[:, prompt_length:] >= self.model.music_band_begin + teacher_rows)).any()) or
                 bool(((topk_codes < 0) | (topk_codes >= teacher_rows)).any()) or bool((topk_logprobs_band > 1e-5).any()) or
@@ -90,7 +100,9 @@ class MusicBandEngine:
             raise Error("D3c teacher top-k repeats a code")
         self.lora_optimizer.zero_grad(set_to_none=True)
         # Always a separate leaf even on CPU fp32, preventing master grad carry-over.
-        head = self.head_master.to(self.model.device, self.model.dtype, copy=True).requires_grad_()
+        # The allocation has65536 rows, but the actual teacher/code vocabulary
+        # has64000. Unwritten reserved rows must not enter the KL normalizer.
+        head = self.head_master[:self.code_rows].to(self.model.device, self.model.dtype, copy=True).requires_grad_()
         positions = torch.arange(prompt_length - 1, prompt_length - 1 + n, device=self.model.device)
         def objective(normed, context):
             return self.module.band_kl(normed[0, positions], head, topk_codes.to(normed.device), topk_logprobs_band.to(normed.device))
@@ -112,6 +124,9 @@ class MusicBandEngine:
             return {"skipped": True, "step": self.step, "loss": None, "host_tables_updated": False}
         if R.tensor_sha256(self.embed_full[:self.offset]) != self.frozen_ledger_sha:
             raise Error("D3c touched frozen control/media ledger embedding rows")
+        if (R.tensor_sha256(self.embed_master[self.code_rows:]) != self.frozen_reserved_sha["embed"] or
+                R.tensor_sha256(self.head_master[self.code_rows:]) != self.frozen_reserved_sha["head"]):
+            raise Error("D3c touched unwritten reserved music rows")
         norm = math.sqrt(sum(float(grad.float().square().sum()) for grad in gradients))
         if not math.isfinite(norm) or norm <= 0:
             raise Error("D3c joint gradient norm invalid")
@@ -123,13 +138,13 @@ class MusicBandEngine:
         for group in self.lora_optimizer.param_groups:
             group["lr"] = self.options["lora_lr"] * factor
         # No optimizer mutates until all three gradient sets passed the same gate.
-        self.head_optimizer.step(torch.arange(self.rows), head_grads)
+        self.head_optimizer.step(torch.arange(self.code_rows), head_grads)
         self.embed_optimizer.step(embed_rows, embed_grads)
         self.lora_optimizer.step()
         self.step += 1
         self.sampler_counter += 1
         return {"skipped": False, "step": self.step, "loss": loss, "joint_gradient_norm": norm,
-                "embed_rows": int(embed_rows.numel()), "head_rows": self.rows, "host_tables_updated": True}
+                "embed_rows": int(embed_rows.numel()), "head_rows": self.code_rows, "allocated_music_rows": self.rows, "host_tables_updated": True}
 
     def save(self, out):
         import torch
@@ -138,7 +153,8 @@ class MusicBandEngine:
         out.parent.mkdir(parents=True, exist_ok=True)
         stage = Path(tempfile.mkdtemp(prefix=".d3c-checkpoint-", dir=out.parent))
         state = {"schema": SCHEMA, "identity": self.identity, "options": self.options, "ownership": self.ownership,
-                 "rows": self.rows, "frozen_ledger_sha256": self.frozen_ledger_sha, "embed": self.embed_master, "head": self.head_master,
+                 "rows": self.rows, "code_rows": self.code_rows, "frozen_ledger_sha256": self.frozen_ledger_sha,
+                 "frozen_reserved_sha256": self.frozen_reserved_sha, "embed": self.embed_master, "head": self.head_master,
                  "embed_optimizer": self.embed_optimizer.state(), "head_optimizer": self.head_optimizer.state(),
                  "lora": {name: value.detach().cpu() for name, value in self.census.items()}, "lora_optimizer": self.lora_optimizer.state_dict(),
                  "step": self.step, "sampler_counter": self.sampler_counter, "skips": self.skips, "total_steps": self.total_steps,
@@ -156,7 +172,8 @@ class MusicBandEngine:
             raise Error("D3c checkpoint incomplete/changed")
         state = torch.load(path / "state.pt", map_location="cpu", weights_only=True)
         if (state["schema"] != SCHEMA or state["identity"] != self.identity or state["options"] != self.options or
-                state["ownership"] != self.ownership or state["rows"] != self.rows or state["total_steps"] != self.total_steps or
+                state["ownership"] != self.ownership or state["rows"] != self.rows or state["code_rows"] != self.code_rows or state["total_steps"] != self.total_steps or
+                state["frozen_reserved_sha256"] != self.frozen_reserved_sha or
                 state["frozen_ledger_sha256"] != self.frozen_ledger_sha):
             raise Error("D3c exact resume refused changed base/cache/optimizer/band inventory")
         with torch.no_grad():

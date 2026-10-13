@@ -1,10 +1,10 @@
 # D3b media recovery driver — 2026-10-13
 
-`train_media.py` now prepares a real production entry point for the existing
-HybridD3 engine. It implements D3b guided-velocity training only. D3a refit,
-D3c music-code band training, D3d vision/video answer KD, and audio-understanding
-teacher/adapter work remain separate requirements; no all-modal readiness claim
-is made by this driver.
+`train_media.py` prepares D3b guided-velocity recovery through the existing
+HybridD3 engine. `train_stages.py` dispatches the separate D3a, D3c and D3d
+engines described below. Source teacher caches, actual modality alignment and
+sealed accepted native batches remain requirements; these drivers do not make
+an all-modal readiness claim.
 
 The exact trainable set is the selected native unit, its interface-out emission
 slices/type-affine rows, and r16 LoRA in text layers d through the end. Other units,
@@ -133,3 +133,68 @@ conditioning for this D3b lane; the full clean latent never enters student
 features. This prepares code-conditioned music denoising. Prompt-to-code
 generation still requires D3c. H3/HY3D conversion needs their genuine synchronized
 and geometry cache contracts; these adapters do not claim those lanes ready.
+
+## Remaining native stages
+
+`train_refit.py` implements D3a unit-only refit, including chart_in, the source
+block and chart_out. The original D3a loss never connected chart_out. The new
+outward-chart term requires independent detached host-write targets, exact D2
+child recapture pins and a dated `teacher_delta_host_write` amendment; it refuses
+to replace a missing target with its own current prediction. CPU tests verify
+actual source-block/chart updates, missing-target refusal and exact resume.
+
+`train_music.py` implements D3c full65536 music embedding/head host FP32 masters
+and all-layer r16 LoRA. The KL softmax/update owns the64000 actually written code
+rows, matching the teacher; the1536 reserved music rows remain frozen and do not
+enter the KL tail. Each step clips the joint gradient and checks every
+gradient before any host-table or LoRA update. Ledger/text rows remain frozen.
+Checkpoint state includes per-row lazy Adam moments/counters, all-layer LoRA,
+RNG and the one-pass sampler. `music_cache.py` converts the actual media_b v2
+ACE-LM source: recorded conditional top64 logprobs plus `lse_full - lse_band`
+restores code-band normalization; BF16 overmass is quarantined rather than
+silently rescaled. Native parent chat tokens encode caption, lyrics, duration
+and musical defaults. Only previous sampled codes enter the teacher-forced
+input, using native code offset252416. Parent ACE text IDs are never reused.
+The current partial ACE-LM cache must acquire its full immutable seal and a new
+connected-group/complete-held-inventory admission snapshot before production.
+
+`train_vision.py` implements D3d QVL unit, C11 input bridge and all-layer LoRA.
+Assistant-only text KD has weight1 and packed block13 feature MSE has weight0.1.
+The auxiliary gradient is attached to the actual native source block during
+streamed recomputation, so it reaches the unit, earlier trunk LoRA and C11.
+`vision_cache.py` reconstructs actual image bytes with the captured factor32
+resize, PIL bicubic, normalization and duplicated-frame merge-window patch
+order, then checks the exact sealed teacher grid, positions and feature rows.
+The main7492-image ViT cache contains no `patch_flat` and no language answers.
+Reconstructing pixels solves the first issue; an independently sealed authentic
+assistant-answer teacher cache with exact native vocabulary alignment is still
+required. The separate32-image reference cache is diagnostic and excluded from
+training. Video inputs and audio-understanding need their own genuine aligned
+source/cache contracts; single-image reconstruction does not prepare those.
+
+The remaining-stage dispatcher has the same immutable clone/parity/prereg,
+source-group, one-pass, initial checkpoint and30-minute rolling safety checks.
+It binds its finite-skip window and decode-review policy to each engine
+checkpoint, preserving them across exact resume. At25% of the budget it requires
+a run-specific meaningful prompt-conditioned decode review. Final checkpoints
+are unregistered and require the production checkpoint composer.
+
+```bash
+CUDA_VISIBLE_DEVICES='' python experiments/chimera_recovery/music_cache.py \
+  --cache /path/to/fully-sealed/ace-lm-cache --manifest-sha256 <sha256> \
+  --items /path/to/ace_prompts_stagec_d2m.json \
+  --admission /path/to/new-complete-held-inventory-admission/manifest.json \
+  --tokenizer /home/cereal/models/Qwen3.8-27B-Uncensored \
+  --amendment-sha256 <sha256> --out /path/to/new/native-music
+
+python experiments/chimera_recovery/train_stages.py preflight \
+  --config /path/to/pinned-native-stage-config.json --out /path/to/preflight.json
+```
+
+The native-stage config schema is `chimera_recovery.native_stage_config.v1`,
+with explicit stage D3a/D3c/D3d, objective, optimizer, seed, steps, one_pass,
+safety, r16 LoRA, dtype/device/kernel, runtime assignment, immutable base,
+hybrid parity/module and prereg pins. Stage-specific batch manifests use
+`refit_batches.v1`, `music_batches.v1` or `vision_batches.v1`. Preflight executes
+without Torch/model loading and returns blockers for absent or partial inputs.
+No production training job was launched by this preparation.

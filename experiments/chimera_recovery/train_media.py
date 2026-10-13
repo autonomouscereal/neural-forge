@@ -2,7 +2,7 @@
 
 Production requires sealed accepted native batches, an immutable registered base,
 hybrid parity, and a pinned dated amendment. Nothing starts from a raw sidecar or
-an unverified teacher. D3a/c/d are separate objectives and are not implemented.
+an unverified teacher. D3a/c/d use the separate train_stages.py entry point.
 """
 from __future__ import annotations
 
@@ -93,7 +93,7 @@ def preflight(config_path: Path) -> dict[str, Any]:
     config, root = read_json(config_path), config_path.parent
     blockers, verified = [], {}
     if config.get("schema") != "chimera_recovery.d3b_config.v1" or config.get("stage") != "D3b":
-        blockers.append("only D3b production driver is implemented; D3a/c/d remain separate blocked lanes")
+        blockers.append("this entry point owns D3b; use train_stages.py for D3a/c/d")
     try:
         verified["optimizer"] = optimizer_config(config["optimizer"])
         verified["preregistration"] = verify_preregistration(config["preregistration"], root)
@@ -158,7 +158,7 @@ def preflight(config_path: Path) -> dict[str, Any]:
         blockers.append(str(error))
     return {"schema": "chimera_recovery.d3b_preflight.v1", "production_ready": not blockers, "training_started": False,
             "config_sha256": R.sha(config_path), "config": config, "verified": verified, "blockers": blockers,
-            "unsupported_stages": ["D3a", "D3c", "D3d"], "driver_sha256": R.sha(Path(__file__)),
+            "separate_stage_driver": str(HERE / "train_stages.py"), "driver_sha256": R.sha(Path(__file__)),
             "objective_adapter_sha256": R.sha(HERE / "training.py")}
 
 

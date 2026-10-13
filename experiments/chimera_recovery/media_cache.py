@@ -220,12 +220,14 @@ def media_admission(path: Path, items_sha256: str, *, kind: str = "qimg") -> tup
         if entry.get("schema") != "recovery_media_admission.v1":
             raise Error("media admission row schema differs")
         ident, group, split = entry["item_id"], entry["recovery_group_id"], entry["split"]
-        if not isinstance(ident, str) or not ident or ident in by_id or not isinstance(group, str) or not group or split not in {"train", "validation", "test"}:
+        if not isinstance(ident, str) or not ident or ident in by_id or not isinstance(group, str) or not group or split not in {"train", "validation", "test", "excluded"}:
             raise Error("invalid media item/group/split admission")
         for key in ("asset_sha256", "prompt_sha256", "conditioning_sha256"):
             R.require_sha(entry.get(key), key)
         if type(entry.get("train_admitted")) is not bool or (entry["train_admitted"] and (split != "train" or entry.get("blockers"))):
             raise Error("media training admission contradicts split/blocker ruling")
+        if split == "excluded" and (entry["train_admitted"] is not False or not entry.get("blockers")):
+            raise Error("excluded media group needs explicit nonadmission and exclusion blockers")
         if group in groups and groups[group] != split:
             raise Error("media connected group crosses train/holdout splits")
         groups[group] = split
