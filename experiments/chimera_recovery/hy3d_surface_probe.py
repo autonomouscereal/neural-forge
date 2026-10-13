@@ -125,7 +125,32 @@ def oracle_metrics(logits,inside):
     return result
 
 
-def parent_surface(root,mesh_path,output,torch,seed):
+def captured_surface(path,receipt_path,receipt_sha256,record,preparation_sha256):
+    """Reuse one frozen actual native sample only through its complete source seal."""
+    import numpy as np
+    if not A.SHA.fullmatch(str(receipt_sha256)) or A.file_sha(receipt_path)!=receipt_sha256:
+        raise ValueError("actual captured native surface receipt file pin differs")
+    body=json.loads(receipt_path.read_text(encoding="utf-8"))
+    seal=body.get("receipt_sha256");unsigned={k:v for k,v in body.items() if k!="receipt_sha256"}
+    control=body.get("parent_surface_control",{})
+    if (A.digest(unsigned)!=seal or body.get("schema")!="chimera_recovery.hy3d_clean_encode_probe.v1" or
+        body.get("encode_executed") is not True or body.get("native_surface_loader_parity") is not True or
+        body.get("weights",{}).get("sha256")!=WEIGHT_SHA or body.get("item_id")!=record["id"] or
+        body.get("source_row_sha256")!=A.digest(record) or body.get("preparation_sha256")!=preparation_sha256 or
+        body.get("mesh_sha256")!=record["geometry_target"]["mesh"]["sha256"] or
+        control.get("loader")!="original SharpEdgeSurfaceLoader" or control.get("num_uniform_points")!=81920 or
+        control.get("num_sharp_points")!=0 or control.get("unseeded_default_rng_unchanged") is not True or
+        any(body.get("source_pins",{}).get(k,{}).get("sha256")!=v for k,v in PINS.items()) or
+        A.file_sha(path)!=control.get("surface",{}).get("sha256")):
+        raise ValueError("captured native surface provenance/source/asset pairing differs")
+    arr=np.load(path,allow_pickle=False)
+    if arr.shape!=(1,81920,7) or arr.dtype!=np.float32 or not np.isfinite(arr).all() or np.any(arr[:,:,6]):
+        raise ValueError("captured native surface array contract differs")
+    return arr,{"path":str(receipt_path),"sha256":receipt_sha256,"receipt_sha256":seal,
+                "captured_surface_sha256":A.file_sha(path),"new_sampler_call":False}
+
+
+def parent_surface(root,mesh_path,output,torch,seed,frozen=None):
     """Call unchanged native loader once; its unseeded default_rng is not replaced."""
     import numpy as np
     import trimesh
@@ -136,9 +161,12 @@ def parent_surface(root,mesh_path,output,torch,seed):
     expected=(np.asarray(loaded.vertices)-center)*scale
     if not np.allclose(normalized.vertices,expected,rtol=0,atol=1e-12):
         raise ValueError("original loader normalized coordinate affine differs")
-    reset_cpu_rng(torch,seed)
-    surface=module.SharpEdgeSurfaceLoader(num_uniform_points=81920,num_sharp_points=0)(str(mesh_path))
-    arr=surface.cpu().numpy()
+    if frozen is None:
+        reset_cpu_rng(torch,seed)
+        surface=module.SharpEdgeSurfaceLoader(num_uniform_points=81920,num_sharp_points=0)(str(mesh_path))
+        arr=surface.cpu().numpy()
+    else:
+        arr=frozen[0]
     if (arr.shape!=(1,81920,7) or arr.dtype!=np.float32 or not np.isfinite(arr).all() or
         np.any(arr[:,:,6]) or not np.allclose(np.linalg.norm(arr[:,:,3:6],axis=-1),1.,atol=.002)):
         raise ValueError("actual parent surface dimensions/normals/sharp flag differ")
@@ -157,7 +185,8 @@ def parent_surface(root,mesh_path,output,torch,seed):
                          "formula":"(source_xyz - bbox_center) * uniform_scale"},
                     "normalized_bbox_min":v.min(0).tolist(),"normalized_bbox_max":v.max(0).tolist(),
                     "maximum_surface_plane_distance":float(np.max(np.abs(signed))),
-                    "native_surface_loader_parity":True,"generation_input_allowed":False}
+                    "native_surface_loader_parity":True,"generation_input_allowed":False,
+                    "prior_native_capture":frozen[1] if frozen else None}
 
 
 def sampled_surface(v,f,count,seed):
@@ -271,7 +300,8 @@ def validate_config(config):
 
 
 def probe(*,root,weights,manifest,manifest_sha256,item_id,surface,mesh_path,conditioning,output,execute=False,threads=8,seed=20261013,
-          native_surface_control=False,dense_resolution=0,compare_posterior_sample=False):
+          native_surface_control=False,dense_resolution=0,compare_posterior_sample=False,
+          frozen_parent_surface=None,parent_surface_receipt=None,parent_surface_receipt_sha256=None,dense_sample_only=False):
     if output.exists():
         raise ValueError("choose a new diagnostic output directory")
     # Refuse an unwritable owned output before hashing/loading the parent or
@@ -282,6 +312,14 @@ def probe(*,root,weights,manifest,manifest_sha256,item_id,surface,mesh_path,cond
         raise ValueError("immutable geometry preparation file pin differs")
     r,arr,prep=source_item(manifest,item_id,surface,conditioning)
     vertices,faces=actual_mesh_surface(r,arr,mesh_path)
+    frozen=None
+    reference_args=(frozen_parent_surface,parent_surface_receipt,parent_surface_receipt_sha256)
+    if any(x is not None for x in reference_args):
+        if not native_surface_control or any(x is None for x in reference_args):
+            raise ValueError("complete original-loader frozen sample reference required")
+        frozen=captured_surface(frozen_parent_surface,parent_surface_receipt,parent_surface_receipt_sha256,r,manifest_sha256)
+    if dense_sample_only and (not compare_posterior_sample or not dense_resolution):
+        raise ValueError("sample-only dense control requires explicit sampled posterior and resolution")
     if weights.stat().st_size!=WEIGHT_BYTES or A.file_sha(weights)!=WEIGHT_SHA:
         raise ValueError("original full HY3D checkpoint pin differs")
     import yaml
@@ -328,7 +366,7 @@ def probe(*,root,weights,manifest,manifest_sha256,item_id,surface,mesh_path,cond
                 state[name]=value.float()
         vae.load_state_dict(state,strict=True);del state,expected
         if native_surface_control:
-            arr,vertices,faces,control=parent_surface(root,mesh_path,output,torch,seed)
+            arr,vertices,faces,control=parent_surface(root,mesh_path,output,torch,seed,frozen=frozen)
             report.update(parent_surface_control=control,native_surface_loader_parity=True,
                           surface_policy="unchanged_original_SharpEdgeSurfaceLoader_captured_once")
         measured={}
@@ -358,19 +396,25 @@ def probe(*,root,weights,manifest,manifest_sha256,item_id,surface,mesh_path,cond
             if list(logits.shape)!=[1,len(queries),1] or not torch.isfinite(logits).all():
                 raise ValueError("genuine native geometry decoder query failed")
             report["oracle_confusion"]=oracle_metrics(logits[0,:,0].numpy(),inside)
-            if dense_resolution:
+            if dense_resolution and not dense_sample_only:
                 report["mode_dense_reconstruction"]=dense_reconstruction(vae,decoded,vertices,faces,output,"mode",dense_resolution,seed)
             additional={}
             if compare_posterior_sample:
                 reset_cpu_rng(torch,seed)
                 sampled=vae.encode(x,sample_posterior=True)
+                sample_query=measured["query_pc"].clone()
+                reset_cpu_rng(torch,seed)
+                repeated_sample=vae.encode(x,sample_posterior=True)
+                if not torch.equal(sampled,repeated_sample) or not torch.equal(sample_query,measured["query_pc"]):
+                    raise ValueError("native prescribed posterior.sample/query repeat failed")
                 sample_decoded=vae.decode(sampled)
                 sample_logits=vae.geo_decoder(queries=query_tensor,latents=sample_decoded)
                 if not torch.isfinite(sampled).all() or not torch.isfinite(sample_logits).all():
                     raise ValueError("native posterior.sample produced nonfinite output")
                 additional={"posterior_sample_raw_latents":sampled.contiguous(),"posterior_sample_geometry_logits":sample_logits.contiguous()}
                 report["prescribed_posterior_sample_control"]={"sample_seed":seed,"samples_compared":1,"best_seed_selection":False,
-                    "encoder_mode":"unchanged native posterior.sample()", "oracle_confusion":oracle_metrics(sample_logits[0,:,0].numpy(),inside)}
+                    "encoder_mode":"unchanged native posterior.sample()", "repeated_sample_bitwise_equal":True,
+                    "repeated_sample_query_xyz_bitwise_equal":True,"oracle_confusion":oracle_metrics(sample_logits[0,:,0].numpy(),inside)}
                 if dense_resolution:
                     report["prescribed_posterior_sample_control"]["dense_reconstruction"]=dense_reconstruction(
                         vae,sample_decoded,vertices,faces,output,"sample",dense_resolution,seed)
@@ -409,10 +453,16 @@ def main(argv=None):
     p.add_argument("--native-surface-control",action="store_true")
     p.add_argument("--dense-resolution",type=int,default=0,choices=(0,16,32,48,64))
     p.add_argument("--compare-posterior-sample",action="store_true")
+    p.add_argument("--frozen-parent-surface",type=Path)
+    p.add_argument("--parent-surface-receipt",type=Path)
+    p.add_argument("--parent-surface-receipt-sha256")
+    p.add_argument("--dense-sample-only",action="store_true")
     a=p.parse_args(argv)
     result=probe(root=a.source_root,weights=a.weights,manifest=a.prepared_manifest,manifest_sha256=a.prepared_manifest_sha256,item_id=a.item_id,
                  surface=a.surface,mesh_path=a.mesh,conditioning=a.conditioning,output=a.output,execute=a.execute,threads=a.threads,seed=a.seed,
-                 native_surface_control=a.native_surface_control,dense_resolution=a.dense_resolution,compare_posterior_sample=a.compare_posterior_sample)
+                 native_surface_control=a.native_surface_control,dense_resolution=a.dense_resolution,compare_posterior_sample=a.compare_posterior_sample,
+                 frozen_parent_surface=a.frozen_parent_surface,parent_surface_receipt=a.parent_surface_receipt,
+                 parent_surface_receipt_sha256=a.parent_surface_receipt_sha256,dense_sample_only=a.dense_sample_only)
     print(json.dumps({k:result[k] for k in ("item_id","encode_executed","native_train_ready","blockers","receipt_sha256")}))
 
 

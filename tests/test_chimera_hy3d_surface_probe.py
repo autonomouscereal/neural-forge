@@ -119,5 +119,36 @@ class SurfaceProbeTests(unittest.TestCase):
         self.assertGreater(shifted["chamfer_l1_sum_of_means"],3.)
         self.assertFalse(same["exact_continuous_mesh_distance_claimed"])
 
+    def test_frozen_native_capture_requires_full_source_and_asset_identity(self):
+        # Serialized contract fixture tests pin checking, not an execution proof.
+        row=copy.deepcopy(self.row);row["geometry_target"]["mesh"]={"sha256":"a"*64}
+        body={"schema":"chimera_recovery.hy3d_clean_encode_probe.v1","encode_executed":True,
+              "native_surface_loader_parity":True,"weights":{"sha256":P.WEIGHT_SHA},"item_id":row["id"],
+              "source_row_sha256":A.digest(row),"preparation_sha256":"b"*64,"mesh_sha256":"a"*64,
+              "source_pins":{k:{"sha256":v} for k,v in P.PINS.items()},
+              "parent_surface_control":{"loader":"original SharpEdgeSurfaceLoader","num_uniform_points":81920,
+                   "num_sharp_points":0,"unseeded_default_rng_unchanged":True,
+                   "surface":{"sha256":A.file_sha(self.surface)}}}
+        receipt=self.base/"capture.json"
+        def seal(value):
+            value=copy.deepcopy(value);value["receipt_sha256"]=A.digest(value)
+            receipt.write_bytes(A.canonical(value));return A.file_sha(receipt)
+        pin=seal(body)
+        array,provenance=P.captured_surface(self.surface,receipt,pin,row,"b"*64)
+        self.assertEqual(array.shape,(1,81920,7));self.assertFalse(provenance["new_sampler_call"])
+        with self.assertRaisesRegex(ValueError,"file pin"):
+            P.captured_surface(self.surface,receipt,"c"*64,row,"b"*64)
+        for kind in ("item","source_pin","row","sampler"):
+            modified=copy.deepcopy(body)
+            if kind=="item":modified["item_id"]="different-source"
+            elif kind=="source_pin":modified["source_pins"][next(iter(P.PINS))]["sha256"]="c"*64
+            elif kind=="row":modified["source_row_sha256"]="c"*64
+            else:modified["parent_surface_control"]["unseeded_default_rng_unchanged"]=False
+            with self.subTest(kind=kind),self.assertRaisesRegex(ValueError,"pairing differs"):
+                P.captured_surface(self.surface,receipt,seal(modified),row,"b"*64)
+        pin=seal(body);self.surface.write_bytes(b"a new sample is not the captured native input")
+        with self.assertRaisesRegex(ValueError,"pairing differs"):
+            P.captured_surface(self.surface,receipt,pin,row,"b"*64)
+
 
 if __name__=="__main__":unittest.main()
