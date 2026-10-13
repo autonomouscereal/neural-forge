@@ -73,6 +73,22 @@ def test_native_grid_packing_separates_noisy_and_velocity_bands_without_truncati
         M.native_qimg_batch(noisy, tensors["v"], sigma=.4, prefix_ids=[1, 2, 3], max_length=6)
 
 
+def test_compact_bands_inflate_bitwise_and_refuse_unallocated_content():
+    torch = pytest.importorskip("torch")
+    tensors, _, noisy = source_target()
+    batch = M.native_qimg_batch(noisy, tensors["v"], sigma=.4, prefix_ids=[1, 2, 3], max_length=10)
+    stored, contract = M.compact_native_batch(batch, {1: {"feature": (512, 576), "emission": (256, 320)}})
+    expanded = M.inflate_native_batch(stored, contract)
+    assert all(torch.equal(value, expanded[key]) for key, value in batch.items())
+    assert sum(value.numel() * value.element_size() for value in stored.values()) < sum(value.numel() * value.element_size() for value in batch.values()) / 40
+    stored["native_media_features.band1"] = stored["native_media_features.band1"][:, :-1]
+    with pytest.raises(M.Error, match="shape/dtype"):
+        M.inflate_native_batch(stored, contract)
+    batch["native_media_features"][0, 0, 600] = 1.
+    with pytest.raises(M.Error, match="discard nonzero"):
+        M.compact_native_batch(batch, {1: {"feature": (512, 576), "emission": (256, 320)}})
+
+
 def test_media_admission_refuses_placeholder_train_and_cross_split_groups(tmp_path):
     rows = [{"schema": "recovery_media_admission.v1", "kind": "qimg", "item_id": "a", "recovery_group_id": "same",
              "split": "train", "train_admitted": True, "blockers": [],

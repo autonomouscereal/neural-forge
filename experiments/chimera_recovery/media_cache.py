@@ -137,10 +137,69 @@ def prompt_prefix(tokenizer: Any, prompt: str) -> list[int]:
     return exact
 
 
-def media_admission(path: Path, items_sha256: str) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+def compact_native_batch(batch: dict[str, Any], bands: dict[int, dict[str, tuple[int, int]]]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Lossless selected-row band storage; dense zero channels are never written."""
+    import torch
+    keys = {"native_media_features": "feature", "native_media_targets": "emission", "native_media_channel_loss_mask": "emission"}
+    types = batch["native_media_type_ids"]
+    stored = {key: value.contiguous() for key, value in batch.items() if key not in keys}
+    allocations = {str(kind): {name: list(bounds) for name, bounds in band.items()} for kind, band in bands.items()}
+    contract = {"schema": "chimera_recovery.native_band.v1", "width": R.FEATURES, "bands": allocations,
+                "channel_loss_mask": "native_media_channel_loss_mask" in batch}
+    for key, layout in keys.items():
+        if key not in batch:
+            continue
+        value = batch[key]
+        if value.shape != (*types.shape, R.FEATURES) or value.requires_grad:
+            raise Error("compact native storage requires detached full-width bridge tensors")
+        remainder = value.clone()
+        for kind, band in bands.items():
+            lo, hi = band[layout]
+            selected = types == kind
+            stored[f"{key}.band{kind}"] = value[..., lo:hi][selected].contiguous()
+            remainder[..., lo:hi][selected] = 0
+        if bool((remainder != 0).any()):
+            raise Error("compact native storage would discard nonzero unallocated channels")
+    return stored, contract
+
+
+def inflate_native_batch(stored: dict[str, Any], contract: dict[str, Any]) -> dict[str, Any]:
+    import torch
+    if contract.get("schema") != "chimera_recovery.native_band.v1" or contract.get("width") != R.FEATURES:
+        raise Error("unsupported compact native storage contract")
+    types = stored["native_media_type_ids"]
+    bands = contract.get("bands")
+    if not isinstance(bands, dict) or set(bands) != {str(kind) for kind in types.unique().tolist()}:
+        raise Error("compact allocation differs from packed native type dispatch")
+    keys = {"native_media_features": "feature", "native_media_targets": "emission"}
+    if contract.get("channel_loss_mask") is True:
+        keys["native_media_channel_loss_mask"] = "emission"
+    elif contract.get("channel_loss_mask") is not False:
+        raise Error("compact channel-mask presence must be explicit")
+    consumed = set()
+    result = {key: value for key, value in stored.items() if ".band" not in key}
+    for key, layout in keys.items():
+        result[key] = torch.zeros((*types.shape, R.FEATURES), dtype=torch.bool if key.endswith("channel_loss_mask") else torch.float32, device=types.device)
+        for kind, band in bands.items():
+            bounds = band.get(layout)
+            if not isinstance(bounds, list) or len(bounds) != 2 or any(type(n) is not int for n in bounds) or not 0 <= bounds[0] < bounds[1] <= R.FEATURES:
+                raise Error("invalid compact feature/emission allocation")
+            lo, hi = bounds
+            name = f"{key}.band{kind}"
+            value, selected = stored[name], types == int(kind)
+            if value.shape != (int(selected.sum()), hi - lo) or value.dtype != result[key].dtype:
+                raise Error("compact native band shape/dtype differs from allocation")
+            result[key][..., lo:hi][selected] = value
+            consumed.add(name)
+    if set(stored) - set(result) != consumed or any(key in stored for key in keys):
+        raise Error("unrecognized or duplicate dense tensor in compact native storage")
+    return result
+
+
+def media_admission(path: Path, items_sha256: str, *, kind: str = "qimg") -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
     admitted = read_json(path)
     if (admitted.get("schema") != "recovery_media_admission.v1" or
-            admitted.get("sources", {}).get("qimg_items", {}).get("sha256") != items_sha256 or admitted.get("eval_disjoint") is not True or
+            admitted.get("sources", {}).get(kind + "_items", {}).get("sha256") != items_sha256 or admitted.get("eval_disjoint") is not True or
             admitted.get("connected_groups_verified") is not True):
         raise Error("QIMG requires verified connected source-group admission against frozen media eval")
     eval_sha = R.require_sha(admitted.get("sources", {}).get("eval_rows", {}).get("sha256"), "eval_index_sha256")
@@ -156,7 +215,7 @@ def media_admission(path: Path, items_sha256: str) -> tuple[dict[str, Any], dict
         raise Error("admission row count differs from sealed output")
     by_id, groups = {}, {}
     for entry in rows:
-        if entry.get("kind") != "qimg":
+        if entry.get("kind") != kind:
             continue
         if entry.get("schema") != "recovery_media_admission.v1":
             raise Error("media admission row schema differs")
@@ -247,7 +306,8 @@ def prepare_qimg(cache: Path, items_path: Path, admission_path: Path, tokenizer:
             batch = native_qimg_batch(noisy, velocity, sigma=proof["sigma"], prefix_ids=prompt_prefix(tokenizer, student_prompt), max_length=max_length)
             ident = f"qimg-{int(target['target']):08d}"
             tensor_name, receipt_name = ident + ".safetensors", ident + ".json"
-            save_file(batch, str(stage / tensor_name))
+            stored, storage = compact_native_batch(batch, {1: {"feature": (512, 576), "emission": (256, 320)}})
+            save_file(stored, str(stage / tensor_name))
             receipt = {"schema": "chimera_recovery.native_flow_cache.v1", "sealed": True, "all_finite": True,
                        "all_structural_ok": True, "guided_teacher": True, "no_clean_target_in_inputs": True,
                        "cache_sha256": R.sha(stage / tensor_name), "corpus_sha256": R.sha(admission_path), "teacher_sha256": teacher_sha,
@@ -261,12 +321,12 @@ def prepare_qimg(cache: Path, items_path: Path, admission_path: Path, tokenizer:
                                   "sidecar_sha256": R.sha(sidecar_path), "target_index": int(target["target"]), "item_index": item_index,
                                   "item_id": item["id"], "media_sha256": media_sha, "conditioning_sha256": conditioning_sha,
                                   "cfg": cfg, "recovery_group_id": entry["recovery_group_id"]},
-                       "reconstruction": proof, "media_placeholder": MEDIA_PLACEHOLDER}
+                       "reconstruction": proof, "media_placeholder": MEDIA_PLACEHOLDER, "storage": storage}
             R.ReadyObjectiveAdapter(receipt).bind("image_generate", batch, {1: {"feature": (512, 576), "emission": (256, 320)}}, parent_signs={1: -1.})
             (stage / receipt_name).write_bytes(R.canonical(receipt) + b"\n")
             accepted.append({"id": ident, "unit": "qimg_mmdit_L30_img", "route": "image_generate", "input_layout": "feature", "target_layout": "emission",
                              "recovery_group_id": entry["recovery_group_id"], "parent_signs": {"1": -1.},
-                             "tensors": {"path": tensor_name, "sha256": receipt["cache_sha256"]},
+                             "storage": storage, "tensors": {"path": tensor_name, "sha256": receipt["cache_sha256"]},
                              "teacher_receipt": {"path": receipt_name, "sha256": R.sha(stage / receipt_name)}})
             if limit is not None and len(accepted) >= limit:
                 traversal_complete = False
