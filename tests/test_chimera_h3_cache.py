@@ -5,6 +5,7 @@ import copy
 import hashlib
 import importlib.util
 import json
+import os
 import struct
 import tempfile
 import unittest
@@ -14,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location("h3_cache", ROOT / "experiments/chimera_recovery/h3_cache.py")
 h3 = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(h3)
-SOURCE_ROOT = Path("C:/Users/cereal/Documents/ai training/neural-forge/reports/omni-campaign-2026-09")
+SOURCE_ROOT = Path(os.environ.get("CHIMERA_H3_CAMPAIGN_SOURCE", "C:/Users/cereal/Documents/ai training/neural-forge/reports/omni-campaign-2026-09"))
 
 
 def item():
