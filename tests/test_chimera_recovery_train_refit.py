@@ -18,6 +18,9 @@ def setup(tmp_path):
     source = os.environ.get("CHIMERA_D3_BASELINE")
     if not source:
         pytest.skip("set CHIMERA_D3_BASELINE for actual native tiny unit fixture")
+    foundation = os.environ.get("CHIMERA_OMNI_SRC")
+    if foundation:
+        sys.path.insert(0, str(Path(foundation) / "src"))
     torch.set_num_threads(1)
     module = A.T.load_module(Path(source), "d3_hybrid_refit_fixture")
     built = module.build_tiny_child(tmp_path / "tiny-base", seed=17)
