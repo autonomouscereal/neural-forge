@@ -85,5 +85,39 @@ class SurfaceProbeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"not sampled"):
             P.actual_mesh_surface(row,altered,p)
 
+    def test_class_imbalance_cannot_hide_low_inside_recall(self):
+        truth=np.array([True]*27+[False]*98)
+        values=np.array([1.]*4+[-1.]*23+[-1.]*98)
+        metrics=P.oracle_metrics(values,truth)
+        positive=metrics["positive_logit_as_inside"]
+        self.assertAlmostEqual(positive["accuracy"],.816)
+        self.assertAlmostEqual(positive["inside_recall"],4/27)
+        self.assertAlmostEqual(positive["balanced_accuracy"],.5*(4/27+1))
+        self.assertEqual(positive["false_negative"],23)
+        self.assertAlmostEqual(metrics["negative_logit_as_inside"]["accuracy"],.184)
+        for logits,inside in (([np.nan,1],[True,False]),([1],[True]),([1,2],[True])):
+            with self.subTest(logits=logits),self.assertRaises(ValueError):P.oracle_metrics(logits,inside)
+
+    def test_metric_samples_stay_on_actual_mesh_and_follow_translation(self):
+        first=P.sampled_surface(V,F,2048,20261013)
+        shift=np.array([4.,-3.,2.])
+        second=P.sampled_surface(V+shift,F,2048,20261013)
+        self.assertTrue(np.allclose(second-first,shift,atol=1e-12))
+        v=np.asarray(V);f=np.asarray(F)
+        self.assertTrue(np.all(first>=v.min(0)-1e-12));self.assertTrue(np.all(first<=v.max(0)+1e-12))
+        queries,inside=P.convex_oracle(v,f)
+        self.assertTrue(inside.any())
+        bad=v.copy();bad[0,0]=np.nan
+        with self.assertRaisesRegex(ValueError,"finite"):
+            P.sampled_surface(bad,F,2048,20261013)
+        with self.assertRaises(ValueError):P.sampled_surface(V,F,100000,20261013)
+
+    def test_sampled_chamfer_detects_wrong_coordinate_frame(self):
+        same=P.mesh_metrics(V,F,V,F,count=2048)
+        shifted=P.mesh_metrics(V,F,V+np.array([4.,0.,0.]),F,count=2048)
+        self.assertLess(same["chamfer_l1_sum_of_means"],.2)
+        self.assertGreater(shifted["chamfer_l1_sum_of_means"],3.)
+        self.assertFalse(same["exact_continuous_mesh_distance_claimed"])
+
 
 if __name__=="__main__":unittest.main()
