@@ -54,6 +54,21 @@ def admission(entry, root, source):
         raise Error('audio admission source bytes differ')
     rows_path = T.pinned_file(manifest['outputs']['admission'], path.parent)
     rows = [json.loads(line) for line in rows_path.read_text(encoding='utf-8').splitlines() if line.strip()]
+    if 'source_path_binding' in manifest:
+        binding = manifest['source_path_binding']
+        paths = load('audio_paths.py', 'chimera_audio_verify_paths')
+        original = T.read_json(T.pinned_file(binding['original_manifest'], path.parent))
+        old_path = T.pinned_file(binding['original_admission'], path.parent)
+        old_rows = [json.loads(line) for line in old_path.read_text(encoding='utf-8').splitlines() if line.strip()]
+        if (binding.get('policy') != paths.POLICY or binding.get('only_paths_rebound') is not True or
+                binding.get('original_admission', {}).get('sha256') != original['outputs']['admission']['sha256'] or
+                paths.projection(rows) != paths.projection(old_rows) or
+                R.digest(paths.projection(rows)) != binding.get('semantic_rows_sha256') or
+                {name: ref['sha256'] for name, ref in sources.items()} != {name: ref['sha256'] for name, ref in original['sources'].items()}):
+            raise Error('derived audio path binding changed source admission semantics or original digests')
+        removed = {'sources', 'outputs', 'manifest_sha256', 'source_path_binding'}
+        if {key: value for key, value in manifest.items() if key not in removed} != {key: value for key, value in original.items() if key not in removed}:
+            raise Error('derived audio path binding changed global admission policy/traversal')
     expected = source_rows(source)
     if len(rows) != len(expected) or {row.get('id', row.get('item_id')) for row in rows} != set(expected):
         raise Error('audio admission must retain every source row exactly once')
