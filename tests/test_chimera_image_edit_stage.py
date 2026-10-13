@@ -7,10 +7,13 @@ from experiments.chimera_recovery import train_image_edit as D,image_edit as E
 
 def module():
     torch=pytest.importorskip('torch')
-    base=os.environ.get('CHIMERA_STREAMED_BASELINE')
+    # The streamed trainer has no tiny native harness. Keep its production
+    # source pin separate from the actual HybridD3 fixture module.
+    base=os.environ.get('CHIMERA_D3_HYBRID',os.environ.get('CHIMERA_D3_BASELINE'))
     source=os.environ.get('CHIMERA_OMNI_SRC')
     if not base or not source:pytest.skip('authentic baseline/foundation source environment required')
-    sys.path.insert(0,str(Path(source)/'src'))
+    source=Path(source)
+    sys.path.insert(0,str(source if source.name=='src' else source/'src'))
     return torch,D.T.load_module(Path(base),'native_image_edit_fixture')
 
 def fixture(tmp_path):
