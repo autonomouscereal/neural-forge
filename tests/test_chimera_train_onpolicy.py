@@ -211,8 +211,12 @@ def test_import_exact_accepted_bank_and_original_base_before_optimizer(tmp_path)
               'schema':'chimera_recovery.student_prefix_round.v1','student_checkpoint_sha256':'a'*64,
               'base_source_identity_sha256':O.digest(identity),'student_acceptance_receipt':O.pin(acceptance),
               'init_adapters':O.pin(bank),'generation_receipt':O.pin(generation)}
+    plan=tmp_path/'teacher-plan.json'; write(plan,{'fixture_only':True})
+    capture=tmp_path/'rescoring.json'; write(capture,{'fixture_only':True})
+    evidence.update(teacher_plan=O.pin(plan),rescoring_receipt=O.pin(capture))
     write(round_path,evidence)
-    data=tmp_path/'data.json'; write(data,{'student_prefix_round':O.pin(round_path),'student_prefix_corpus':O.pin(corpus)})
+    data=tmp_path/'data.json'; write(data,{'student_prefix_round':O.pin(round_path),'student_prefix_corpus':O.pin(corpus),
+        'teacher_plan':O.pin(plan),'rescoring_receipt':O.pin(capture)})
     args=SimpleNamespace(student_prefix_round=str(round_path),init_adapters=str(bank),data_config=str(data))
     O.verify_source(args,SimpleNamespace(identity=lambda:identity))
     with pytest.raises(O.Error,match='already composed'):
