@@ -84,6 +84,31 @@ and zero false outside positives: overall accuracy .816 obscures inside recall
 any native targets. The subsequent parent-loader control uses a new namespace
 and preserves that failed quality evidence.
 
+The actual unchanged parent-loader v4 control separated sampler and posterior
+behavior. Mode still had inside recall .2593 and sampled Chamfer L1 .3106.
+One prescribed default `posterior.sample()` on the same captured surface passed
+all 125 oracle queries and achieved sampled Chamfer L1 .0992 at MC32. Its receipt
+is `reviews/2026-10-13-folding/recovery-preparation/hy3d-geometry-cpu-v4/probe.json`,
+file SHA `dc0b8b4164e421c32a5dec12a8e49770c14eec7ceb6ea6474e6680d4f49f6f70`.
+
+The v5 control reused that exact frozen surface through the full v4 receipt,
+source row, mesh, config/source and byte seals. It repeated the prescribed native
+posterior sample and query points bitwise; the complete safetensors SHA remained
+`0dbf99baf314a99e03d74ef624b92236e25afe83d90f15b1f85471431a66963f`.
+Native MC64 evaluated 274,625 queries without changing its coordinate divisor
+65, and sampled Chamfer L1 improved to .076634 (direction means .038370/.038265;
+p95 .066614/.066549). The v5 receipt file SHA is
+`1228ec0cf999bbdb93791f249422c8073eb4553d72778c96159acc1d99eeabf3`.
+This proves repeatable native default-sample reconstruction for the one tested
+box; it neither selects a favorable seed nor admits all mesh families.
+
+To reproduce finer extraction of that exact capture, use a fresh namespace and
+append `--frozen-parent-surface`, `--parent-surface-receipt` and
+`--parent-surface-receipt-sha256` with the actual v4 files/pin, plus
+`--dense-resolution 64 --dense-sample-only`. A new sampler call, mismatched mesh,
+source row, parent source or artifact seal is refused by the frozen-capture
+join. Both sample encodes run the original CPU FPS and Gaussian sampler.
+
 Example CPU argv after copying the v2 preparation and mounting the genuine
 source/checkpoint plus root-owned CPU dependency overlay:
 
