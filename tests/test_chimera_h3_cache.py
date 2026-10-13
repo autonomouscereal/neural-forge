@@ -151,6 +151,20 @@ class ContractTests(unittest.TestCase):
             self.assertIn(anchor, candidate)
         self.assertFalse(receipt["teacher_job_launched"])
 
+    def test_writer_resolves_real_namespace_package_without_executing_model(self):
+        import subprocess
+        import sys
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "comfy/ldm/minimax/model.py"
+            source.parent.mkdir(parents=True)
+            source.write_text("raise RuntimeError('model must not execute for source lookup')\n")
+            script = "from pathlib import Path\nimport sys\nsys.path.insert(0," + repr(str(root)) + ")\n"
+            script += h3.WRITER_HELPERS
+            script += "\nimport comfy\nassert comfy.__file__ is None\n"
+            script += "assert h3_model_source_path().resolve() == Path(" + repr(str(source)) + ").resolve()\n"
+            subprocess.run([sys.executable, "-B", "-c", script], check=True, capture_output=True, text=True, timeout=15)
+
     def test_dual_clock_schedule_differs_from_video_clock(self):
         sa, slope = h3.schedule(0.6)
         self.assertAlmostEqual(sa, 0.2727272727272727)
