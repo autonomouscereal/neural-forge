@@ -159,7 +159,29 @@
     "unselected_type_rows_and_bands": "frozen; optimizer state cannot update them through dense parameter aliases",
     "lineage": "replace only prior D3b.hy3d stage in reviewed sequential child lineage; after QIMG and before genuine H3",
     "checkpoint_resume": "must bind exact selected amendment digest, source/batch seals, optimizer type-row masks, model configuration and shared adapter lineage",
-    "optimizer_ready": false
+    "optimizer_ready": false,
+    "optimizer": {
+      "unit_lr": 2e-05,
+      "bridge_lr": 2e-05,
+      "emission_lr": 2e-05,
+      "lora_lr": 0.0001,
+      "betas": [
+        0.9,
+        0.95
+      ],
+      "eps": 1e-08,
+      "weight_decay": 0.0,
+      "clip": 1.0,
+      "warmup_steps": 20,
+      "min_lr_ratio": 0.1
+    },
+    "ownership": [
+      "HY3D_unit",
+      "type7_bridge",
+      "type7_emission",
+      "shared_r16"
+    ],
+    "additional_optimizer_controls": "candidate existing driver defaults; exact digest requires owner selection before use"
   },
   "native_source_pins": {
     "config.py": "ae93ef1e1bb0160803dc3a5a71243300c3e2b120542dfe3c4cde2ff4ab335957",
