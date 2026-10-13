@@ -19,8 +19,8 @@ def test_d3_production_preflight_is_blocked_without_real_prerequisites(tmp_path)
     config.write_text(json.dumps({"schema": "chimera_recovery.d3b_config.v1", "stage": "D3d"}))
     result = M.preflight(config)
     assert result["production_ready"] is False and result["training_started"] is False
-    assert any("only D3b" in blocker for blocker in result["blockers"])
-    assert result["unsupported_stages"] == ["D3a", "D3c", "D3d"]
+    assert any("this entry point owns D3b" in blocker and "train_stages.py" in blocker for blocker in result["blockers"])
+    assert Path(result["separate_stage_driver"]).name == "train_stages.py"
 
 
 def test_d3_optimizer_has_no_invented_production_defaults():
