@@ -206,6 +206,11 @@ def test_train_only_immutable_replay_is_not_a_quality_claim(tmp_path):
                objective="fixture", supervised_units=1, objective_weight=1., active_families=["D2.lora"], input=R.I.pin(source), target=R.I.pin(source))
     with pytest.raises(R.Error, match="train-only"):
         R.replay_identity([row], dict(source=R.I.pin(source)), tmp_path)
+    row["split"] = "train"
+    assert R.replay_identity([row], dict(source=R.I.pin(source)), tmp_path)["exclusive_one_pass"]
+    row["held"] = True
+    with pytest.raises(R.Error, match="train-only"):
+        R.replay_identity([row], dict(source=R.I.pin(source)), tmp_path)
 
 
 def test_actual_optimizer_gate_after_backward_prevents_revoked_update(tmp_path):
@@ -229,8 +234,3 @@ def test_actual_optimizer_gate_after_backward_prevents_revoked_update(tmp_path):
     assert all(torch.equal(value, values[name]) and value.grad is None for name, value in engine.census.items())
     assert engine.window(real, before_apply=lambda: calls.append("admitted"))["applied"]
     assert engine.cursor == 2 and engine.step == 1
-    row["split"] = "train"
-    assert R.replay_identity([row], dict(source=R.I.pin(source)), tmp_path)["exclusive_one_pass"]
-    row["held"] = True
-    with pytest.raises(R.Error, match="train-only"):
-        R.replay_identity([row], dict(source=R.I.pin(source)), tmp_path)
