@@ -13,6 +13,7 @@ import hashlib
 import json
 import math
 import re
+import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -770,6 +771,8 @@ def bind_text_cache(packed_manifest: Path, cache: Path, *, teacher_sha256: str) 
     packed = json.loads(packed_manifest.read_text(encoding="utf-8"))
     if packed.get("schema") != PACK_SCHEMA:
         raise ReadinessError("packed manifest schema mismatch")
+    if not packed.get("shard") or packed.get("rows", 1) < 1:
+        raise ReadinessError("packed corpus contains no accepted rows")
     shard = Path(packed["shard"])
     if not shard.is_file() or sha(shard) != packed.get("sha256"):
         raise ReadinessError("prepared mask-bearing corpus digest moved")
@@ -802,7 +805,7 @@ def bind_text_cache(packed_manifest: Path, cache: Path, *, teacher_sha256: str) 
                                  "production_training_ready": False}}
 
 
-def prepare_text(records: list[dict[str, Any]], tokenizer: Any, root: Path, out: Path, max_length: int) -> dict[str, Any]:
+def prepare_text(records: list[dict[str, Any]], tokenizer: Any, root: Path, out: Path, max_length: int, *, split: str = "train") -> dict[str, Any]:
     """Write digest-pinned native text shards for qtext_teacher_cache.py.
 
     One complete conversation per row; no truncation, no separator packing that
@@ -810,32 +813,69 @@ def prepare_text(records: list[dict[str, Any]], tokenizer: Any, root: Path, out:
     """
     import torch
     from safetensors.torch import save_file
-    if out.exists() and any(out.iterdir()):
-        raise ReadinessError("output directory is not empty; preserve prepared artifacts")
-    rows = [pack_native_chat(record, tokenizer, root=root, max_length=max_length) for record in records]
-    if not rows:
-        raise ReadinessError("no text rows supplied")
+    if out.exists():
+        raise ReadinessError("output already exists; preserve prepared artifacts")
+    split = "validation" if split == "val" else split
+    if split not in {"train", "validation", "test"}:
+        raise ReadinessError("split must be train, validation or test")
+    rows, accepted, quarantine, excluded = [], [], [], []
+    groups = {}
+    for record in records:
+        record_split = "validation" if record.get("split") == "val" else record.get("split")
+        group = record.get("group_id", record.get("group", record.get("id")))
+        if not isinstance(group, str) or not group or record_split not in {"train", "validation", "test"}:
+            quarantine.append({"id": record.get("id"), "split": record_split, "reason": "missing stable group identity or valid split"})
+            continue
+        groups.setdefault(group, set()).add(record_split)
+    overlapping = {group for group, splits in groups.items() if len(splits) != 1}
+    for record in records:
+        record_split = "validation" if record.get("split") == "val" else record.get("split")
+        group = record.get("group_id", record.get("group", record.get("id")))
+        if not isinstance(group, str) or not group or record_split not in {"train", "validation", "test"}:
+            continue
+        if group in overlapping:
+            quarantine.append({"id": record.get("id"), "split": record_split, "group": group, "reason": "source group occurs across splits"})
+            continue
+        if record_split != split:
+            excluded.append({"id": record.get("id"), "split": record_split, "group": group})
+            continue
+        try:
+            if record.get("quality", {}).get("train_ready") is False:
+                raise ReadinessError("quality.train_ready explicitly false")
+            rows.append(pack_native_chat(record, tokenizer, root=root, max_length=max_length))
+            accepted.append(record)
+        except (ReadinessError, KeyError, ValueError, TypeError) as error:
+            quarantine.append({"id": record.get("id"), "route": record.get("route"), "split": record_split,
+                               "group": group, "reason": str(error), "error_type": type(error).__name__})
     pad = getattr(tokenizer, "pad_token_id", None)
     if type(pad) is not int or not 0 <= pad < TEXT_VOCAB:
         raise ReadinessError("parent tokenizer must supply an in-text-vocabulary padding id")
-    width = max(len(row.input_ids) for row in rows)
+    width = max((len(row.input_ids) for row in rows), default=0)
     ids = torch.full((len(rows), width), pad, dtype=torch.int64)
     masks = torch.zeros((len(rows), width), dtype=torch.bool)
     lengths = torch.tensor([len(row.input_ids) for row in rows], dtype=torch.int64)
     for i, row in enumerate(rows):
         ids[i, :len(row.input_ids)] = torch.tensor(row.input_ids)
         masks[i, :len(row.input_ids)] = torch.tensor(row.assistant_mask)
-    out.mkdir(parents=True, exist_ok=True)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix=".recovery-pack-", dir=out.parent))
     tensor_path = out / "assistant_text.safetensors"
-    save_file({"input_ids": ids, "lengths": lengths, "assistant_mask": masks}, str(tensor_path), metadata={"schema": PACK_SCHEMA})
-    manifest = {"schema": PACK_SCHEMA, "corpus_schema": "recovery_corpus.v1", "shard": str(tensor_path.resolve()),
-                "sha256": sha(tensor_path), "rows": len(rows), "tokens": int(lengths.sum()),
+    staged_tensor = stage / tensor_path.name
+    if rows:
+        save_file({"input_ids": ids, "lengths": lengths, "assistant_mask": masks}, str(staged_tensor), metadata={"schema": PACK_SCHEMA})
+    manifest = {"schema": PACK_SCHEMA, "corpus_schema": "recovery_corpus.v1", "shard": str(tensor_path.resolve()) if rows else None,
+                "sha256": sha(staged_tensor) if rows else None, "rows": len(rows), "tokens": int(lengths.sum()),
                 "supervised_tokens": int(masks.sum()), "shape": list(ids.shape),
-                "template_sha256": rows[0].template_sha256, "records_sha256": digest(records),
+                "split": split, "input_records_sha256": digest(records), "records_sha256": digest(accepted),
+                "template_sha256": rows[0].template_sha256 if rows else digest(getattr(tokenizer, "chat_template", None)),
+                "quarantined_rows": quarantine, "quarantined_count": len(quarantine), "other_split_rows_preserved": excluded,
+                "other_split_count": len(excluded), "cross_split_groups": sorted(overlapping),
+                "admission": "accepted rows only; holdouts require distinct --split outputs; no truncated conversations",
                 "row_receipts": [{**asdict(row), "input_ids": None, "assistant_mask": None, "next_token_mask": None} for row in rows],
                 "teacher_cache_required": True, "production_training_ready": False,
                 "trainer_integration": "apply streamed_supervision.patch against its recorded baseline sha; corpus assistant_mask is token ownership"}
-    (out / "manifest.json").write_bytes(canonical(manifest) + b"\n")
+    (stage / "manifest.json").write_bytes(canonical(manifest) + b"\n")
+    stage.rename(out)
     return manifest
 
 
@@ -875,6 +915,7 @@ def main(argv: list[str] | None = None) -> int:
     prepare.add_argument("--tokenizer", type=Path, required=True)
     prepare.add_argument("--out", type=Path, required=True)
     prepare.add_argument("--max-length", type=int, default=4096)
+    prepare.add_argument("--split", default="train", choices=("train", "validation", "val", "test"))
     patch = commands.add_parser("patch-streamed")
     patch.add_argument("--source", type=Path, required=True)
     patch.add_argument("--out", type=Path, required=True)
@@ -912,9 +953,11 @@ def main(argv: list[str] | None = None) -> int:
         else:
             from transformers import AutoTokenizer
             tokenizer = AutoTokenizer.from_pretrained(str(args.tokenizer), local_files_only=True, trust_remote_code=False)
-            manifest = prepare_text(records, tokenizer, args.corpus.parent, args.out, args.max_length)
-            print(json.dumps({"schema": manifest["schema"], "rows": manifest["rows"], "supervised_tokens": manifest["supervised_tokens"], "production_training_ready": False}))
-            return 0
+            manifest = prepare_text(records, tokenizer, args.corpus.parent, args.out, args.max_length, split=args.split)
+            print(json.dumps({"schema": manifest["schema"], "rows": manifest["rows"], "supervised_tokens": manifest["supervised_tokens"],
+                              "split": manifest["split"], "quarantined": manifest["quarantined_count"], "other_split_count": manifest["other_split_count"],
+                              "production_training_ready": False}))
+            return 0 if manifest["rows"] else 3
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_bytes(canonical(result) + b"\n")
     print(json.dumps({"schema": result["schema"], "out": str(args.out), "production_ready": result.get("production_ready", False)}))

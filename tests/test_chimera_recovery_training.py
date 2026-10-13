@@ -216,6 +216,28 @@ def test_pack_artifact_exact_ids_lengths_and_supervision(tmp_path):
     assert manifest["production_training_ready"] is False
 
 
+def test_pack_split_admission_quarantine_and_atomic_artifacts(tmp_path):
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("safetensors.torch")
+    good, bad, held = row(), row(), row()
+    good["group_id"] = "good-group"
+    bad.update(id="bad", group_id="bad-group", quality={"train_ready": False})
+    held.update(id="held", group_id="held-group", split="validation")
+    manifest = t.prepare_text([good, bad, held], ContractTokenizer(), tmp_path, tmp_path / "train", 4096)
+    assert manifest["rows"] == 1 and manifest["split"] == "train"
+    assert manifest["quarantined_rows"][0]["id"] == "bad"
+    assert manifest["other_split_rows_preserved"] == [{"id": "held", "split": "validation", "group": "held-group"}]
+    assert list(tmp_path.glob(".recovery-pack-*")) == []
+    validation = t.prepare_text([good, bad, held], ContractTokenizer(), tmp_path, tmp_path / "held", 4096, split="validation")
+    assert validation["rows"] == 1 and validation["row_receipts"][0]["row_id"] == "held"
+    duplicate = copy.deepcopy(held)
+    duplicate["group_id"] = "good-group"
+    empty = t.prepare_text([good, duplicate], ContractTokenizer(), tmp_path, tmp_path / "quarantine", 4096)
+    assert empty["rows"] == 0 and empty["shard"] is None and empty["cross_split_groups"] == ["good-group"]
+    assert empty["quarantined_count"] == 2
+    assert not (tmp_path / "quarantine" / "assistant_text.safetensors").exists()
+
+
 def test_optimizer_ownership_covers_actual_delta_bank():
     torch = pytest.importorskip("torch")
     a = torch.tensor([1.0], requires_grad=True)
