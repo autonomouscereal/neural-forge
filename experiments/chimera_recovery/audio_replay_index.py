@@ -111,6 +111,8 @@ def audit(ce_manifest, ce_sha, ce_source_dir, flow_manifest, flow_sha, flow_sour
         proofs.append({'id': item['id'], 'encoder_proof': pin(proof_path), 'source_tensors': pin(tensors),
             'raw_shape': proof['measurement']['raw_latent_shape'], 'model_space_verified': True,
             'split': admitted[item['id']]['split'], 'train_admitted': admitted[item['id']]['train_admitted']})
+        if len(proofs) % 32 == 0:
+            print(json.dumps({'phase': 'encoder_tensor_reconstruction', 'verified_rows': len(proofs)}), flush=True)
     ce_entries, flow_entries = [], []
     text_vocabulary_contract = SimpleNamespace(base_vocab=248320)
     for item in ce['batches']:
@@ -131,6 +133,8 @@ def audit(ce_manifest, ce_sha, ce_source_dir, flow_manifest, flow_sha, flow_sour
             'native_audio_rows': batch['native_media_type_ids'].numel(),
             'latent_frames_per_channel': batch['native_media_type_ids'].numel() // 2,
             'amendment_sha256': amendment_sha, 'source_reconstruction_bitwise_equal': True})
+        if len(ce_entries) % 16 == 0:
+            print(json.dumps({'phase': 'native_ce_reconstruction', 'verified_rows': len(ce_entries)}), flush=True)
     for item in flow['batches']:
         receipt = W.T.read_json(W.T.pinned_file(item['teacher_receipt'], flow_manifest.parent))
         batch = W.T.load_native_batch(item, flow_manifest.parent, 'cpu')
@@ -149,6 +153,8 @@ def audit(ce_manifest, ce_sha, ce_source_dir, flow_manifest, flow_sha, flow_sour
             'native_audio_rows': batch['native_media_type_ids'].numel(),
             'latent_frames_per_channel': batch['native_media_type_ids'].numel() // 2,
             'amendment_sha256': amendment_sha, 'source_reconstruction_bitwise_equal': True})
+        if len(flow_entries) % 16 == 0:
+            print(json.dumps({'phase': 'native_speech_flow_reconstruction', 'verified_rows': len(flow_entries)}), flush=True)
     coverage(admitted, ce_entries, flow_entries, F.SIGMAS)
     if torch.cuda.is_initialized():
         raise ValueError('CUDA initialized during CPU-only replay reconstruction')
