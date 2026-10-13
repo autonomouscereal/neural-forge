@@ -191,11 +191,17 @@ def audit_source_shard(cache, items_path, index, source_sha, source_capture):
         raise Error("HY3D raw source shard/sidecar/item/config identity differs")
     recorded_item_identity(sidecar, item)
     tensors = load_file(str(path), device="cpu")
-    trajectory = validate_trajectory(tensors, sidecar)
-    image = reconstruct_image(Path(item["path"]), item["sha256"], tensors)
+    checks = {}
+    for name, check in (("trajectory", lambda: validate_trajectory(tensors, sidecar)),
+                        ("image", lambda: reconstruct_image(Path(item["path"]), item["sha256"], tensors))):
+        try:
+            checks[name] = {"passed": True, "proof": check()}
+        except (Error, OSError, ValueError, TypeError, KeyError) as error:
+            checks[name] = {"passed": False, "failure": str(error)}
+    passed = all(check["passed"] for check in checks.values())
     return {"schema": "chimera_recovery.hy3d_source_audit.v1", "sealed": False, "production_ready": False,
             "source_shard_sha256": source_sha, "source_sidecar_sha256": R.sha(sidecar_path), "source_items_sha256": R.sha(items_path),
-            "item_id": item["id"], "held": item["held"], "contract": contract, "trajectory": trajectory, "image": image,
+            "item_id": item["id"], "held": item["held"], "contract": contract, "checks": checks, "all_source_checks_passed": passed,
             "training_started": False, "model_weights_loaded": False, "geometry_training_admission_granted": False,
             "adapter_sha256": R.sha(Path(__file__))}
 
@@ -328,7 +334,7 @@ def main(argv=None):
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_bytes(R.canonical(result) + b"\n")
     print(json.dumps(result))
-    return 0 if args.mode == "audit-source" else 2
+    return 0 if args.mode == "audit-source" and result["all_source_checks_passed"] else 2
 
 
 if __name__ == "__main__":
