@@ -15,6 +15,7 @@ import math
 import re
 import tempfile
 from collections.abc import Mapping
+import copy
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -251,6 +252,9 @@ class PackedRow:
     template_sha256: str
     rendered_sha256: str
     linkage: dict[str, Any]
+    source_record_sha256: str
+    native_messages_sha256: str
+    template_adaptations: list[dict[str, Any]]
 
 
 def native_token_ids(value: Any) -> list[int]:
@@ -275,6 +279,29 @@ def native_token_ids(value: Any) -> list[int]:
     return value
 
 
+def qwen_native_messages(record: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Adapt valid OpenAI JSON-string arguments to Qwen's native mapping input.
+
+    Qwen's actual template iterates argument.items(). Both render and tokenize
+    must receive the same copied native messages. Original records, schemas,
+    call IDs and result IDs remain unchanged and separately digest-pinned.
+    """
+    messages = copy.deepcopy(record["messages"])
+    adaptations = []
+    for message in messages:
+        for call in message.get("tool_calls", []):
+            arguments = call["function"].get("arguments")
+            if isinstance(arguments, str):
+                decoded = json.loads(arguments)
+                if not isinstance(decoded, dict):
+                    raise ReadinessError("Qwen native tool arguments must be a mapping")
+                call["function"]["arguments"] = decoded
+                adaptations.append({"kind": "qwen_json_arguments_to_mapping", "tool_call_id": call["id"],
+                                    "source_arguments_sha256": hashlib.sha256(arguments.encode()).hexdigest(),
+                                    "native_arguments_sha256": digest(decoded)})
+    return messages, adaptations
+
+
 def pack_native_chat(record: dict[str, Any], tokenizer: Any, *, root: Path, max_length: int) -> PackedRow:
     """Call the real parent template, then identify assistant spans in that output.
 
@@ -286,8 +313,9 @@ def pack_native_chat(record: dict[str, Any], tokenizer: Any, *, root: Path, max_
     checked = validate_record(record, root)
     if checked["media"]:
         raise ReadinessError("text shard preparation cannot erase media; use the native media cache adapter")
+    messages, adaptations = qwen_native_messages(record)
     options = {"tools": record.get("tools") or None, "add_generation_prompt": False, "enable_thinking": False}
-    rendered = tokenizer.apply_chat_template(record["messages"], tokenize=False, **options)
+    rendered = tokenizer.apply_chat_template(messages, tokenize=False, **options)
     if not isinstance(rendered, str):
         raise ReadinessError("chat template did not render text")
     template = getattr(tokenizer, "chat_template", None)
@@ -312,7 +340,7 @@ def pack_native_chat(record: dict[str, Any], tokenizer: Any, *, root: Path, max_
             spans.append((header.end(), end + len("<|im_end|>")))
     encoded = tokenizer(rendered, add_special_tokens=False, return_offsets_mapping=True)
     ids, offsets = native_token_ids(encoded), list(encoded["offset_mapping"])
-    exact = tokenizer.apply_chat_template(record["messages"], tokenize=True, return_dict=False, **options)
+    exact = tokenizer.apply_chat_template(messages, tokenize=True, return_dict=False, **options)
     if ids != native_token_ids(exact) or len(ids) != len(offsets):
         raise ReadinessError("native template ids disagree with offset-tokenized rendered output")
     if len(ids) > max_length:
@@ -332,7 +360,8 @@ def pack_native_chat(record: dict[str, Any], tokenizer: Any, *, root: Path, max_
         raise ReadinessError("native template produced no supervised assistant token")
     next_mask = mask[1:] + [False]
     return PackedRow(str(record.get("id", record.get("record_id", ""))), checked["route"], ids, mask,
-                     next_mask, digest(template), hashlib.sha256(rendered.encode()).hexdigest(), checked["chat"])
+                     next_mask, digest(template), hashlib.sha256(rendered.encode()).hexdigest(), checked["chat"],
+                     digest(record), digest(messages), adaptations)
 
 
 def mask_streamed_targets(targets: dict[str, Any], assistant_mask: Any, lengths: Any) -> dict[str, Any]:
