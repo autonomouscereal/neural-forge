@@ -56,3 +56,14 @@ joins the preserved original source. It emits diagnostic evidence only;
 the native packer independently validates actual tensor values and the
 complete source inventory. One admitted tone diagnostic is not a sealed
 24-row clean cache, and the old CPU speech diagnostic stays unadmitted.
+
+When training and held evaluation speech were generated in separate jobs, pass
+`--additional-campaigns PATH.json`. The file contains a list of objects with
+`pins` (the same five pinned sources) and `asset_root` for each additional job.
+Every job must be complete before admission. The joined inventory connects
+exact and near utterances across all jobs before propagating exclusions.
+Original plan/teacher/ASR row hashes remain intact, and source-ready held rows
+stay in diagnostic outputs with zero optimizer admission. A plan marked
+`optimizer_use_forbidden` cannot contain training rows. Pin the final joined
+snapshot for subsequent encoding; a separately admitted held-only snapshot
+does not replace this combined check.
