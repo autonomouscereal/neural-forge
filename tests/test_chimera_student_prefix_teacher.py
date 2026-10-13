@@ -196,7 +196,7 @@ def test_real_original_writer_raw_capture_guard_rejects_padding_runtime_and_sour
     arrays = {'ids':torch.tensor([16,17,18,23,24]),'pos':torch.tensor([5,6,7,2,3]),
         'topk_ids':torch.arange(64,dtype=torch.int32).repeat(5,1),
         'topk_logprobs':torch.full((5,64),-10.,dtype=torch.bfloat16),'lse':torch.zeros(5)}
-    shard = writer.write_shard(cache,0,arrays,record,64,248320)
+    shard = writer.write_shard(cache,0,arrays,record,vocab_rows=248320,top_k=64)
     shard_path = cache/shard['shard']/'shard.json'
     spin = write(cache/'sessions'/'session-session-A.json',sessions['session-A'])
     manifest.update(corpus={'sha256':P.sha(native)},shards=[{'shard':shard['shard'],'shard_json_sha256':P.sha(shard_path)}],
