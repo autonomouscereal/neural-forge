@@ -47,8 +47,11 @@ python experiments/chimera_recovery/training.py bind-text-cache \
 
 The binder refuses unsealed, structurally invalid, wrong-corpus, wrong-vocabulary,
 or changed-teacher caches. It emits an existing-trainer-compatible text source
-with explicit `supervision: assistant_only`. Production `QTextCache` still checks
-actual teacher shard contents when loading the source.
+with explicit `supervision: assistant_only`. The original `QTextCache` checks
+metadata and stored input IDs; it does not hash its raw teacher target files.
+The structured runner below additionally calls the authentic cache writer's
+`verify_shard` for all five files and structural checks before every fresh run
+or resume. The binder itself reports `raw_teacher_tensors_verified=false`.
 
 The minimal `streamed_supervision.patch` is against exact source SHA256
 `77091f8ab1581c1edac3e3f1c1e5d727d60f8fb8465745c03a6eb6b12f0567da`,
@@ -66,6 +69,47 @@ gated by assistant ownership of token t+1. This gates CE, EOS, Qwen KD, K3 KD,
 unlikelihood, and JSD. The corpus and supervision policy participate in exact
 data/resume identity. Unmasked legacy sources preserve their existing objective.
 No D1 source or frozen preregistration body is edited by this package.
+
+## Structured recovery lane
+
+`train_text.py` emits an opt-in candidate of the exact original streamed trainer:
+
+```bash
+python -m experiments.chimera_recovery.train_text \
+  --source /path/to/original/streamed_kd_trainer.py \
+  --out /path/to/private/tools/streamed_kd_trainer.py
+```
+
+Keep the `experiments/chimera_recovery` package beside the candidate's `tools`
+directory. Point `QTEXT_TEACHER_CACHE_PATH` and the other original peer-tool
+environment paths at the audited campaign tools. After fresh teacher caches
+have sealed, bind each packed corpus and combine their uniquely named sources
+in a data config. Duplicate corpus digests, mixture weights, delayed sources,
+K3/on-policy sources and identity waivers refuse in this lane. Those original
+replay objectives retain their separate preregistered passes.
+
+The production command adds `--structured-recovery --recovery-amendment
+/path/to/the/exact/appended/amendment.md --preregistration
+/path/to/amended/PREREGISTRATION_OMNI_STAGE_D_v1.md --w-ul 0` to the ordinary
+streamed D2 parameters. Use `--seq-len 4096` for complete short conversations
+and a separate `--seq-len 32768` long rung, initialized with the previous
+accepted adapters. Tool calls and results are never separated or truncated.
+
+Every accepted source row is visited once in a deterministic exclusive plan.
+Batches crop only right padding; the entire accumulation window is normalized
+by its actual assistant prediction positions. A nonfinite window performs no
+optimizer update, rewinds to the same rows, and retries under the original
+skip guards. Real, compute and supervised-position counts refer to applied
+windows. Initial receipts precede updates; resume verifies source/cache/code,
+full amended document, row-plan cursor, independently recomputed consumed row
+counts, and Adam step counters. One replica is required.
+
+Actual CPU integration tests use authentic cache writer/reader, Qwen decoder,
+streamed backward, Adam and checkpoint serializer. They compare uninterrupted
+and resumed parameters plus optimizer states exactly, replay an injected
+nonfinite window, and reject a same-size raw teacher target mutation. Their
+small random weights and target distributions are explicitly fixtures; these
+tests do not establish recovered intelligence or production GPU parity.
 
 ## Native media and readiness
 
