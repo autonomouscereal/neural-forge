@@ -201,6 +201,9 @@ class NativeIntegrationTests(unittest.TestCase):
         cfg = ChimeraConfig(vocab_size=317952, hidden_size=8, intermediate_size=16, num_layers=3,
             num_heads=2, num_kv_heads=2, max_sequence_length=8192, block_pattern=("gated_gqa", "charted", "gated_gqa"),
             residual_mode="none", ledger_kind="fixed_band", ledger_base_vocab_size=F.TEXT_VOCAB,
+            # Exact original clone ledger: default native bands omit music codes.
+            ledger_bands=(("control", 512), ("media", 2048), ("grounding", 1024),
+                          ("sync", 128), ("tool", 384), ("music_codes", 65536)),
             native_feature_dim=F.WIDTH, native_position_dim=4, native_coordinate_frequencies=8,
             native_bidirectional_refinement=False, charted_blocks=(spec,), aux_heads=())
         model = ChimeraOmniModel(cfg)
