@@ -183,10 +183,11 @@ async def bind(args):
         captured = datetime.now(timezone.utc)
         rows = await allocation_rows(conn, str(args.group))
         if len(rows) != 2:
-            raise R.Error("Actual D1 allocator group must have exactly two rows")
+            raise R.Error("D1 group not fully reconciled; run official controller status then retry binding; no update authority issued")
         assignment = {key: plan[key] for key in ("owner", "server", "stage", "native_task", "image_id", "mounts",
                      "clone_directory_sha256", "mem_available_launch_floor_gib", "max_proof_age_seconds",
-                     "container_devices", "lease_proof_target", "lease_mount_read_only", "candidate_receipt_sha256", "root_controller_sha256")}
+                     "container_devices", "lease_proof_target", "lease_mount_read_only", "candidate_receipt_sha256", "root_controller_sha256",
+                     "source_path_map_sha256")}
         assignment.update(schema=R.SCHEMA, active=True, allocation_group_id=str(args.group),
                           container_id=rows[0]["container_id"], container_name=rows[0]["name"],
                           gpus=[dict(host_index=row["gpu_index"], uuid=row["gpu_uuid"], container_ordinal=i) for i, row in enumerate(rows)])

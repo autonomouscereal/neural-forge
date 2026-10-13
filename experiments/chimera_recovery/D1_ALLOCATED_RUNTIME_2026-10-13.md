@@ -1,4 +1,4 @@
-The D1 v5 candidate runs only inside an existing, exact-task, allocator-owned
+The D1 v6 portable candidate runs only inside an existing, exact-task, allocator-owned
 GPU0/GPU4 container. Native ordinals are `cuda:0,cuda:1`; host indices are never
 passed through to the trainer. This preparation does not acquire GPUs or start
 training. The original live queue and the CPU-only v4 candidate remain intact.
@@ -18,6 +18,17 @@ template to acquire an idle two-member group. The plan specifies the actual
 Torch2.11 image, read-only model/code/preparation/lease mounts and separate writable
 run/delta mounts. Its missing group/container fields must never be filled from
 historical status or a hand-written `active` flag.
+An allocator CLI timeout can leave an already-started container before the PG
+commit. Incomplete group rows grant no update authority and do not prove absence;
+root uses official controller reconciliation, then retries the exact binding.
+
+The allocator forbids `/home` container targets. The preparation namespace is
+therefore mounted read-only at `/inputs/successor`. An exact SHA-pinned resolver
+maps the original preparation prefix only when opening/comparing source paths.
+Original sealed manifest bytes, original provenance paths, every source SHA,
+real lengths, fit/held groups and exclusions remain unchanged. The portable
+validator derives from the exact reviewed predecessor and still rechecks actual
+data bytes; no new fabricated manifest seal replaces the original.
 
 Use the exact published `tools/d1_allocated_root.py`, whose code SHA is pinned.
 Root then runs `d1_allocated_root.py bind --plan PLAN --plan-sha256 SHA --group
