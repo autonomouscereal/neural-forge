@@ -1,0 +1,146 @@
+{
+  "schema": "recovery_geometry_flow_amendment.v1",
+  "amendment_id": "hy3d-supervised-position-free-native-progress-2026-10-13-v1",
+  "created_utc": "2026-10-13",
+  "status": "proposed_owner_selection_required",
+  "source_year": 2026,
+  "stage": "D3b_geometry_supervised_flow",
+  "objective": "supervised_geometry_rectified_flow",
+  "policy": "hy3d_position_free_bridge_native_progress_2026-10-13.v1",
+  "prediction_kind": "raw",
+  "parent_signs": {
+    "7": -1
+  },
+  "target_kind": "canonical_velocity",
+  "guided_teacher": false,
+  "teacher_logits_used": false,
+  "time_mapping": "native_progress=1-canonical_sigma",
+  "corruption": "x_sigma=(1-sigma)*clean_model_space_latent+sigma*epsilon",
+  "canonical_target": "epsilon-clean_model_space_latent",
+  "loss": "mean((-raw_prediction-canonical_target)^2) over4096latentrowsx64channels",
+  "sigma_grid": [
+    0.05,
+    0.3,
+    0.7,
+    1
+  ],
+  "noise_seed": 20261013,
+  "noise_seed_policy": "source_row_sigma_sha256_first63bits_v1",
+  "latent_permutation_augmentation": false,
+  "best_seed_selection": false,
+  "storage": {
+    "schema": "recovery_geometry_flow_bands.v1",
+    "width": 6144,
+    "image_feature": [
+      640,
+      2176
+    ],
+    "geometry_feature": [
+      576,
+      640
+    ],
+    "geometry_emission": [
+      320,
+      384
+    ],
+    "time_row": 1024
+  },
+  "insertion": {
+    "prompt": "exact unchanged source user messages; actual pinned Qwen parent generation prefix, enable_thinking=false; assistant metadata excluded",
+    "order": [
+      "authentic parent generation-prefix IDs",
+      "1024 raw source C11 image rows",
+      "1 original HY3D zero-feature timestep row",
+      "4096 noisy model-space geometry rows"
+    ],
+    "placeholder": 248832,
+    "text_vocab": 248320,
+    "truncation_allowed": false
+  },
+  "coordinates": {
+    "bridge_latents": "constant [0,0,0,0] independent of clean mesh/query/image; original cos(0) constant retained",
+    "bridge_time": "original sentinel [-1,-1,-1,-1]",
+    "bridge_image": "authentic C11 merge-window grid [0,y/31,x/31,0]",
+    "full_sequence_metadata": "categorical prefix ordinals [i,0,0]; image [0,y/31,x/31]; time [-1,-1,-1]; geometry constant [0,0,0]; not physical XYZ",
+    "native_rope_source_mapping": "hy3d metadata only; actual type7 unit has no source spatial RoPE; do not route categorical coordinates into H3",
+    "target_only_encoder_query_xyz_allowed_in_generation_inputs": false
+  },
+  "read_policy": "existing original69layer sequential trunk/actual type6 pixel ingress/type7 native HY3D dispatch; no restored DINO cross attention; no text answer supervision; no bidirectional refinement switch",
+  "loss_weights": {
+    "image_rows": 0,
+    "time_row": 0,
+    "geometry_rows": 1,
+    "canonical_weight_key": "native_media_loss_weights",
+    "legacy_alias": "native_media_loss_mask",
+    "guided_kd": 0,
+    "text_answer_ce": 0,
+    "supervised_flow": 1
+  },
+  "native_parent_xyz_parity": false,
+  "full_trunk_parent_parity": false,
+  "parent_conditioning_parity": false,
+  "parent_time_token_to_trunk_calibration_parity": false,
+  "learned_quality_superiority_claimed": false,
+  "original_guided_D3b_quota_or_cache_history_rewritten": false,
+  "replacement_fold_requested": false,
+  "quality_admission": {
+    "all_prior_source_admitted_train_examples_remain_eligible": true,
+    "required": [
+      "immutable global frozen/group/source admission with train split",
+      "finite genuine original ShapeVAE posterior.sample model-space targets",
+      "original source surface capture+normalization and source-bound physical mesh/image seals",
+      "prescribed apriori seed; repeated representatives bitwise; no best-seed search",
+      "exact raw C11 parity and actual original native bridge/time/decoder evidence"
+    ],
+    "geometry_oracle_or_chamfer_threshold_for_seed_ranking": null,
+    "observed_distortion_is_measured_limit": true,
+    "shape_oracle_parity_claimed": false,
+    "source_train_count": 8,
+    "held_source_count": 16,
+    "optimizer_held_use": false,
+    "coverage": "small authored box/octahedron/tetrahedron meshes; train boxes only; no natural-object/topology/texture competence claim"
+  },
+  "required_before_training": [
+    "owner selects exact amendment file digest and all8source IDs/row+native receipt hashes",
+    "actual tiny full configured native trunk forward/backward, image conditioning gradient and native-time inspection",
+    "no clean query XYZ/unallocated channel/assistant-target ingress regression tests",
+    "reviewed distinct supervised-flow production driver/optimizer+resume/sequential native composition",
+    "matched before/after held-family geometry evaluation with actual native VAE decode/MC; no cache replay quality claims"
+  ],
+  "optimizer_scope": {
+    "trunk": "existing preregistered shared r16 LoRA; do not thaw full base trunk",
+    "native_units": "existing HY3D unit and explicitly selected type6 image ingress bridge/type7 bridge/emission deltas",
+    "model_lm_head": "frozen; media-only native API",
+    "rates": "reuse reviewed D3b optimizer defaults only after explicit driver/source binding",
+    "full_original_depth": 69,
+    "actual_hy3d_site": 34,
+    "actual_qvl_site": 36
+  },
+  "native_source_pins": {
+    "config.py": "ae93ef1e1bb0160803dc3a5a71243300c3e2b120542dfe3c4cde2ff4ab335957",
+    "charted.py": "f3d6153c19bb0a690218fcf6af82c0fb4e6568f35cd018ce2f15f36f7f16eb57",
+    "modeling/chimera.py": "8f2971edf76ab751a577d2cd95ec26fff61d0a90dfc1197fed67c1b25a6273fe",
+    "modeling/charted.py": "0ee1875895a192cc4ce0dcd469a7cc2e9014b29b68ed3d8c4be978f24828ddc3",
+    "modeling/hy3d.py": "1336c85db99b958cfa4097c6e1d9039205adad7782877663e36c4a38576d7b39",
+    "modeling/layers.py": "6953425b53084f84b1619e345f9b687d09283ea4d03882a98f952fe47a9bc691"
+  },
+  "clone_config_sha256": "3516b587ce80461745b772eb92bf1d3c0ffd40fc5e0d82d83c037ad872c99b02",
+  "clone_index_sha256": "564bd342cc8ddd63a3b28b2c0b37b595a4623020360c97bff87d2842858f6082",
+  "original_hy3d_checkpoint_sha256": "5f21e98a6cb99b13b5e224abaee33929570fff7af2b6a0060001559a04ba9d72",
+  "evidence": {
+    "bridge_time_decoder": {
+      "path": "C:/Users/cereal/Documents/ai training/reviews/2026-10-13-folding/recovery-preparation/geometry-bridge-cpu-v1/probe.json",
+      "sha256": "087edd5e34e027394fc797be7a466bb641a90a2e791da2fed8def73c6581ad19"
+    },
+    "target_intersection": {
+      "path": "C:/Users/cereal/Documents/ai training/proof_outputs/chimera_geometry_targets_oct13_v1/manifest.json",
+      "sha256": "1d025896024de61d9e1e7a1367d23b2535266a5726fc11ef4bde2599920b64cc"
+    },
+    "c11_parity": {
+      "path": "C:/Users/cereal/Documents/ai training/reviews/2026-10-13-folding/recovery-preparation/geometry-conditioning-cpu-v1/proof.json",
+      "sha256": "61f3f6e03e44bf714fc8f3e82d2d5af50afea216f4fced563c3ef7fd3c459c18"
+    }
+  },
+  "native_train_ready": false,
+  "training_started": false
+}
