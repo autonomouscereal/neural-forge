@@ -254,9 +254,33 @@ def test_pack_artifact_exact_ids_lengths_and_supervision(tmp_path):
     tensors = st.load_file(manifest["shard"])
     assert manifest["sha256"] == t.sha(Path(manifest["shard"]))
     assert tensors["assistant_mask"].dtype == torch.bool
+    assert torch.equal(tensors["target_mask"], tensors["assistant_mask"])
     assert tensors["input_ids"].shape == tensors["assistant_mask"].shape
     assert int(tensors["lengths"][0]) == manifest["tokens"]
     assert manifest["production_training_ready"] is False
+
+
+def test_actual_qtext_loader_caches_only_shifted_assistant_targets(tmp_path):
+    torch = pytest.importorskip("torch")
+    st = pytest.importorskip("safetensors.torch")
+    source = os.environ.get("CHIMERA_QTEXT_BASELINE")
+    if not source:
+        streamed = os.environ.get("CHIMERA_STREAMED_BASELINE")
+        source = str(Path(streamed).parent / "qtext_teacher_cache.py") if streamed else None
+    if not source or not Path(source).is_file():
+        pytest.skip("set CHIMERA_QTEXT_BASELINE to the actual native cache tool; no model weights loaded")
+    native_spec = importlib.util.spec_from_file_location("recovery_qtext_cache_fixture", source)
+    native = importlib.util.module_from_spec(native_spec)
+    sys.modules[native_spec.name] = native
+    native_spec.loader.exec_module(native)
+    manifest = t.prepare_text([row()], ContractTokenizer(), tmp_path, tmp_path / "packed", 4096)
+    loaded = native.load_text_corpus(Path(manifest["shard"]))
+    tensors = st.load_file(manifest["shard"])
+    expected = torch.zeros_like(tensors["assistant_mask"])
+    expected[:, :-1] = tensors["assistant_mask"][:, 1:]
+    assert torch.equal(loaded["store_mask"], expected)
+    assert loaded["stored_positions_planned"] == int(expected.sum()) == manifest["supervised_tokens"]
+    assert loaded["mask_source"].startswith("target_mask shifted")
 
 
 def test_pack_split_admission_quarantine_and_atomic_artifacts(tmp_path):
@@ -329,7 +353,9 @@ def test_d3_compatible_velocity_hook_gradient_parity_and_sealed_binding():
     noisy = torch.tensor([[[2., 3., 0., 0.], [4., 5., 0., 0.]]])
     target = torch.tensor([[[0., 0., 1., 2.], [0., 0., 3., 4.]]])
     predicted = torch.zeros_like(target).requires_grad_()
-    got = t.flow_velocity_loss(predicted, target, types, weights, bands, param="x0", x_t=noisy, sigma=sigma)
+    allocation = {1: (0, 2)}
+    got = t.flow_velocity_loss(predicted, target, types, weights, bands, param="x0", x_t=noisy, sigma=sigma,
+                               noisy_feature_bands=allocation)
     got.backward()
     reference = torch.zeros_like(target).requires_grad_()
     # Algebraically identical velocity loss: each endpoint error scales 1/sigma.
@@ -340,7 +366,8 @@ def test_d3_compatible_velocity_hook_gradient_parity_and_sealed_binding():
     receipt = {"schema": "chimera_recovery.native_flow_cache.v1", "sealed": True, "all_finite": True,
                "all_structural_ok": True, "guided_teacher": True, "no_clean_target_in_inputs": True,
                **{key: "a" * 64 for key in ("cache_sha256", "corpus_sha256", "teacher_sha256", "recovery_amendment_sha256")},
-               "route": "image_generate", "target_kind": "x0", "prediction_kind": "x0", "input_layout": "feature", "target_layout": "emission"}
+               "route": "image_generate", "target_kind": "x0", "prediction_kind": "x0", "input_layout": "feature", "target_layout": "emission",
+               "noisy_feature_bands": {"1": [0, 2]}, "noisy_feature_bands_sha256": t.digest({"1": [0, 2]})}
     with pytest.raises(t.ReadinessError, match="sealed guided"):
         t.ReadyObjectiveAdapter({**receipt, "sealed": False})
     features = torch.zeros(1, 2, 6144)
@@ -357,6 +384,43 @@ def test_d3_compatible_velocity_hook_gradient_parity_and_sealed_binding():
     assert torch.allclose(actual, expected.detach())
     actual.backward()
     assert torch.allclose(pred.grad[..., :4], predicted.grad)
+
+
+def test_velocity_suballocation_excludes_ace_conditioning_and_rejects_implicit_slice():
+    torch = pytest.importorskip("torch")
+    bands = {4: {"feature": (0, 384), "emission": (0, 128)}}
+    features = torch.zeros(1, 2, 6144)
+    features[..., :128] = 123.  # deliberately unrelated context, never x_t
+    features[..., 256:384] = 2.
+    targets = torch.zeros_like(features)
+    targets[..., :128] = 1.
+    pred = torch.zeros_like(features).requires_grad_()
+    types = torch.full((1, 2), 4, dtype=torch.int64)
+    weights, sigma = torch.ones(1, 2), torch.full((1, 2), .5)
+    with pytest.raises(t.ReadinessError, match="explicit audited"):
+        t.flow_velocity_loss(pred, targets, types, weights, bands, x_t=features, sigma=sigma)
+    loss = t.flow_velocity_loss(pred, targets, types, weights, bands, x_t=features, sigma=sigma,
+                                noisy_feature_bands={4: (256, 384)}, target_kind="canonical_velocity")
+    assert float(loss.detach()) == 9.  # (noisy2/sigma.5 - teacher_velocity1)^2
+    loss.backward()
+    assert (pred.grad[..., :128] == -3 / 64).all() and not pred.grad[..., 128:].any()
+    with pytest.raises(t.ReadinessError, match="suballocation"):
+        t.flow_velocity_loss(pred, targets, types, weights, bands, x_t=features, sigma=sigma,
+                             noisy_feature_bands={4: (128, 384)})
+    receipt = {"schema": "chimera_recovery.native_flow_cache.v1", "sealed": True, "all_finite": True,
+               "all_structural_ok": True, "guided_teacher": True, "no_clean_target_in_inputs": True,
+               **{key: "a" * 64 for key in ("cache_sha256", "corpus_sha256", "teacher_sha256", "recovery_amendment_sha256")},
+               "route": "music_generate", "target_kind": "x0", "prediction_kind": "x0", "input_layout": "feature", "target_layout": "emission",
+               "noisy_feature_bands": {"4": [256, 384]}, "noisy_feature_bands_sha256": t.digest({"4": [256, 384]}),
+               "conditioning_contract": {"ace_source_latents": "zeros", "ace_chunk_masks": "zeros", "regime": "generation_without_target_reference"}}
+    batch = {"input_ids": torch.zeros(1, 8, dtype=torch.int64), "native_media_features": features,
+             "native_media_type_ids": types, "native_media_indices": torch.tensor([[3, 4]]),
+             "native_media_valid_mask": torch.ones(1, 2, dtype=torch.bool), "native_media_positions": torch.zeros(1, 2, 4),
+             "native_media_targets": targets, "native_media_loss_mask": weights, "native_media_noise_levels": sigma}
+    with pytest.raises(t.ReadinessError, match="target reference"):
+        t.ReadyObjectiveAdapter(receipt).bind("music_generate", batch, bands)
+    features[..., :256] = 0
+    assert torch.isfinite(t.ReadyObjectiveAdapter(receipt).bind("music_generate", batch, bands)(pred))
 
 
 def test_d3_objective_patch_refuses_changed_source(tmp_path):

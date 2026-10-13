@@ -28,7 +28,10 @@ test require distinct output directories. Connected provenance groups cannot
 cross splits. Explicit `quality.train_ready=false` rows cannot enter the shard.
 The output directory is published only after all validation and file creation.
 Media cannot be discarded into a text
-shard. The shard contains `input_ids`, `lengths`, and bool `assistant_mask`.
+shard. The shard contains `input_ids`, `lengths`, bool `assistant_mask`, and an
+identical target-indexed `target_mask` for the native QTextCache loader. Its
+loader shifts targets internally; prompt and tool-result positions are omitted.
+This changes the shard digest, so caches made for earlier shards cannot be reused.
 
 The existing teacher-cache builder accepts this shard's `input_ids` and
 `lengths`. Its build-text command loads the teacher; it is a later runtime action,

@@ -24,6 +24,16 @@ Input features and emission targets have explicit allocation layouts; H3 uses
 actual packed source positions. Every source group, cache and teacher must remain
 the same on resume.
 
+Every sealed cache receipt pins `noisy_feature_bands` and its canonical JSON
+SHA256. No loss silently selects the first channels of a conditioning band.
+Native ACE packs source64, chunk-mask64 and noisy64 in c*2+k order, so its noisy
+suballocation is feature256:384 to emission0:128. Music generation additionally
+requires the source and chunk-mask features to be zero under a target-free
+generation recipe; the old clean-source S8 stimulus is rejected. The tiny random
+fixture explicitly declares its own six noisy channels and never claims native
+ACE recipe validation. The optional existing D3 rate hook now also requires
+`--noisy-feature-bands <allocation.json>` with its velocity adapter.
+
 The frozen D3 section does not pin its own optimizer/LR defaults. A production
 config must explicitly supply unit/emission/LoRA LRs, betas, epsilon, weight decay,
 clipping, warmup and minimum LR ratio, recorded in the amendment. This driver has
