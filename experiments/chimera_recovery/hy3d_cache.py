@@ -187,8 +187,9 @@ def audit_source_shard(cache, items_path, index, source_sha, source_capture):
             sidecar.get("schema") != "omni-campaign.teacher_cache_shard.v2" or sidecar.get("teacher") != TEACHER or
             sidecar.get("index") != index or sidecar.get("item_id") != item["id"] or sidecar.get("item_sha256") != item["sha256"] or
             sidecar.get("corpus_sha256") != corpus["corpus_sha256"] or sidecar.get("config_sha256") != R.digest(config) or
-            config.get("teacher") != TEACHER or sidecar.get("finite") is not True or sidecar.get("item") != item):
+            config.get("teacher") != TEACHER or sidecar.get("finite") is not True):
         raise Error("HY3D raw source shard/sidecar/item/config identity differs")
+    recorded_item_identity(sidecar, item)
     tensors = load_file(str(path), device="cpu")
     trajectory = validate_trajectory(tensors, sidecar)
     image = reconstruct_image(Path(item["path"]), item["sha256"], tensors)
@@ -197,6 +198,16 @@ def audit_source_shard(cache, items_path, index, source_sha, source_capture):
             "item_id": item["id"], "held": item["held"], "contract": contract, "trajectory": trajectory, "image": image,
             "training_started": False, "model_weights_loaded": False, "geometry_training_admission_granted": False,
             "adapter_sha256": R.sha(Path(__file__))}
+
+
+def recorded_item_identity(sidecar, item):
+    """Teacher records its input fields; corpus-only provenance stays separate."""
+    recorded = sidecar.get("item", {})
+    fields = ("caption", "held", "id", "path", "seed", "sha256")
+    if (type(item.get("held")) is not bool or type(item.get("seed")) is not int or
+            any(key not in item or key not in recorded or item[key] != recorded[key] for key in fields)):
+        raise Error("HY3D recorded source item caption/held/id/path/seed/asset differs")
+    return {key: item[key] for key in fields}
 
 
 def geometry_admission(entry, item):

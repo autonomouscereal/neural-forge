@@ -80,6 +80,15 @@ def test_chart_icons_and_held_objects_cannot_receive_geometry_admission():
         H.geometry_admission(row, {**item, "held": True})
 
 
+def test_actual_recorded_item_projection_retains_all_input_identities():
+    recorded = {"caption": "chart", "held": False, "id": "rid#sha", "path": "/image.png", "seed": 1, "sha256": "a" * 64}
+    corpus = {**recorded, "bytes": 120, "dataset": "source", "rid": "rid", "tier": "edit_source"}
+    assert H.recorded_item_identity({"item": recorded}, corpus) == recorded
+    for key, value in (("caption", "different"), ("held", True), ("id", "other"), ("path", "/changed.png"), ("seed", 2), ("sha256", "b" * 64)):
+        with pytest.raises(H.Error, match="recorded source item"):
+            H.recorded_item_identity({"item": {**recorded, key: value}}, corpus)
+
+
 def test_experimental_pack_has_no_targets_in_inputs_and_zero_context_gradients():
     torch = pytest.importorskip("torch")
     noisy = torch.arange(4 * 64).float().reshape(4, 64)
