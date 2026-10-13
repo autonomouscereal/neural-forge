@@ -10,6 +10,7 @@ import argparse
 import ast
 import copy
 import hashlib
+import importlib.util
 import json
 from pathlib import Path
 import re
@@ -22,7 +23,8 @@ STAGES = {
     "D3d": ("vision", "text_answer_kd_plus_vit_feature_mse", "train_vision.py"),
 }
 SOURCES = ("train_stages.py", "train_media.py", "training.py", "media_cache.py",
-           "train_refit.py", "train_music.py", "music_cache.py", "train_vision.py", "vision_cache.py")
+           "train_refit.py", "train_music.py", "music_cache.py", "train_vision.py", "vision_cache.py",
+           "stage_inheritance.py", "native_state_inheritance.py", "stage_jobs.py")
 UNITS = ("ace_dit_L12", "h3_dit_L25_curve6", "qimg_mmdit_L30_img", "hy3d_dit_L10", "qvl32_vit_L13")
 SAFETY = {"minutes": 30, "keep": 2, "max_consecutive_skips": 8, "window": 100, "max_skip_fraction": .2}
 FROZEN_SHA = "c24d21e08815d7acd2ce14aea989d16f84f167eb24a40597966be19284cb1370"
@@ -159,7 +161,14 @@ def amendment(stage):
             "checkpoints (latest2), halt on8 consecutive nonfinite skips or more than20/100 skips, "
             "and quarter-point prompt-conditioned decode review. Frozen holdout/source groups "
             "never enter the sampler. Pin immutable base, parity, active runtime, current driver "
-            "and engine bytes, corpus/cache/amendment identities and exact resume state. A final "
+            "and engine bytes, corpus/cache/amendment identities and exact resume state. Only the "
+            "explicit first D3a unit initializes the shared r16 and native-state chain; every later "
+            "unit/stage inherits both full-bank and cumulative native-state exports from the same "
+            "producing checkpoint. Unit values are replacements; native interface masters remain "
+            "fp32 cumulative deltas against the immutable base, combined before one forward cast. "
+            "Preserve prior learned music tables and all earlier units/interfaces outside the "
+            "current optimizer census. Each stage starts fresh optimizers for its own physical "
+            "trainables; do not add independent banks or import another stage's Adam state. A final "
             "delta is unregistered until native checkpoint composition and independent content/no-"
             "regression review. Preparation does not establish trained-model recovery.\n").encode()
 
@@ -179,7 +188,8 @@ def template(stage, unit, prereg_entry, dtype):
              "preregistration": prereg_entry,
              "hybrid_module": None, "immutable_base_receipt": None, "parity_receipt": None,
              "runtime_assignment": None, "batches_manifest": None,
-             "omni": None, "parent_config": None, "device": None, "kernels": None}
+             "omni": None, "parent_config": None, "device": None, "kernels": None,
+             "shared_r16": None, "native_state": None}
     if unit is not None:
         value["unit"] = unit
     if stage == "D3a":
@@ -218,6 +228,8 @@ def prepare(engine_dir, preregistration, out, *, dtype, python=sys.executable, e
                                             "--config", str(out / (ident + ".config.json")), "--out", str(out / (ident + ".preflight.json"))]})
     result = {"schema": "chimera_recovery.native_stage_jobs.v1", "date": DATE, "stage_contracts": list(STAGES),
               "engine_sources": inventory, "source_preregistration": original, "source_evidence": evidence_pins,
+              "stage_handoff": {"shared_r16": "full_bank_replacement", "native_state": "cumulative_native_state",
+                                "predecessor": "same producing checkpoint for both exports", "first_initialization": "explicit first D3a unit only"},
               "frozen_body_sha256": FROZEN_SHA, "frozen_body_bytes": FROZEN_BYTES,
               "old_d3b_amendment_sha256": hashlib.sha256(old_tail).hexdigest(), "jobs": jobs,
               "numeric_settings_status": "new dated initial choices; no measured optimum claim",
@@ -257,7 +269,7 @@ def materialize(plan_path, expected_sha, job_id, bindings_path, out):
     stage, lane = config["stage"], STAGES[config["stage"]][0]
     bindings = read_json(bindings_path)
     required = {"hybrid_module", "immutable_base_receipt", "parity_receipt", "runtime_assignment", "batches_manifest",
-                "omni", "parent_config", "device", "kernels", "trunk_ffn_width", "python"}
+                "omni", "parent_config", "device", "kernels", "trunk_ffn_width", "python", "shared_r16", "native_state"}
     if not required.issubset(bindings) or set(bindings) - required - {"compose_plan", "decode_review_receipt"}:
         raise Refusal("bindings need exact actual base/runtime/cache/module paths and explicit native layout")
     if type(bindings["trunk_ffn_width"]) is not int or bindings["trunk_ffn_width"] <= 0:
@@ -274,6 +286,7 @@ def materialize(plan_path, expected_sha, job_id, bindings_path, out):
     config.update({"omni": str(omni), "parent_config": parent_config["path"],
                    "device": bindings["device"], "kernels": bindings["kernels"]})
     config["lora"]["trunk_ffn_width"] = bindings["trunk_ffn_width"]
+    config["shared_r16"], config["native_state"] = bindings["shared_r16"], bindings["native_state"]
     for key in ("compose_plan", "decode_review_receipt"):
         if key in bindings:
             config[key] = bindings[key]
@@ -340,6 +353,15 @@ def materialize(plan_path, expected_sha, job_id, bindings_path, out):
                     receipt.get("prompt", {}).get("parent_prompt_ids_reused") is not False):
                 raise Refusal("D3c requires actual shifted conditional music targets")
     config["steps"] = len(ids)
+    def load(name):
+        source = check_pin(plan["engine_sources"][name], plan_path.parent)
+        spec = importlib.util.spec_from_file_location("chimera_stage_binding_" + source.stem, source)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        return module
+    shared = load("stage_inheritance.py").preflight_config(config, out.parent, base_sha)
+    native = load("native_state_inheritance.py").preflight_config(config, out.parent, shared)
     config["preparation_sources"] = plan["engine_sources"]
     config["preparation_plan"] = pin(plan_path)
     write_new(out, canonical(config) + b"\n")
@@ -348,6 +370,7 @@ def materialize(plan_path, expected_sha, job_id, bindings_path, out):
     result = {"schema": "chimera_recovery.native_stage_binding.v1", "stage": stage, "job_id": job_id,
               "config": pin(out), "bindings_source": pin(bindings_path), "plan": pin(plan_path),
               "parent_config": parent_config, "actual_accepted_batches": len(ids), "preflight_argv": argv,
+              "shared_r16": shared, "native_state": native,
               "production_ready": False, "status": "actual artifacts bound; production native preflight still required",
               "training_launched": False, "tensor_targets_loaded": False}
     write_new(out.with_suffix(".binding.json"), canonical(result) + b"\n")

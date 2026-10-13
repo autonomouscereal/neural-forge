@@ -34,6 +34,7 @@ def load_module(path: Path, name: str):
 R = load_module(HERE / "training.py", "chimera_recovery_training_media")
 C = load_module(HERE / "media_cache.py", "chimera_recovery_band_storage")
 I = load_module(HERE / "stage_inheritance.py", "chimera_recovery_shared_r16")
+N = load_module(HERE / "native_state_inheritance.py", "chimera_recovery_native_state")
 Error = R.ReadinessError
 FROZEN_BODY_SHA256 = "c24d21e08815d7acd2ce14aea989d16f84f167eb24a40597966be19284cb1370"
 FROZEN_BODY_BYTES = 15339
@@ -124,6 +125,7 @@ def preflight(config_path: Path) -> dict[str, Any]:
             raise Error("configured base path/digest differs from immutable clone receipt")
         verified["base"] = base
         verified["shared_r16"] = I.preflight_config(config, root, base["base_sha256"])
+        verified["native_state"] = N.preflight_config(config, root, verified["shared_r16"])
         parity = read_json(pinned_file(config["parity_receipt"], root))
         if parity.get("verdict") != "PASS" or parity.get("base_sha256") != base["base_sha256"]:
             raise Error("native hybrid parity must pass on this exact base")
@@ -438,10 +440,11 @@ def train(config_path: Path, out: Path, resume: Path | None = None) -> dict[str,
     hybrid = module.HybridD3(config["omni"], config["parent_config"], module.HybridOptions(dtype=getattr(torch, config["dtype"]),
                             device=config["device"], kernels=config["kernels"], lora=plan, lora_seed=config["seed"], plan=config.get("compose_plan")))
     inherited = I.initialize_stage(hybrid, verified["shared_r16"], config_path.parent)
+    native = N.initialize_stage(hybrid, verified["native_state"], config_path.parent)
     identity = {"config_sha256": check["config_sha256"], "base": verified["base"], "batches_manifest_sha256": config["batches_manifest"]["sha256"],
                 "hybrid": hybrid.identity(), "preregistration": verified["preregistration"], "driver_sha256": check["driver_sha256"],
                 "objective_adapter_sha256": check["objective_adapter_sha256"], "optimizer": config["optimizer"], "unit": config["unit"],
-                "hybrid_module_sha256": config["hybrid_module"]["sha256"], "shared_r16": inherited}
+                "hybrid_module_sha256": config["hybrid_module"]["sha256"], "shared_r16": inherited, "native_state": native}
     engine = D3bEngine(module, hybrid, config["unit"], config["optimizer"], identity, total_steps=config["steps"])
     if resume:
         engine.resume(resume)
@@ -488,8 +491,9 @@ def train(config_path: Path, out: Path, resume: Path | None = None) -> dict[str,
     engine.save(out / "checkpoint-final")
     engine.export(out / "delta")
     shared = I.export_from_engine(engine, out / "checkpoint-final", out / "shared-r16", verified["shared_r16"]["context"], "D3b", config["unit"])
+    native = N.export_from_engine(engine, out / "checkpoint-final", out / "native-state", verified["shared_r16"]["context"], "D3b", shared)
     return {"schema": SCHEMA, "status": "complete", "step": engine.step, "training_complete": True, "registered": False,
-            "shared_r16": shared, "requires_checkpoint_compose_adapter": True}
+            "shared_r16": shared, "native_state": native, "requires_checkpoint_compose_adapter": True}
 
 
 def main(argv=None):
