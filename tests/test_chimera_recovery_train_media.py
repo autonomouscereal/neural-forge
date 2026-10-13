@@ -77,3 +77,15 @@ def test_actual_tiny_hybrid_velocity_updates_and_exact_resume(tmp_path):
     assert result["production_ready"] is False
     assert (out / "initial" / "receipt.json").is_file()
     assert (out / "delta" / "manifest.json").is_file()
+
+
+def test_h3_source_positions_are_dispatched_by_source_and_media_ids_match_base():
+    torch = pytest.importorskip("torch")
+    batch = {"input_ids": torch.tensor([[1, 2, 50, 50]]), "native_media_features": torch.zeros(1, 2, 6144),
+             "native_media_type_ids": torch.tensor([[2, 3]]), "native_media_positions": torch.zeros(1, 2, 4),
+             "native_media_indices": torch.tensor([[2, 3]]), "native_media_valid_mask": torch.ones(1, 2, dtype=torch.bool),
+             "native_media_noise_levels": torch.ones(1, 2), "charted_source_positions": torch.zeros(1, 4, 3)}
+    segment = M.make_segment(batch, media_placeholder=50)
+    assert segment["source_positions"]["h3"] is batch["charted_source_positions"]
+    with pytest.raises(M.Error, match="immutable base ledger"):
+        M.make_segment(batch, media_placeholder=51)

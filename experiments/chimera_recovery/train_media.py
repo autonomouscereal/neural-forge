@@ -138,6 +138,8 @@ def preflight(config_path: Path) -> dict[str, Any]:
             pinned_file(item["tensors"], batches_path.parent)
             receipt = read_json(pinned_file(item["teacher_receipt"], batches_path.parent))
             R.ReadyObjectiveAdapter(receipt)
+            if receipt["cache_sha256"] != item["tensors"]["sha256"] or receipt["corpus_sha256"] != batches.get("corpus_sha256"):
+                raise Error("native teacher receipt does not bind this exact tensor shard and admitted corpus")
             if receipt["recovery_amendment_sha256"] != verified["preregistration"]["amendment_sha256"]:
                 raise Error("native cache objective amendment differs from this run")
             if receipt["route"] != R.route_name(item["route"]):
@@ -190,14 +192,18 @@ def configure_trainables(hybrid: Any, unit: str, config: dict[str, Any]):
     return placement, census, optimizer, ownership
 
 
-def make_segment(batch: dict[str, Any]) -> dict[str, Any]:
+def make_segment(batch: dict[str, Any], *, media_placeholder: int | None = None) -> dict[str, Any]:
     if batch["input_ids"].shape[0] != 1 or not bool(batch["native_media_valid_mask"].all()):
         raise Error("HybridD3 requires one unpadded sample per call")
+    if media_placeholder is not None:
+        actual = batch["input_ids"].gather(1, batch["native_media_indices"])
+        if not bool((actual == media_placeholder).all()):
+            raise Error("native media placeholder IDs differ from actual immutable base ledger")
     segment = {"ids": batch["input_ids"], "features": batch["native_media_features"], "types": batch["native_media_type_ids"],
                "positions": batch["native_media_positions"], "indices": batch["native_media_indices"],
                "sigma": batch["native_media_noise_levels"], "media_rows": batch["native_media_type_ids"].shape[1]}
     if "charted_source_positions" in batch:
-        segment["source_positions"] = batch["charted_source_positions"]
+        segment["source_positions"] = {"h3": batch["charted_source_positions"]}
     return segment
 
 
@@ -224,7 +230,7 @@ def capture_xd(module, engine, batches, root: Path, out: Path, device: str):
     for item in batches:
         batch = load_file(str(pinned_file(item["tensors"], root)), device=device)
         R.validate_native_batch(item["route"], batch)
-        segment = make_segment(batch)
+        segment = make_segment(batch, media_placeholder=engine.hybrid.media_placeholder)
         context = engine.hybrid.prepare(segment)
         with torch.no_grad():
             x_d = engine.hybrid.run_layers(context["x"], 0, engine.placement.depth, context, units_at_stop=False)
@@ -446,7 +452,7 @@ def train(config_path: Path, out: Path, resume: Path | None = None) -> dict[str,
         receipt = read_json(pinned_file(item["teacher_receipt"], root))
         compute = R.ReadyObjectiveAdapter(receipt).bind(item["route"], batch, hybrid.bands,
                                                     parent_signs={int(k): v for k, v in item.get("parent_signs", {}).items()})
-        segment = make_segment(batch)
+        segment = make_segment(batch, media_placeholder=hybrid.media_placeholder)
         try:
             result = engine.train_step(segment, compute, x_d=xd.get(item["id"]).unsqueeze(0))
         except Exception:

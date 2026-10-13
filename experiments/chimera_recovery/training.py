@@ -474,7 +474,7 @@ def validate_native_batch(route: str, batch: dict[str, Any]) -> dict[str, Any]:
             raise ReadinessError("flow training requires finite 0 < sigma <= 1")
         if name == "joint_av":
             source = batch.get("charted_source_positions")
-            if source is None or source.ndim != 3 or source.shape[0] != b or source.shape[-1] != 3 or not bool(torch.isfinite(source).all()):
+            if source is None or source.shape != (b, ids.shape[1], 3) or not bool(torch.isfinite(source).all()):
                 raise ReadinessError("H3 requires authentic packed [B,S,3] source positions")
     return {"route": name, "stage": stage, "objective": objective, "shape": list(features.shape),
             "valid_media_rows": int(valid.sum()), "production_adapter_verified": False}
@@ -617,6 +617,11 @@ class ReadyObjectiveAdapter:
         x_t = batch["native_media_features"]
         sigma = batch["native_media_noise_levels"]
         allocation = {int(kind): tuple(value) for kind, value in self.cache_receipt["noisy_feature_bands"].items()}
+        if self.cache_receipt["prediction_kind"] == "raw" or self.cache_receipt["target_kind"] == "parent_raw":
+            declared_signs = self.cache_receipt.get("parent_signs")
+            if (not isinstance(declared_signs, dict) or parent_signs is None or
+                    {str(kind): value for kind, value in parent_signs.items()} != declared_signs):
+                raise ReadinessError("raw parent signs differ from sealed objective receipt")
         active_types = {int(value) for value in types[mask > 0].unique().tolist()}
         if not active_types.issubset(allocation):
             raise ReadinessError("sealed cache lacks supervised modality noisy-channel allocation")

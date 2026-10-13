@@ -73,3 +73,30 @@ foundation source environment above.
 No production job is started as part of this preparation. Sealed native teacher
 cache adapters and their accepted batch manifests remain the immediate external
 prerequisites. Missing synchronized H3 AV or genuine HY3D targets stay blocked.
+
+`media_cache.py` implements the genuine Stage-C QIMG velocity-cache conversion.
+It requires a sealed cache manifest SHA and exact teacher item file, verified
+connected-group media admission with frozen eval pins, and the real parent
+tokenizer. It reconstructs x_t with the original CPU generator and proves the
+recorded noise SHA, denoising identity and CFG branches before packing any
+native rows. Inputs use feature512:576, targets use emission256:320, with actual
+parent-template prompt tokens and normalized native image-grid positions.
+The driver checks placeholder tokens against the actual base ledger. Teacher,
+corpus, amendment, native tensor, source cache and source group pins travel into
+each receipt. The student raw head and QIMG sign=-1 map to canonical velocity.
+
+```bash
+CUDA_VISIBLE_DEVICES='' python experiments/chimera_recovery/media_cache.py \
+  --cache /path/to/sealed/qimg-velocity-cache --manifest-sha256 <sha256> \
+  --items /path/to/qimg_items.media_a.jsonl \
+  --admission /path/to/verified/media-admission/manifest.json \
+  --tokenizer /home/cereal/models/Qwen3.8-27B-Uncensored \
+  --amendment-sha256 <sha256> --out /path/to/new/native-qimg --limit 2
+```
+
+`--limit` produces a bounded CPU preparation proof with an unsealed batch
+manifest; the production driver refuses it. Omit it only for an authorized full
+cache conversion. ACE needs an additional audited semantic-code conditioning
+prefix and its actual teacher source/chunk-mask recipe. H3/HY3D conversion needs
+their genuine synchronized and geometry cache contracts. QIMG preparation does
+not claim those adapters are available.
