@@ -112,3 +112,24 @@ def test_media_admission_refuses_placeholder_train_and_cross_split_groups(tmp_pa
     path.write_text(json.dumps(manifest))
     with pytest.raises(M.Error, match="crosses train/holdout"):
         M.media_admission(path, "b" * 64)
+
+
+def test_excluded_connected_media_groups_are_retained_but_cannot_be_admitted(tmp_path):
+    row = {"schema": "recovery_media_admission.v1", "kind": "qimg", "item_id": "excluded", "recovery_group_id": "mixed",
+           "split": "excluded", "train_admitted": False, "blockers": ["mixed_source_group"],
+           **{key: "a" * 64 for key in ("asset_sha256", "prompt_sha256", "conditioning_sha256")}}
+    data = tmp_path / "admission.jsonl"
+    manifest = {"schema": "recovery_media_admission.v1", "connected_groups_verified": True, "eval_disjoint": True,
+                "sources": {"qimg_items": {"sha256": "b" * 64}, "eval_rows": {"sha256": "c" * 64}},
+                "outputs": {"admission": {"path": str(data), "rows": 1}}}
+    path = tmp_path / "manifest.json"
+    def write():
+        data.write_text(json.dumps(row) + "\n")
+        manifest["outputs"]["admission"]["sha256"] = M.R.sha(data)
+        path.write_text(json.dumps(manifest))
+    write()
+    assert M.media_admission(path, "b" * 64)[1]["excluded"] == row
+    row["blockers"] = []
+    write()
+    with pytest.raises(M.Error, match="exclusion blockers"):
+        M.media_admission(path, "b" * 64)
