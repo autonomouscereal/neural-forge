@@ -73,6 +73,8 @@ class MusicBandEngine:
 
     def train_step(self, segment, *, prompt_length, topk_codes, topk_logprobs_band):
         import torch
+        if self.step >= self.total_steps:
+            raise Error("D3c exhausted declared one-pass step budget")
         ids, n = segment["ids"], topk_codes.shape[0]
         if (ids.ndim != 2 or ids.shape[0] != 1 or ids.dtype != torch.int64 or prompt_length < 1 or n < 1 or
                 topk_codes.ndim != 2 or topk_logprobs_band.shape != topk_codes.shape or

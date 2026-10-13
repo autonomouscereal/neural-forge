@@ -217,10 +217,10 @@ def test_preregistration_pin_and_objective_drift(tmp_path):
     frozen = b"## 1. Scope\nguided-velocity KD\n"
     document = tmp_path / "PREREGISTRATION_OMNI_STAGE_D_v1.md"
     document.write_bytes(frozen + b"\n## Amendments\n(none)\n")
-    h = __import__("hashlib").sha256(frozen).hexdigest()
+    h = __import__("hashlib").sha256(frozen + b"\n").hexdigest()
     (tmp_path / "tools/stage2_training_receipt.py").write_text(
         f"STAGE2_PREREGISTRATION_SECTION = '## 1. Scope'\nSTAGE2_PREREGISTRATION_NEXT_SECTION = '\\n## Amendments'\n"
-        f"STAGE2_PREREGISTRATION_SHA256 = '{h}'\nSTAGE2_PREREGISTRATION_BYTE_LENGTH = {len(frozen)}\n")
+        f"STAGE2_PREREGISTRATION_SHA256 = '{h}'\nSTAGE2_PREREGISTRATION_BYTE_LENGTH = {len(frozen) + 1}\n")
     (tmp_path / "tools/d3_hybrid_module.py").write_text('FLOW = dict(default="x0")\n')
     audit = t.audit_campaign(tmp_path)
     assert audit["preregistration"]["verified"]
