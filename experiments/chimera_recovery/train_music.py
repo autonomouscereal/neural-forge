@@ -43,7 +43,9 @@ class MusicBandEngine:
             raise Error("D3c needs an untied head, positive step budget and a fresh stage-specific hybrid")
         self.offset = model.music_band_begin - model.base_vocab
         self.rows = model.band_embed.shape[0] - self.offset
-        self.code_rows = self.rows if identity.get("fixture") is True else 64000
+        self.code_rows = identity.get("fixture_written_code_rows", self.rows) if identity.get("fixture") is True else 64000
+        if type(self.code_rows) is not int or not 1 <= self.code_rows <= self.rows:
+            raise Error("D3c written code rows must be within allocated music band")
         if identity.get("fixture") is not True:
             if self.rows != 65536 or model.music_band_begin != 252416 or model.base_vocab != 248320 or model.cfg.hidden_size != 5120:
                 raise Error("D3c production must own the exact frozen65536x5120 music-band contract")

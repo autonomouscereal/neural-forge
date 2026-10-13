@@ -13,7 +13,7 @@ sys.modules[spec.name] = C
 spec.loader.exec_module(C)
 
 
-def setup(tmp_path):
+def setup(tmp_path, written_codes=None):
     torch = pytest.importorskip("torch")
     source = os.environ.get("CHIMERA_D3_BASELINE")
     if not source:
@@ -24,6 +24,8 @@ def setup(tmp_path):
     optimizer = {"band_lr": .001, "lora_lr": .001, "betas": [.9, .95], "eps": 1e-8, "weight_decay": 0.,
                  "clip": 1., "warmup_steps": 0, "min_lr_ratio": 1.}
     identity = {"fixture": True, "stage": "D3c", "base_seed": 17}
+    if written_codes is not None:
+        identity["fixture_written_code_rows"] = written_codes
     def construct():
         plan = module.trainer_module().SitePlanConfig(rank=4, alpha=4., k3_rank=0, trunk_ffn_width=module.TINY.TRUNK, gain=False)
         hybrid = module.HybridD3(built["dir"], built["parent_config"], module.HybridOptions(dtype=torch.float32, device="cpu", kernels="torch",
@@ -33,7 +35,7 @@ def setup(tmp_path):
     prompt = torch.tensor([[1, 2, 3]])
     previous = torch.tensor([[4, 5, 4]]) + engine.model.music_band_begin
     segment = {"ids": torch.cat([prompt, previous], dim=1)}
-    teacher = torch.randn(4, engine.rows, generator=torch.Generator().manual_seed(31))
+    teacher = torch.randn(4, engine.code_rows, generator=torch.Generator().manual_seed(31))
     lp = torch.log_softmax(teacher, -1)
     values, ids = lp.topk(4, -1)
     kwargs = {"prompt_length": 3, "topk_codes": ids, "topk_logprobs_band": values}
@@ -84,3 +86,14 @@ def test_nonfinite_lora_gradient_cannot_partially_step_host_tables(tmp_path):
 def test_music_optimizer_cannot_guess_defaults():
     with pytest.raises(C.Error, match="explicitly pin"):
         C.options({"band_lr": .001})
+
+
+def test_reserved_music_rows_do_not_enter_code_kl_or_receive_adam_updates(tmp_path):
+    torch, engine, _, segment, kwargs = setup(tmp_path, written_codes=10)
+    embed, head = engine.embed_master[10:].clone(), engine.head_master[10:].clone()
+    result = engine.train_step(segment, **kwargs)
+    assert not result["skipped"] and result["head_rows"] == 10 and result["allocated_music_rows"] == 16
+    assert torch.equal(embed, engine.embed_master[10:]) and torch.equal(head, engine.head_master[10:])
+    assert not engine.embed_optimizer.steps[10:].any() and not engine.head_optimizer.steps[10:].any()
+    assert engine.head_optimizer.steps[:10].tolist() == [1] * 10
+    assert engine.ownership["host_music_tables"]["reserved_rows_frozen"] == 6
