@@ -67,6 +67,10 @@ def test_positive_sigma_noise_target_separation_and_source_positions(tmp_path):
     assert not batch['native_media_features'][..., :480].any() and not batch['native_media_features'][..., 512:].any()
     assert chart['read_policy'] == F.READ_POLICY and 'clean_sigma' not in chart
     assert chart['native_parent_xyz_parity'] is False and chart['latent_frames_per_channel'] == 167
+    compact, storage = F.T.C.compact_native_batch(batch, {3: {'feature': (480, 512), 'emission': (224, 256)}})
+    assert storage == F.STORAGE and 'native_media_features' not in compact and 'native_media_targets' not in compact
+    inflated = F.T.C.inflate_native_batch(compact, storage)
+    assert set(inflated) == set(batch) and all(torch.equal(inflated[key], value) for key, value in batch.items())
     full_noise, _, same_seed = F.build_batch(source, prefix, proof, clean + 9., sigma=1., **kwargs)
     earlier, _, _ = F.build_batch(source, prefix, proof, clean, sigma=1., **kwargs)
     assert torch.equal(full_noise['native_media_features'], earlier['native_media_features'])
@@ -75,7 +79,7 @@ def test_positive_sigma_noise_target_separation_and_source_positions(tmp_path):
     with pytest.raises(F.Error, match='positive sigma'):
         F.build_batch(source, prefix, proof, clean, sigma=0., **kwargs)
 
-def setup(tmp_path):
+def setup(tmp_path, *, native_inheritance=False):
     torch = pytest.importorskip('torch')
     source = os.environ.get('CHIMERA_D3_BASELINE')
     if not source:
@@ -99,6 +103,10 @@ def setup(tmp_path):
         plan = module.trainer_module().SitePlanConfig(rank=4, alpha=4., k3_rank=0, trunk_ffn_width=module.TINY.TRUNK, gain=False)
         model = module.HybridD3(built['dir'], built['parent_config'], module.HybridOptions(dtype=torch.float32, device='cpu', kernels='torch',
             lora=plan, lora_seed=3, pin_boundaries=False, prefetch=False))
+        if native_inheritance:
+            context = {'fixture': True, 'base_sha256': 'a' * 64, 'parent_config_sha256': 'b' * 64, 'hybrid_module_sha256': 'c' * 64}
+            S.T.I.initialize_stage(model, {'mode': 'initialize', 'context': context}, tmp_path)
+            S.T.N.initialize_stage(model, {'mode': 'initialize', 'context': context}, tmp_path)
         return S.SpeechFlowEngine(module, model, 'tiny_h3', optimizer, {'fixture': True, 'seed': 17}, total_steps=3)
     engine = construct()
     segment = module.tiny_segment(engine.hybrid.cfg, 'h3', prompt=6, rows=6, seed=8)
@@ -181,3 +189,18 @@ def test_speaking_sampler_discards_any_input_feature_values_and_never_accepts_ta
     assert latent.shape == (1, 6, engine.hybrid.bands[3]['feature'][1] - engine.hybrid.bands[3]['feature'][0])
     with pytest.raises(TypeError):
         S.sample_latents(engine, segment, prompt_length=6, seed=7, clean_target=before)
+
+
+def test_speaking_cumulative_native_adapter_keeps_both_interface_gradients_and_resume(tmp_path):
+    torch, _, engine, construct, segment, target, weights = setup(tmp_path, native_inheritance=True)
+    for group in ('bridge', 'emission'):
+        values = [v for k, v in engine.census.items() if k.startswith(group + '.')]
+        assert values and all(v.is_leaf and v.dtype == torch.float32 for v in values)
+    first = engine.train_step(segment, target, weights, prompt_length=6)
+    assert all(first['group_norms'][g] > 0 for g in ('unit', 'bridge', 'emission', 'lora'))
+    engine.save(tmp_path / 'native-interrupted')
+    engine.train_step(segment, target, weights, prompt_length=6)
+    resumed = construct()
+    resumed.resume(tmp_path / 'native-interrupted')
+    resumed.train_step(segment, target, weights, prompt_length=6)
+    assert all(torch.equal(v, resumed.census[k]) for k, v in engine.census.items())

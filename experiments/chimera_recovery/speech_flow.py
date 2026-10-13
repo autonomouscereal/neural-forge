@@ -33,7 +33,9 @@ SCHEMA = 'chimera_recovery.speech_flow_batches.v1'
 SIGMAS = [.05, .3, .7, 1.]
 SEED = 20261013
 VOICES = {'Ryan', 'Aiden', 'Vivian', 'Serena'}
-DEPENDENCIES = ('audio_cache.py', 'audio_dialogue.py', 'h3_audio_chart.py', 'h3_audio_probe.py', 'training.py')
+DEPENDENCIES = ('audio_cache.py', 'audio_dialogue.py', 'h3_audio_chart.py', 'h3_audio_probe.py', 'training.py', 'media_cache.py')
+STORAGE = {'schema': 'chimera_recovery.native_band.v1', 'width': 6144,
+           'bands': {'3': {'feature': [480, 512], 'emission': [224, 256]}}, 'channel_loss_mask': False}
 
 
 def dependency_pins():
@@ -149,6 +151,7 @@ def validate_batch(batch, receipt, root):
             row.get('recovery_group_id') != receipt.get('recovery_group_id') or
             receipt.get('source_row_sha256') != R.digest(record) or receipt.get('adapter_sha256') != R.sha(Path(__file__)) or
             receipt.get('dependencies') != dependency_pins() or
+            receipt.get('storage') != STORAGE or
             receipt.get('input_layout') != 'feature' or receipt.get('target_layout') != 'emission' or
             receipt.get('prediction_kind') != 'x0' or receipt.get('target_kind') != 'x0' or
             receipt.get('noisy_feature_bands') != {'3': [480, 512]} or receipt.get('no_clean_target_in_inputs') is not True):
@@ -219,7 +222,10 @@ def prepare(source, clean_manifest, clean_sha, admission_path, admission_sha, to
             batch, chart, seed = build_batch(record, prefix, proof, latent, proof_sha=R.sha(proof_path),
                 amendment_sha=amendment_sha, charted_attention_sha=chart_sha, sigma=sigma)
             target = temporary / (basename + f'.sigma{index}.safetensors')
-            save_file(batch, str(target))
+            stored, storage = T.C.compact_native_batch(batch, {3: {'feature': (480, 512), 'emission': (224, 256)}})
+            if storage != STORAGE:
+                raise Error('speaking compact storage disagrees with audited native type3 allocation')
+            save_file(stored, str(target))
             receipt = {'schema': 'chimera_recovery.speech_flow_cache.v1', 'sealed': True, 'all_finite': True,
                 'id': ident + f':sigma{index}', 'source_id': ident, 'stage': STAGE, 'objective': OBJECTIVE,
                 'split': 'train', 'held': False, 'guided_teacher': False, 'teacher_logits_used': False,
@@ -231,11 +237,13 @@ def prepare(source, clean_manifest, clean_sha, admission_path, admission_sha, to
                 'corpus_sha256': admission_sha, 'tensors_sha256': R.sha(target), 'amendment_sha256': amendment_sha,
                 'charted_attention_sha256': chart_sha, 'chart': chart, 'sigma': sigma, 'noise_seed': seed,
                 'prompt_length': prefix['prompt_length'], 'tokenizer_files': {name: C.pin(tokenizer_dir / name) for name in D.TOKENIZER_PINS},
-                'adapter_sha256': R.sha(Path(__file__)), 'dependencies': dependency_pins(), 'native_parent_xyz_parity': False}
+                'adapter_sha256': R.sha(Path(__file__)), 'dependencies': dependency_pins(), 'storage': storage,
+                'native_parent_xyz_parity': False}
             receipt_path = temporary / (basename + f'.sigma{index}.receipt.json')
             receipt_path.write_bytes(R.canonical(receipt) + b'\n')
             batches.append({'id': receipt['id'], 'source_id': ident, 'route': 'speech_generate',
-                'recovery_group_id': row['recovery_group_id'], 'tensors': final_pin(target), 'teacher_receipt': final_pin(receipt_path)})
+                'recovery_group_id': row['recovery_group_id'], 'tensors': final_pin(target),
+                'teacher_receipt': final_pin(receipt_path), 'storage': storage})
     if not batches:
         raise Error('no globally admitted speaking targets; diagnostic encodings do not grant admission')
     result = {'schema': SCHEMA, 'sealed': True, 'stage': STAGE, 'objective': OBJECTIVE, 'split': 'train',
