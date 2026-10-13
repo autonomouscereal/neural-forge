@@ -254,6 +254,53 @@ def test_velocity_objective_explicit_conversion_and_type_balancing():
                                target_kind="parent_raw", x_t=x_t, sigma=sigma)
 
 
+def test_d3_compatible_velocity_hook_gradient_parity_and_sealed_binding():
+    torch = pytest.importorskip("torch")
+    types = torch.ones(1, 2, dtype=torch.int64)
+    weights = torch.ones(1, 2)
+    # Input noisy latent is allocated in feature channels 0:2, emitted in 2:4.
+    bands = {1: {"feature": (0, 2), "emission": (2, 4)}}
+    sigma = torch.tensor([[0.5, 0.25]])
+    noisy = torch.tensor([[[2., 3., 0., 0.], [4., 5., 0., 0.]]])
+    target = torch.tensor([[[0., 0., 1., 2.], [0., 0., 3., 4.]]])
+    predicted = torch.zeros_like(target).requires_grad_()
+    got = t.flow_velocity_loss(predicted, target, types, weights, bands, param="x0", x_t=noisy, sigma=sigma)
+    got.backward()
+    reference = torch.zeros_like(target).requires_grad_()
+    # Algebraically identical velocity loss: each endpoint error scales 1/sigma.
+    expected = ((reference[..., 2:4] - target[..., 2:4]) / sigma[..., None]).square().mean()
+    expected.backward()
+    assert torch.allclose(got, expected) and torch.allclose(predicted.grad, reference.grad)
+    assert not predicted.grad[..., :2].any()
+    receipt = {"schema": "chimera_recovery.native_flow_cache.v1", "sealed": True, "all_finite": True,
+               "all_structural_ok": True, "guided_teacher": True, "no_clean_target_in_inputs": True,
+               **{key: "a" * 64 for key in ("cache_sha256", "corpus_sha256", "teacher_sha256", "recovery_amendment_sha256")},
+               "route": "image_generate", "target_kind": "x0", "prediction_kind": "x0", "input_layout": "feature", "target_layout": "emission"}
+    with pytest.raises(t.ReadinessError, match="sealed guided"):
+        t.ReadyObjectiveAdapter({**receipt, "sealed": False})
+    features = torch.zeros(1, 2, 6144)
+    features[..., :2] = noisy[..., :2]
+    targets = torch.zeros_like(features)
+    targets[..., 2:4] = target[..., 2:4]
+    batch = {"input_ids": torch.zeros(1, 8, dtype=torch.int64), "native_media_features": features,
+             "native_media_type_ids": types, "native_media_indices": torch.tensor([[3, 4]]),
+             "native_media_valid_mask": torch.ones(1, 2, dtype=torch.bool), "native_media_positions": torch.zeros(1, 2, 4),
+             "native_media_targets": targets, "native_media_loss_mask": weights, "native_media_noise_levels": sigma}
+    compute = t.ReadyObjectiveAdapter(receipt).bind("image_generate", batch, bands)
+    pred = torch.zeros_like(features).requires_grad_()
+    actual = compute(pred)
+    assert torch.allclose(actual, expected.detach())
+    actual.backward()
+    assert torch.allclose(pred.grad[..., :4], predicted.grad)
+
+
+def test_d3_objective_patch_refuses_changed_source(tmp_path):
+    path = tmp_path / "d3.py"
+    path.write_text("pass\n")
+    with pytest.raises(t.ReadinessError, match="D3 baseline moved"):
+        t.d3_objective_patch(path)
+
+
 def test_real_native_tensor_contract_rejects_alias_leakage():
     torch = pytest.importorskip("torch")
     features = torch.ones(1, 2, 6144)

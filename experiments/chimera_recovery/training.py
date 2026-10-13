@@ -52,6 +52,7 @@ PINNED_FILES = (
     "queues/d1_launch.sh", "tools/queues/d3.sh",
 )
 STREAMED_BASELINE_SHA256 = "77091f8ab1581c1edac3e3f1c1e5d727d60f8fb8465745c03a6eb6b12f0567da"
+D3_BASELINE_SHA256 = "540fca2d9d976da336c8d24ae5369c5a303ff37367cae54a9bcfc762a7e95197"
 
 
 class ReadinessError(ValueError):
@@ -472,6 +473,145 @@ def native_velocity_loss(prediction: Any, target: Any, types: Any, weights: Any,
     return torch.stack(losses).mean()
 
 
+def flow_velocity_loss(prediction: Any, x0_target: Any, types: Any, mask: Any, bands: dict[int, dict[str, Any]], *,
+                       param: str = "x0", x_t: Any = None, sigma: Any = None,
+                       signs: dict[int, float] | None = None, target_kind: str = "x0", x_t_layout: str = "feature") -> Any:
+    """D3 flow_x0_loss-compatible hook, with a velocity objective.
+
+    Python `param` names the emission head parameterization. It does not select
+    the objective. Old raw-head predictions require signs; x0 heads require the
+    exact noisy input and sigma, and always get sigma-aware velocity gradients.
+    The default teacher argument is x0 to fit existing D3 teacher_x0 callers.
+    """
+    if param not in {"x0", "raw", "canonical_velocity"}:
+        raise ReadinessError("unsupported D3 head parameterization")
+    emission = {int(kind): tuple(band["emission"]) for kind, band in bands.items()}
+    if x_t is not None and x_t_layout == "feature":
+        # Bridge inputs and head outputs have distinct allocation tables. Never
+        # assume a noisy latent occupies the same channels in both layouts.
+        import torch
+        aligned = torch.zeros_like(prediction)
+        for modality in (int(value) for value in torch.unique(types[mask > 0]).tolist()):
+            if modality not in bands or "feature" not in bands[modality]:
+                raise ReadinessError("velocity conversion requires the audited feature-to-emission allocation")
+            flo, fhi = bands[modality]["feature"]
+            elo, ehi = emission[modality]
+            if fhi - flo != ehi - elo or not 0 <= flo < fhi <= x_t.shape[-1]:
+                raise ReadinessError("feature/emission widths differ or noisy latent band is invalid")
+            rows = types == modality
+            aligned[..., elo:ehi][rows] = x_t[..., flo:fhi][rows]
+        x_t = aligned
+    elif x_t_layout != "emission":
+        if x_t is not None or x_t_layout != "feature":
+            raise ReadinessError("noisy input layout must be explicit feature or emission")
+    return native_velocity_loss(prediction, x0_target, types, mask, emission,
+                                prediction_kind="parent_raw" if param == "raw" else param,
+                                target_kind=target_kind, x_t=x_t, sigma=sigma, parent_signs=signs)
+
+
+@dataclass(frozen=True)
+class ReadyObjectiveAdapter:
+    """Bind actual sealed-cache tensors to D3b's loss_fn(prediction) callback.
+
+    This adapter is usable by a production driver but cannot launch that driver.
+    A recipe receipt is mandatory; synthetic rate checks use the pure loss hook
+    separately and never produce this production-oriented binding.
+    """
+    cache_receipt: dict[str, Any]
+
+    def __post_init__(self):
+        receipt = self.cache_receipt
+        if receipt.get("schema") != "chimera_recovery.native_flow_cache.v1" or any(
+                receipt.get(field) is not True for field in ("sealed", "all_finite", "all_structural_ok", "guided_teacher", "no_clean_target_in_inputs")):
+            raise ReadinessError("velocity adapter requires a sealed guided native cache and reviewed input/target separation")
+        for field in ("cache_sha256", "corpus_sha256", "teacher_sha256", "recovery_amendment_sha256"):
+            require_sha(receipt.get(field), field)
+        if receipt.get("target_kind") not in {"x0", "canonical_velocity", "parent_raw"}:
+            raise ReadinessError("sealed cache must declare teacher target parameterization")
+        if receipt.get("prediction_kind") not in {"x0", "raw", "canonical_velocity"}:
+            raise ReadinessError("sealed cache must declare student head parameterization")
+        if receipt.get("input_layout") != "feature" or receipt.get("target_layout") != "emission":
+            raise ReadinessError("sealed cache must declare native feature inputs and emission targets")
+
+    def bind(self, route: str, batch: dict[str, Any], bands: dict[int, dict[str, Any]], *,
+             parent_signs: dict[int, float] | None = None):
+        contract = validate_native_batch(route, batch)
+        if contract["stage"] != "D3b":
+            raise ReadinessError("velocity adapter can only bind a D3b flow route")
+        if self.cache_receipt.get("route") != route_name(route):
+            raise ReadinessError("sealed native cache route differs from objective binding")
+        # Capture the exact adapter-provided tensors, not a recomputed/clean input.
+        target = batch["native_media_targets"]
+        types = batch["native_media_type_ids"]
+        mask = batch["native_media_loss_mask"]
+        x_t = batch["native_media_features"]
+        sigma = batch["native_media_noise_levels"]
+        def compute(prediction):
+            return flow_velocity_loss(prediction, target, types, mask, bands,
+                                      param=self.cache_receipt["prediction_kind"], target_kind=self.cache_receipt["target_kind"],
+                                      x_t=x_t, sigma=sigma, signs=parent_signs)
+        return compute
+
+
+def d3_objective_patch(source: Path) -> tuple[str, dict[str, Any]]:
+    """Add a real explicit CLI callback hook to D3's existing lr=0 rate driver.
+
+    It leaves old x0 rate/synthetic defaults unchanged. An imported pure velocity
+    adapter gets authentic noisy features/sigma from the segment. This is rate
+    preparation only: rate targets remain labeled random and are not sealed-cache
+    production supervision. ReadyObjectiveAdapter.bind supplies that later path.
+    """
+    baseline = sha(source)
+    if baseline != D3_BASELINE_SHA256:
+        raise ReadinessError("D3 baseline moved; inspect before regenerating objective patch")
+    before = source.read_bytes().decode().replace("\r\n", "\n")
+    after = before
+    changes = [
+        ('def rate_cell(hybrid: HybridD3, placement: UnitPlacement, seg: dict[str, Any], *, stage: str, steps: int) -> tuple[dict[str, Any], list[str]]:\n',
+         'def rate_cell(hybrid: HybridD3, placement: UnitPlacement, seg: dict[str, Any], *, stage: str, steps: int, objective_adapter: Callable | None = None) -> tuple[dict[str, Any], list[str]]:\n'),
+        ('        loss_fn = lambda pred: flow_x0_loss(pred, target, context["types"], mask, hybrid.bands)  # noqa: E731\n',
+         '        if objective_adapter is None:\n'
+         '            loss_fn = lambda pred: flow_x0_loss(pred, target, context["types"], mask, hybrid.bands)  # noqa: E731\n'
+         '        else:\n'
+         '            loss_fn = lambda pred: objective_adapter(pred, target, context["types"], mask, hybrid.bands, param="x0", x_t=seg["features"], sigma=seg["sigma"], signs=flow_signs())  # noqa: E731\n'
+         '        cell.update({"flow_objective": "guided_velocity" if objective_adapter else "x0", "teacher_targets": "random rate fixture, not production cache"})\n'),
+        ('def command_rate(args: argparse.Namespace) -> int:\n    started = time.time()\n',
+         'def command_rate(args: argparse.Namespace) -> int:\n'
+         '    objective_adapter = None\n'
+         '    if args.flow_objective == "guided_velocity":\n'
+         '        if not args.objective_adapter:\n'
+         '            raise D3Error("guided_velocity requires --objective-adapter PATH to audited recovery training.py")\n'
+         '        adapter_path = Path(args.objective_adapter)\n'
+         '        spec = importlib.util.spec_from_file_location("chimera_recovery_objective_adapter", adapter_path)\n'
+         '        module = importlib.util.module_from_spec(spec)\n'
+         '        sys.modules[spec.name] = module\n'
+         '        spec.loader.exec_module(module)\n'
+         '        objective_adapter = getattr(module, "flow_velocity_loss", None)\n'
+         '        if not callable(objective_adapter):\n'
+         '            raise D3Error("objective adapter lacks flow_velocity_loss")\n'
+         '    elif args.objective_adapter:\n'
+         '        raise D3Error("--objective-adapter requires --flow-objective guided_velocity")\n'
+         '    started = time.time()\n'),
+        ('        cell, cell_refusals = rate_cell(hybrid, placement, seg, stage=args.stage, steps=int(args.steps))\n',
+         '        cell, cell_refusals = rate_cell(hybrid, placement, seg, stage=args.stage, steps=int(args.steps), objective_adapter=objective_adapter)\n'),
+        ('    r.add_argument("--stage", default="d3b", choices=("d3b", "d3d"))\n',
+         '    r.add_argument("--stage", default="d3b", choices=("d3b", "d3d"))\n'
+         '    r.add_argument("--flow-objective", default="x0", choices=("x0", "guided_velocity"))\n'
+         '    r.add_argument("--objective-adapter", help="audited recovery training.py exporting flow_velocity_loss; rate fixture only")\n'),
+    ]
+    for old, new in changes:
+        if after.count(old) != 1:
+            raise ReadinessError("D3 objective patch anchor absent or ambiguous")
+        after = after.replace(old, new, 1)
+    ast.parse(after)
+    patch = "".join(difflib.unified_diff(before.splitlines(True), after.splitlines(True), fromfile="a/d3_hybrid_module.py", tofile="b/d3_hybrid_module.py"))
+    return patch, {"schema": "chimera_recovery.d3_objective_patch.v1", "baseline_sha256": baseline,
+                   "patched_lf_sha256": hashlib.sha256(after.encode()).hexdigest(), "patch_sha256": hashlib.sha256(patch.encode()).hexdigest(),
+                   "changes": len(changes), "objective_flag": "--flow-objective guided_velocity --objective-adapter <audited training.py>",
+                   "rate_only_random_teacher_targets": True, "production_driver_implemented": False, "amendment_required": True,
+                   "frozen_preregistration_edited": False}
+
+
 def streamed_supervision_patch(source: Path) -> tuple[str, dict[str, Any]]:
     """Emit a minimal patch against the audited exact campaign baseline.
 
@@ -738,6 +878,9 @@ def main(argv: list[str] | None = None) -> int:
     patch = commands.add_parser("patch-streamed")
     patch.add_argument("--source", type=Path, required=True)
     patch.add_argument("--out", type=Path, required=True)
+    d3patch = commands.add_parser("patch-d3-objective")
+    d3patch.add_argument("--source", type=Path, required=True)
+    d3patch.add_argument("--out", type=Path, required=True)
     bind = commands.add_parser("bind-text-cache")
     bind.add_argument("--packed-manifest", type=Path, required=True)
     bind.add_argument("--cache", type=Path, required=True)
@@ -752,8 +895,8 @@ def main(argv: list[str] | None = None) -> int:
         args.out.write_bytes(canonical(config) + b"\n")
         print(json.dumps(config["recovery_binding"]))
         return 0
-    if args.command == "patch-streamed":
-        patch_text, receipt = streamed_supervision_patch(args.source)
+    if args.command in {"patch-streamed", "patch-d3-objective"}:
+        patch_text, receipt = (streamed_supervision_patch if args.command == "patch-streamed" else d3_objective_patch)(args.source)
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_bytes(patch_text.encode("utf-8"))
         args.out.with_suffix(args.out.suffix + ".json").write_bytes(canonical(receipt) + b"\n")

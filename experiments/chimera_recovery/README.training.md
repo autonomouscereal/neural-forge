@@ -78,6 +78,34 @@ This helper alone does not wire a production D3 driver or create media teacher
 caches. `optimizer_ownership` checks the actual trainable delta bank, including
 functional tensors outside frozen module trees, against optimizer parameters.
 
+`flow_velocity_loss` exports the existing D3 `flow_x0_loss` Python signature and
+uses `bands[type]['emission']`. Noisy bridge inputs are remapped explicitly from
+`bands[type]['feature']` before x0 conversion. `ReadyObjectiveAdapter` binds
+actual tensors to D3b's `loss_fn(prediction)` callback; it requires a reviewed
+`chimera_recovery.native_flow_cache.v1` receipt with sealed/finite/structural,
+guided-teacher, and input/target-separation attestations, teacher/cache/corpus/
+amendment hashes, declared student/teacher parameterizations, and layouts.
+Production cache adapters must emit that receipt; a fake receipt is not evidence.
+
+The candidate D3 patch adds a real optional callback to its existing lr=0 rate
+entry point, selected by `--flow-objective guided_velocity --objective-adapter
+/path/to/training.py`. It preserves existing x0 rate/synthetic defaults. Rate
+targets remain random, labeled fixtures; this flag does not create a production
+teacher cache or production D3 run. The baseline documents `--flow-param`, but
+that flag does not exist in its CLI parser. Python `param='raw'` still selects
+raw-head parameterization, and its old loss still scores converted x0 endpoints.
+
+```bash
+python experiments/chimera_recovery/training.py patch-d3-objective \
+  --source /path/to/audited/d3_hybrid_module.py \
+  --out /path/to/new/d3_velocity_objective.patch
+```
+
+The D3 source baseline is SHA256
+`540fca2d9d976da336c8d24ae5369c5a303ff37367cae54a9bcfc762a7e95197`.
+The CPU test compares adapter loss and gradients against independent sigma-
+scaled endpoint algebra, including distinct input/output channel allocations.
+
 All semantic routes have explicit dispatch; unknown routes never become text.
 Vision/video/audio understanding require real conditioning and answer caches.
 Image/edit, audio, music, joint AV, and volume generation require their native
