@@ -165,6 +165,20 @@ cannot consume this separate clean-VAE source admission as a sealed trajectory
 cache. These assets support a distinct supervised flow proposal; they do not
 repair or relabel the earlier planar/icon teacher targets.
 
+`geometry_conditioning.py` prepares compact, source-sealed raw C11 image ingress
+for every corrected render. It rechecks all global preparation input hashes and
+the complete source/admission joins, retains 8 train-eligible and 16 held family
+identities, and never loads mesh targets or assistant answers into features.
+The exact pinned resize function executes in isolation from the source module's
+service/model entry points. NumPy patches retain both duplicated temporal frames
+and every original normalized RGB pixel. `verify_ingress` separately executes
+the original pinned Torch patchify and its `_torch` helper for all sources, with
+bitwise grid/row/pixel/position checks. The raw RGBA policy is explicit PIL RGB
+conversion with verified black transparent-pixel RGB; it does not claim parity
+with HY3D's white-background DINO preprocessor. Its `.npz` feature payload is
+input data only, with no learned features, teacher targets, latent queries or
+training-readiness claim.
+
 Run focused local tests:
 
 ```powershell
