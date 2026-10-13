@@ -33,6 +33,32 @@ def test_d3_optimizer_has_no_invented_production_defaults():
         M.optimizer_config({**valid, "lora_lr": 0.})
 
 
+def test_h3_dispatch_requires_pinned_source_reconstruction_before_loss(tmp_path, monkeypatch):
+    class CpuValue:
+        def detach(self): return self
+        def cpu(self): return self
+    item={"route":"joint_av","source_id":"authentic-source","recovery_group_id":"train-group"}
+    with pytest.raises(M.Error,match="explicitly source-pinned"):
+        M.authenticate_h3_batch(item,{"input":CpuValue()},{},tmp_path,None,tmp_path)
+    helper=tmp_path/"h3_native.py";helper.write_text("# source dispatch contract fixture\n")
+    pin={"path":str(helper),"sha256":M.R.sha(helper)}
+    class Validator:
+        def validate_batch(self,cpu,receipt,root,aliases=None):
+            assert cpu=={"input":value} and receipt=={"source":"sealed"}
+            return {"verified":True,"source_id":"authentic-source","recovery_group_id":"train-group",
+                    "supervised_units":1,"denominator_kind":"native_guided_pair_mean","adapter_sha256":pin["sha256"]}
+    value=CpuValue();validator=Validator()
+    monkeypatch.setattr(M,"load_module",lambda path,name:validator)
+    assert M.authenticate_h3_batch(item,{"input":value},{"source":"sealed"},tmp_path,pin,tmp_path)==pin
+    old=validator.validate_batch
+    validator.validate_batch=lambda *args,**kwargs:{**old(*args,**kwargs),"recovery_group_id":"held-group"}
+    with pytest.raises(M.Error,match="ownership differs"):
+        M.authenticate_h3_batch(item,{"input":value},{"source":"sealed"},tmp_path,pin,tmp_path)
+    helper.write_text("changed source\n")
+    with pytest.raises(M.Error,match="changed"):
+        M.authenticate_h3_batch(item,{"input":value},{"source":"sealed"},tmp_path,pin,tmp_path)
+
+
 def test_d3_receipts_refuse_changed_bytes_and_frozen_body(tmp_path):
     path = tmp_path / "receipt.json"
     path.write_bytes(b"{}")

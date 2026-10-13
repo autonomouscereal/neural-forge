@@ -113,6 +113,7 @@ class TensorContractTests(unittest.TestCase):
             (root/'receipt.json').write_bytes(N.R.canonical(receipt)+b'\n')
             manifest={'schema':'chimera_recovery.native_batches.v1','sealed':True,
                 'adapter_kind':'exact_h3_joint_native_dualclock_guided_velocity','complete_source_traversal':True,
+                'dependencies':N.dependency_pins(),'adapter_sha256':N.H.sha(N.HERE/'h3_native.py'),
                 'heldout_groups_excluded':True,'batches':[{'storage':storage,'tensors':N.pin(root/'input.safetensors'),
                     'teacher_receipt':N.pin(root/'receipt.json')}]}
             (root/'manifest.json').write_text(json.dumps(manifest))

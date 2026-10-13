@@ -25,6 +25,10 @@ BANDS = {2:{'feature':(384,480),'emission':(128,224)},3:{'feature':(480,512),'em
 SIGNS = {2:1.,3:1.}
 SUFFIX = '\nNative recovery view: generate only the first 22/24 seconds on 22 frames at 24 fps; preserve the requested source event times and sample each visual event by latest-frame hold.'
 COMMON = ('normalized','corpus_manifest','eval_rows','frozen_exclusions','prior_admission')
+DEPENDENCIES = ('h3_cache.py','media_cache.py','training.py','audio_dialogue.py')
+
+def dependency_pins():
+    return {name:H.sha(HERE/name) for name in DEPENDENCIES}
 
 def pin(path):
     return {'path':str(Path(path).resolve()),'sha256':H.sha(path)}
@@ -325,6 +329,7 @@ def prepare_cache(cache, manifest_sha, encode_cache, items_path, admission_path,
         'geometry_proof':pin(proof_path),'batches':accepted,'excluded_heldout_targets':excluded,
         'uncached_held_source_ids':sorted(i for i,r in av.items() if not r['train_admitted'] and i not in {v['id'] for v in items}),
         'adapter_kind':'exact_h3_joint_native_dualclock_guided_velocity','adapter_sha256':H.sha(Path(__file__)),
+        'dependencies':dependency_pins(),
         'production_training_started':False,'production_training_ready':False}
     (stage/'manifest.json').write_bytes(R.canonical(result)+b'\n');stage.rename(out);return result
 
@@ -340,7 +345,8 @@ def validate_batch(cpu_batch, receipt, manifest_root, *, aliases=None):
     root=Path(manifest_root); native=read(root/'manifest.json')
     if (native.get('schema')!='chimera_recovery.native_batches.v1' or native.get('sealed') is not True or
             native.get('adapter_kind')!='exact_h3_joint_native_dualclock_guided_velocity' or
-            native.get('complete_source_traversal') is not True or native.get('heldout_groups_excluded') is not True):
+            native.get('complete_source_traversal') is not True or native.get('heldout_groups_excluded') is not True or
+            native.get('dependencies')!=dependency_pins() or native.get('adapter_sha256')!=H.sha(Path(__file__))):
         raise Error('sealed complete native H3 source manifest required')
     matches=[]
     for b in native['batches']:
