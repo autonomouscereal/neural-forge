@@ -46,6 +46,18 @@ and no teacher logits. Holdout rows retain genuine encoder proofs but cannot ent
 optimizer batches. `train_audio.py` remains responsible for actual model, stage
 inheritance, amendment, ownership and checkpoint preflight.
 
+For the held-answer review, `audio_sampling.sample_answer(engine, segment,
+prompt_length=..., completion_eos_id=..., max_new_tokens=256)` runs the actual
+full-depth model from clean audio and the native generation prefix. It discards
+all reference-answer IDs and coordinates before model access, extends the
+explicitly amended text ordinal chart, and keeps H3 joint reads restricted to the
+original prompt and observations. It returns generated native token IDs and EOS
+status with input, engine and sampler identities. Decode with the pinned parent
+tokenizer and grade against the independently retained held answer afterward.
+The sampler does not grant the production driver's review pass. Its actual tiny
+native CPU tests prove reference-tail invariance, no parameter updates, EOS and
+budget behavior, nonfinite refusal, and restoration of the bounded read policy.
+
 Keep speaking separate. `speech_flow.py prepare` consumes the original admitted
 speech-only source and its complete genuine encoder manifest. Its
 `D3d_speech_flow` targets are supervised rectified flow from speech waveforms in
