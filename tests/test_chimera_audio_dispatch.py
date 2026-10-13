@@ -30,6 +30,23 @@ def test_missing_sources_surface_concrete_blockers_without_loading_engine(tmp_pa
     assert any('preregistration' in blocker for blocker in result['blockers'])
     assert any('batches_path' in blocker for blocker in result['blockers'])
 
+def test_selected_speaking_successor_replaces_old_direct_d4_order_without_accepting_missing_sources(tmp_path):
+    config = tmp_path / 'config.json'
+    value = {'schema': 'chimera_recovery.audio_stage_config.v1', 'stage': A.STAGE,
+        'objective': A.OBJECTIVE, 'read_policy': A.READ_POLICY, 'dtype': 'float32',
+        'after_stage': 'D3d', 'before_stage': 'D3d_speech_flow', 'safety': A.SAFETY, 'seed': 20261013}
+    config.write_bytes(A.R.canonical(value))
+    result = A.preflight(config)
+    assert not result['production_ready'] and not result['training_started']
+    assert any('base:' in blocker for blocker in result['blockers'])
+    assert not any('audio CE must follow' in blocker or 'audio objective, stage order' in blocker for blocker in result['blockers'])
+    for after, before in [('D3d', 'D4'), ('D3b', 'D3d_speech_flow')]:
+        config.write_bytes(A.R.canonical(dict(value, after_stage=after, before_stage=before)))
+        refused = A.preflight(config)
+        assert not refused['production_ready']
+        assert any('audio CE must follow completed vision D3d and precede selected D3d_speech_flow' in blocker
+                   for blocker in refused['blockers'])
+
 def test_finite_guard_does_not_advance_onepass_on_retry_and_halts_eighth():
     fixture = SimpleNamespace(step=2, consecutive_skips=0, skip_window=[])
     result = None
