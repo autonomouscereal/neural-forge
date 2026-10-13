@@ -1,4 +1,5 @@
 from copy import deepcopy
+from collections import UserDict
 import importlib.util
 import json
 import os
@@ -29,7 +30,8 @@ class PrefixTokenizer:
         self.messages, self.options = messages, options
         return [10, 11, 12] if tokenize else "user followed by assistant generation prefix"
     def __call__(self, text, **kwargs):
-        return {"input_ids": [10, 11, 12]}
+        # Transformers BatchEncoding is a Mapping/UserDict, not a plain dict.
+        return UserDict({"input_ids": [10, 11, 12]})
 
 
 def image():

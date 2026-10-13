@@ -7,6 +7,7 @@ Source XYZ/clean queries/assistant geometry metadata are target-only evidence.
 from __future__ import annotations
 
 import argparse
+from collections.abc import Mapping
 import hashlib
 import json
 import os
@@ -75,7 +76,7 @@ def source_messages(record):
 
 
 def token_ids(value):
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         value = value["input_ids"]
     if hasattr(value, "tolist"):
         value = value.tolist()
