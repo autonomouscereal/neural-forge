@@ -166,7 +166,7 @@ def install_joint_bank(hybrid, joint):
     hybrid._recovery_joint_bank = joint
 
 
-def merged_site_weights(base_weights, joint, index):
+def merged_site_weights(base_weights, joint, index, *, cast=True):
     """Return fresh merged tensors: fp32 accumulation, gain once, final cast.
 
     Inputs are original uncomposed weights in the genuine qwen3_5 layer naming.
@@ -207,7 +207,7 @@ def merged_site_weights(base_weights, joint, index):
     result[down.site][:, down.trunk:] *= gain
     if any(not bool(torch.isfinite(value).all()) for value in result.values()):
         raise Error("D4 merge nonfinite result")
-    return {site: value.to(base_weights[site].dtype).detach().contiguous() for site, value in result.items()}
+    return {site: value.to(base_weights[site].dtype if cast else torch.float32).detach().contiguous() for site, value in result.items()}
 
 
 def activate_native_interfaces(module, hybrid):

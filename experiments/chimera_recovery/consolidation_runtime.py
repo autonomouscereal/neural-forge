@@ -22,6 +22,24 @@ SCHEMA = "chimera_recovery.d4_union_runtime.v1"
 TERMINAL = "D3d_speech_flow"
 
 
+def model_files(source):
+    """Pin actual P1 roots and all composing files, not only shard sizes."""
+    reader = source.reader
+    roots = [reader.shards]
+    if reader.overlay is not None:
+        roots.extend(shards for _, shards in reader.overlay.links)
+    paths = {Path(source.parent_config_path)}
+    if source.plan is not None:
+        paths.add(Path(source.plan))
+    for shards in roots:
+        paths.update(shards.directory / name for name in shards.files)
+        paths.update(shards.directory.glob("*.json"))
+    for ref in (source.identity().get("p1_tool"),):
+        if ref:
+            paths.add(Path(ref["path"]))
+    return {str(path.resolve()): I.pin(path.resolve()) for path in sorted(paths, key=str)}
+
+
 def rebase_text(hybrid, original, d2):
     """Prove every actual text tensor before changing the engine's source.
 
@@ -71,6 +89,7 @@ def rebase_text(hybrid, original, d2):
     # Mutation follows the completed tensor proof. Resident layers are refreshed
     # from the original source; streamed buffers reload on their next use.
     receipt = dict(original_source=original.identity(), d2_native_source=hybrid.source.identity(),
+                   model_files={**model_files(original), **model_files(hybrid.source)},
                    tensor_hashes=hashes, tensor_proof_sha256=I.digest(hashes),
                    text_tensors=len(names), d2_applied_in_source=False, native_reader_retained=True)
     engine.source = original
@@ -217,6 +236,8 @@ class UnionEngine:
         self.initial_native = N.native_inventory(self.hybrid)
 
     def verify_sources(self):
+        for ref in self.identity["rebase"]["model_files"].values():
+            I.pinned(ref, self.root)
         replay_identity(self.rows, self.identity["replay"]["sources"], self.root)
         if I.digest(self.rows) != self.identity["replay"]["row_order_sha256"]:
             raise Error("D4 ordered source rows changed")
@@ -277,16 +298,7 @@ class UnionEngine:
         return dict(applied=True, cursor=self.cursor, step=self.step, rows=len(rows), mean_row_loss=sum(stats) / len(stats),
                     supervised_denominators=denominators, objective_weights=weights, grad_norm=float(norm))
 
-    def checkpoint(self, out):
-        import torch
-        out = Path(out)
-        if out.exists():
-            raise Error("preserve previous D4 checkpoint")
-        self.verify_sources()
-        if self.cursor != min(self.step * self.accumulation, len(self.rows)):
-            raise Error("D4 checkpoint sampler cursor disagrees with applied windows")
-        if any(not bool(torch.isfinite(value).all()) for value in self.census.values()):
-            raise Error("D4 cannot save nonfinite trainables")
+    def verify_frozen(self):
         for key, value in {**N.unit_parameters(self.hybrid), **N.fixed_parameters(self.hybrid)}.items():
             if key in self.initial_frozen and I.tensor_sha(value) != self.initial_frozen[key]:
                 raise Error("D4 frozen native coefficient/base interface changed")
@@ -294,6 +306,18 @@ class UnionEngine:
         for name, label in (("ledger", "ledger_sha256"), ("reserved_embed", "reserved_embed_sha256"), ("reserved_head", "reserved_head_sha256")):
             if I.tensor_sha(music[name]) != music["contract"][label]:
                 raise Error("D4 frozen music ledger/reserved rows changed")
+
+    def checkpoint(self, out):
+        import torch
+        out = Path(out)
+        if out.exists():
+            raise Error("preserve previous D4 checkpoint")
+        self.verify_sources()
+        self.verify_frozen()
+        if self.cursor != min(self.step * self.accumulation, len(self.rows)):
+            raise Error("D4 checkpoint sampler cursor disagrees with applied windows")
+        if any(not bool(torch.isfinite(value).all()) for value in self.census.values()):
+            raise Error("D4 cannot save nonfinite trainables")
         state = dict(schema=SCHEMA, identity=self.identity, step=self.step, cursor=self.cursor, total_steps=self.total_steps,
                      trainables={name: value.detach().cpu().clone() for name, value in self.census.items()},
                      optimizer=self.optimizer.state_dict(), optimizer_steps=self.optimizer_steps, rng=torch.random.get_rng_state(),
