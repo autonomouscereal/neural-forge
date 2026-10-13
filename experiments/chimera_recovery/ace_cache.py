@@ -127,6 +127,12 @@ def load_cpu_conditioner(comfy_root: Path, weights: Path):
     if R.sha(weights) != TEACHER_SHA:
         raise Error("ACE component weight file is not the sealed teacher")
     sys.path.insert(0, str(comfy_root))
+    # Same CPU-only optional-backend policy as audited media_b_teacher_cache
+    # comfy_modules(): kitchen expects ImportError for unavailable Triton,
+    # whereas installed GPU Triton may raise RuntimeError with no active driver.
+    # FP32 quantizer/detokenizer use native Torch CPU ops, not those GPU kernels.
+    if "triton" not in sys.modules:
+        sys.modules["triton"] = None
     argv = sys.argv
     try:
         sys.argv = [argv[0], "--cpu"]
