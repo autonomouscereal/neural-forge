@@ -1,4 +1,4 @@
-The D1 v6 portable candidate runs only inside an existing, exact-task, allocator-owned
+The D1 portable candidate runs only inside an existing, exact-task, allocator-owned
 GPU0/GPU4 container. Native ordinals are `cuda:0,cuda:1`; host indices are never
 passed through to the trainer. This preparation does not acquire GPUs or start
 training. The original live queue and the CPU-only v4 candidate remain intact.
@@ -34,7 +34,7 @@ Use the exact published `tools/d1_allocated_root.py`, whose code SHA is pinned.
 Root then runs `d1_allocated_root.py bind --plan PLAN --plan-sha256 SHA --group
 ACTUAL_UUID --out NEW_ASSIGNMENT`. This reads only the parameterized exact group
 through the primary raw PostgreSQL backend, checks Docker identity/image/device
-UUIDs/access, K3 completion/occupancy, legacy selected-card queues, foreign GPU
+UUIDs/access, the explicitly selected resource policy, legacy selected-card queues, foreign GPU
 processes, and initial `MemAvailable >= 100 GiB`. CUDA probing happens only after
 live allocation/container/host admission. The source tree is genuinely hashed.
 
@@ -55,3 +55,21 @@ updates. This does not forcibly terminate an in-flight kernel or release an
 allocation: root retains responsibility for inspecting the stopped job and
 releasing its exact group. Completed deltas require separate reviewed ledger
 publication. Different assignment identity cannot silently resume old outputs.
+
+Without resource amendment flags, the builder preserves the historical completed
+K3-pass/four-sealed-cache prerequisite. Selecting both `--resource-amendment FILE`
+and `--resource-amendment-sha256 SHA` enables only the exact reviewed dated record
+in `d1_allocated_contract.RESOURCE_AMENDMENT`. The candidate, plan, runtime
+assignment and fresh proof bind that record's SHA. Missing, changed or unknown
+policies refuse authority; there is no automatic replacement of an old policy.
+
+The dated resource amendment removes external K3 cache completion as a D1
+prerequisite. The original v4 queue documents this gate as host RAM exclusion
+(lines20–23). The actual v4 trainer opens only the child/parent checkpoints and
+the successor IDs (lines1215–1261), obtains frozen K3 weight slices from the child
+(line972), and streams direct parent states (lines1337–1356). Its K3 cache work is
+independent. The amendment retains no active K3 process, initial100GiB available
+RAM, no foreign selected-card processes/queues, exact allocator ownership and
+fresh root checks before every apply. Root must coordinate the resource window;
+the monitor refuses later updates if another K3 process starts. Completion
+history remains diagnostic metadata, and all original v4/v6 artifacts stay intact.

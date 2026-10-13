@@ -14,6 +14,26 @@ OWNER = "codex-chimera-recovery-01a1326f"
 SOURCE_ROOT = "/home/cereal/omni-campaign/distill/codex-preparation-01a1326f-20261013"
 SOURCE_MAP = dict(schema="chimera_recovery.d1_source_path_map.v1", source_root=SOURCE_ROOT,
                   container_root="/inputs/successor", semantics="resolve_only_original_manifest_bytes_and_sha256s_preserved")
+DEFAULT_RESOURCE_POLICY = dict(schema="chimera_recovery.d1_resource_policy.v1", policy="legacy_k3_completion")
+RESOURCE_AMENDMENT = dict(
+    schema="chimera_recovery.d1_resource_policy.v1", policy="exclusive_live_resources", date="2026-10-13",
+    reviewed_trainer_sha256="c6b2525b70e1d8c74aeb5a40434e00cc25e43b1647c1afc903046a8da3c4ed03",
+    successor_manifest_sha256="a488e75b46a667ebe91c23a08e5ce50a07a49be8208520f9af2d71bc060bbf88",
+    clone_directory_sha256="8edf50c42090d6d556d71d6c6c71e2405569b5082adaf133f4265bad1d901264",
+    teacher_dependency="Direct immutable Qwen parent hidden-state forwards; frozen K3 weights already in OMNI1 child",
+    removed_prerequisite="K3 pass0..3 completion and four sealed external K3 caches",
+    rationale="External K3 caches are unused by D1; historical completion gate was host RAM exclusion",
+    retained_checks=["No live K3 process", "No foreign selected-GPU processes or legacy selected-GPU queues",
+                     "Initial MemAvailable at least100GiB", "Exact live two-GPU PG/Docker assignment",
+                     "Fresh root resource proof before every optimizer apply", "Unchanged source/base/recipe seals"],
+    selection="Explicit builder path and exact amendment SHA required; no automatic policy adoption")
+
+
+def resource_policy_record(path, expected):
+    value = read(path, expected)
+    if value not in (DEFAULT_RESOURCE_POLICY, RESOURCE_AMENDMENT):
+        raise Error("D1 resource policy is not the exact reviewed legacy policy or resource amendment")
+    return value
 
 
 def source_map_record(path, expected):
@@ -113,6 +133,10 @@ def assignment_record(path, expected):
         raise Error("D1 frozen clone full verified digest differs")
     if value.get("mem_available_launch_floor_gib") != 100 or value.get("max_proof_age_seconds") != 45:
         raise Error("D1 launch memory/freshness policy differs")
+    policy = value.get("resource_policy")
+    if (policy not in (DEFAULT_RESOURCE_POLICY, RESOURCE_AMENDMENT)
+            or value.get("resource_policy_sha256") != hashlib.sha256(canonical(policy) + b"\n").hexdigest()):
+        raise Error("D1 resource policy must match an explicitly pinned reviewed record")
     if (not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{1,100}", value.get("container_name", ""))
             or not re.fullmatch(r"2\.11\.0(?:\+[a-zA-Z0-9.]+)?", value.get("torch_version", ""))
             or value.get("image_id") != "sha256:20e01d3a0d9cd8eda1cde410870c8111918f1e6e06cadfc9016dd4069c223164"
@@ -165,10 +189,14 @@ def verify_docker(assignment, docker):
 def verify_host(assignment, host):
     if host.get("chimera_source_sha256") != assignment["chimera_source_sha256"]:
         raise Error("D1 native source tree changed after runtime assignment")
+    policy = assignment.get("resource_policy")
+    if policy not in (DEFAULT_RESOURCE_POLICY, RESOURCE_AMENDMENT):
+        raise Error("D1 unknown resource policy; no update authority")
     if (host.get("k3_running") is not False or host.get("foreign_gpu_processes")
-            or host.get("k3_passes_complete") is not True or host.get("k3_sealed_manifests", 0) < 4
             or host.get("selected_gpu_queues_running") is not False):
         raise Error("D1 cannot overlap K3 host memory or foreign selected-GPU processes")
+    if policy == DEFAULT_RESOURCE_POLICY and (host.get("k3_passes_complete") is not True or host.get("k3_sealed_manifests", 0) < 4):
+        raise Error("D1 legacy policy still requires completed K3 passes and sealed caches")
     if host.get("phase") == "launch" and host.get("mem_available_gib", 0) < 100:
         raise Error("D1 initial MemAvailable below100GiB")
     if host.get("phase") not in {"launch", "training"}:
@@ -191,6 +219,7 @@ def attest(assignment, assignment_sha, rows, docker, cuda, host, now=None):
                 gpu_uuids=uuids, phase=host["phase"], mem_available_gib=host["mem_available_gib"],
                 chimera_source_sha256=assignment["chimera_source_sha256"], postgres_live=True, docker_live=True,
                 root_controller_sha256=assignment["root_controller_sha256"],
+                resource_policy_sha256=assignment["resource_policy_sha256"],
                 proof_producer="root_raw_pg_and_server_manager", training_launch_authorized=False)
 
 
@@ -210,6 +239,7 @@ def validate_step(args, *, now=None, proof_path=None, candidate_root=None):
             or proof.get("gpu_uuids") != [gpu["uuid"] for gpu in assignment["gpus"]]
             or proof.get("chimera_source_sha256") != assignment["chimera_source_sha256"]
             or proof.get("root_controller_sha256") != assignment["root_controller_sha256"]
+            or proof.get("resource_policy_sha256") != assignment["resource_policy_sha256"]
             or proof.get("postgres_live") is not True or proof.get("docker_live") is not True
             or proof.get("phase") not in {"launch", "training"}
             or proof.get("proof_producer") != "root_raw_pg_and_server_manager"):
@@ -222,6 +252,10 @@ def validate_step(args, *, now=None, proof_path=None, candidate_root=None):
     if candidate["files"].get("source_path_map.json") != assignment["source_path_map_sha256"]:
         raise Error("D1 source resolver differs from runtime assignment")
     source_map_record(candidate_root / "source_path_map.json", assignment["source_path_map_sha256"])
+    if candidate["files"].get("resource_policy.json") != assignment["resource_policy_sha256"]:
+        raise Error("D1 resource amendment differs from runtime assignment")
+    if resource_policy_record(candidate_root / "resource_policy.json", assignment["resource_policy_sha256"]) != assignment["resource_policy"]:
+        raise Error("D1 actual selected resource policy differs")
     if hasattr(args, "devices"):
         required = dict(devices="cuda:0,cuda:1", child="/models/child", parent="/models/parent", dtype="bfloat16",
                         train_dtype="float32", master_dtype="float32", base_digest="full",
