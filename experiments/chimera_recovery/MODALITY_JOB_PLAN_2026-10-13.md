@@ -36,9 +36,9 @@ Separate existing registry/cache evidence:
 |---|---|---|
 | Image generation | Immutable media-admission-v3 admits1126 QIMG sources and excludes922; it removes183 sources that the earlier1309-batch v2 conversion admitted. Root reports actual v3 conversion completed with1126 sealed native batches. The older native manifest `d5868886226e07096028d63af702cff69bd8bf9c8cf793b521b5d2afcd2da3c2` remains historical evidence and is superseded for launch eligibility | Pin the full actual v3 completion/native manifest SHA in launch config; exact registered immutable recovery base/parity, approved objective/optimizer config, runtime assignment, actual D3b updates, decode/content review, delta composition and before/after evaluation |
 | Music DiT generation | `live/adapter_metadata/ace_velocity/manifest.json` is sealed at2026-10-13T14:42:14Z, finite, teacher unchanged,964 shards/964 clips,109 captured heldout clips; file SHA256 `bb348e51c4476f6a12aed36b31c11586dc34fd4a50fc00a810e60666fcc3ffe3`. Immutable media-admission-v3 admits691 clips, excludes273. Actual v5 authentic conditioning/native conversion completed2026-10-13T16:58:42Z:691 clips,2764 batches, native manifest SHA256 `6291173d03a3ffd09add51e19b0ca566d2ca714c9ed52166d9b9b6ffbcb89299` | Pin the actual native/conditioner manifests and exact v3 admission hash in the D3b launch config; exact immutable base/parity, optimizer/amendment, runtime assignment, actual updates and content/decode evaluation remain. The earlier CPU bounded-v2 import failure and v4 admission binding are historical and superseded by actual v5 completion |
-| Music prompt-to-code | `train_music.py` supplies a D3c engine with exact host band masters and LoRA ownership; root reports partial662 ACE-LM shards. V3 excludes all6667 source rows from native training while only4766 are source-train-eligible under the split | Complete sealed ACE-LM top64+tail cache and native prompt/code alignment, heldout admission, production caller, pinned optimizer/amendment, actual updates and prompt-to-code evaluation. Source eligibility and code-conditioned DiT training do not establish this |
+| Music prompt-to-code | `train_music.py` and `train_stages.py` supply the D3c engine/production dispatch with exact host band masters, LoRA ownership and tiny CPU proofs; root's2026-10-13T17:32Z read-only status reports partial838 ACE-LM shards (previous662). V3 excludes all6667 source rows from native training while only4766 are source-train-eligible under the split | Complete sealed ACE-LM top64+tail cache and native prompt/code alignment, heldout admission, pinned optimizer/amendment, actual updates and prompt-to-code evaluation. Source eligibility and code-conditioned DiT training do not establish this |
 | QVL vision features | Root reports7492 sealed QVL feature shards. Immutable media-admission-v3 has2294 source-admitted cache candidates and5198 excluded; native answer/patch adapter remains unavailable | Bind the exact feature cache to admitted image/video question/answer sources and current immutable base. Features alone do not supply answers, video time alignment, or a production D3d training receipt |
-| H3 / HY3D | Root reports no active H3 cache namespace for the recovery fixtures. Actual synchronized clips and genuine OBJ files exist locally | New authentic native captures/converters below. No native target is inferred from raw file metadata |
+| H3 / HY3D | Root reports no active H3 cache namespace for the recovery fixtures. Root's2026-10-13T17:32Z read-only status reports146 incomplete HY3D source shards, which do not establish targets for the distinct procedural fixtures. Actual synchronized clips and genuine OBJ files exist locally | New authentic native captures/converters below, plus complete source traversal/seals for any existing HY3D cache used. No native target is inferred from raw file metadata |
 
 The QIMG/ACE registry caches are distinct corpora. Their hashes do not match the
 new procedural fixture source hash, so their teacher provenance cannot be copied
@@ -167,10 +167,17 @@ rolling safety/skip policy remain enforced. H3 `charted_source_positions` is
 `[B,input_ids_length,3]`, including text prefix and every packed row; the metadata
 dry-run descriptor cannot be copied as a batch.
 
-D3c uses its separate music-band engine and requires a production caller plus
-sealed ACE-LM top64/tail targets. D3d understanding still needs a production
-driver; its route declarations and random shaped loss checks are preparation.
-No executable production configuration is fabricated for either missing path.
+D3a/c/d now have the actual `train_stages.py` production dispatch, native engines,
+strict cache admission, exact-resume/checkpoint paths and tiny CPU proofs. The
+additive `stage_jobs.py` preparation emits three new dated stage amendments and
+seven source-pinned config templates; actual base/runtime/native-batch bindings
+remain absent until independently supplied. D3a explicitly includes independent
+`teacher_delta_host_write` outward-chart targets recaptured on the exact D2 child.
+D3c still requires a complete sealed ACE-LM conditional top64/tail cache; the
+partial source cannot train. QVL D3d needs aligned native patches and assistant
+answer KD in addition to its admitted ViT-block13 features. Audio understanding
+still lacks a native audio-to-text input/answer adapter. See `README.stage_jobs.md`
+for the executable preparation/binding contract. Existing D3b v1 seals are untouched.
 
 For every actual recovery run retain the pre-update identity/optimizer census,
 finite-gradient/update counts, safety and exact-resume receipts, actual decoded
