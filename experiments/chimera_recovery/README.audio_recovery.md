@@ -102,8 +102,18 @@ python experiments/chimera_recovery/audio_cache.py encode-admitted-source \
   --stage-c /work/audio-cache-inputs-v1/stage_c_media_a.py \
   --comfy-root /opt/ComfyUI \
   --audio-vae /opt/ComfyUI/models/vae/minimax_h3_audio_vae_fp32.safetensors \
+  --reuse-runtime \
   --out /work/clean-speech-cache-v1
 ```
+
+`--reuse-runtime` loads the actual source-pinned CPU VAE once. Every waveform
+still receives two genuine encodes, one decode, raw/model/pack checks and
+parent-file SHA verification before and after its proof. The cache seals only
+after the completed waveform count matches its inventory and the actual VAE's
+parameter/buffer digest, parent bytes and imported implementation bytes remain
+unchanged. Imported lazy modules join the verified source inventory. No latent
+output from another waveform is reused. Without this flag the original separate
+runtime loading path remains available.
 
 The actual October13 procedural CPU audit passed all24 clean encodings and
 bitwise reconstruction of eight admitted native batches, owning344 assistant
