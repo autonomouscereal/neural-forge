@@ -15,7 +15,7 @@ try:
 except ImportError:
     import video_teacher as T
 V,A=T.V,T.A
-ENGINE_SHA="77091f8ab1581c1edac3e3f1c1e5d727d60f8fb8465745c03a6eb6b12f0567da"
+ENGINE_SHA="449eecc4acf985556a2454f4af25ead6379d2d515a7d77879f27d9c9d80f9a1a"
 PLAN_SCHEMA='recovery_video_answer_plan.v1'
 BATCH_POLICY={'micro_batch':1,'batch_order':'corpus','max_batch_tokens':8192,'rows_per_shard':8,
     'dtype':'bfloat16','head_precision':'fp32','top_k':64,'vocab_rows':V.TEXT_VOCAB,
@@ -36,6 +36,7 @@ def prepare(*,vl_adapter,writer,plan,plan_sha256,inspection,inspection_sha256,in
     if output.exists():raise ValueError('fresh video-only plan output required')
     adapter=V.module(vl_adapter,V.VL_ADAPTER_SHA,'recovery_video_plan_original_adapter')
     original=adapter.load_writer(writer,V.WRITER_SHA)
+    if original.engine_identity()['sha256']!=ENGINE_SHA:raise ValueError('actual source-audited tps_probe source changed')
     old=adapter.load_plan(plan,plan_sha256)
     replay,rows=T.load_inputs(ingress,ingress_sha256,receipts)
     proof=json.loads(A.pinned({'path':str(inspection),'sha256':inspection_sha256},'authentic processor inspection').read_text())
@@ -84,6 +85,7 @@ def prepare(*,vl_adapter,writer,plan,plan_sha256,inspection,inspection_sha256,in
     value={'schema':PLAN_SCHEMA,'sealed':True,'source_year':2026,'teacher':'q38-video-singleton-assistant-20261013-v1',
         'adapter_contract':old['adapter_contract'],'adapter_sha256':V.VL_ADAPTER_SHA,'writer_sha256':V.WRITER_SHA,
         'engine_sha256':ENGINE_SHA,'original_plan':V.pin(plan),'original_inspection':V.pin(inspection),
+        'stock_control_adapter_sha256':A.file_sha(Path(__file__).with_name('video_stock_control.py')),
         'source_ingress':V.pin(ingress),'source_receipts':V.pin(receipts),'global_join':V.pin(global_join),
         'sources':sources,'assets':assets,'records':records,'batch_policy':BATCH_POLICY,'processor_options':old['processor_options'],
         'all_frames_retained':True,'complete_sequences':True,'assistant_only':True,'batch_shape_invariance_claimed':False,
@@ -96,6 +98,7 @@ def load_plan(path,sha):
     r=T.json_pin(path,sha,PLAN_SCHEMA)
     if (r['batch_policy']!=BATCH_POLICY or r['writer_sha256']!=V.WRITER_SHA or r['adapter_sha256']!=V.VL_ADAPTER_SHA or
             r['engine_sha256']!=ENGINE_SHA or r.get('code_sha256')!=A.file_sha(Path(__file__)) or
+            r.get('stock_control_adapter_sha256')!=A.file_sha(Path(__file__).with_name('video_stock_control.py')) or
             r.get('all_frames_retained') is not True or r.get('complete_sequences') is not True or
             r.get('assistant_only') is not True or r.get('batch_shape_invariance_claimed') is not False):
         raise ValueError('source-pinned full-sequence singleton answer policy differs')
@@ -127,6 +130,7 @@ def original_inputs(vl_adapter,writer,plan,plan_sha256,inspection,inspection_sha
         raise ValueError('actual source-pinned alternate-decoder temporal proof and real allocation required')
     adapter=V.module(vl_adapter,V.VL_ADAPTER_SHA,'recovery_temporal_original_vl_adapter')
     original=adapter.load_writer(writer,V.WRITER_SHA)
+    if original.engine_identity()['sha256']!=ENGINE_SHA:raise ValueError('actual source-audited tps_probe source changed')
     old=json.loads(A.pinned({'path':str(inspection),'sha256':inspection_sha256},'original48 CPU processor inspection').read_text())
     if (old.get('passed') is not True or old.get('adapter_sha256')!=V.VL_ADAPTER_SHA or
             old.get('writer_sha256')!=V.WRITER_SHA or old.get('plan_sha256')!=prepared['original_plan']['sha256'] or
@@ -145,24 +149,33 @@ def control(**kwargs):
     if kwargs['receipt'].exists() or kwargs['output'].exists():raise ValueError('fresh parity namespace required')
     plan,adapter,W=original_inputs(**{k:kwargs[k] for k in ('vl_adapter','writer','plan','plan_sha256','inspection',
         'inspection_sha256','ingress','ingress_sha256','model_dir','allocator_receipt')})
+    if kwargs['stock_adapter_sha256']!=plan['stock_control_adapter_sha256']:
+        raise ValueError('reviewed exact stock VL placement adapter differs from selected plan')
     argv=writer_argv(plan,kwargs['plan'],kwargs['split'],kwargs['model_dir'],kwargs['output'],kwargs['allocator_receipt'])
     args=W.parser().parse_args(argv);args.work_dir=str(kwargs['output']);args.receipt=str(kwargs['receipt'])
     args.corpus=args.corpus[0];args.parity_rows=8;args.parity_length=4096;args.seed=20261013
     corpus=W.load_vl_corpus(Path(args.corpus));source=next(r for r in plan['sources'] if r['split']==kwargs['split'])
     if corpus['sha256']!=source['corpus_sha256'] or corpus['row_ids']!=source['row_ids']:
         raise ValueError('same complete singleton control corpus required')
-    with V.decoder_adapter(W,'pyav_full',kwargs['decoder_wheel']) as decoder:
-        with adapter.assistant_mask_adapter(W):code=W.run_parity(args,'vl')
+    stock=V.module(kwargs['stock_adapter'],kwargs['stock_adapter_sha256'],'recovery_video_stock_offload_control')
+    with stock.reference_placement(W) as placement:
+        with V.decoder_adapter(W,'pyav_full',kwargs['decoder_wheel']) as decoder:
+            with adapter.assistant_mask_adapter(W):code=W.run_parity(args,'vl')
+        # Independent actual full digest after the stock reference forward.
+        stock_after=W.teacher_digest(kwargs['model_dir'],'full',4)
     if not kwargs['receipt'].is_file():raise ValueError('original stock control produced no receipt')
     original=json.loads(kwargs['receipt'].read_text());cache=Path(original['cache_dir'])/'manifest.json'
     value={'schema':'recovery_video_answer_control.v1','source_year':2026,'exit_code':code,
         'source_plan':V.pin(kwargs['plan']),'source_ingress':V.pin(kwargs['ingress']),
         'original_parity_receipt':V.pin(kwargs['receipt']),'original_parity':original,
         'streamed_control_cache':V.pin(cache),'batch_policy':BATCH_POLICY,'split':kwargs['split'],
+        'stock_placement':placement,'stock_adapter':V.pin(kwargs['stock_adapter']),'stock_teacher_after':stock_after,
         'decoder_proof':decoder,'adapter':V.pin(kwargs['vl_adapter']),'writer':V.pin(kwargs['writer']),
         'batch_shape_invariance_claimed':False,'native_train_ready':False,'code_sha256':A.file_sha(Path(__file__))}
     target=kwargs['receipt'].with_name(kwargs['receipt'].stem+'.video-control.json');target.write_bytes(A.canonical(value)+b'\n')
-    if code or original.get('passed') is not True:raise ValueError('original same-singleton stock control failed; receipts preserved')
+    raw=json.loads(cache.read_text())
+    if (code or original.get('passed') is not True or raw['teacher']['tree_sha256_before']!=stock_after['tree_sha256']):
+        raise ValueError('original same-singleton stock control or full teacher integrity failed; receipts preserved')
     return value
 
 
@@ -278,6 +291,14 @@ def convert(*,cache_manifest,cache_manifest_sha256,capture_receipt,capture_recei
             parity.get('corpus_sha256')!=raw['corpus']['sha256'] or parity.get('top_k')!=64 or parity.get('vocab_rows')!=V.TEXT_VOCAB or
             parity.get('batching')!={'micro_batch':1,'max_batch_tokens':8192,'order':'corpus','rows_per_shard':8}):
         raise ValueError('genuine same-full-sequence singleton stock control required')
+    A.pinned(proof['stock_adapter'],'unchanged explicit stock VL placement source')
+    if proof['stock_adapter']['sha256']!=prepared['stock_control_adapter_sha256']:
+        raise ValueError('stock placement source differs from the selected sealed plan')
+    placement=proof.get('stock_placement',{})
+    if (placement.get('reference_placement_only_changed') is not True or
+            placement.get('original_forward_and_exact_id_gate_unchanged') is not True or len(placement.get('reference_facts',[]))!=1 or
+            proof.get('stock_teacher_after',{}).get('mode')!='full' or proof['stock_teacher_after'].get('tree_sha256')!=raw['teacher']['tree_sha256_after']):
+        raise ValueError('genuine full-digest stock offload reference placement proof required')
     A.pinned(proof['original_parity_receipt'],'unchanged original stock parity receipt')
     control_cache=A.pinned(proof['streamed_control_cache'],'unchanged original streamed control cache')
     control_raw=json.loads(control_cache.read_text())
@@ -357,6 +378,8 @@ def main(argv=None):
             for field in fields:s.add_argument('--'+field,type=Path,required=True)
             for field in ('plan-sha256','inspection-sha256'):s.add_argument('--'+field,required=True)
             if name=='prepare':s.add_argument('--global-join-sha256',required=True)
+            if name=='control':
+                s.add_argument('--stock-adapter',type=Path,required=True);s.add_argument('--stock-adapter-sha256',required=True)
         else:
             for field in ('cache-manifest','capture-receipt','control-receipt','receipts','global-join'):s.add_argument('--'+field,type=Path,required=True)
             for field in ('cache-manifest-sha256','capture-receipt-sha256','control-receipt-sha256','global-join-sha256'):s.add_argument('--'+field,required=True)
