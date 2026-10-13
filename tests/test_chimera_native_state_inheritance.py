@@ -187,7 +187,9 @@ def test_actual_native_media_music_vision_continuity_preserves_frozen_families_a
     # Refuse illicit sparse writes and duplicate live owners, without mutation.
     master = third._recovery_native_interfaces["emission.out.weight"].clone()
     desc = third._recovery_native_descriptors["emission.out.weight"]
-    master[0, 0] = 1
+    owned_rows = {index for a, b in desc["ranges"] for index in range(a, b)}
+    unowned_row = next(index for index in range(master.shape[0]) if index not in owned_rows)
+    master[unowned_row, 0] = 1
     with pytest.raises(N.Error, match="outside owned"):
         N.checked_sparse(master, desc, third)
     third.bridge_deltas.append(third.bridge_deltas[0])
