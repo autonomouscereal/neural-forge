@@ -339,6 +339,13 @@ native decode, and lossless channel-major `[80,32]` packing. It records waveform
 reconstruction error, nominal `.025s` intervals, source/teacher/runtime hashes
 and actual tensor bytes. No waveform or latent padding/trimming is permitted.
 
+The actual October13 container sources bind `MiniMaxH3` to `MiniMaxH3AV`, with
+unit-scale inherited `BaseModel.process_latent_in/out`. The probe invokes those
+real pure methods without constructing the DiT, requires bitwise raw/model and
+inverse equality, and also checks the packed transform. Source drift in the
+supported model, inherited method or latent scale refuses the proof. This
+establishes the parent latent transform; it does not grade a diffusion forward.
+
 ```bash
 CUDA_VISIBLE_DEVICES='' /opt/environments/python/comfyui/bin/python \
   experiments/chimera_recovery/h3_audio_probe.py \
@@ -352,7 +359,7 @@ CUDA_VISIBLE_DEVICES='' /opt/environments/python/comfyui/bin/python \
 This probe is CPU first and supplies no runtime allocator or GPU launch. A CPU
 failure is preserved in the receipt with the exact exception; no replacement
 implementation is inserted. A passing raw encoder proof grants no training
-admission: standalone native XYZ, the full parent model-space route, held-group
+admission: standalone native XYZ, held-group
 batch admission and the distinct audio CE/read-policy production binding remain
 separate requirements. Nominal hop intervals do not claim local receptive-field
 support, which the encoder's convolution/attention can spread across time.

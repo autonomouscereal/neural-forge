@@ -3,6 +3,7 @@ import importlib.util
 from pathlib import Path
 import struct
 import sys
+from types import SimpleNamespace
 import wave
 
 import pytest
@@ -99,3 +100,46 @@ def test_cpu_startup_requires_explicit_hidden_cuda(tmp_path, monkeypatch):
     monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
     with pytest.raises(P.Error, match="explicit CUDA_VISIBLE_DEVICES"):
         P.load_runtime(tmp_path / "stage.py", tmp_path)
+
+
+def transform_fixture():
+    torch = pytest.importorskip("torch")
+    class LatentFormat:
+        scale_factor = 1.0
+        def process_in(self, value):
+            return value * self.scale_factor
+        def process_out(self, value):
+            return value / self.scale_factor
+    class MiniMaxH3AV(LatentFormat):
+        pass
+    class BaseModel:
+        def process_latent_in(self, value):
+            return self.latent_format.process_in(value)
+        def process_latent_out(self, value):
+            return self.latent_format.process_out(value)
+    class MiniMaxH3(BaseModel):
+        pass
+    return torch, {"model_base": SimpleNamespace(BaseModel=BaseModel, MiniMaxH3=MiniMaxH3),
+                   "supported_models": SimpleNamespace(MiniMaxH3=SimpleNamespace(latent_format=MiniMaxH3AV)),
+                   "latent_formats": SimpleNamespace(LatentFormat=LatentFormat, MiniMaxH3AV=MiniMaxH3AV)}
+
+
+def test_parent_pure_inherited_transform_without_dit_construction():
+    torch, modules = transform_fixture()
+    raw = torch.arange(2560, dtype=torch.float32).reshape(1, 32, 2, 40)
+    native, packed, receipt = P.model_space_transform(raw, **modules)
+    assert torch.equal(native, raw) and torch.equal(packed[:40], raw[0, :, 0].T)
+    assert receipt["raw_to_model_bitwise_equal"] and receipt["packed_transform_bitwise_equal"]
+    assert not receipt["full_dit_constructed"]
+
+
+def test_latent_scale_or_h3_override_drift_refuses():
+    torch, modules = transform_fixture()
+    raw = torch.zeros(1, 32, 2, 40)
+    modules["latent_formats"].MiniMaxH3AV.scale_factor = .5
+    with pytest.raises(P.Error, match="unit-scale"):
+        P.model_space_transform(raw, **modules)
+    modules["latent_formats"].MiniMaxH3AV.scale_factor = 1.0
+    modules["model_base"].MiniMaxH3.process_latent_in = lambda self, value: value + 1
+    with pytest.raises(P.Error, match="ownership differs"):
+        P.model_space_transform(raw, **modules)
