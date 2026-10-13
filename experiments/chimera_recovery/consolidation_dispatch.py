@@ -269,8 +269,22 @@ def replay_catalog(entry, root, amendment, *, compatible_amendments=(), reviewed
 
 class NativeBackward:
     """Dispatch trusted validators and native losses; never execute dataset code."""
-    def __init__(self, module, root, objective_config):
+    def __init__(self, module, root, objective_config, *, h3_validator=None, config_root=None, h3_aliases=None):
         self.module, self.root, self.objective_config = module, Path(root), objective_config
+        self.h3_validator, self.config_root, self.h3_aliases = h3_validator, Path(config_root or root), h3_aliases
+
+    def authenticate_guided_source(self, row, item, batch, receipt, manifest_root):
+        """The signed loss adapter alone cannot prove genuine H3 target provenance."""
+        from . import train_media as T
+        is_h3 = T.R.route_name(item.get('route')) == 'joint_av'
+        if (row.get('lane') == 'h3') != is_h3:
+            raise Error('D4 guided lane differs from authentic joint AV source route')
+        if not is_h3:
+            return None
+        if row.get('supervised_units') != 1:
+            raise Error('D4 genuine H3 pair denominator must be one')
+        return T.authenticate_h3_batch(item, batch, receipt, manifest_root, self.h3_validator,
+                                      self.config_root, aliases=self.h3_aliases)
 
     def text_batch(self, row, batch, receipt):
         import torch
@@ -344,6 +358,8 @@ class NativeBackward:
             F.validate_batch(batch, receipt, manifest_path.parent)
         elif objective == O.MUSIC:
             S.validate_music_batch(batch, receipt)
+        elif objective == O.GUIDED:
+            self.authenticate_guided_source(row, item, batch, receipt, manifest_path.parent)
         elif objective != O.GUIDED:
             raise Error("D4 objective lacks an audited native callback")
         batch = {key: value.to(hybrid.device) for key, value in batch.items()}
@@ -365,6 +381,35 @@ def job_digest(config):
     # in its own digest would require an impossible cryptographic fixed point.
     return I.digest({key: value for key, value in config.items() if key not in
                      {"runtime_assignment", "runtime_proof_path", "decode_review_pointer"}})
+
+
+def h3_source_aliases(ref, root):
+    """Pin a SHA-keyed mounted-source locator; the validator checks used bytes."""
+    if ref is None:
+        return None
+    values, _ = read(ref, root)
+    if (not isinstance(values, dict) or any(not isinstance(key, str) or len(key) != 64 or
+            any(c not in '0123456789abcdef' for c in key) or not isinstance(value, str) or
+            not Path(value).is_absolute() for key, value in values.items())):
+        raise Error('D4 H3 aliases must map exact source SHA to absolute unchanged mounted file')
+    return values
+
+
+def verify_helpers(config, root, rows):
+    """Pin the actual source guards used by this selected replay, before a model."""
+    expected = {Path(module.__file__).name: I.sha(Path(module.__file__)) for module in (R, R.D, O, C, I, N)}
+    expected[Path(__file__).name] = I.sha(Path(__file__))
+    aliases = None
+    if any(row.get('lane') == 'h3' for row in rows):
+        from . import h3_native as H, train_media as T
+        expected['h3_native.py'] = I.sha(Path(H.__file__))
+        expected['train_media.py'] = I.sha(Path(T.__file__))
+        aliases = h3_source_aliases(config.get('h3_source_aliases'), root)
+    helpers = config['helpers']
+    if any(name not in helpers or helpers[name]['sha256'] != digest or I.sha(I.pinned(helpers[name], root)) != digest
+           for name,digest in expected.items()):
+        raise Error('D4 running union/native/objective/dispatch helper source differs')
+    return aliases
 
 
 def runtime_gate(assignment, proof, job_sha, now=None):
@@ -540,12 +585,7 @@ def preflight(config_path):
         verified["replay"] = replay_catalog(config["replay_manifest"], path.parent,
                     verified["preregistration"]["amendment_sha256"], compatible_amendments=source_amendments, reviewed_plan=reviewed)
         # Exact currently executing helper bytes are part of this run identity.
-        helpers = config["helpers"]
-        expected = {Path(module.__file__).name: I.sha(Path(module.__file__)) for module in (R, R.D, O, C, I, N)}
-        expected[Path(__file__).name] = I.sha(Path(__file__))
-        if any(name not in helpers or helpers[name]["sha256"] != digest or I.sha(I.pinned(helpers[name], path.parent)) != digest
-               for name, digest in expected.items()):
-            raise Error("D4 running union/native/objective/dispatch helper source differs")
+        verified['h3_source_aliases'] = verify_helpers(config, path.parent, verified['replay']['rows'])
     except (ValueError, KeyError, TypeError, OSError) as exc:
         blockers.append("bindings: " + str(exc))
     return dict(schema=SCHEMA, production_ready=False, candidate_preflight_passed=not blockers,
@@ -677,10 +717,14 @@ def train(config_path, out, resume=None):
     replay["sources"].update({key: I.pin(I.pinned(ref, root)) for key, ref in
                             {"preregistration": config["preregistration"], "rates": config["previous_rate_ledger"],
                              "streamed_trainer": config["streamed_trainer"], **config["helpers"]}.items()})
+    if config.get('h3_source_aliases') is not None:
+        replay['sources']['h3_source_aliases'] = I.pin(I.pinned(config['h3_source_aliases'], root))
     engine = R.UnionEngine(union, replay["rows"], replay["sources"], Path(replay["root"]),
                            accumulation=config["accumulation"], clip_norm=config["clip_norm"])
     engine.identity["replay"]["supervised_denominators"] = replay["measured_supervised_units"]
-    return execute(engine, NativeBackward(module, Path(replay["root"]), config["text_objective"]), out,
+    return execute(engine, NativeBackward(module, Path(replay["root"]), config["text_objective"],
+                   h3_validator=config['helpers'].get('h3_native.py'), config_root=root,
+                   h3_aliases=verified.get('h3_source_aliases')), out,
                    gate=gate, review_pointer=config.get("decode_review_pointer"), resume=resume)
 
 

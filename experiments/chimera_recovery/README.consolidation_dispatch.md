@@ -90,6 +90,19 @@ Current small selected geometry source has eight boxes and four sigma pairs
 per source; its conditional/full-parent parity remains explicitly false.
 Genuine H3 guided pairs retain their source-specific signs, own-clock audio
 velocity and original native adapter without extra slope multiplication.
+Before any H3 backward, the dispatcher runs the source-pinned `h3_native.py`
+validator through `train_media.authenticate_h3_batch`. It reconstructs the
+exact original seeded targets, clean encode/padding, dual clocks, captured
+parent packer tensors and globally admitted source/group; a signed structural
+loss receipt is insufficient. Both `h3_native.py` and `train_media.py` must be
+listed in config `helpers` with their actual executing SHA. Optional
+`h3_source_aliases` is a file pin to a JSON map of original source SHA to absolute
+mounted source path. Aliases locate unchanged bytes and never rewrite producer
+receipts. The locator file and helpers enter checkpoint/resume identity; every
+used source byte is reauthenticated by the H3 validator. H3 keeps the original
+one-pair denominator (`supervised_units=1`). Missing validators, other routes,
+changed targets/groups/helper bytes or fabricated denominator refuse before
+device transfer and loss dispatch.
 This dispatcher refuses old guided/planar HY3D substitutes. Final registered native checkpoint publication/parity and
 held-out intelligence/media evaluation remain separate required work.
 

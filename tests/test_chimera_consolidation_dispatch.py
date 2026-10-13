@@ -86,6 +86,61 @@ def test_unknown_cli_modes_and_missing_actual_states_refuse_before_torch(tmp_pat
         D.main(["preflight", "--config", str(config), "--unexpected"])
 
 
+def test_h3_executing_source_helpers_and_sha_locator_are_pinned_before_model(tmp_path):
+    from experiments.chimera_recovery import h3_native as H, train_media as T
+    modules=(D.R,D.R.D,D.O,D.C,D.I,D.N,D)
+    config={'helpers':{Path(module.__file__).name:D.I.pin(Path(module.__file__)) for module in modules}}
+    rows=[{'lane':'h3'}]
+    assert D.verify_helpers(config,tmp_path,[{'lane':'qimg'}]) is None
+    with pytest.raises(D.Error,match='helper source'): D.verify_helpers(config,tmp_path,rows)
+    config['helpers'].update({Path(module.__file__).name:D.I.pin(Path(module.__file__)) for module in (H,T)})
+    alias=tmp_path/'aliases.json'; config['h3_source_aliases']=write(alias,{'a'*64:str((tmp_path/'mounted-original').resolve())})
+    assert D.verify_helpers(config,tmp_path,rows)=={'a'*64:str((tmp_path/'mounted-original').resolve())}
+    different=copy.deepcopy(config); different['helpers']['h3_native.py']['sha256']='f'*64
+    with pytest.raises(D.Error,match='helper source'): D.verify_helpers(different,tmp_path,rows)
+    alias.write_bytes(b'{}')
+    with pytest.raises(D.I.Error): D.verify_helpers(config,tmp_path,rows)
+    for bad in ({'invalid-sha':'/absolute/path'},{'a'*64:'relative/source'},['not','mapping']):
+        config['h3_source_aliases']=write(alias,bad)
+        with pytest.raises(D.Error,match='aliases'): D.verify_helpers(config,tmp_path,rows)
+
+
+def test_guided_h3_dispatch_demands_full_source_guard_before_loss(tmp_path):
+    """Dispatcher boundary fixture; real 32-target reconstruction is independently tested by H3 adapter."""
+    from experiments.chimera_recovery import train_media as T
+    helper=tmp_path/'h3_native.py'
+    helper.write_text('''import hashlib
+from pathlib import Path
+def validate_batch(cpu,receipt,root,*,aliases=None):
+    if not all(value.on_cpu for value in cpu.values()): raise ValueError("CPU source proof missing")
+    if aliases != receipt["expected_aliases"]: raise ValueError("mounted source aliases differ")
+    return {**receipt["proof"],"adapter_sha256":hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
+''')
+    class CPUProbe:
+        on_cpu=False
+        def detach(self): return self
+        def cpu(self): self.on_cpu=True; return self
+    aliases={'a'*64:str((tmp_path/'original').resolve())}
+    callback=D.NativeBackward(None,tmp_path,{},h3_validator=D.I.pin(helper),config_root=tmp_path,h3_aliases=aliases)
+    row={'lane':'h3','supervised_units':1}
+    item={'route':'joint_av','source_id':'captured-source','recovery_group_id':'train-group'}
+    proof={'verified':True,'source_id':'captured-source','recovery_group_id':'train-group',
+           'supervised_units':1,'denominator_kind':'native_guided_pair_mean'}
+    receipt={'proof':proof,'expected_aliases':aliases}
+    assert callback.authenticate_guided_source(row,item,{'tensor':CPUProbe()},receipt,tmp_path)['sha256']==D.I.sha(helper)
+    for change in ({'verified':False},{'source_id':'invented-target'},{'recovery_group_id':'held'},
+                   {'supervised_units':32},{'denominator_kind':'scalar_mse'}):
+        with pytest.raises(T.Error,match='ownership'):
+            callback.authenticate_guided_source(row,item,{'tensor':CPUProbe()},dict(receipt,proof={**proof,**change}),tmp_path)
+    with pytest.raises(D.Error,match='denominator'):
+        callback.authenticate_guided_source(dict(row,supervised_units=32),item,{},receipt,tmp_path)
+    with pytest.raises(D.Error,match='route'):
+        callback.authenticate_guided_source(dict(row,lane='qimg'),item,{},receipt,tmp_path)
+    missing=D.NativeBackward(None,tmp_path,{})
+    with pytest.raises(T.Error,match='source-pinned'):
+        missing.authenticate_guided_source(row,item,{},receipt,tmp_path)
+
+
 def test_actual_native_x0_velocity_callback_and_window_weight_are_not_endpoint_mse(tmp_path):
     torch, M, _, construct = fixture(tmp_path)
     first, second = construct()["hybrid"], construct()["hybrid"]
