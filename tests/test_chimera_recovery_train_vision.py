@@ -95,3 +95,20 @@ def test_vision_qvl_bridge_lora_update_exact_resume_and_feature_alignment_refusa
     assert all(torch.equal(value, resumed.census[name]) for name, value in engine.census.items())
     with pytest.raises(V.Error, match="owned-row packing"):
         resumed.train_step(segment, targets, teacher[:, :-1], answer_positions=3)
+
+
+def test_union_window_weight_scales_both_real_vision_objectives(tmp_path):
+    torch, module, engine, construct, segment, targets, teacher = setup(tmp_path)
+    unscaled = V.feature_forward_backward(module, engine.hybrid, segment,
+                    module.d3d_head_loss(engine.hybrid, targets, denominator=3.), engine.placement.container, teacher)
+    expected = {name: value.grad.detach().clone() for name, value in engine.census.items()}
+    second = construct()
+    scaled = V.feature_forward_backward(module, second.hybrid, segment,
+                    module.d3d_head_loss(second.hybrid, targets, denominator=3.), second.placement.container, teacher, loss_scale=.3)
+    assert scaled == unscaled  # Diagnostics report original objective, not scheduler weight.
+    for name, value in second.census.items():
+        torch.testing.assert_close(value.grad, expected[name] * .3, rtol=3e-4, atol=3e-5)
+    for prefix in ("unit.", "bridge.", "lora."):
+        assert any(value.grad.norm() > 0 for name, value in second.census.items() if name.startswith(prefix))
+    with pytest.raises(V.Error, match="positive"):
+        V.feature_forward_backward(module, second.hybrid, segment, lambda *_: None, second.placement.container, teacher, loss_scale=0)
