@@ -177,6 +177,7 @@ def construct_union(module, hybrid, original, d2, binding, native, shared, rates
     for name, value in joint.tensors.items():
         family = "D3.shared_lora" if name.startswith("d3.") else "D2.gain" if name.endswith(".gain") else "D2.k3_lora" if ".k3_" in name else "D2.lora"
         groups[family][name] = value
+    rates = rates(groups) if callable(rates) else rates
     optimizer, ownership = D.fresh_union_optimizer(groups, rates)
     return dict(hybrid=hybrid, groups=groups, optimizer=optimizer, ownership=ownership,
                 identity=dict(schema=SCHEMA, fixture=fixture, terminal_stage=TERMINAL,

@@ -24,8 +24,12 @@ def module():
     return torch, M
 
 
-def fixture(tmp_path):
+def fixture(tmp_path, *, native_features=False):
     torch, M = module()
+    if native_features:
+        # Retain real production bridge feature width when exercising the
+        # strict native batch admission; the remaining model is still tiny.
+        M.TINY.FEATURE = 6144
     built = M.build_tiny_child(tmp_path / "tiny", seed=91)
     T = M.trainer_module()
     ctx = dict(base_sha256=R.I.sha(built["dir"] / "config.json"), parent_config_sha256=R.I.sha(built["parent_config"] / "config.json"),
