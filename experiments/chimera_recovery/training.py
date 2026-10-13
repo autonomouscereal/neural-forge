@@ -13,6 +13,7 @@ import hashlib
 import json
 import math
 import re
+import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -52,6 +53,7 @@ PINNED_FILES = (
     "queues/d1_launch.sh", "tools/queues/d3.sh",
 )
 STREAMED_BASELINE_SHA256 = "77091f8ab1581c1edac3e3f1c1e5d727d60f8fb8465745c03a6eb6b12f0567da"
+D3_BASELINE_SHA256 = "540fca2d9d976da336c8d24ae5369c5a303ff37367cae54a9bcfc762a7e95197"
 
 
 class ReadinessError(ValueError):
@@ -85,6 +87,11 @@ def route_name(value: str) -> str:
     if resolved not in ROUTES:
         raise ReadinessError(f"unsupported route {value!r}; no silent text fallback")
     return resolved
+
+
+def source_group(record: dict[str, Any]) -> str | None:
+    provenance = record.get("provenance", {})
+    return provenance.get("recovery_group_id", provenance.get("group_id", record.get("group_id", record.get("group", record.get("id")))))
 
 
 def check_json_schema(value: Any, schema: dict[str, Any], where: str) -> None:
@@ -472,6 +479,145 @@ def native_velocity_loss(prediction: Any, target: Any, types: Any, weights: Any,
     return torch.stack(losses).mean()
 
 
+def flow_velocity_loss(prediction: Any, x0_target: Any, types: Any, mask: Any, bands: dict[int, dict[str, Any]], *,
+                       param: str = "x0", x_t: Any = None, sigma: Any = None,
+                       signs: dict[int, float] | None = None, target_kind: str = "x0", x_t_layout: str = "feature") -> Any:
+    """D3 flow_x0_loss-compatible hook, with a velocity objective.
+
+    Python `param` names the emission head parameterization. It does not select
+    the objective. Old raw-head predictions require signs; x0 heads require the
+    exact noisy input and sigma, and always get sigma-aware velocity gradients.
+    The default teacher argument is x0 to fit existing D3 teacher_x0 callers.
+    """
+    if param not in {"x0", "raw", "canonical_velocity"}:
+        raise ReadinessError("unsupported D3 head parameterization")
+    emission = {int(kind): tuple(band["emission"]) for kind, band in bands.items()}
+    if x_t is not None and x_t_layout == "feature":
+        # Bridge inputs and head outputs have distinct allocation tables. Never
+        # assume a noisy latent occupies the same channels in both layouts.
+        import torch
+        aligned = torch.zeros_like(prediction)
+        for modality in (int(value) for value in torch.unique(types[mask > 0]).tolist()):
+            if modality not in bands or "feature" not in bands[modality]:
+                raise ReadinessError("velocity conversion requires the audited feature-to-emission allocation")
+            flo, fhi = bands[modality]["feature"]
+            elo, ehi = emission[modality]
+            if fhi - flo != ehi - elo or not 0 <= flo < fhi <= x_t.shape[-1]:
+                raise ReadinessError("feature/emission widths differ or noisy latent band is invalid")
+            rows = types == modality
+            aligned[..., elo:ehi][rows] = x_t[..., flo:fhi][rows]
+        x_t = aligned
+    elif x_t_layout != "emission":
+        if x_t is not None or x_t_layout != "feature":
+            raise ReadinessError("noisy input layout must be explicit feature or emission")
+    return native_velocity_loss(prediction, x0_target, types, mask, emission,
+                                prediction_kind="parent_raw" if param == "raw" else param,
+                                target_kind=target_kind, x_t=x_t, sigma=sigma, parent_signs=signs)
+
+
+@dataclass(frozen=True)
+class ReadyObjectiveAdapter:
+    """Bind actual sealed-cache tensors to D3b's loss_fn(prediction) callback.
+
+    This adapter is usable by a production driver but cannot launch that driver.
+    A recipe receipt is mandatory; synthetic rate checks use the pure loss hook
+    separately and never produce this production-oriented binding.
+    """
+    cache_receipt: dict[str, Any]
+
+    def __post_init__(self):
+        receipt = self.cache_receipt
+        if receipt.get("schema") != "chimera_recovery.native_flow_cache.v1" or any(
+                receipt.get(field) is not True for field in ("sealed", "all_finite", "all_structural_ok", "guided_teacher", "no_clean_target_in_inputs")):
+            raise ReadinessError("velocity adapter requires a sealed guided native cache and reviewed input/target separation")
+        for field in ("cache_sha256", "corpus_sha256", "teacher_sha256", "recovery_amendment_sha256"):
+            require_sha(receipt.get(field), field)
+        if receipt.get("target_kind") not in {"x0", "canonical_velocity", "parent_raw"}:
+            raise ReadinessError("sealed cache must declare teacher target parameterization")
+        if receipt.get("prediction_kind") not in {"x0", "raw", "canonical_velocity"}:
+            raise ReadinessError("sealed cache must declare student head parameterization")
+        if receipt.get("input_layout") != "feature" or receipt.get("target_layout") != "emission":
+            raise ReadinessError("sealed cache must declare native feature inputs and emission targets")
+
+    def bind(self, route: str, batch: dict[str, Any], bands: dict[int, dict[str, Any]], *,
+             parent_signs: dict[int, float] | None = None):
+        contract = validate_native_batch(route, batch)
+        if contract["stage"] != "D3b":
+            raise ReadinessError("velocity adapter can only bind a D3b flow route")
+        if self.cache_receipt.get("route") != route_name(route):
+            raise ReadinessError("sealed native cache route differs from objective binding")
+        # Capture the exact adapter-provided tensors, not a recomputed/clean input.
+        target = batch["native_media_targets"]
+        types = batch["native_media_type_ids"]
+        mask = batch["native_media_loss_mask"]
+        x_t = batch["native_media_features"]
+        sigma = batch["native_media_noise_levels"]
+        def compute(prediction):
+            return flow_velocity_loss(prediction, target, types, mask, bands,
+                                      param=self.cache_receipt["prediction_kind"], target_kind=self.cache_receipt["target_kind"],
+                                      x_t=x_t, sigma=sigma, signs=parent_signs)
+        return compute
+
+
+def d3_objective_patch(source: Path) -> tuple[str, dict[str, Any]]:
+    """Add a real explicit CLI callback hook to D3's existing lr=0 rate driver.
+
+    It leaves old x0 rate/synthetic defaults unchanged. An imported pure velocity
+    adapter gets authentic noisy features/sigma from the segment. This is rate
+    preparation only: rate targets remain labeled random and are not sealed-cache
+    production supervision. ReadyObjectiveAdapter.bind supplies that later path.
+    """
+    baseline = sha(source)
+    if baseline != D3_BASELINE_SHA256:
+        raise ReadinessError("D3 baseline moved; inspect before regenerating objective patch")
+    before = source.read_bytes().decode().replace("\r\n", "\n")
+    after = before
+    changes = [
+        ('def rate_cell(hybrid: HybridD3, placement: UnitPlacement, seg: dict[str, Any], *, stage: str, steps: int) -> tuple[dict[str, Any], list[str]]:\n',
+         'def rate_cell(hybrid: HybridD3, placement: UnitPlacement, seg: dict[str, Any], *, stage: str, steps: int, objective_adapter: Callable | None = None) -> tuple[dict[str, Any], list[str]]:\n'),
+        ('        loss_fn = lambda pred: flow_x0_loss(pred, target, context["types"], mask, hybrid.bands)  # noqa: E731\n',
+         '        if objective_adapter is None:\n'
+         '            loss_fn = lambda pred: flow_x0_loss(pred, target, context["types"], mask, hybrid.bands)  # noqa: E731\n'
+         '        else:\n'
+         '            loss_fn = lambda pred: objective_adapter(pred, target, context["types"], mask, hybrid.bands, param="x0", x_t=seg["features"], sigma=seg["sigma"], signs=flow_signs())  # noqa: E731\n'
+         '        cell.update({"flow_objective": "guided_velocity" if objective_adapter else "x0", "teacher_targets": "random rate fixture, not production cache"})\n'),
+        ('def command_rate(args: argparse.Namespace) -> int:\n    started = time.time()\n',
+         'def command_rate(args: argparse.Namespace) -> int:\n'
+         '    objective_adapter = None\n'
+         '    if args.flow_objective == "guided_velocity":\n'
+         '        if not args.objective_adapter:\n'
+         '            raise D3Error("guided_velocity requires --objective-adapter PATH to audited recovery training.py")\n'
+         '        adapter_path = Path(args.objective_adapter)\n'
+         '        spec = importlib.util.spec_from_file_location("chimera_recovery_objective_adapter", adapter_path)\n'
+         '        module = importlib.util.module_from_spec(spec)\n'
+         '        sys.modules[spec.name] = module\n'
+         '        spec.loader.exec_module(module)\n'
+         '        objective_adapter = getattr(module, "flow_velocity_loss", None)\n'
+         '        if not callable(objective_adapter):\n'
+         '            raise D3Error("objective adapter lacks flow_velocity_loss")\n'
+         '    elif args.objective_adapter:\n'
+         '        raise D3Error("--objective-adapter requires --flow-objective guided_velocity")\n'
+         '    started = time.time()\n'),
+        ('        cell, cell_refusals = rate_cell(hybrid, placement, seg, stage=args.stage, steps=int(args.steps))\n',
+         '        cell, cell_refusals = rate_cell(hybrid, placement, seg, stage=args.stage, steps=int(args.steps), objective_adapter=objective_adapter)\n'),
+        ('    r.add_argument("--stage", default="d3b", choices=("d3b", "d3d"))\n',
+         '    r.add_argument("--stage", default="d3b", choices=("d3b", "d3d"))\n'
+         '    r.add_argument("--flow-objective", default="x0", choices=("x0", "guided_velocity"))\n'
+         '    r.add_argument("--objective-adapter", help="audited recovery training.py exporting flow_velocity_loss; rate fixture only")\n'),
+    ]
+    for old, new in changes:
+        if after.count(old) != 1:
+            raise ReadinessError("D3 objective patch anchor absent or ambiguous")
+        after = after.replace(old, new, 1)
+    ast.parse(after)
+    patch = "".join(difflib.unified_diff(before.splitlines(True), after.splitlines(True), fromfile="a/d3_hybrid_module.py", tofile="b/d3_hybrid_module.py"))
+    return patch, {"schema": "chimera_recovery.d3_objective_patch.v1", "baseline_sha256": baseline,
+                   "patched_lf_sha256": hashlib.sha256(after.encode()).hexdigest(), "patch_sha256": hashlib.sha256(patch.encode()).hexdigest(),
+                   "changes": len(changes), "objective_flag": "--flow-objective guided_velocity --objective-adapter <audited training.py>",
+                   "rate_only_random_teacher_targets": True, "production_driver_implemented": False, "amendment_required": True,
+                   "frozen_preregistration_edited": False}
+
+
 def streamed_supervision_patch(source: Path) -> tuple[str, dict[str, Any]]:
     """Emit a minimal patch against the audited exact campaign baseline.
 
@@ -630,6 +776,8 @@ def bind_text_cache(packed_manifest: Path, cache: Path, *, teacher_sha256: str) 
     packed = json.loads(packed_manifest.read_text(encoding="utf-8"))
     if packed.get("schema") != PACK_SCHEMA:
         raise ReadinessError("packed manifest schema mismatch")
+    if not packed.get("shard") or packed.get("rows", 1) < 1:
+        raise ReadinessError("packed corpus contains no accepted rows")
     shard = Path(packed["shard"])
     if not shard.is_file() or sha(shard) != packed.get("sha256"):
         raise ReadinessError("prepared mask-bearing corpus digest moved")
@@ -662,7 +810,7 @@ def bind_text_cache(packed_manifest: Path, cache: Path, *, teacher_sha256: str) 
                                  "production_training_ready": False}}
 
 
-def prepare_text(records: list[dict[str, Any]], tokenizer: Any, root: Path, out: Path, max_length: int) -> dict[str, Any]:
+def prepare_text(records: list[dict[str, Any]], tokenizer: Any, root: Path, out: Path, max_length: int, *, split: str = "train") -> dict[str, Any]:
     """Write digest-pinned native text shards for qtext_teacher_cache.py.
 
     One complete conversation per row; no truncation, no separator packing that
@@ -670,32 +818,73 @@ def prepare_text(records: list[dict[str, Any]], tokenizer: Any, root: Path, out:
     """
     import torch
     from safetensors.torch import save_file
-    if out.exists() and any(out.iterdir()):
-        raise ReadinessError("output directory is not empty; preserve prepared artifacts")
-    rows = [pack_native_chat(record, tokenizer, root=root, max_length=max_length) for record in records]
-    if not rows:
-        raise ReadinessError("no text rows supplied")
+    if out.exists():
+        raise ReadinessError("output already exists; preserve prepared artifacts")
+    split = "validation" if split == "val" else split
+    if split not in {"train", "validation", "test"}:
+        raise ReadinessError("split must be train, validation or test")
+    rows, accepted, quarantine, excluded = [], [], [], []
+    groups = {}
+    for record in records:
+        record_split = "validation" if record.get("split") == "val" else record.get("split")
+        group = source_group(record)
+        if not isinstance(group, str) or not group or record_split not in {"train", "validation", "test"}:
+            quarantine.append({"id": record.get("id"), "split": record_split, "reason": "missing stable group identity or valid split"})
+            continue
+        groups.setdefault(group, set()).add(record_split)
+    overlapping = {group for group, splits in groups.items() if len(splits) != 1}
+    for record in records:
+        record_split = "validation" if record.get("split") == "val" else record.get("split")
+        group = source_group(record)
+        if not isinstance(group, str) or not group or record_split not in {"train", "validation", "test"}:
+            continue
+        if group in overlapping:
+            quarantine.append({"id": record.get("id"), "split": record_split, "group": group, "reason": "source group occurs across splits"})
+            continue
+        if record_split != split:
+            excluded.append({"id": record.get("id"), "split": record_split, "group": group})
+            continue
+        try:
+            if record.get("provenance", {}).get("split", record_split) != record_split:
+                raise ReadinessError("provenance split differs from row split")
+            if record.get("quality", {}).get("train_ready") is False:
+                raise ReadinessError("quality.train_ready explicitly false")
+            rows.append(pack_native_chat(record, tokenizer, root=root, max_length=max_length))
+            accepted.append(record)
+        except Exception as error:
+            if isinstance(error, MemoryError):
+                raise
+            quarantine.append({"id": record.get("id"), "route": record.get("route"), "split": record_split,
+                               "group": group, "reason": str(error), "error_type": type(error).__name__})
     pad = getattr(tokenizer, "pad_token_id", None)
     if type(pad) is not int or not 0 <= pad < TEXT_VOCAB:
         raise ReadinessError("parent tokenizer must supply an in-text-vocabulary padding id")
-    width = max(len(row.input_ids) for row in rows)
+    width = max((len(row.input_ids) for row in rows), default=0)
     ids = torch.full((len(rows), width), pad, dtype=torch.int64)
     masks = torch.zeros((len(rows), width), dtype=torch.bool)
     lengths = torch.tensor([len(row.input_ids) for row in rows], dtype=torch.int64)
     for i, row in enumerate(rows):
         ids[i, :len(row.input_ids)] = torch.tensor(row.input_ids)
         masks[i, :len(row.input_ids)] = torch.tensor(row.assistant_mask)
-    out.mkdir(parents=True, exist_ok=True)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix=".recovery-pack-", dir=out.parent))
     tensor_path = out / "assistant_text.safetensors"
-    save_file({"input_ids": ids, "lengths": lengths, "assistant_mask": masks}, str(tensor_path), metadata={"schema": PACK_SCHEMA})
-    manifest = {"schema": PACK_SCHEMA, "corpus_schema": "recovery_corpus.v1", "shard": str(tensor_path.resolve()),
-                "sha256": sha(tensor_path), "rows": len(rows), "tokens": int(lengths.sum()),
+    staged_tensor = stage / tensor_path.name
+    if rows:
+        save_file({"input_ids": ids, "lengths": lengths, "assistant_mask": masks}, str(staged_tensor), metadata={"schema": PACK_SCHEMA})
+    manifest = {"schema": PACK_SCHEMA, "corpus_schema": "recovery_corpus.v1", "shard": str(tensor_path.resolve()) if rows else None,
+                "sha256": sha(staged_tensor) if rows else None, "rows": len(rows), "tokens": int(lengths.sum()),
                 "supervised_tokens": int(masks.sum()), "shape": list(ids.shape),
-                "template_sha256": rows[0].template_sha256, "records_sha256": digest(records),
+                "split": split, "input_records_sha256": digest(records), "records_sha256": digest(accepted),
+                "template_sha256": rows[0].template_sha256 if rows else digest(getattr(tokenizer, "chat_template", None)),
+                "quarantined_rows": quarantine, "quarantined_count": len(quarantine), "other_split_rows_preserved": excluded,
+                "other_split_count": len(excluded), "cross_split_groups": sorted(overlapping),
+                "admission": "accepted rows only; holdouts require distinct --split outputs; no truncated conversations",
                 "row_receipts": [{**asdict(row), "input_ids": None, "assistant_mask": None, "next_token_mask": None} for row in rows],
                 "teacher_cache_required": True, "production_training_ready": False,
                 "trainer_integration": "apply streamed_supervision.patch against its recorded baseline sha; corpus assistant_mask is token ownership"}
-    (out / "manifest.json").write_bytes(canonical(manifest) + b"\n")
+    (stage / "manifest.json").write_bytes(canonical(manifest) + b"\n")
+    stage.rename(out)
     return manifest
 
 
@@ -735,9 +924,13 @@ def main(argv: list[str] | None = None) -> int:
     prepare.add_argument("--tokenizer", type=Path, required=True)
     prepare.add_argument("--out", type=Path, required=True)
     prepare.add_argument("--max-length", type=int, default=4096)
+    prepare.add_argument("--split", default="train", choices=("train", "validation", "val", "test"))
     patch = commands.add_parser("patch-streamed")
     patch.add_argument("--source", type=Path, required=True)
     patch.add_argument("--out", type=Path, required=True)
+    d3patch = commands.add_parser("patch-d3-objective")
+    d3patch.add_argument("--source", type=Path, required=True)
+    d3patch.add_argument("--out", type=Path, required=True)
     bind = commands.add_parser("bind-text-cache")
     bind.add_argument("--packed-manifest", type=Path, required=True)
     bind.add_argument("--cache", type=Path, required=True)
@@ -752,8 +945,8 @@ def main(argv: list[str] | None = None) -> int:
         args.out.write_bytes(canonical(config) + b"\n")
         print(json.dumps(config["recovery_binding"]))
         return 0
-    if args.command == "patch-streamed":
-        patch_text, receipt = streamed_supervision_patch(args.source)
+    if args.command in {"patch-streamed", "patch-d3-objective"}:
+        patch_text, receipt = (streamed_supervision_patch if args.command == "patch-streamed" else d3_objective_patch)(args.source)
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_bytes(patch_text.encode("utf-8"))
         args.out.with_suffix(args.out.suffix + ".json").write_bytes(canonical(receipt) + b"\n")
@@ -769,9 +962,11 @@ def main(argv: list[str] | None = None) -> int:
         else:
             from transformers import AutoTokenizer
             tokenizer = AutoTokenizer.from_pretrained(str(args.tokenizer), local_files_only=True, trust_remote_code=False)
-            manifest = prepare_text(records, tokenizer, args.corpus.parent, args.out, args.max_length)
-            print(json.dumps({"schema": manifest["schema"], "rows": manifest["rows"], "supervised_tokens": manifest["supervised_tokens"], "production_training_ready": False}))
-            return 0
+            manifest = prepare_text(records, tokenizer, args.corpus.parent, args.out, args.max_length, split=args.split)
+            print(json.dumps({"schema": manifest["schema"], "rows": manifest["rows"], "supervised_tokens": manifest["supervised_tokens"],
+                              "split": manifest["split"], "quarantined": manifest["quarantined_count"], "other_split_count": manifest["other_split_count"],
+                              "production_training_ready": False}))
+            return 0 if manifest["rows"] else 3
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_bytes(canonical(result) + b"\n")
     print(json.dumps({"schema": result["schema"], "out": str(args.out), "production_ready": result.get("production_ready", False)}))

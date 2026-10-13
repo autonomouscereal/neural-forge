@@ -22,7 +22,12 @@ omits IDs, the packer follows that authentic template and preserves IDs as audit
 metadata. All assistant bodies, including tool calls and closing EOS, may be
 supervised; system/user/tool results and role headers cannot be supervised.
 Selected earlier assistant turns can be masked explicitly. Oversized rows refuse
-instead of truncating a call/result pair. Media cannot be discarded into a text
+instead of truncating a call/result pair. Unsupported rows are quarantined with
+IDs and reasons; valid rows continue. `--split` defaults to train; validation and
+test require distinct output directories. Connected provenance groups cannot
+cross splits. Explicit `quality.train_ready=false` rows cannot enter the shard.
+The output directory is published only after all validation and file creation.
+Media cannot be discarded into a text
 shard. The shard contains `input_ids`, `lengths`, and bool `assistant_mask`.
 
 The existing teacher-cache builder accepts this shard's `input_ids` and
@@ -78,11 +83,39 @@ This helper alone does not wire a production D3 driver or create media teacher
 caches. `optimizer_ownership` checks the actual trainable delta bank, including
 functional tensors outside frozen module trees, against optimizer parameters.
 
+`flow_velocity_loss` exports the existing D3 `flow_x0_loss` Python signature and
+uses `bands[type]['emission']`. Noisy bridge inputs are remapped explicitly from
+`bands[type]['feature']` before x0 conversion. `ReadyObjectiveAdapter` binds
+actual tensors to D3b's `loss_fn(prediction)` callback; it requires a reviewed
+`chimera_recovery.native_flow_cache.v1` receipt with sealed/finite/structural,
+guided-teacher, and input/target-separation attestations, teacher/cache/corpus/
+amendment hashes, declared student/teacher parameterizations, and layouts.
+Production cache adapters must emit that receipt; a fake receipt is not evidence.
+
+The candidate D3 patch adds a real optional callback to its existing lr=0 rate
+entry point, selected by `--flow-objective guided_velocity --objective-adapter
+/path/to/training.py`. It preserves existing x0 rate/synthetic defaults. Rate
+targets remain random, labeled fixtures; this flag does not create a production
+teacher cache or production D3 run. The baseline documents `--flow-param`, but
+that flag does not exist in its CLI parser. Python `param='raw'` still selects
+raw-head parameterization, and its old loss still scores converted x0 endpoints.
+
+```bash
+python experiments/chimera_recovery/training.py patch-d3-objective \
+  --source /path/to/audited/d3_hybrid_module.py \
+  --out /path/to/new/d3_velocity_objective.patch
+```
+
+The D3 source baseline is SHA256
+`540fca2d9d976da336c8d24ae5369c5a303ff37367cae54a9bcfc762a7e95197`.
+The CPU test compares adapter loss and gradients against independent sigma-
+scaled endpoint algebra, including distinct input/output channel allocations.
+
 All semantic routes have explicit dispatch; unknown routes never become text.
 Vision/video/audio understanding require real conditioning and answer caches.
 Image/edit, audio, music, joint AV, and volume generation require their native
 cache adapters and teacher targets. H3 synchronized AV and HY3D genuine geometry
-remain corpus requirements. No active thermal prerequisite is imposed here.
+remain corpus requirements.
 
 ```bash
 python experiments/chimera_recovery/training.py cpu-dryrun --out /path/to/contract.json

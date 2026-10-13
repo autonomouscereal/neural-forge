@@ -101,6 +101,13 @@ def test_terminal_tool_action_allowed_but_not_unresolved_history():
         t.validate_messages(r)
 
 
+def test_recovery_group_contract_takes_precedence_over_row_identity():
+    r = row()
+    r["group_id"] = "less-specific"
+    r["provenance"] = {"recovery_group_id": "connected-event-media-content-component", "group_id": "source-file"}
+    assert t.source_group(r) == "connected-event-media-content-component"
+
+
 def test_mask_can_exclude_earlier_assistant_turn_without_text_search():
     r = row()
     r["supervision"]["message_mask"][1] = False
@@ -216,6 +223,28 @@ def test_pack_artifact_exact_ids_lengths_and_supervision(tmp_path):
     assert manifest["production_training_ready"] is False
 
 
+def test_pack_split_admission_quarantine_and_atomic_artifacts(tmp_path):
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("safetensors.torch")
+    good, bad, held = row(), row(), row()
+    good["group_id"] = "good-group"
+    bad.update(id="bad", group_id="bad-group", quality={"train_ready": False})
+    held.update(id="held", group_id="held-group", split="validation")
+    manifest = t.prepare_text([good, bad, held], ContractTokenizer(), tmp_path, tmp_path / "train", 4096)
+    assert manifest["rows"] == 1 and manifest["split"] == "train"
+    assert manifest["quarantined_rows"][0]["id"] == "bad"
+    assert manifest["other_split_rows_preserved"] == [{"id": "held", "split": "validation", "group": "held-group"}]
+    assert list(tmp_path.glob(".recovery-pack-*")) == []
+    validation = t.prepare_text([good, bad, held], ContractTokenizer(), tmp_path, tmp_path / "held", 4096, split="validation")
+    assert validation["rows"] == 1 and validation["row_receipts"][0]["row_id"] == "held"
+    duplicate = copy.deepcopy(held)
+    duplicate["group_id"] = "good-group"
+    empty = t.prepare_text([good, duplicate], ContractTokenizer(), tmp_path, tmp_path / "quarantine", 4096)
+    assert empty["rows"] == 0 and empty["shard"] is None and empty["cross_split_groups"] == ["good-group"]
+    assert empty["quarantined_count"] == 2
+    assert not (tmp_path / "quarantine" / "assistant_text.safetensors").exists()
+
+
 def test_optimizer_ownership_covers_actual_delta_bank():
     torch = pytest.importorskip("torch")
     a = torch.tensor([1.0], requires_grad=True)
@@ -252,6 +281,53 @@ def test_velocity_objective_explicit_conversion_and_type_balancing():
     with pytest.raises(t.ReadinessError, match="audited per-type sign"):
         t.native_velocity_loss(x0, target, types, weights, bands, prediction_kind="x0",
                                target_kind="parent_raw", x_t=x_t, sigma=sigma)
+
+
+def test_d3_compatible_velocity_hook_gradient_parity_and_sealed_binding():
+    torch = pytest.importorskip("torch")
+    types = torch.ones(1, 2, dtype=torch.int64)
+    weights = torch.ones(1, 2)
+    # Input noisy latent is allocated in feature channels 0:2, emitted in 2:4.
+    bands = {1: {"feature": (0, 2), "emission": (2, 4)}}
+    sigma = torch.tensor([[0.5, 0.25]])
+    noisy = torch.tensor([[[2., 3., 0., 0.], [4., 5., 0., 0.]]])
+    target = torch.tensor([[[0., 0., 1., 2.], [0., 0., 3., 4.]]])
+    predicted = torch.zeros_like(target).requires_grad_()
+    got = t.flow_velocity_loss(predicted, target, types, weights, bands, param="x0", x_t=noisy, sigma=sigma)
+    got.backward()
+    reference = torch.zeros_like(target).requires_grad_()
+    # Algebraically identical velocity loss: each endpoint error scales 1/sigma.
+    expected = ((reference[..., 2:4] - target[..., 2:4]) / sigma[..., None]).square().mean()
+    expected.backward()
+    assert torch.allclose(got, expected) and torch.allclose(predicted.grad, reference.grad)
+    assert not predicted.grad[..., :2].any()
+    receipt = {"schema": "chimera_recovery.native_flow_cache.v1", "sealed": True, "all_finite": True,
+               "all_structural_ok": True, "guided_teacher": True, "no_clean_target_in_inputs": True,
+               **{key: "a" * 64 for key in ("cache_sha256", "corpus_sha256", "teacher_sha256", "recovery_amendment_sha256")},
+               "route": "image_generate", "target_kind": "x0", "prediction_kind": "x0", "input_layout": "feature", "target_layout": "emission"}
+    with pytest.raises(t.ReadinessError, match="sealed guided"):
+        t.ReadyObjectiveAdapter({**receipt, "sealed": False})
+    features = torch.zeros(1, 2, 6144)
+    features[..., :2] = noisy[..., :2]
+    targets = torch.zeros_like(features)
+    targets[..., 2:4] = target[..., 2:4]
+    batch = {"input_ids": torch.zeros(1, 8, dtype=torch.int64), "native_media_features": features,
+             "native_media_type_ids": types, "native_media_indices": torch.tensor([[3, 4]]),
+             "native_media_valid_mask": torch.ones(1, 2, dtype=torch.bool), "native_media_positions": torch.zeros(1, 2, 4),
+             "native_media_targets": targets, "native_media_loss_mask": weights, "native_media_noise_levels": sigma}
+    compute = t.ReadyObjectiveAdapter(receipt).bind("image_generate", batch, bands)
+    pred = torch.zeros_like(features).requires_grad_()
+    actual = compute(pred)
+    assert torch.allclose(actual, expected.detach())
+    actual.backward()
+    assert torch.allclose(pred.grad[..., :4], predicted.grad)
+
+
+def test_d3_objective_patch_refuses_changed_source(tmp_path):
+    path = tmp_path / "d3.py"
+    path.write_text("pass\n")
+    with pytest.raises(t.ReadinessError, match="D3 baseline moved"):
+        t.d3_objective_patch(path)
 
 
 def test_real_native_tensor_contract_rejects_alias_leakage():

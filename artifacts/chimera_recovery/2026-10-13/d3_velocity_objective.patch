@@ -1,0 +1,63 @@
+--- a/d3_hybrid_module.py
++++ b/d3_hybrid_module.py
+@@ -1845,7 +1845,7 @@
+     return norms, problems
+ 
+ 
+-def rate_cell(hybrid: HybridD3, placement: UnitPlacement, seg: dict[str, Any], *, stage: str, steps: int) -> tuple[dict[str, Any], list[str]]:
++def rate_cell(hybrid: HybridD3, placement: UnitPlacement, seg: dict[str, Any], *, stage: str, steps: int, objective_adapter: Callable | None = None) -> tuple[dict[str, Any], list[str]]:
+     """One lr = 0 rate cell: D3b (x_d recapture + units / layers d..L-1 / flow head fwd+bwd) or a
+     D3d-shaped full-depth step (bridge deltas + every layer + the unit + text KD on answer text
+     appended after the media rows, so the KD gradient reaches the unit and the bridge rows).
+@@ -1886,7 +1886,11 @@
+         g = torch.Generator().manual_seed(1)
+         target = torch.randn(1, int(seg["media_rows"]), int(hybrid.cfg.native_feature_dim), generator=g).to(device)
+         mask = torch.ones(1, int(seg["media_rows"]), device=device)
+-        loss_fn = lambda pred: flow_x0_loss(pred, target, context["types"], mask, hybrid.bands)  # noqa: E731
++        if objective_adapter is None:
++            loss_fn = lambda pred: flow_x0_loss(pred, target, context["types"], mask, hybrid.bands)  # noqa: E731
++        else:
++            loss_fn = lambda pred: objective_adapter(pred, target, context["types"], mask, hybrid.bands, param="x0", x_t=seg["features"], sigma=seg["sigma"], signs=flow_signs())  # noqa: E731
++        cell.update({"flow_objective": "guided_velocity" if objective_adapter else "x0", "teacher_targets": "random rate fixture, not production cache"})
+         run = lambda: d3b_forward_backward(hybrid, context, x_d, placement.depth, loss_fn)  # noqa: E731
+     elif stage == "d3d":
+         groups = {**{f"bridge_delta.{d.name}": [d.delta] for d in hybrid.add_bridge_deltas(list(placement.type_ids))},
+@@ -1957,6 +1961,20 @@
+ 
+ 
+ def command_rate(args: argparse.Namespace) -> int:
++    objective_adapter = None
++    if args.flow_objective == "guided_velocity":
++        if not args.objective_adapter:
++            raise D3Error("guided_velocity requires --objective-adapter PATH to audited recovery training.py")
++        adapter_path = Path(args.objective_adapter)
++        spec = importlib.util.spec_from_file_location("chimera_recovery_objective_adapter", adapter_path)
++        module = importlib.util.module_from_spec(spec)
++        sys.modules[spec.name] = module
++        spec.loader.exec_module(module)
++        objective_adapter = getattr(module, "flow_velocity_loss", None)
++        if not callable(objective_adapter):
++            raise D3Error("objective adapter lacks flow_velocity_loss")
++    elif args.objective_adapter:
++        raise D3Error("--objective-adapter requires --flow-objective guided_velocity")
+     started = time.time()
+     torch.set_num_threads(int(args.threads))
+     dtype = getattr(torch, args.dtype)
+@@ -1985,7 +2003,7 @@
+         seg = s7.media_segment(container, Path(args.tap_rows), bands_feature, hybrid.cfg)
+         seg = trim_segment(seg, int(args.max_rows_per_type), hybrid.media_placeholder)
+         seg["source_positions"] = h3_zero_positions(hybrid.cfg, int(seg["ids"].shape[1]))
+-        cell, cell_refusals = rate_cell(hybrid, placement, seg, stage=args.stage, steps=int(args.steps))
++        cell, cell_refusals = rate_cell(hybrid, placement, seg, stage=args.stage, steps=int(args.steps), objective_adapter=objective_adapter)
+         cells.append(cell)
+         refusals.extend(cell_refusals)
+     receipt.update({"cells": cells, "refusals": refusals, "verdict": "PASS" if not refusals else "FAIL",
+@@ -2024,6 +2042,8 @@
+     r.add_argument("--dtype", default="float32", choices=("float32", "bfloat16"))
+     r.add_argument("--kernels", default="torch", choices=("torch", "auto"))
+     r.add_argument("--stage", default="d3b", choices=("d3b", "d3d"))
++    r.add_argument("--flow-objective", default="x0", choices=("x0", "guided_velocity"))
++    r.add_argument("--objective-adapter", help="audited recovery training.py exporting flow_velocity_loss; rate fixture only")
+     r.add_argument("--units", default="ace_dit_L12,hy3d_dit_L10")
+     r.add_argument("--max-rows-per-type", type=int, default=0)
+     r.add_argument("--steps", type=int, default=3)
