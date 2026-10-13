@@ -16,7 +16,7 @@ import json
 from pathlib import Path
 import tempfile
 
-from . import corpus as C, text_eval_seed as E, train_text as T, evaluation as V
+from . import corpus as C, text_eval_seed as E, train_text as T, evaluation as V, student_prefix_teacher as P
 
 Error = T.ReadinessError
 POLICY = "chimera_recovery.student_prefix_one_pass.v1"
@@ -379,7 +379,8 @@ def pack_traces(prompts, prompt_manifest, traces, generation_receipt, output):
     with tempfile.TemporaryDirectory(prefix=output.name + ".", dir=output.parent) as temporary:
         root = Path(temporary)
         native = root / "student_prefix.safetensors"
-        save_file({"input_ids": ids, "real_lengths": torch.tensor([len(tokens) for tokens, _ in data]), "assistant_mask": masks}, str(native))
+        save_file({"input_ids": ids, "real_lengths": torch.tensor([len(tokens) for tokens, _ in data]),
+                   "assistant_mask": masks, "target_mask": masks.clone()}, str(native))
         evidence = {"schema": "chimera_recovery.student_prefix_corpus.v1", "policy": POLICY,
             "corpus": {"path": str((output / native.name).resolve()), "sha256": sha(native)},
             "source_prompts": pin(prompts), "source_prompt_manifest": pin(prompt_manifest), "generation_receipt": pin(generation_receipt),
@@ -431,6 +432,10 @@ def verify_round(args):
     spec = json.loads(Path(args.data_config).read_text())
     if spec.get("student_prefix_round") != pin(path):
         raise Error("data config references another student-prefix round")
+    for key in ('teacher_plan', 'rescoring_receipt'):
+        if key not in evidence or evidence[key] != spec.get(key):
+            raise Error('round singleton teacher policy/rescoring identity differs')
+        checked(evidence[key])
     corpus_receipt = json.loads(checked(spec["student_prefix_corpus"]).read_text())
     if (corpus_receipt.get("identity", {}).get("student_checkpoint_sha256") != evidence.get("student_checkpoint_sha256")
             or corpus_receipt.get("generation_receipt") != evidence.get("generation_receipt")
@@ -453,6 +458,15 @@ def load_sources(path, api):
         raise Error("dedicated student-prefix round/corpus evidence differs")
     checked(corpus_receipt["generation_receipt"])
     checked(corpus_receipt["source_prompts"]); checked(corpus_receipt["source_prompt_manifest"]); checked(corpus_receipt["traces"])
+    teacher_plan = checked(spec['teacher_plan'])
+    rescoring = json.loads(checked(spec['rescoring_receipt']).read_text())
+    if rescoring.get('passed') is not True or rescoring.get('teacher_plan') != spec['teacher_plan']:
+        raise Error('singleton parent rescoring receipt differs')
+    runtime_receipt = checked(rescoring['runtime_receipt'])
+    actual = P.verify_capture(teacher_plan, checked(spec['student_prefix_corpus']),
+                              Path(spec['sources'][0]['qtext_cache']), runtime_receipt)
+    if actual != rescoring:
+        raise Error('actual singleton parent rescoring evidence changed at run/resume')
     teacher_sha = spec.get("teacher_sha256")
     if not isinstance(teacher_sha, str) or len(teacher_sha) != 64 or any(v not in '0123456789abcdef' for v in teacher_sha):
         raise Error("immutable parent teacher SHA required")
@@ -483,11 +497,16 @@ def load_sources(path, api):
     identity.update(policy=POLICY, helper_sha256=sha(Path(__file__)), structured_helper_sha256=sha(Path(T.__file__)),
                     student_prefix_corpus_sha256=spec["student_prefix_corpus"]["sha256"],
                     raw_shards_verified_sha256=digest(raw), teacher_sha256=spec["teacher_sha256"],
+                    teacher_plan_sha256=spec['teacher_plan']['sha256'],
+                    rescoring_receipt_sha256=spec['rescoring_receipt']['sha256'],
+                    teacher_execution_profile_sha256=digest(actual['execution_profile']),
+                    teacher_runtime_receipt_sha256=rescoring['runtime_receipt']['sha256'],
+                    teacher_policy_helper_sha256=sha(Path(P.__file__)),
                     cache_verifier={"path": verifier.__file__, "sha256": sha(Path(verifier.__file__))})
     return sources, identity
 
 
-def bind_cache(corpus_manifest, cache, teacher_sha256, round_receipt, output):
+def bind_cache(corpus_manifest, cache, teacher_sha256, round_receipt, teacher_plan, rescoring_receipt, output):
     """Bind authentic parent rescoring to the exact new student-prefix corpus.
 
     Raw shards are verified by the real cache helper again at train/resume.
@@ -500,6 +519,14 @@ def bind_cache(corpus_manifest, cache, teacher_sha256, round_receipt, output):
     if corpus.get("schema") != "chimera_recovery.student_prefix_corpus.v1" or corpus.get("objective") != OBJECTIVE:
         raise Error("student-prefix native corpus schema/objective differs")
     checked(corpus["corpus"]); checked(corpus["generation_receipt"])
+    teacher_plan, rescoring_receipt = map(Path, (teacher_plan, rescoring_receipt))
+    captured = json.loads(rescoring_receipt.read_text())
+    if (captured.get('teacher_plan') != pin(teacher_plan) or captured.get('passed') is not True
+            or P.validate_plan(teacher_plan)['teacher_sha256'] != teacher_sha256):
+        raise Error('selected singleton parent plan/rescoring binding differs')
+    actual = P.verify_capture(teacher_plan, corpus_manifest, cache, checked(captured['runtime_receipt']))
+    if actual != captured:
+        raise Error('actual singleton parent rescoring proof differs')
     manifest = json.loads((cache / "manifest.json").read_text())
     teacher = manifest.get("teacher", {})
     if (manifest.get("schema") != "omni-distill-teacher-cache-manifest-v1"
@@ -519,6 +546,7 @@ def bind_cache(corpus_manifest, cache, teacher_sha256, round_receipt, output):
     spec = {"sources": [{"name": "student-prefix-snapshot", "kind": "onpolicy", "supervision": "assistant_only",
                          "qtext_cache": str(cache.resolve()), "corpus": corpus["corpus"]["path"]}],
             "student_prefix_corpus": pin(corpus_manifest), "student_prefix_round": pin(round_receipt),
+            'teacher_plan': pin(teacher_plan), 'rescoring_receipt': pin(rescoring_receipt),
             "teacher_sha256": teacher_sha256, "cache_manifest_sha256": sha(cache / "manifest.json")}
     output.parent.mkdir(parents=True, exist_ok=True)
     # Exercise the actual round initialization contract before publishing config.
@@ -559,6 +587,7 @@ def patch_trainer(source):
     candidate = candidate.replace(anchor, anchor + '    if not structured:\n        raise TrainerError("dedicated student-prefix candidate requires --structured-recovery")\n', 1)
     compile(candidate, "student-prefix-candidate", "exec")
     return candidate, {"schema": POLICY, "baseline": original, "helper_sha256": sha(Path(__file__)),
+                        'teacher_policy_helper_sha256': sha(Path(P.__file__)),
                         "objective": OBJECTIVE, "candidate_sha256": hashlib.sha256(candidate.encode()).hexdigest(),
                         "runtime_validation_required": True, "production_training_ready": False}
 
@@ -578,7 +607,7 @@ def main():
     candidate = sub.add_parser("prepare-trainer")
     candidate.add_argument("--source", type=Path, required=True); candidate.add_argument("--output", type=Path, required=True)
     binding = sub.add_parser("bind-cache")
-    for key in ("corpus-manifest", "cache", "round-receipt", "output"):
+    for key in ("corpus-manifest", "cache", "round-receipt", "teacher-plan", "rescoring-receipt", "output"):
         binding.add_argument("--" + key, type=Path, required=True)
     binding.add_argument("--teacher-sha256", required=True)
     tools = sub.add_parser('add-tool-prompts')
