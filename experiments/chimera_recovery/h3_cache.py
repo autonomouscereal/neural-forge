@@ -130,7 +130,7 @@ def prepare_items(planner_manifest: Path, out: Path) -> dict[str, Any]:
         if pin is None or sha(pin["path"]) != row["sha256"]:
             raise Refusal(f"{row['id']}: source media absent from verified planner inventory")
     adapted = [strict_item(row) for row in rows]
-    if out.exists():
+    if out.exists() or out.with_suffix(out.suffix + ".receipt.json").exists():
         raise Refusal("refusing to overwrite prepared item file")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_bytes(b"".join(canonical(row) + b"\n" for row in adapted))
@@ -441,18 +441,19 @@ def pack_pair(pair: dict[str, Any], prefix_ids: Any, bridge_positions: Any, *, m
     channels[0, :na, 224:256], channels[0, na:, 128:224] = True, True
     types = torch.tensor([[3] * na + [2] * nv], dtype=torch.int64)
     ids = torch.cat([prefix_ids.detach().cpu(), torch.full((1, m), media_token_id, dtype=torch.int64)], dim=1)
-    sigma = torch.cat([torch.full((na,), pair["sigma_audio"]), torch.full((nv,), pair["sigma_video"])]).view(1, m)
+    sigma = torch.cat([torch.full((na,), pair["sigma_audio"], dtype=torch.float32),
+                       torch.full((nv,), pair["sigma_video"], dtype=torch.float32)]).view(1, m)
     _, _, tv, h, w = pair["video_x_t"].shape
     chart = chart_positions(p, tv, h, w, pair["audio_x_t"].shape[-1])
     if chart.shape != (1, ids.shape[1], 3):
         raise Refusal("chart must cover prefix AND both streams")
     return {"input_ids": ids, "native_media_features": features,
             "native_media_targets": targets.detach(), "native_media_type_ids": types,
-            "native_media_positions": bridge_positions.detach().clone().float(),
+            "native_media_positions": bridge_positions.detach().cpu().clone().float(),
             "native_media_indices": torch.arange(p, p + m, dtype=torch.int64).view(1, m),
             "native_media_valid_mask": torch.ones(1, m, dtype=torch.bool),
-            "native_media_noise_levels": sigma, "native_media_loss_mask": torch.ones(1, m),
-            "native_media_loss_weights": torch.ones(1, m),
+            "native_media_noise_levels": sigma, "native_media_loss_mask": torch.ones(1, m, dtype=torch.float32),
+            "native_media_loss_weights": torch.ones(1, m, dtype=torch.float32),
             "native_media_channel_loss_mask": channels, "charted_source_positions": chart}
 
 
@@ -553,7 +554,7 @@ def writer_candidate(source: Path) -> tuple[str, dict[str, Any]]:
 
 def emit_writer(source: Path, out: Path) -> dict[str, Any]:
     after, receipt = writer_candidate(source)
-    if out.exists() or out.resolve() == source.resolve():
+    if any(p.exists() for p in (out, out.with_suffix(".patch"), out.with_suffix(".receipt.json"))) or out.resolve() == source.resolve():
         raise Refusal("candidate must be a new file; refusing existing source mutation")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_bytes(after.encode())
