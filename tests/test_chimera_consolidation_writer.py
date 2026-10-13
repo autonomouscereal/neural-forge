@@ -40,11 +40,16 @@ def test_true_native_chimera_forward_after_joint_optimizer_and_inverse_writer(tm
         music = model._recovery_d4_music
         logits = torch.nn.functional.linear(actual.float(), music["head"])
         torch.testing.assert_close(logits, result["logits"][:, :, model.music_band_begin:model.music_band_begin + 10], rtol=5e-5, atol=5e-6)
-    # Full fused FFN halves, KDA concat and GQA query/gate interleave all change,
-    # while text rows, ledger and all reserve rows stay bit-identical.
+    # Full fused FFN halves and KDA concatenated Q/K/V change. The genuine D2
+    # builder explicitly forbids GQA q/k adapters, so its interleaved query/gate
+    # source parts and key projections must remain exactly source-frozen.
     assert any("ffn.up.weight" in name for name in patches)
     assert any("mixer.q_proj.weight" in name for name in patches)
-    assert any("mixer.gate_proj.weight" in name for name in patches)
+    for index, kind in enumerate(reader.block_kinds):
+        if kind != "kda":
+            for suffix in ("q_proj.weight", "gate_proj.weight", "k_proj.weight"):
+                name = f"blocks.{reader.text_blocks[index]}.mixer.{suffix}"
+                assert name not in patches and torch.equal(published[name], original[name]), name
     begin, end = model.music_band_begin, model.music_band_begin + 10
     for name in ("embed.weight", "lm_head.weight"):
         assert torch.equal(patches[name][:begin], original[name][:begin])
