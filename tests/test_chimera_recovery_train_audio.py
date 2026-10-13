@@ -31,7 +31,14 @@ def setup(tmp_path):
                                 lora=plan, lora_seed=3, pin_boundaries=False, prefetch=False))
         return A.AudioCEEngine(module, model, "tiny_h3", optimizer, identity, total_steps=3)
     engine = construct()
-    segment = module.tiny_segment(engine.hybrid.cfg, "audio", prompt=6, rows=5, seed=8, suffix=4)
+    segment = module.tiny_segment(engine.hybrid.cfg, "h3", prompt=6, rows=5, seed=8, suffix=4)
+    # The original mathematical builder supplies mixed AV only. Create an
+    # audio-only native fixture with the actual tiny allocated audio band.
+    segment["types"].fill_(3)
+    segment["features"].zero_()
+    lo, hi = engine.hybrid.bands[3]["feature"]
+    segment["features"][..., lo:hi] = torch.randn(1, 5, hi - lo, generator=torch.Generator().manual_seed(33))
+    segment["ids"][0, -4:] = torch.tensor([4, 5, 6, 7])
     segment["sigma"].zero_()
     length = segment["ids"].shape[1]
     mask = torch.zeros_like(segment["ids"], dtype=torch.bool)
