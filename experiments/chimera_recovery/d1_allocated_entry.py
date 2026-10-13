@@ -55,6 +55,7 @@ def cuda_evidence():
             torch.cuda.synchronize(ordinal)
         del value
     return dict(device_count=count, ordinals=list(range(count)), uuids=uuids,
+                python_executable=sys.executable,
                 torch_version=str(torch.__version__), bf16_matmul_finite=finite)
 
 
@@ -144,6 +145,7 @@ def run(args):
     sys.path[:0] = ["/candidate/tools", "/chimera/src"]
     cuda = cuda_evidence()
     if (cuda["device_count"] != 2 or cuda["uuids"] != [gpu["uuid"] for gpu in assignment["gpus"]]
+            or cuda["python_executable"] != assignment["image_python"]
             or cuda["torch_version"] != assignment["torch_version"] or not cuda["bf16_matmul_finite"]):
         raise R.Error("D1 actual container CUDA/Torch/BF16 proof differs")
     trainer = importlib.import_module("d1_trunk_recovery")

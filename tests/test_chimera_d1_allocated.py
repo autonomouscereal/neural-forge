@@ -27,14 +27,15 @@ def fixture():
                    "/home/cereal/omni-campaign/distill/runtime_leases/D1-test",
                    "/home/cereal/omni-campaign/distill/d1/test-allocated", "/mnt/lexar/omni-campaign/deltas/test-allocated")
     value.update(schema=R.SCHEMA, active=True, container_id="1" * 64, container_name="codex-d1-test",
-                 allocation_group_id="00000000-0000-0000-0000-000000000003", torch_version="2.11.0+cu130",
+                 allocation_group_id="00000000-0000-0000-0000-000000000003", torch_version=R.IMAGE_TORCH,
                  candidate_receipt_sha256="a" * 64, chimera_source_sha256="b" * 64,
                  root_controller_sha256=R.sha(H.__file__),
                  source_path_map_sha256="c" * 64,
                  gpus=[dict(uuid=f"GPU-00000000-0000-0000-0000-00000000000{i+1}", host_index=index, container_ordinal=i)
                        for i, index in enumerate([0, 4])])
     uuids = [gpu["uuid"] for gpu in value["gpus"]]
-    cuda = dict(device_count=2, ordinals=[0, 1], uuids=uuids, torch_version=value["torch_version"], bf16_matmul_finite=True)
+    cuda = dict(device_count=2, ordinals=[0, 1], uuids=uuids, torch_version=value["torch_version"],
+                python_executable=R.IMAGE_PYTHON, bf16_matmul_finite=True)
     value["initial_cuda_evidence"] = cuda
     rows = [dict(allocation_id=str(uuid.uuid4()), group_id=value["allocation_group_id"], server="ai", owner=B.OWNER,
                  state="running", kind="generic", name=value["container_name"], container_id=value["container_id"],
@@ -113,6 +114,47 @@ class AllocatedTests(unittest.TestCase):
             mutation(docker)
             with self.assertRaises(ValueError):
                 R.attest(self.value, self.digest, self.rows, docker, self.cuda, self.host, self.now)
+
+    def test_exact_image_interpreter_and_torch_required_for_real_cuda_proof(self):
+        for field, bad in (("python_executable", "/usr/bin/python3.12"), ("torch_version", "2.11.0+cu130")):
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, "CUDA"):
+                R.attest(self.value, self.digest, self.rows, self.docker, dict(self.cuda, **{field: bad}), self.host, self.now)
+        plan = B.plan("/candidate-host", "/lease-host", "/run-host", "/delta-host")
+        cmd = plan["allocation_command_template"]
+        self.assertEqual(cmd[cmd.index("--runtime-arg") + 1], R.IMAGE_PYTHON)
+        # Execute the actual production start operation, with only subprocess
+        # transport modeled. No Docker call or GPU allocation occurs in this test.
+        calls = []
+        def capture(argv, **kwargs):
+            calls.append(argv)
+            return argparse.Namespace(returncode=0, stdout="PID COMMAND\n", stderr="")
+        request = H.request(self.value, "start", mode="--check-only", assignment_sha256=self.digest,
+                            candidate_receipt_sha256=self.value["candidate_receipt_sha256"], execution_id=str(uuid.uuid4()))
+        import base64, subprocess, sys
+        with mock.patch.object(subprocess, "run", side_effect=capture), mock.patch.object(sys, "argv", ["fixture", base64.b64encode(R.canonical(request)).decode()]):
+            exec(compile(H.REMOTE, "actual-root-start-operation", "exec"), {})
+        start = next(argv for argv in calls if argv[:3] == ["docker", "exec", "-d"])
+        self.assertEqual(start[4], R.IMAGE_PYTHON)
+        tree = ast.parse(H.REMOTE)
+        cuda_cmd = next(node for node in ast.walk(tree) if isinstance(node, ast.List) and len(node.elts) >= 4
+                        and [getattr(value, "value", None) for value in node.elts[:2]] == ["docker", "exec"]
+                        and getattr(node.elts[2], "value", None) != "-d")
+        self.assertEqual(ast.unparse(cuda_cmd.elts[3]), "r['image_python']")
+
+    def test_authentic_cpu_image_import_receipt_not_a_gpu_ready_flag(self):
+        path = Path(os.environ.get("D1_IMAGE_IMPORT_PROOF", "C:/Users/cereal/Documents/ai training/reviews/2026-10-13-folding/recovery-preparation/d1-torch-image-proof-v3/collect.json"))
+        if not path.is_file():
+            self.skipTest("authentic root CPU image proof fixture not staged")
+        value = B.image_import_proof(path)
+        observed = json.loads(value["result"]["stdout"])
+        self.assertEqual(observed["executable"], R.IMAGE_PYTHON)
+        self.assertEqual(observed["torch"], R.IMAGE_TORCH)
+        self.assertFalse(observed["cuda_available"])
+        altered = self.root / "changed-image-proof.json"
+        value["result"]["container"]["image"] = "sha256:" + "0" * 64
+        altered.write_bytes(R.canonical(value))
+        with self.assertRaises(ValueError):
+            B.image_import_proof(altered)
 
     def test_k3_foreign_gpu_and_native_source_fail_closed(self):
         for field, bad in (("k3_running", True), ("k3_passes_complete", False), ("k3_sealed_manifests", 3),

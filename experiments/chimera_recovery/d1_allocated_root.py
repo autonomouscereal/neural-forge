@@ -83,7 +83,7 @@ if action=='snapshot':
   'k3_sealed_manifests':sealed,'foreign_gpu_processes':foreign,'chimera_source_sha256':source_sha}
  if r.get('probe_cuda'):
   code="import sys,json;sys.path.insert(0,'/candidate/tools');from d1_allocated_entry import cuda_evidence;print(json.dumps(cuda_evidence(),sort_keys=True))"
-  out['cuda']=json.loads(cmd(['docker','exec',cid,'python3','-c',code]))
+  out['cuda']=json.loads(cmd(['docker','exec',cid,r['image_python'],'-c',code]))
 elif action=='publish':
  lease=root('lease')
  if not str(lease).startswith('/home/cereal/omni-campaign/distill/runtime_leases/D1-'): raise ValueError('exclusive D1 lease namespace required')
@@ -96,7 +96,7 @@ elif action=='start':
  # Refuse another still-running entry after a controller crash; do not kill it.
  own=cmd(['docker','top',cid,'-eo','pid,args'])
  if 'd1_allocated_entry.py' in own: raise ValueError('existing D1 entry still active')
- argv=['docker','exec','-d',cid,'python3','/candidate/tools/d1_allocated_entry.py',r['mode'],
+ argv=['docker','exec','-d',cid,r['image_python'],'/candidate/tools/d1_allocated_entry.py',r['mode'],
   '--runtime-assignment','/lease/assignment.json','--runtime-assignment-sha256',r['assignment_sha256'],
   '--candidate-receipt-sha256',r['candidate_receipt_sha256'],'--execution-id',r['execution_id']]
  cmd(argv);out={'started':True}
@@ -147,6 +147,7 @@ async def allocation_rows(conn, group):
 
 def request(assignment, action, **extra):
     return dict(action=action, container_id=assignment["container_id"], mounts=assignment["mounts"],
+                image_python=assignment["image_python"],
                 gpu_uuids=[gpu["uuid"] for gpu in assignment["gpus"]], **extra)
 
 
@@ -176,7 +177,9 @@ async def guarded_cuda_probe(conn, assignment):
 async def bind(args):
     plan = R.read(args.plan, args.plan_sha256)
     if (plan.get("schema") != "chimera_recovery.d1_allocation_plan.v1" or plan.get("owner") != B.OWNER
-            or plan.get("image_id") != B.IMAGE or plan.get("root_controller_sha256") != R.sha(__file__) or args.out.exists()):
+            or plan.get("image_id") != B.IMAGE or plan.get("image_python") != R.IMAGE_PYTHON
+            or plan.get("image_import_proof_sha256") != R.IMAGE_PROOF_SHA256
+            or plan.get("root_controller_sha256") != R.sha(__file__) or args.out.exists()):
         raise R.Error("Exact new reviewed D1 allocation binding required")
     conn = await connection()
     try:
@@ -184,7 +187,7 @@ async def bind(args):
         rows = await allocation_rows(conn, str(args.group))
         if len(rows) != 2:
             raise R.Error("D1 group not fully reconciled; run official controller status then retry binding; no update authority issued")
-        assignment = {key: plan[key] for key in ("owner", "server", "stage", "native_task", "image_id", "mounts",
+        assignment = {key: plan[key] for key in ("owner", "server", "stage", "native_task", "image_id", "image_python", "image_import_proof_sha256", "mounts",
                      "clone_directory_sha256", "mem_available_launch_floor_gib", "max_proof_age_seconds",
                      "container_devices", "lease_proof_target", "lease_mount_read_only", "candidate_receipt_sha256", "root_controller_sha256",
                      "source_path_map_sha256", "resource_policy", "resource_policy_sha256")}

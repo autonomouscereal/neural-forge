@@ -16,7 +16,7 @@ except ImportError:
     import d1_source_contract as S
 
 OWNER = "codex-chimera-recovery-01a1326f"
-IMAGE = "sha256:20e01d3a0d9cd8eda1cde410870c8111918f1e6e06cadfc9016dd4069c223164"
+IMAGE = R.IMAGE
 CLONE = "/mnt/lexar/omni-campaign/clones/OC02-F-Q38-27BU-OMNI1.clone-pre-D1"
 PREPARATION = "/home/cereal/omni-campaign/distill/codex-preparation-01a1326f-20261013"
 CLONE_DIGEST = "8edf50c42090d6d556d71d6c6c71e2405569b5082adaf133f4265bad1d901264"
@@ -35,7 +35,8 @@ def plan(runtime_candidate, lease_source, run_source, delta_source):
         ("run", run_source, "/runout", False), ("delta", delta_source, "/deltaout", False))]
     return dict(schema="chimera_recovery.d1_allocation_plan.v1", owner=OWNER, server="ai", stage="D1",
                 native_task="01a1326f-4f44-7ef0-a2fa-2a64a706fedc", active=False, production_ready=False,
-                required_host_gpu_indices=[0, 4], image_id=IMAGE, mounts=mounts,
+                required_host_gpu_indices=[0, 4], image_id=IMAGE, image_python=R.IMAGE_PYTHON,
+                image_import_proof_sha256=R.IMAGE_PROOF_SHA256, mounts=mounts,
                 clone_directory_sha256=CLONE_DIGEST, mem_available_launch_floor_gib=100, max_proof_age_seconds=45,
                 resource_policy=R.DEFAULT_RESOURCE_POLICY,
                 resource_policy_sha256=hashlib.sha256(R.canonical(R.DEFAULT_RESOURCE_POLICY) + b"\n").hexdigest(),
@@ -44,7 +45,7 @@ def plan(runtime_candidate, lease_source, run_source, delta_source):
                 allocation_command_template=["C:/Python314/python.exe", "-B", "C:/Users/cereal/hermes.py", "run", "--gpus", "0", "4",
                                              "--owner", OWNER, "--name", "<root-chosen-exact-name>", "--image", IMAGE]
                 + [value for item in mounts for value in ("--mount-ro" if item["read_only"] else "--mount-rw", item["source"], item["target"])]
-                + ["--runtime-arg", "python3", "--runtime-arg=-c", "--runtime-arg", "import time; time.sleep(86400)"],
+                + ["--runtime-arg", R.IMAGE_PYTHON, "--runtime-arg=-c", "--runtime-arg", "import time; time.sleep(86400)"],
                 blockers=["No actual named two-GPU allocator group/container has been supplied",
                           "Root must choose an idle resource window, then bind real PG/Docker/CUDA evidence",
                           "No production D1 run or GPU parity/memory-throughput test performed by this preparation"],
@@ -85,8 +86,23 @@ def portable_validator(raw):
     return text.encode()
 
 
+def image_import_proof(path):
+    value = R.read(path, R.IMAGE_PROOF_SHA256)
+    result = value.get("result", {})
+    container = result.get("container", {})
+    observed = json.loads(result.get("stdout", ""))
+    if (value.get("remote_returncode") != 0 or container.get("state", {}).get("ExitCode") != 0
+            or container.get("image") != IMAGE or container.get("device_requests") is not None
+            or observed.get("executable") != R.IMAGE_PYTHON or observed.get("torch") != R.IMAGE_TORCH
+            or not observed.get("python", "").startswith("3.12.14 ") or observed.get("cuda_available") is not False):
+        raise R.Error("D1 authentic CPU image interpreter/import proof differs; it is not a GPU capability proof")
+    return value
+
+
 def prepare(baseline, source_manifest, source_sha, clone_receipt, registry_receipt, campaign_tools, campaign_ledger,
-            runtime_candidate, lease_source, run_source, delta_source, out, resource_amendment=None, resource_amendment_sha256=None):
+            runtime_candidate, lease_source, run_source, delta_source, out, runtime_image_proof,
+            resource_amendment=None, resource_amendment_sha256=None):
+    image_import_proof(runtime_image_proof)
     if bool(resource_amendment) != bool(resource_amendment_sha256):
         raise R.Error("D1 resource amendment path/SHA must be selected together")
     policy = R.DEFAULT_RESOURCE_POLICY
@@ -117,13 +133,15 @@ def prepare(baseline, source_manifest, source_sha, clone_receipt, registry_recei
              "tools/oc_seal.py": (campaign_ledger / "oc_seal.py").read_bytes(),
              "evidence/actual-clone-receipt.json": Path(clone_receipt).read_bytes(),
              "evidence/actual-registry-clone.json": Path(registry_receipt).read_bytes(),
+             "evidence/actual-image-cpu-import.json": Path(runtime_image_proof).read_bytes(),
              "resource_policy.json": R.canonical(policy) + b"\n",
              "source_path_map.json": R.canonical(R.SOURCE_MAP) + b"\n"}
     for name, raw in files.items():
         if name.endswith(".py"):
             compile(raw, name, "exec")
     candidate = dict(schema="chimera_recovery.d1_allocated_candidate.v1", prepared_date="2026-10-13",
-                     image_id=IMAGE, clone_directory_sha256=CLONE_DIGEST, actual_counts=manifest["actual_counts"],
+                     image_id=IMAGE, image_python=R.IMAGE_PYTHON, image_import_proof_sha256=R.IMAGE_PROOF_SHA256,
+                     clone_directory_sha256=CLONE_DIGEST, actual_counts=manifest["actual_counts"],
                      source_path_map=R.SOURCE_MAP, original_source_manifest_bytes_unchanged=True,
                      resource_policy=policy,
                      successor=dict(manifest=str(PurePosixPath(manifest["dataset"]["path"]).parent / "manifest.json"),
@@ -158,7 +176,7 @@ def prepare(baseline, source_manifest, source_sha, clone_receipt, registry_recei
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
-    for key in ("baseline", "source-manifest", "clone-receipt", "registry-receipt", "campaign-tools", "campaign-ledger", "out"):
+    for key in ("baseline", "source-manifest", "clone-receipt", "registry-receipt", "campaign-tools", "campaign-ledger", "out", "runtime-image-proof"):
         parser.add_argument("--" + key, type=Path, required=True)
     for key in ("source-sha", "runtime-candidate", "lease-source", "run-source", "delta-source"):
         parser.add_argument("--" + key, required=True)

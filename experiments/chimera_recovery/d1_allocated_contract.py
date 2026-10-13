@@ -11,6 +11,10 @@ SCHEMA = "chimera_recovery.d1_allocated_runtime.v1"
 PROOF = "chimera_recovery.d1_allocator_live.v1"
 Error = ValueError
 OWNER = "codex-chimera-recovery-01a1326f"
+IMAGE = "sha256:d4ef16f161e51df2bd51df62c1aaa4ea7d9fc65fefcbaef8382027a527ec3ba6"
+IMAGE_PYTHON = "/usr/local/bin/python"
+IMAGE_TORCH = "2.11.0+cu128"
+IMAGE_PROOF_SHA256 = "79a38c79062420e10c2620a360b8c4b2adff6483a375ad6154c5fa943aff0830"
 SOURCE_ROOT = "/home/cereal/omni-campaign/distill/codex-preparation-01a1326f-20261013"
 SOURCE_MAP = dict(schema="chimera_recovery.d1_source_path_map.v1", source_root=SOURCE_ROOT,
                   container_root="/inputs/successor", semantics="resolve_only_original_manifest_bytes_and_sha256s_preserved")
@@ -138,8 +142,8 @@ def assignment_record(path, expected):
             or value.get("resource_policy_sha256") != hashlib.sha256(canonical(policy) + b"\n").hexdigest()):
         raise Error("D1 resource policy must match an explicitly pinned reviewed record")
     if (not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{1,100}", value.get("container_name", ""))
-            or not re.fullmatch(r"2\.11\.0(?:\+[a-zA-Z0-9.]+)?", value.get("torch_version", ""))
-            or value.get("image_id") != "sha256:20e01d3a0d9cd8eda1cde410870c8111918f1e6e06cadfc9016dd4069c223164"
+            or value.get("torch_version") != IMAGE_TORCH or value.get("image_python") != IMAGE_PYTHON
+            or value.get("image_id") != IMAGE or value.get("image_import_proof_sha256") != IMAGE_PROOF_SHA256
             or not re.fullmatch(r"[a-f0-9]{64}", value.get("chimera_source_sha256", ""))
             or not re.fullmatch(r"[a-f0-9]{64}", value.get("root_controller_sha256", ""))
             or not re.fullmatch(r"[a-f0-9]{64}", value.get("source_path_map_sha256", ""))
@@ -212,6 +216,7 @@ def attest(assignment, assignment_sha, rows, docker, cuda, host, now=None):
     verify_docker(assignment, docker)
     verify_host(assignment, host)
     if (cuda.get("device_count") != 2 or cuda.get("uuids") != uuids or cuda.get("torch_version") != assignment["torch_version"]
+            or cuda.get("python_executable") != assignment["image_python"]
             or cuda.get("bf16_matmul_finite") is not True or cuda.get("ordinals") != [0, 1]):
         raise Error("D1 actual in-container CUDA ordinals/UUIDs/BF16 runtime differ")
     return dict(schema=PROOF, valid=True, assignment_sha256=assignment_sha, captured_at=now.isoformat(),
