@@ -22,7 +22,12 @@ omits IDs, the packer follows that authentic template and preserves IDs as audit
 metadata. All assistant bodies, including tool calls and closing EOS, may be
 supervised; system/user/tool results and role headers cannot be supervised.
 Selected earlier assistant turns can be masked explicitly. Oversized rows refuse
-instead of truncating a call/result pair. Media cannot be discarded into a text
+instead of truncating a call/result pair. Unsupported rows are quarantined with
+IDs and reasons; valid rows continue. `--split` defaults to train; validation and
+test require distinct output directories. Connected provenance groups cannot
+cross splits. Explicit `quality.train_ready=false` rows cannot enter the shard.
+The output directory is published only after all validation and file creation.
+Media cannot be discarded into a text
 shard. The shard contains `input_ids`, `lengths`, and bool `assistant_mask`.
 
 The existing teacher-cache builder accepts this shard's `input_ids` and
@@ -110,7 +115,7 @@ All semantic routes have explicit dispatch; unknown routes never become text.
 Vision/video/audio understanding require real conditioning and answer caches.
 Image/edit, audio, music, joint AV, and volume generation require their native
 cache adapters and teacher targets. H3 synchronized AV and HY3D genuine geometry
-remain corpus requirements. No active thermal prerequisite is imposed here.
+remain corpus requirements.
 
 ```bash
 python experiments/chimera_recovery/training.py cpu-dryrun --out /path/to/contract.json
