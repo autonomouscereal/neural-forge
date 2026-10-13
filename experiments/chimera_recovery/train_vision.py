@@ -4,6 +4,7 @@ Feature targets must be authentic packed parent outputs aligned to this sample.
 No adapter guesses a teacher feature from image pixels or token counts.
 """
 from __future__ import annotations
+from contextlib import contextmanager
 import importlib.util
 import math
 from pathlib import Path
@@ -15,6 +16,25 @@ T = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = T
 spec.loader.exec_module(T)
 R, Error = T.R, T.Error
+
+
+@contextmanager
+def capture_unit_block(unit, outputs):
+    """Observe the native block method without changing its computation/weights."""
+    prior_instance_override = "block" in unit.__dict__
+    original = unit.block
+    def observed(*args, **kwargs):
+        result = original(*args, **kwargs)
+        outputs.append(result)
+        return result
+    unit.block = observed
+    try:
+        yield
+    finally:
+        if prior_instance_override:
+            unit.block = original
+        else:
+            delattr(unit, "block")
 
 
 def feature_forward_backward(module, model, segment, text_objective, unit_name, teacher_features):
@@ -41,13 +61,12 @@ def feature_forward_backward(module, model, segment, text_objective, unit_name, 
         if i in pre:
             y = pre[i].to(model.device, copy=True).requires_grad_(True)
             feature_outputs = []
-            handle = model.units[unit_name].block.register_forward_hook(lambda _module, _args, output: feature_outputs.append(output)) if i == placement.depth - 1 else None
-            try:
+            if i == placement.depth - 1:
+                with capture_unit_block(model.units[unit_name], feature_outputs), torch.enable_grad():
+                    z = model.apply_units(y, i, context)
+            else:
                 with torch.enable_grad():
                     z = model.apply_units(y, i, context)
-            finally:
-                if handle is not None:
-                    handle.remove()
             if feature_outputs:
                 captures += len(feature_outputs)
                 actual = feature_outputs[0]

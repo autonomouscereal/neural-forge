@@ -45,7 +45,8 @@ def test_refit_trains_chart_out_and_whole_native_unit_with_exact_resume(tmp_path
     first = engine.train_step(*tensors, **kwargs)
     assert not first["skipped"] and first["chart_out_rel_mse"] > 0
     assert any(not torch.equal(initial[name], value) for name, value in engine.census.items() if "chart_out" in name)
-    assert any(not torch.equal(initial[name], value) for name, value in engine.census.items() if ".block." in name)
+    source_parameters = {name: value for name, value in engine.census.items() if ".block_params." in name}
+    assert source_parameters and any(not torch.equal(initial[name], value) for name, value in source_parameters.items())
     assert all(value.grad is not None for value in engine.census.values())
     assert not any(value.requires_grad for value in engine.hybrid.bank.tensors.values())
     engine.save(tmp_path / "interrupted")
