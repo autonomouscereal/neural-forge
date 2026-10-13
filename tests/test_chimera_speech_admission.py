@@ -120,6 +120,32 @@ class SpeechAdmissionTests(unittest.TestCase):
         self.assertEqual(ids[0],ids[1])
         self.assertNotEqual(inventory[0]["provenance"]["group_id"],inventory[1]["provenance"]["group_id"])
 
+    def test_held_only_plan_cannot_silently_supply_train_rows(self):
+        self.plan["optimizer_use_forbidden"]=True
+        with self.assertRaisesRegex(ValueError,"held-only"):
+            self.build()
+
+    def test_independent_campaign_near_utterances_propagate_holdout(self):
+        _,records,_=self.build()
+        held=copy.deepcopy(records[0]);held["id"]="separate-held-plan"
+        held["split"]="test";held["provenance"]["group_id"]="b"*64
+        held["provenance"]["source_ids"]=["separate-held-source"]
+        held["media"]=[{"sha256":"c"*64,"source_media_sha256":"d"*64,"path":"independent-held.wav"}]
+        held["messages"][-1]["content"]="A gardener moved clay pots beneath the porch after snow."
+        rows=records+[held]
+        self.assertFalse(A.identities(records[0]) & A.identities(held))
+        S.link_campaign_groups(rows)
+        groups=A.Groups()
+        indices=[groups.add(A.identities(r)) for r in rows]
+        self.assertEqual(len({groups.find(i) for i in indices}),1)
+        self.assertEqual(held["split"],"test")
+        self.assertEqual(records[0]["provenance"]["tts_row_sha256"],A.digest(self.tts["rows"][0]))
+
+    def test_combined_campaign_duplicate_ids_refused(self):
+        _,records,_=self.build()
+        with self.assertRaisesRegex(ValueError,"duplicate"):
+            S.link_campaign_groups(records+[copy.deepcopy(records[0])])
+
 
 if __name__ == "__main__":
     unittest.main()

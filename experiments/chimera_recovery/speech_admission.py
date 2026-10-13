@@ -111,6 +111,8 @@ def build_sources(*,plan,plan_sha,tts,asr,download,asset_root):
         plan.get("original_user_voice_used") is not False or plan.get("sampling") != {"do_sample":False,"subtalker_dosample":False,"max_new_tokens":256}):
         raise ValueError("authored speech plan scope/sampling not verified")
     planned = unique(plan.get("records",[]),"planned")
+    if plan.get("optimizer_use_forbidden") is True and any(p.get("split") == "train" for p in planned.values()):
+        raise ValueError("held-only speech plan cannot contain optimizer training rows")
     generated,recognized = campaign_verified(tts,"tts",plan_sha),campaign_verified(asr,"asr",plan_sha)
     if not planned or plan.get("rows") != len(planned) or set(planned) != set(generated) or set(planned) != set(recognized):
         raise ValueError("complete plan/TTS/ASR source inventory must match exactly; canary/partial cannot admit full corpus")
@@ -177,7 +179,28 @@ def build_sources(*,plan,plan_sha,tts,asr,download,asset_root):
     return candidates,inventory,quarantine
 
 
-def prepare(*,global_specs,speech_specs,procedural_asset_root,speech_asset_root,output):
+def link_campaign_groups(inventory):
+    """Propagate exact/near utterance identities across independently sealed plans."""
+    unique(inventory,"combined campaign")
+    groups=A.Groups()
+    nodes=[]
+    for r in inventory:
+        text=normalized(r["messages"][-1]["content"])
+        grams={tuple(text[i:i+4]) for i in range(len(text)-3)}
+        key="combined-speech-wording:"+A.digest(text)
+        index=groups.add({key,"utterance:"+r["provenance"]["group_id"]})
+        for _,prior,prior_grams in nodes:
+            if grams and prior_grams and len(grams & prior_grams)/len(grams | prior_grams) > .5:
+                groups.add({key,prior})
+        nodes.append((index,key,grams))
+    members={}
+    for index,key,_ in nodes:
+        members.setdefault(groups.find(index),set()).add(key)
+    for r,(index,_,_) in zip(inventory,nodes):
+        r["provenance"]["source_ids"].append("combined-speech-group:"+A.digest(sorted(members[groups.find(index)])))
+
+
+def prepare(*,global_specs,speech_specs,procedural_asset_root,speech_asset_root,output,additional_campaigns=()):
     if output.exists():
         raise ValueError("preserve previous preparation; use a new output")
     required={"speech_plan","tts_receipt","asr_receipt","teacher_download","teacher_writer"}
@@ -189,6 +212,23 @@ def prepare(*,global_specs,speech_specs,procedural_asset_root,speech_asset_root,
         raise ValueError("speech plan frozen evaluation pin differs from global admission")
     candidates,inventory,quarantine=build_sources(plan=data["speech_plan"],plan_sha=speech_specs["speech_plan"]["sha256"],
                                                  tts=data["tts_receipt"],asr=data["asr_receipt"],download=data["teacher_download"],asset_root=speech_asset_root)
+    campaign_pins=dict(speech_specs)
+    for i,campaign in enumerate(additional_campaigns):
+        pins=campaign["pins"]
+        if not required.issubset(pins):
+            raise ValueError("additional speech campaign requires all five pinned sources")
+        extra_paths={k:A.pinned(v,"additional_"+k) for k,v in pins.items()}
+        extra={k:json.loads(extra_paths[k].read_text(encoding="utf-8")) for k in required if k!="teacher_writer"}
+        if extra["speech_plan"].get("exclusions_sha256") != global_specs["frozen_exclusions"]["sha256"]:
+            raise ValueError("additional speech frozen evaluation pin differs")
+        c,records,q=build_sources(plan=extra["speech_plan"],plan_sha=pins["speech_plan"]["sha256"],
+                                 tts=extra["tts_receipt"],asr=extra["asr_receipt"],download=extra["teacher_download"],
+                                 asset_root=Path(campaign["asset_root"]))
+        candidates.extend(c);inventory.extend(records);quarantine.extend(q)
+        campaign_pins.update({f"additional_speech_{i}_"+k:v for k,v in pins.items()})
+    link_campaign_groups(inventory)
+    # Candidates reference these same record objects; admission hashes the final
+    # combined identity, while original teacher/plan row hashes stay untouched.
     basepaths={k:A.pinned(v,k) for k,v in global_specs.items()}
     _,procedural=A.procedural_candidates(basepaths,global_specs,procedural_asset_root)
     output.mkdir(parents=True)
@@ -196,14 +236,15 @@ def prepare(*,global_specs,speech_specs,procedural_asset_root,speech_asset_root,
     for name,records in (("source_ready",[c["record"] for c in candidates]),("source_inventory",inventory),("quarantine",quarantine)):
         path=output/(name+".jsonl");path.write_bytes(b"".join(A.canonical(r)+b"\n" for r in records))
         files[name]={"path":str(path.resolve()),"sha256":A.file_sha(path),"rows":len(records)}
-    specs={**{("procedural_"+k if k.startswith("source") else k):v for k,v in global_specs.items()},**speech_specs,
+    specs={**{("procedural_"+k if k.startswith("source") else k):v for k,v in global_specs.items()},**campaign_pins,
            "source":files["source_ready"],"source_inventory":files["source_inventory"],"quarantine":files["quarantine"]}
     manifest=A.seal_admission(specs=specs,candidates=candidates,inventory=procedural+inventory,output=output/"global_admission")
-    receipt={"schema":"recovery_speech_source_preparation.v1","sources":{**global_specs,**speech_specs},"outputs":files,
+    receipt={"schema":"recovery_speech_source_preparation.v1","sources":{**global_specs,**campaign_pins},"outputs":files,
              "code_sha256":A.file_sha(Path(__file__)),"global_admission":manifest["manifest_sha256"],
              "global_admission_file_sha256":A.file_sha(output/"global_admission/manifest.json"),
              "actual_tts_sources":len(inventory),"independent_asr_exact":len(candidates),"quarantined":len(quarantine),
              "train_source_admitted":manifest["train_admitted"],"native_train_ready":False,"training_started":False,
+             "complete_campaigns":1+len(additional_campaigns),"cross_campaign_utterance_groups_verified":True,
              "limitations":["Official synthetic English voices; no original user voice, listening review, accent/noise benchmark or broad speech capability claim.",
                             "Only independent exact case/punctuation agreement becomes supervised; mismatches remain unsupervised.",
                             "H3 standalone encoding, dated audio chart/amendment, native mask/batch and driver proofs remain required."]}
@@ -216,10 +257,12 @@ def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__)
     for name in ("global-pins","speech-pins","procedural-asset-root","speech-asset-root","output"):
         p.add_argument("--"+name,type=Path,required=True)
+    p.add_argument("--additional-campaigns",type=Path,help="JSON list of complete {pins,asset_root} campaigns; held splits stay held")
     args=p.parse_args(argv)
     result=prepare(global_specs=json.loads(args.global_pins.read_text(encoding="utf-8")),
                    speech_specs=json.loads(args.speech_pins.read_text(encoding="utf-8")),procedural_asset_root=args.procedural_asset_root,
-                   speech_asset_root=args.speech_asset_root,output=args.output)
+                   speech_asset_root=args.speech_asset_root,output=args.output,
+                   additional_campaigns=json.loads(args.additional_campaigns.read_text(encoding="utf-8")) if args.additional_campaigns else ())
     print(json.dumps({k:result[k] for k in ("actual_tts_sources","independent_asr_exact","quarantined","train_source_admitted","outputs","manifest_sha256")}))
     return 0
 
