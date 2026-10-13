@@ -56,6 +56,16 @@ allocation: root retains responsibility for inspecting the stopped job and
 releasing its exact group. Completed deltas require separate reviewed ledger
 publication. Different assignment identity cannot silently resume old outputs.
 
+The v7 candidate binds the actual CPU-import-tested image
+`sha256:d4ef16f161e51df2bd51df62c1aaa4ea7d9fc65fefcbaef8382027a527ec3ba6`
+and absolute interpreter `/usr/local/bin/python` (Python3.12.14,
+Torch2.11.0+cu128). Idle allocation, CUDA evidence and entry execution all use that
+same absolute interpreter. `--runtime-image-proof FILE` must supply the authentic
+SHA-pinned root CPU receipt; this records no GPU availability/capability claim.
+The earlier OS image `20e01d...` failed its import proof and is superseded.
+Actual allocated CUDA UUIDs and finite BF16 operations still require separate
+in-container preflight before any model or optimizer work.
+
 Without resource amendment flags, the builder preserves the historical completed
 K3-pass/four-sealed-cache prerequisite. Selecting both `--resource-amendment FILE`
 and `--resource-amendment-sha256 SHA` enables only the exact reviewed dated record
