@@ -264,8 +264,10 @@ def preflight(config_path):
     check("runtime_assignment", lambda: T.read_json(T.pinned_file(config["runtime_assignment"], root)))
     check("batches_path", lambda: str(T.pinned_file(config["batches_manifest"], root)))
     try:
+        if (config.get("after_stage"), config.get("before_stage")) != ("D3d", "D3d_speech_flow"):
+            raise Error("audio CE must follow completed vision D3d and precede selected D3d_speech_flow")
         if (config.get("objective") != OBJECTIVE or config.get("read_policy") != READ_POLICY or config.get("dtype") not in {"float32", "bfloat16"} or
-                config.get("after_stage") != "D3d" or config.get("before_stage") != "D4" or config.get("safety") != SAFETY or
+                config.get("safety") != SAFETY or
                 type(config.get("seed")) is not int or config["seed"] != 20261013):
             raise Error("audio objective, stage order, read policy, dtype, seed and safety must be explicitly amended")
         body = T.pinned_file(config["preregistration"], root).read_bytes().replace(b"\r\n", b"\n")
