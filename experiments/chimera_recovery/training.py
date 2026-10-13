@@ -533,7 +533,8 @@ def native_velocity_loss(prediction: Any, target: Any, types: Any, weights: Any,
 
 def flow_velocity_loss(prediction: Any, x0_target: Any, types: Any, mask: Any, bands: dict[int, dict[str, Any]], *,
                        param: str = "x0", x_t: Any = None, sigma: Any = None,
-                       signs: dict[int, float] | None = None, target_kind: str = "x0", x_t_layout: str = "feature") -> Any:
+                       signs: dict[int, float] | None = None, target_kind: str = "x0", x_t_layout: str = "feature",
+                       noisy_feature_bands: dict[int, tuple[int, int]] | None = None) -> Any:
     """D3 flow_x0_loss-compatible hook, with a velocity objective.
 
     Python `param` names the emission head parameterization. It does not select
@@ -552,10 +553,14 @@ def flow_velocity_loss(prediction: Any, x0_target: Any, types: Any, mask: Any, b
         for modality in (int(value) for value in torch.unique(types[mask > 0]).tolist()):
             if modality not in bands or "feature" not in bands[modality]:
                 raise ReadinessError("velocity conversion requires the audited feature-to-emission allocation")
-            flo, fhi = bands[modality]["feature"]
+            if noisy_feature_bands is None or modality not in noisy_feature_bands:
+                raise ReadinessError("velocity conversion requires explicit audited noisy-channel suballocation")
+            flo, fhi = noisy_feature_bands[modality]
+            bridge_lo, bridge_hi = bands[modality]["feature"]
             elo, ehi = emission[modality]
-            if fhi - flo != ehi - elo or not 0 <= flo < fhi <= x_t.shape[-1]:
-                raise ReadinessError("feature/emission widths differ or noisy latent band is invalid")
+            if (type(flo) is not int or type(fhi) is not int or fhi - flo != ehi - elo or
+                    not 0 <= bridge_lo <= flo < fhi <= bridge_hi <= x_t.shape[-1]):
+                raise ReadinessError("noisy-channel suballocation outside bridge band or differs from emission width")
             rows = types == modality
             aligned[..., elo:ehi][rows] = x_t[..., flo:fhi][rows]
         x_t = aligned
@@ -590,6 +595,13 @@ class ReadyObjectiveAdapter:
             raise ReadinessError("sealed cache must declare student head parameterization")
         if receipt.get("input_layout") != "feature" or receipt.get("target_layout") != "emission":
             raise ReadinessError("sealed cache must declare native feature inputs and emission targets")
+        allocation = receipt.get("noisy_feature_bands")
+        if (not isinstance(allocation, dict) or not allocation or
+                any(not isinstance(k, str) or not k.isdecimal() or not isinstance(v, list) or len(v) != 2 or
+                    any(type(n) is not int for n in v) for k, v in allocation.items())):
+            raise ReadinessError("sealed cache must pin explicit per-type noisy-channel suballocation")
+        if digest(allocation) != require_sha(receipt.get("noisy_feature_bands_sha256"), "noisy_feature_bands_sha256"):
+            raise ReadinessError("sealed noisy-channel suballocation digest moved")
 
     def bind(self, route: str, batch: dict[str, Any], bands: dict[int, dict[str, Any]], *,
              parent_signs: dict[int, float] | None = None):
@@ -604,10 +616,31 @@ class ReadyObjectiveAdapter:
         mask = batch["native_media_loss_mask"]
         x_t = batch["native_media_features"]
         sigma = batch["native_media_noise_levels"]
+        allocation = {int(kind): tuple(value) for kind, value in self.cache_receipt["noisy_feature_bands"].items()}
+        active_types = {int(value) for value in types[mask > 0].unique().tolist()}
+        if not active_types.issubset(allocation):
+            raise ReadinessError("sealed cache lacks supervised modality noisy-channel allocation")
+        for kind in active_types:
+            lo, hi = allocation[kind]
+            flo, fhi = bands[kind]["feature"]
+            elo, ehi = bands[kind]["emission"]
+            if not 0 <= flo <= lo < hi <= fhi <= FEATURES or hi - lo != ehi - elo:
+                raise ReadinessError("sealed noisy-channel allocation differs from native bridge/emission contract")
+        if route_name(route) == "music_generate":
+            # Audited ACE input is [source64, chunk_mask64, noisy64], each c*2+k.
+            # Old S8 fixtures put x0 in source64 and must never become generation data.
+            if (allocation.get(4) != (256, 384) or tuple(bands[4]["feature"]) != (0, 384) or
+                    tuple(bands[4]["emission"]) != (0, 128)):
+                raise ReadinessError("ACE generation requires audited noisy channels 256:384 -> emission 0:128")
+            if self.cache_receipt.get("conditioning_contract") != {
+                    "ace_source_latents": "zeros", "ace_chunk_masks": "zeros", "regime": "generation_without_target_reference"}:
+                raise ReadinessError("ACE generation must declare target-free source and chunk-mask conditioning")
+            if bool((x_t[..., :256][types == 4] != 0).any()):
+                raise ReadinessError("ACE generation source/chunk conditioning contains nonzero target reference")
         def compute(prediction):
             return flow_velocity_loss(prediction, target, types, mask, bands,
                                       param=self.cache_receipt["prediction_kind"], target_kind=self.cache_receipt["target_kind"],
-                                      x_t=x_t, sigma=sigma, signs=parent_signs)
+                                      x_t=x_t, sigma=sigma, signs=parent_signs, noisy_feature_bands=allocation)
         return compute
 
 
@@ -637,25 +670,29 @@ def d3_objective_patch(source: Path) -> tuple[str, dict[str, Any]]:
          'def command_rate(args: argparse.Namespace) -> int:\n'
          '    objective_adapter = None\n'
          '    if args.flow_objective == "guided_velocity":\n'
-         '        if not args.objective_adapter:\n'
-         '            raise D3Error("guided_velocity requires --objective-adapter PATH to audited recovery training.py")\n'
+         '        if not args.objective_adapter or not args.noisy_feature_bands:\n'
+         '            raise D3Error("guided_velocity requires audited --objective-adapter and --noisy-feature-bands JSON")\n'
          '        adapter_path = Path(args.objective_adapter)\n'
          '        spec = importlib.util.spec_from_file_location("chimera_recovery_objective_adapter", adapter_path)\n'
          '        module = importlib.util.module_from_spec(spec)\n'
          '        sys.modules[spec.name] = module\n'
          '        spec.loader.exec_module(module)\n'
-         '        objective_adapter = getattr(module, "flow_velocity_loss", None)\n'
-         '        if not callable(objective_adapter):\n'
+         '        adapter_fn = getattr(module, "flow_velocity_loss", None)\n'
+         '        if not callable(adapter_fn):\n'
          '            raise D3Error("objective adapter lacks flow_velocity_loss")\n'
-         '    elif args.objective_adapter:\n'
-         '        raise D3Error("--objective-adapter requires --flow-objective guided_velocity")\n'
+         '        allocation = json.loads(Path(args.noisy_feature_bands).read_text())\n'
+         '        noisy_feature_bands = {int(k): tuple(v) for k, v in allocation.items()}\n'
+         '        objective_adapter = lambda *a, **kw: adapter_fn(*a, **kw, noisy_feature_bands=noisy_feature_bands)\n'
+         '    elif args.objective_adapter or args.noisy_feature_bands:\n'
+         '        raise D3Error("adapter/allocation require --flow-objective guided_velocity")\n'
          '    started = time.time()\n'),
         ('        cell, cell_refusals = rate_cell(hybrid, placement, seg, stage=args.stage, steps=int(args.steps))\n',
          '        cell, cell_refusals = rate_cell(hybrid, placement, seg, stage=args.stage, steps=int(args.steps), objective_adapter=objective_adapter)\n'),
         ('    r.add_argument("--stage", default="d3b", choices=("d3b", "d3d"))\n',
          '    r.add_argument("--stage", default="d3b", choices=("d3b", "d3d"))\n'
          '    r.add_argument("--flow-objective", default="x0", choices=("x0", "guided_velocity"))\n'
-         '    r.add_argument("--objective-adapter", help="audited recovery training.py exporting flow_velocity_loss; rate fixture only")\n'),
+         '    r.add_argument("--objective-adapter", help="audited recovery training.py exporting flow_velocity_loss; rate fixture only")\n'
+         '    r.add_argument("--noisy-feature-bands", help="audited per-type noisy-channel suballocation JSON; required for velocity")\n'),
     ]
     for old, new in changes:
         if after.count(old) != 1:
@@ -665,7 +702,7 @@ def d3_objective_patch(source: Path) -> tuple[str, dict[str, Any]]:
     patch = "".join(difflib.unified_diff(before.splitlines(True), after.splitlines(True), fromfile="a/d3_hybrid_module.py", tofile="b/d3_hybrid_module.py"))
     return patch, {"schema": "chimera_recovery.d3_objective_patch.v1", "baseline_sha256": baseline,
                    "patched_lf_sha256": hashlib.sha256(after.encode()).hexdigest(), "patch_sha256": hashlib.sha256(patch.encode()).hexdigest(),
-                   "changes": len(changes), "objective_flag": "--flow-objective guided_velocity --objective-adapter <audited training.py>",
+                   "changes": len(changes), "objective_flag": "--flow-objective guided_velocity --objective-adapter <audited training.py> --noisy-feature-bands <audited allocation.json>",
                    "rate_only_random_teacher_targets": True, "production_driver_implemented": False, "amendment_required": True,
                    "frozen_preregistration_edited": False}
 
@@ -923,7 +960,10 @@ def prepare_text(records: list[dict[str, Any]], tokenizer: Any, root: Path, out:
     tensor_path = out / "assistant_text.safetensors"
     staged_tensor = stage / tensor_path.name
     if rows:
-        save_file({"input_ids": ids, "lengths": lengths, "assistant_mask": masks}, str(staged_tensor), metadata={"schema": PACK_SCHEMA})
+        # QTextCache consumes target-indexed target_mask and shifts it internally.
+        # Separate storage avoids safetensors rejecting aliased tensor names.
+        save_file({"input_ids": ids, "lengths": lengths, "assistant_mask": masks, "target_mask": masks.clone()},
+                  str(staged_tensor), metadata={"schema": PACK_SCHEMA})
     manifest = {"schema": PACK_SCHEMA, "corpus_schema": "recovery_corpus.v1", "shard": str(tensor_path.resolve()) if rows else None,
                 "sha256": sha(staged_tensor) if rows else None, "rows": len(rows), "tokens": int(lengths.sum()),
                 "supervised_tokens": int(masks.sum()), "shape": list(ids.shape),

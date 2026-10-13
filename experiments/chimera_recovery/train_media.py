@@ -350,7 +350,11 @@ def cpu_fixture(module_path: Path, out: Path) -> dict[str, Any]:
     built = module.build_tiny_child(out / "tiny-base", seed=17)
     config = {"unit_lr": 0.001, "emission_lr": 0.001, "lora_lr": 0.001, "betas": [0.9, 0.95], "eps": 1e-8,
               "weight_decay": 0., "clip": 1., "warmup_steps": 0, "min_lr_ratio": 1.}
-    identity = {"fixture": True, "seed": 17, "objective": "guided_velocity", "module_sha256": R.sha(module_path), "optimizer": config}
+    # This random tiny fixture explicitly defines its last six ACE bridge
+    # channels as noisy latent; it does not assert native ACE's 384-wide recipe.
+    fixture_noise = {4: (6, 12)}
+    identity = {"fixture": True, "seed": 17, "objective": "guided_velocity", "module_sha256": R.sha(module_path), "optimizer": config,
+                "fixture_noisy_feature_bands": fixture_noise}
     def construct():
         plan = module.trainer_module().SitePlanConfig(rank=4, alpha=4., k3_rank=0, trunk_ffn_width=module.TINY.TRUNK, gain=False)
         hybrid = module.HybridD3(built["dir"], built["parent_config"], module.HybridOptions(dtype=torch.float32, device="cpu", kernels="torch",
@@ -362,7 +366,8 @@ def cpu_fixture(module_path: Path, out: Path) -> dict[str, Any]:
     target = torch.randn(1, 4, module.TINY.FEATURE, generator=generator)
     def objective(engine):
         return lambda prediction: R.flow_velocity_loss(prediction, target, segment["types"], torch.ones(1, 4), engine.hybrid.bands,
-                                                        param="x0", x_t=segment["features"], sigma=segment["sigma"])
+                                                        param="x0", x_t=segment["features"], sigma=segment["sigma"],
+                                                        noisy_feature_bands=fixture_noise)
     full.save(out / "initial")
     first = full.train_step(segment, objective(full))
     full.save(out / "interrupted")
@@ -384,6 +389,7 @@ def cpu_fixture(module_path: Path, out: Path) -> dict[str, Any]:
     full.export(out / "delta")
     report = {"schema": "chimera_recovery.d3b_cpu_fixture.v1", "production_model_weights_loaded": False,
               "random_tiny_child": True, "actual_hybrid_forward_backward": True, "optimizer_updates": full.step,
+              "fixture_noisy_feature_bands": fixture_noise,
               "updated_parameters": changed, "resume_tensor_exact": exact, "changed_identity_refused": refused,
               "uninterrupted_losses": [first["loss"], second["loss"], third["loss"]],
               "resumed_losses": [second_resumed["loss"], third_resumed["loss"]], "ownership": full.ownership,
