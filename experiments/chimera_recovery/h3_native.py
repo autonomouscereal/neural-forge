@@ -54,8 +54,8 @@ def rows(path):
 
 def validate_conditioning(item, record, entry):
     prompt=record['messages'][0]['content']
-    if (item.get('prompt')!=prompt+SUFFIX or entry.get('prompt_sha256')!=R.digest(prompt) or
-            item.get('source_prompt_sha256')!=hashlib.sha256(prompt.encode('utf-8')).hexdigest()):
+    if (item.get('prompt')!=prompt+SUFFIX or item.get('source_prompt_sha256')!=R.digest(prompt) or
+            entry.get('prompt_sha256')!=hashlib.sha256(prompt.encode('utf-8')).hexdigest()):
         raise Error('native teacher window prompt differs from the raw UTF8 source and canonical admission identities')
 
 def source_candidate(record):
