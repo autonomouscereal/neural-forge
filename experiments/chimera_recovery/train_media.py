@@ -130,6 +130,8 @@ def preflight(config_path: Path) -> dict[str, Any]:
             raise Error("accepted sealed training batches must exclude heldout source groups")
         if not batches.get("batches"):
             raise Error("no accepted native media batches; cache adapters have not supplied training data")
+        if config.get("sampling_policy") != "one_pass" or config["steps"] != len(batches["batches"]):
+            raise Error("D3b recovery must pin one_pass and one successful step per accepted native batch")
         if len({item.get("id") for item in batches["batches"]}) != len(batches["batches"]) or any(not isinstance(item.get("id"), str) for item in batches["batches"]):
             raise Error("accepted native batches require unique stable ids")
         for item in batches["batches"]:
@@ -447,7 +449,9 @@ def train(config_path: Path, out: Path, resume: Path | None = None) -> dict[str,
                 engine.save(out / f"checkpoint-decode-review-{engine.step:08d}")
                 return {"schema": SCHEMA, "status": "awaiting_decode_review", "step": engine.step, "training_complete": False}
             engine.decode_review_passed = True
-        item = batches[engine.sampler_counter % len(batches)]
+        if engine.sampler_counter >= len(batches):
+            raise Error("one-pass sampler exhausted before declared step budget")
+        item = batches[engine.sampler_counter]
         batch = load_file(str(pinned_file(item["tensors"], root)), device=config["device"])
         receipt = read_json(pinned_file(item["teacher_receipt"], root))
         compute = R.ReadyObjectiveAdapter(receipt).bind(item["route"], batch, hybrid.bands,
