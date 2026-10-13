@@ -420,7 +420,8 @@ def test_velocity_suballocation_excludes_ace_conditioning_and_rejects_implicit_s
     with pytest.raises(t.ReadinessError, match="target reference"):
         t.ReadyObjectiveAdapter(receipt).bind("music_generate", batch, bands)
     features[..., :256] = 0
-    assert torch.isfinite(t.ReadyObjectiveAdapter(receipt).bind("music_generate", batch, bands)(pred))
+    with pytest.raises(t.ReadinessError, match="zero-source fixtures"):
+        t.ReadyObjectiveAdapter(receipt).bind("music_generate", batch, bands)
 
 
 def test_d3_objective_patch_refuses_changed_source(tmp_path):
