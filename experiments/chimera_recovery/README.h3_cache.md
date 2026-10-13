@@ -42,6 +42,9 @@ also emits `.patch` and `.receipt.json`; the items command emits its receipt.
 Root must run the four numerical Torch tests in its supported CPU Torch runtime
 as well as the standard-library tests. Numerical fixtures are explicitly
 synthetic contract checks and never serve as native teacher training data.
+On the actual Linux runtime set `CHIMERA_H3_CAMPAIGN_SOURCE=/home/cereal/omni-campaign`
+so the source/chart reference tests verify the authentic server mirror rather
+than skip because the workstation's Windows path is absent.
 
 For the future bounded capture, root's runtime owner must transfer the new
 candidate and strict items using server-manager, recheck remote file SHA256s
