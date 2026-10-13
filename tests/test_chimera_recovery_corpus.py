@@ -115,7 +115,43 @@ def test_bfcl_captured_schema_and_acceptable_target_recovery():
     assert r["tools"][0]["function"]["parameters"]["type"] == "object"
     assert r["provenance"]["bfcl_schema_target_adaptation"]["original_schemas"] == [schema]
     assert r["provenance"]["bfcl_schema_target_adaptation"]["original_acceptable_targets"] == target
+    assert "optional" not in r["tools"][0]["function"]["parameters"]["properties"]["get_area"]
+    assert r["provenance"]["bfcl_schema_target_adaptation"]["removed_optional_annotations"][0]["value"] is True
     assert not any(m["role"] == "tool" for m in r["messages"])
+
+
+def test_bfcl_optional_annotations_only_drop_with_explicit_required_proof():
+    schema = {"type": "dict", "properties": {"key": {"type": "string"},
+              "limit": {"type": "integer", "optional": "True"}}, "required": ["key"], "optional": ["limit"]}
+    annotations = []
+    adapted = c.adapt_bfcl_schema(schema, annotations=annotations)
+    assert c.supported_schema(adapted)
+    assert adapted["required"] == ["key"] and adapted["properties"]["limit"] == {"type": "integer"}
+    assert len(annotations) == 2 and all(a["required"] == ["key"] for a in annotations)
+    assert schema["optional"] == ["limit"]  # source remains lossless
+    for changed in ({**schema, "required": ["key", "limit"]},
+                    {k: v for k, v in schema.items() if k != "required"},
+                    {**schema, "optional": ["unknown"]}):
+        assert not c.supported_schema(c.adapt_bfcl_schema(changed))
+    for ambiguous in (False, "False", 1, "yes"):
+        changed = {**schema, "properties": {"key": {"type": "string"},
+                   "limit": {"type": "integer", "optional": ambiguous}}}
+        assert not c.supported_schema(c.adapt_bfcl_schema(changed))
+
+
+def test_previous_normalized_bfcl_rows_upgrade_idempotently_without_target_change():
+    r = tool_row()
+    r["tools"][0]["function"]["parameters"]["properties"]["limit"] = {"type": "integer", "optional": True}
+    original = json.loads(json.dumps(r["tools"]))
+    r["provenance"]["bfcl_schema_target_adaptation"] = {"original_schemas": original}
+    normalized = c.normalize_record(r)
+    assert normalized["messages"] == r["messages"] and normalized["split"] == r["split"]
+    assert c.validate_record(normalized)["train_ready"]
+    receipt = normalized["provenance"]["bfcl_schema_target_adaptation"]
+    assert receipt["original_schemas"] == original and len(receipt["removed_optional_annotations"]) == 1
+    assert c.normalize_record(normalized) == normalized
+    r["provenance"].pop("bfcl_schema_target_adaptation")
+    assert "optional" in c.normalize_record(r)["tools"][0]["function"]["parameters"]["properties"]["limit"]
 
 
 def test_frozen_evaluation_exact_and_near_duplicates_exclude_shared_catalog():
