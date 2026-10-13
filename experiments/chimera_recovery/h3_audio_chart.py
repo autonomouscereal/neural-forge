@@ -26,35 +26,39 @@ def _sha(value, label):
 def validate_encoder_proof(proof, *, require_model_space=True):
     """Check measured scope; the caller separately seals proof bytes and tensors."""
     inp, meas, dec = (proof.get(k, {}) for k in ("input_contract", "measurement", "decode"))
+    samples = inp.get("target_samples")
+    if type(samples) is not int or samples <= 0 or samples % HOP or samples > 2048 * HOP:
+        raise ValueError("audio chart needs a bounded measured waveform divisible by the actual 800-sample hop")
+    frames, duration = samples // HOP, samples / SAMPLE_RATE
     if (proof.get("schema") != "chimera_recovery.h3_standalone_audio_probe.v1" or
             proof.get("probe_passed") is not True or proof.get("teacher_unchanged") is not True or
-            inp.get("target_rate") != SAMPLE_RATE or inp.get("target_samples") != SAMPLES or
-            inp.get("duration_seconds") != 1.0 or inp.get("no_input_padding_or_trim") is not True or
-            meas.get("raw_latent_shape") != [1, 32, 2, FRAMES] or meas.get("packed_shape") != [80, 32] or
-            meas.get("decoded_shape") != [1, 2, SAMPLES] or
+            inp.get("target_rate") != SAMPLE_RATE or inp.get("duration_seconds") != duration or
+            inp.get("no_input_padding_or_trim") is not True or
+            meas.get("raw_latent_shape") != [1, 32, 2, frames] or meas.get("packed_shape") != [2 * frames, 32] or
+            meas.get("decoded_shape") != [1, 2, samples] or
             meas.get("measured_samples_per_latent_frame") != HOP or meas.get("nominal_hop_seconds") != HOP / SAMPLE_RATE or
             meas.get("encoder_repeat_bitwise_equal") is not True or
             meas.get("channel_major_pack_bitwise_invertible") is not True or
             any(meas.get(k) != 0 for k in ("latent_padded_frames", "latent_trimmed_frames")) or
             any(dec.get(k) != 0 for k in ("waveform_padded_samples", "waveform_trimmed_samples")) or
-            dec.get("first_pts_seconds") != 0.0 or dec.get("last_end_seconds") != 1.0 or
-            dec.get("target_samples") != SAMPLES or dec.get("resampler_flushed") is not True):
-        raise ValueError("audio chart requires actual full-second, full-coverage stereo encoder evidence")
+            dec.get("first_pts_seconds") != 0.0 or dec.get("last_end_seconds") != duration or
+            dec.get("target_samples") != samples or dec.get("resampler_flushed") is not True):
+        raise ValueError("audio chart requires actual full-duration, full-coverage stereo encoder evidence")
     intervals = meas.get("nominal_frame_interval_seconds")
-    if (not isinstance(intervals, list) or len(intervals) != FRAMES or
+    if (not isinstance(intervals, list) or len(intervals) != frames or
             any(not isinstance(pair, list) or len(pair) != 2 or
                 any(not isinstance(v, (float, int)) or not math.isfinite(v) for v in pair) or
                 abs(pair[0] - i * HOP / SAMPLE_RATE) > 1e-9 or
                 abs(pair[1] - (i + 1) * HOP / SAMPLE_RATE) > 1e-9
                 for i, pair in enumerate(intervals))):
-        raise ValueError("audio chart needs measured nominal intervals covering exactly [0,1]")
+        raise ValueError("audio chart needs measured nominal intervals covering the full derived waveform")
     if require_model_space and proof.get("model_space_verified") is not True:
         raise ValueError("raw VAE proof does not establish the parent model-space observation")
     return True
 
 
 def chart(prefix_text_count, T, full_ids_length, media_indices, text_order_indices, *,
-          clean_encoder_receipt_sha256, amendment_sha256, source_pins):
+          clean_encoder_receipt_sha256, amendment_sha256, source_pins, encoder_proof=None):
     """Scatter the sealed new convention into the genuine full native sequence.
 
     Indices are ascending physical sequence slots. Text order includes answers;
@@ -62,12 +66,18 @@ def chart(prefix_text_count, T, full_ids_length, media_indices, text_order_indic
     channel-major (left forty frames, then right forty frames), wholly in prompt.
     The caller must verify encoder bytes/assets and keep this read mask enforced.
     """
-    if type(T) is not int or T != FRAMES or type(full_ids_length) is not int or not 1 <= full_ids_length <= 65536:
-        raise ValueError("this measured audio chart supports exactly forty full-second frames")
+    if type(T) is not int or not 1 <= T <= 2048 or type(full_ids_length) is not int or not 1 <= full_ids_length <= 65536:
+        raise ValueError("audio chart needs bounded positive measured frames and native sequence length")
+    if encoder_proof is not None:
+        validate_encoder_proof(encoder_proof)
+        if encoder_proof["measurement"]["raw_latent_shape"][-1] != T:
+            raise ValueError("chart frame count disagrees with its actual encoder proof")
+    elif T != FRAMES:
+        raise ValueError("non-default duration needs its own actual full-coverage encoder proof")
     if (type(prefix_text_count) is not int or prefix_text_count < 1 or
             not isinstance(media_indices, (list, tuple)) or not isinstance(text_order_indices, (list, tuple)) or
             prefix_text_count > len(text_order_indices) or len(media_indices) != 2 * T):
-        raise ValueError("audio chart requires prompt text and exactly eighty stereo media slots")
+        raise ValueError("audio chart requires prompt text and exactly twice its measured stereo frame count")
     media, text = list(media_indices), list(text_order_indices)
     for values in (media, text):
         if any(type(i) is not int or not 0 <= i < full_ids_length for i in values) or values != sorted(set(values)):
@@ -103,7 +113,8 @@ def chart(prefix_text_count, T, full_ids_length, media_indices, text_order_indic
                 "time_scope": "measured nominal encoder lattice, not receptive-field localization",
                 "native_parent_xyz_parity": False, "native_admission_granted": False,
                 "spec_type_ids": [2, 3], "observation_type_id": 3, "clean_sigma": 0.0,
-                "packing": "channel-major", "sample_rate": SAMPLE_RATE, "samples": SAMPLES,
+                "packing": "channel-major", "sample_rate": SAMPLE_RATE, "samples": T * HOP,
+                "derived_waveform_duration_seconds": T * HOP / SAMPLE_RATE,
                 "latent_frames_per_channel": T, "samples_per_frame": HOP,
                 "prefix_text_count": prefix_text_count, "full_ids_length": full_ids_length,
                 "media_indices": media, "text_order_indices": text,
