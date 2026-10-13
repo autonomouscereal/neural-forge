@@ -204,3 +204,54 @@ def test_bfcl_pack_excludes_targets_from_runner_inputs_and_refuses_training_grou
     train.write_text(json.dumps({"split": "train", "provenance": {"recovery_group_id": "held-group"}}) + "\n", encoding="utf-8")
     with pytest.raises(ValueError, match="overlaps training"):
         e.prepare_bfcl(heldout_corpus=held, training_corpus=train, expected_heldout_sha256=file_sha256(held), expected_training_sha256=file_sha256(train), output=tmp_path / "leaking")
+
+
+def test_captured_tool_constraints_are_enforced_not_discarded():
+    schema = {"type": "object", "properties": {"operation": {"enum": ["read", "write"]},
+               "count": {"type": "integer", "minimum": -5, "maximum": 5},
+               "name": {"type": "string", "pattern": "^[a-z]+\\.txt$"}, "text": {"type": "string", "maxLength": 8}},
+              "required": ["operation", "count", "name"], "additionalProperties": False,
+              "allOf": [{"if": {"properties": {"operation": {"enum": ["write"]}}}, "then": {"required": ["text"]}}]}
+    assert e.supported_eval_schema(schema)
+    assert not e.check_eval_arguments({"operation": "read", "count": 3.0, "name": "file.txt"}, schema)
+    bad = {"operation": "write", "count": 8, "name": "../file.txt"}
+    errors = e.check_eval_arguments(bad, schema)
+    assert "arguments.count:maximum" in errors and "arguments.name:pattern" in errors and "arguments:required:text" in errors
+    bad.update(count=0, name="file.txt", text="x" * 9)
+    assert "arguments.text:maxLength" in e.check_eval_arguments(bad, schema)
+    assert not e.supported_eval_schema({"$ref": "https://untrusted.invalid/schema"})
+
+
+def test_executed_seed_pack_joins_actual_records_and_never_exposes_outcomes_in_inputs(tmp_path):
+    schema = {"type": "object", "properties": {"key": {"type": "string", "maxLength": 20}}, "required": ["key"], "additionalProperties": False}
+    tools = [{"type": "function", "function": {"name": "lookup", "parameters": schema}}]
+    rows, receipts = [], []
+    for split, value in (("train", "train-key"), ("test", "test-key")):
+        identifier, cid = "seed-" + split, "call-" + split
+        observed = {"ok": True, "value": 12 if split == "train" else 19}
+        actual_result = {"role": "tool", "tool_call_id": cid, "content": json.dumps(observed)}
+        record = {"call_id": cid, "tool_name": "lookup", "arguments": {"key": value}, "result": observed,
+                  "result_sha256": digest(observed), "concurrent_dispatch": False, "dispatch_group": 1}
+        p = {"source_year": 2026, "source_verified": True, "actual_tool_execution": True, "synthetic_operator_authored": True,
+             "source_code_sha256": "b" * 64, "tool_catalog_sha256": digest(tools), "source_ids": ["fixture-" + split],
+             "group_id": "family-" + split, "template_family": "scenario-" + split, "case_id": identifier,
+             "split": split, "execution_receipt_sha256": digest([record])}
+        rows.append({"id": identifier, "provenance": p, "tools": tools, "quality": {"tool_routes": ["tool_result"]},
+                     "messages": [{"role": "user", "content": "Find the value for " + value}, call(cid, json.dumps({"key": value})), actual_result,
+                                  {"role": "assistant", "content": "Recorded value: [" + str(observed["value"]) + "]"}]})
+        receipts.append({"id": identifier, "template_family": p["template_family"], "split": split, "calls": [record]})
+    ready, observed_path, report_path = (tmp_path / n for n in ("ready.jsonl", "receipts.jsonl", "report.json"))
+    ready.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    observed_path.write_text("".join(json.dumps(r) + "\n" for r in receipts), encoding="utf-8")
+    report_path.write_text(json.dumps({"episodes": 2, "source_code_sha256": "b" * 64, "artifacts": {
+        "ready.jsonl": {"sha256": file_sha256(ready)}, "execution_receipts.jsonl": {"sha256": file_sha256(observed_path)}}}), encoding="utf-8")
+    kwargs = dict(ready=ready, execution_receipts=observed_path, seed_report=report_path,
+                  expected_ready_sha256=file_sha256(ready), expected_receipts_sha256=file_sha256(observed_path), expected_report_sha256=file_sha256(report_path))
+    result = e.prepare_tool_seeds(**kwargs, output=tmp_path / "pack")
+    assert result["tasks"] == result["source_evidence_compatible"] == 1
+    recorded_input = json.loads((tmp_path / "pack/inputs.jsonl").read_text(encoding="utf-8"))
+    assert "oracle" not in recorded_input and all(m["role"] != "tool" for m in recorded_input["input"]["messages"])
+    receipts[1]["calls"][0]["result"]["value"] = 100
+    observed_path.write_text("".join(json.dumps(r) + "\n" for r in receipts), encoding="utf-8")
+    with pytest.raises(ValueError, match="source pin mismatch"):
+        e.prepare_tool_seeds(**kwargs, output=tmp_path / "bad")

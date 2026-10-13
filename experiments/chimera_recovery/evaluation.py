@@ -24,6 +24,74 @@ PIN_FIELDS = ("holdout_sha256", "corpus_sha256", "tokenizer_sha256", "template_s
 HORIZONS = (5, 8, 16, 32)
 
 
+def supported_eval_schema(schema, depth=0):
+    """Captured local-tool extension: bounds, patterns and if/then/allOf.
+
+    References, dynamic catalogs and other JSON-schema constructs are ungraded.
+    These constraints are validated in place, never discarded for readiness.
+    """
+    if not isinstance(schema, dict) or depth > 12:
+        return False
+    extra = {"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "minLength", "maxLength", "pattern", "allOf", "if", "then", "else"}
+    base = {k: v for k, v in schema.items() if k not in extra}
+    if "properties" in base:
+        if not isinstance(base["properties"], dict) or not all(supported_eval_schema(v, depth + 1) for v in base["properties"].values()):
+            return False
+        base["properties"] = {k: {} for k in base["properties"]}
+    if "items" in base:
+        if not supported_eval_schema(base["items"], depth + 1):
+            return False
+        base["items"] = {}
+    if not supported_schema(base):
+        return False
+    for key in ("minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"):
+        if key in schema and (type(schema[key]) not in (int, float) or not math.isfinite(schema[key])):
+            return False
+    for key in ("minLength", "maxLength"):
+        if key in schema and (type(schema[key]) is not int or not 0 <= schema[key] <= 4096):
+            return False
+    if "pattern" in schema:
+        if not isinstance(schema["pattern"], str) or len(schema["pattern"]) > 256:
+            return False
+        try:
+            re.compile(schema["pattern"])
+        except re.error:
+            return False
+    if "allOf" in schema and (not isinstance(schema["allOf"], list) or not schema["allOf"] or len(schema["allOf"]) > 16 or not all(supported_eval_schema(s, depth + 1) for s in schema["allOf"])):
+        return False
+    return all(supported_eval_schema(schema[k], depth + 1) for k in ("if", "then", "else") if k in schema)
+
+
+def check_eval_arguments(value, schema, prefix="arguments"):
+    errors = check_arguments(schema_numbers(value, schema), schema, prefix)
+    if "enum" in schema and not any(json_equivalent(value, v) for v in schema["enum"]):
+        errors.append(prefix + ":enum")
+    if isinstance(value, (int, float)) and type(value) is not bool:
+        for key, predicate in (("minimum", operator.ge), ("maximum", operator.le), ("exclusiveMinimum", operator.gt), ("exclusiveMaximum", operator.lt)):
+            if key in schema and not predicate(value, schema[key]):
+                errors.append(prefix + ":" + key)
+    if isinstance(value, str):
+        if "minLength" in schema and len(value) < schema["minLength"]:
+            errors.append(prefix + ":minLength")
+        if "maxLength" in schema and len(value) > schema["maxLength"]:
+            errors.append(prefix + ":maxLength")
+        if "pattern" in schema and (len(value) > 4096 or re.search(schema["pattern"], value) is None):
+            errors.append(prefix + ":pattern")
+    if isinstance(value, dict):
+        for key in value.keys() & schema.get("properties", {}).keys():
+            errors.extend(check_eval_arguments(value[key], schema["properties"][key], prefix + "." + key))
+    elif isinstance(value, list) and isinstance(schema.get("items"), dict):
+        for index, sub in enumerate(value):
+            errors.extend(check_eval_arguments(sub, schema["items"], f"{prefix}[{index}]"))
+    for sub in schema.get("allOf", []):
+        errors.extend(check_eval_arguments(value, sub, prefix))
+    if "if" in schema:
+        branch = "else" if check_eval_arguments(value, schema["if"], prefix) else "then"
+        if branch in schema:
+            errors.extend(check_eval_arguments(value, schema[branch], prefix))
+    return sorted(set(errors))
+
+
 class UnsupportedCode(ValueError):
     pass
 
@@ -321,7 +389,7 @@ def grade_tools(messages: list[dict], tools: list[dict], oracle: dict, outcomes:
     schemas = {}
     for tool in tools:
         f = tool.get("function") or {}
-        if not f.get("name") or f["name"] in schemas or not supported_schema(f.get("parameters") or {}):
+        if not f.get("name") or f["name"] in schemas or not supported_eval_schema(f.get("parameters") or {}):
             return {"status": "ungraded", "reason": "authentic_supported_tool_schema_required"}
         schemas[f["name"]] = f["parameters"]
     expected = oracle.get("steps") or []
@@ -330,12 +398,15 @@ def grade_tools(messages: list[dict], tools: list[dict], oracle: dict, outcomes:
     observed, pending, identifiers, results, errors = [], {}, set(), {}, []
     user_turns = 0
     user_messages = []
+    user_after_steps = []
+    assistant_batches = []
     final_answer = ""
     for message in messages:
         role = message.get("role")
         if role == "user":
             user_turns += 1
             user_messages.append({"role": "user", "content": message.get("content")})
+            user_after_steps.append(len(observed))
             if pending:
                 errors.append("unanswered_tool_before_user_turn")
         elif role == "assistant":
@@ -357,7 +428,7 @@ def grade_tools(messages: list[dict], tools: list[dict], oracle: dict, outcomes:
                             raise ValueError("arguments must remain JSON string")
                         arguments = json.loads(fn["arguments"])
                         schema = schemas.get(fn.get("name"), {})
-                        mismatch = check_arguments(schema_numbers(arguments, schema), schema)
+                        mismatch = check_eval_arguments(arguments, schema)
                         if mismatch:
                             errors.extend(mismatch)
                     except (ValueError, TypeError):
@@ -367,6 +438,7 @@ def grade_tools(messages: list[dict], tools: list[dict], oracle: dict, outcomes:
                     pending[identifier] = action
                     batch.append(action)
                 observed.append(batch)
+                assistant_batches.append(message)
             elif isinstance(message.get("content"), str):
                 final_answer = message["content"]
         elif role == "tool":
@@ -436,11 +508,27 @@ def grade_tools(messages: list[dict], tools: list[dict], oracle: dict, outcomes:
         errors.append("multiturn_user_followup_missing")
     if "followup_user_messages" in oracle and canonical(user_messages) != canonical(oracle["followup_user_messages"]):
         errors.append("multiturn_user_followup_content_mismatch")
+    if "followup_after_steps" in oracle and user_after_steps != oracle["followup_after_steps"]:
+        errors.append("multiturn_user_followup_timing_mismatch")
+    reviews = []
+    for requirement in oracle.get("schema_reports", []):
+        step = requirement["step"]
+        content = assistant_batches[step].get("content") if 0 <= step < len(assistant_batches) else None
+        try:
+            reported = json.loads(content or "")
+            if not json_equivalent(reported, schemas[requirement["name"]]):
+                errors.append("reported_tool_schema_mismatch")
+        except (TypeError, ValueError):
+            reviews.append("natural_language_schema_report_requires_review")
+    final = None
     if oracle.get("final_answer"):
         final = grade_semantics({"oracle": oracle["final_answer"]}, {"messages": [{"role": "assistant", "content": final_answer}]})
-        if final["status"] != "pass":
+        if final["status"] == "fail":
             errors.append("tool_final_answer_not_correct")
-    return {"status": "fail" if errors else "pass", "errors": sorted(set(errors)), "observed_batches": observed,
+        elif final["status"] == "ungraded":
+            reviews.append(final.get("reason", "tool_final_answer_requires_review"))
+    return {"status": "fail" if errors else "ungraded" if reviews else "pass", "errors": sorted(set(errors)), "reviews": reviews,
+            "final_answer": final, "observed_batches": observed,
             "proposed_calls_correct": not any("arguments" in e or "name_or_type" in e or "count_mismatch" in e for e in errors),
             "execution_required": needs_execution, "pending_tool_ids": list(pending), "recorded_outcome_count": len(results)}
 
@@ -453,6 +541,21 @@ def grade_semantics(task: dict, response: dict) -> dict:
         return grade_arithmetic(text, oracle)
     if kind == "python_function":
         return grade_code(text, oracle)
+    if kind == "observed_values":
+        expected = oracle["expected_values"]
+        try:
+            stripped = text.strip()
+            match = re.search(r"(\[.*\])\s*[.!]?\s*$", stripped, re.S)
+            value = json.loads(match.group(1) if match else stripped)
+            if isinstance(value, dict) and set(value) == {"values"}:
+                value = value["values"]
+            if not isinstance(value, list) and len(expected) == 1:
+                value = [value]
+            return {"status": "pass" if json_equivalent(value, expected) else "fail", "actual": value, "expected": expected}
+        except (TypeError, ValueError):
+            if len(expected) == 1 and isinstance(expected[0], str) and text.strip() == expected[0]:
+                return {"status": "pass", "actual": [text.strip()], "expected": expected}
+            return {"status": "ungraded", "reason": "unstructured_final_values_require_review", "expected": expected}
     if kind == "tool":
         return grade_tools(response.get("messages") or [], (task.get("input") or {}).get("tools") or [], oracle, response.get("tool_outcomes") or [])
     return {"status": "ungraded", "reason": "independent_semantic_oracle_missing", "required_review": oracle.get("review_requirements", [])}
@@ -707,6 +810,151 @@ def prepare_bfcl(*, heldout_corpus: Path, training_corpus: Path, expected_heldou
     return manifest
 
 
+def prepare_tool_seeds(*, ready: Path, execution_receipts: Path, seed_report: Path,
+                       expected_ready_sha256: str, expected_receipts_sha256: str,
+                       expected_report_sha256: str, output: Path, split="test") -> dict:
+    """Derive executed-outcome oracles from genuine bounded local-tool episodes.
+
+    Reads already recorded evidence only. No command/file tool is executed here.
+    Operator-authored synthetic scenarios retain that label and benchmark limit.
+    """
+    sources = {"ready": ready, "execution_receipts": execution_receipts, "seed_report": seed_report}
+    wanted = {"ready": expected_ready_sha256, "execution_receipts": expected_receipts_sha256, "seed_report": expected_report_sha256}
+    for name, path in sources.items():
+        if not SHA_RE.fullmatch(str(wanted[name])) or file_sha256(path) != wanted[name]:
+            raise ValueError("tool seed source pin mismatch: " + name)
+    report = json.loads(seed_report.read_text(encoding="utf-8"))
+    for name, path in (("ready.jsonl", ready), ("execution_receipts.jsonl", execution_receipts)):
+        if report.get("artifacts", {}).get(name, {}).get("sha256") != file_sha256(path):
+            raise ValueError("tool seed report not bound to actual artifacts")
+    if split not in {"validation", "test"}:
+        raise ValueError("tool seed evaluation split must be heldout")
+    rows = list(iter_jsonl(ready))
+    receipts = list(iter_jsonl(execution_receipts))
+    receipt_by_id = {r.get("id"): r for r in receipts}
+    if len(receipt_by_id) != len(receipts) or len(rows) != report.get("episodes") or len(rows) != len(receipts):
+        raise ValueError("tool seed row/receipt cardinality mismatch")
+    seen = {}
+    for row in rows:
+        p = row.get("provenance") or {}
+        row_split = row.get("split") or p.get("split")
+        if row_split not in {"train", "validation", "test"} or p.get("source_year") != 2026 or p.get("source_verified") is not True or p.get("actual_tool_execution") is not True or p.get("synthetic_operator_authored") is not True:
+            raise ValueError("tool seed provenance/split is not authentic operator fixture")
+        if p.get("source_code_sha256") != report.get("source_code_sha256"):
+            raise ValueError("tool seed source-code receipt mismatch")
+        keys = [("group", p.get("group_id")), ("family", p.get("template_family")), ("case", p.get("case_id"))]
+        keys += [("source", v) for v in p.get("source_ids", [])]
+        keys += [("user_prompt", digest(m.get("content"))) for m in row["messages"] if m.get("role") == "user"]
+        keys += [("tool_parameters", digest([call["function"]["name"], call["function"]["arguments"]])) for m in row["messages"] for call in m.get("tool_calls", [])]
+        for key in keys:
+            if not key[1]:
+                raise ValueError("tool seed source identity missing")
+            previous = seen.setdefault(key, row_split)
+            if previous != row_split:
+                raise ValueError("tool seed family/parameter/source crosses splits")
+    training_groups = sorted({r["provenance"]["group_id"] for r in rows if (r.get("split") or r["provenance"]["split"]) == "train"})
+    tasks, recording_adapters = [], []
+    for row in rows:
+        p = row["provenance"]
+        if (row.get("split") or p["split"]) != split:
+            continue
+        receipt = receipt_by_id.get(row["id"])
+        calls_recorded = receipt.get("calls") if receipt else None
+        if not receipt or receipt.get("template_family") != p["template_family"] or receipt.get("split") != split or digest(calls_recorded) != p.get("execution_receipt_sha256"):
+            raise ValueError("tool seed execution receipt join/seal mismatch")
+        call_by_id = {c["call_id"]: c for c in calls_recorded}
+        if len(call_by_id) != len(calls_recorded):
+            raise ValueError("tool seed receipt duplicate call ID")
+        tool_results = {m["tool_call_id"]: m for m in row["messages"] if m.get("role") == "tool"}
+        if len(tool_results) != len(calls_recorded):
+            raise ValueError("tool seed full recorded result count mismatch")
+        tools = row.get("tools") or []
+        schemas = {t["function"]["name"]: t["function"]["parameters"] for t in tools}
+        if not schemas or not all(supported_eval_schema(s) for s in schemas.values()):
+            raise ValueError("tool seed captured schema outside evaluated subset")
+        prefix, steps, followups, after_steps, schema_reports = [], [], [], [], []
+        runtime_records = []
+        for message in row["messages"]:
+            role = message.get("role")
+            if not steps and role in {"system", "developer", "user"}:
+                prefix.append(message)
+            elif role == "user":
+                followups.append({"role": "user", "content": message.get("content")})
+                after_steps.append(len(steps))
+            if role != "assistant" or not message.get("tool_calls"):
+                continue
+            batch = []
+            for call in message["tool_calls"]:
+                fn, identifier = call["function"], call["id"]
+                args = json.loads(fn["arguments"])
+                observed = call_by_id.get(identifier)
+                result_message = tool_results.get(identifier)
+                if not observed or not result_message or observed["tool_name"] != fn["name"] or not json_equivalent(args, observed["arguments"]) or check_eval_arguments(args, schemas.get(fn["name"], {})):
+                    raise ValueError("tool seed source call/result/schema disagreement")
+                result = json.loads(result_message["content"])
+                if not json_equivalent(result, observed["result"]) or digest(result) != observed["result_sha256"] or type(result.get("ok")) is not bool:
+                    raise ValueError("tool seed recorded outcome does not match execution receipt")
+                status = "success" if result["ok"] else "error"
+                batch.append({"name": fn["name"], "accepted_arguments": [args], "outcome": {"status": status, "json_equals": result}})
+                runtime_records.append({"tool_call_id": identifier, "status": status, "source_verified": True,
+                                        "receipt_sha256": digest(observed), "result_sha256": digest(result_message)})
+            parallel = len(batch) > 1
+            if parallel and any(call_by_id[c["id"]].get("concurrent_dispatch") is not True for c in message["tool_calls"]):
+                raise ValueError("tool seed parallel dispatch not observed")
+            if message.get("content"):
+                try:
+                    reported_schema = json.loads(message["content"])
+                except ValueError:
+                    reported_schema = None
+                for name, schema in schemas.items():
+                    if json_equivalent(reported_schema, schema):
+                        schema_reports.append({"step": len(steps), "name": name})
+            steps.append({"parallel": parallel, "calls": batch})
+        if not steps or set(tool_results) != set(call_by_id) or sum(len(s["calls"]) for s in steps) != len(calls_recorded):
+            raise ValueError("tool seed executed trajectory incomplete")
+        values = [c["outcome"]["json_equals"]["value"] for c in steps[-1]["calls"] if c["outcome"]["status"] == "success"]
+        if len(values) != len(steps[-1]["calls"]):
+            raise ValueError("tool seed ends without successful observed values")
+        facets = (row.get("quality") or {}).get("tool_routes") or []
+        task = {"schema": "recovery_eval_task.v1", "id": row["id"], "group_id": p["group_id"], "split": split,
+                "route": facets[0] if len(facets) == 1 else "tool_multiturn", "input": {"messages": prefix, "tools": tools, "media": []},
+                "oracle": {"kind": "tool", "steps": steps, "require_all_results": True, "schema_reports": schema_reports,
+                           "followup_user_messages": followups, "followup_after_steps": after_steps,
+                           "final_answer": {"kind": "observed_values", "expected_values": values}},
+                "environment": {"followup_user_messages": followups, "followup_after_steps": after_steps,
+                                "tool_catalog_sha256": p["tool_catalog_sha256"], "tool_source_code_sha256": p["source_code_sha256"]},
+                "provenance": {**p, "ready_sha256": expected_ready_sha256, "execution_receipts_sha256": expected_receipts_sha256,
+                               "seed_report_sha256": expected_report_sha256, "row_sha256": digest(row)},
+                "evaluation_scope": "operator-authored synthetic format scenarios with actual recorded local results; not a realistic benchmark or model score"}
+        tasks.append(task)
+        recording_adapters.append({"id": task["id"], "schema": "recovery_eval_response.v1", "input_sha256": digest(task["input"]),
+                                   "messages": row["messages"][len(prefix):], "tool_outcomes": runtime_records,
+                                   "scope": "source trajectory compatibility check only, never a model response"})
+    if not tasks:
+        raise ValueError("no heldout tool seed tasks")
+    if output.exists():
+        raise ValueError("tool seed task output must be new")
+    output.mkdir(parents=True)
+    task_path = output / "tasks.jsonl"
+    task_path.write_bytes(b"".join(canonical(t) + b"\n" for t in tasks))
+    inputs_path = output / "inputs.jsonl"
+    inputs_path.write_bytes(b"".join(canonical({"id": t["id"], "group_id": t["group_id"], "split": t["split"], "input": t["input"], "input_sha256": digest(t["input"]), "environment": t["environment"]}) + b"\n" for t in tasks))
+    # The source-evidence adapters prove oracle wiring; publish no model receipt.
+    checks = [{"id": t["id"], "source_evidence_compatibility": grade_semantics(t, recording)} for t, recording in zip(tasks, recording_adapters)]
+    (output / "source_evidence_compatibility.json").write_bytes(canonical({"scope": "source executed fixtures only; no model evaluated", "checks": checks}) + b"\n")
+    manifest = {"schema": "recovery_eval_tasks_manifest.v1", "tasks": len(tasks), "split": split,
+                "routes": dict(Counter(t["route"] for t in tasks)), "families": sorted({t["provenance"]["template_family"] for t in tasks}),
+                "task_source_groups_disjoint_from_training": True, "training_group_ids": training_groups,
+                "holdout_sha256": file_sha256(task_path), "inputs_sha256": file_sha256(inputs_path),
+                "sources": {name: {"path": str(path.resolve()), "sha256": wanted[name]} for name, path in sources.items()},
+                "source_evidence_compatible": sum(c["source_evidence_compatibility"]["status"] == "pass" for c in checks),
+                "grader_sha256": file_sha256(Path(__file__)), "limitations": ["Operator-authored synthetic format coverage with genuine tool executions, not model intelligence or BFCL performance.",
+                "Natural-language schema/final-value alternatives outside deterministic parsing require review.", "Model run must record new linked outcomes; copied fixture answers never count as model execution."]}
+    manifest["manifest_sha256"] = digest(manifest)
+    (output / "manifest.json").write_bytes(canonical(manifest) + b"\n")
+    return manifest
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="mode", required=True)
@@ -721,6 +969,12 @@ def main():
         prepare.add_argument("--" + key.replace("_", "-"), type=Path, required=True)
     for key in ("expected_heldout_sha256", "expected_training_sha256"):
         prepare.add_argument("--" + key.replace("_", "-"), required=True)
+    seeds = sub.add_parser("prepare-tool-seeds")
+    for key in ("ready", "execution_receipts", "seed_report", "output"):
+        seeds.add_argument("--" + key.replace("_", "-"), type=Path, required=True)
+    for key in ("expected_ready_sha256", "expected_receipts_sha256", "expected_report_sha256"):
+        seeds.add_argument("--" + key.replace("_", "-"), required=True)
+    seeds.add_argument("--split", choices=("validation", "test"), default="test")
     args = parser.parse_args()
     if args.mode == "grade":
         report = evaluate(list(iter_jsonl(args.tasks)), json.loads(args.receipt.read_text(encoding="utf-8")), list(iter_jsonl(args.responses)), holdout_sha256=file_sha256(args.tasks))
@@ -729,7 +983,7 @@ def main():
     else:
         fields = vars(args).copy()
         fields.pop("mode")
-        result = prepare_bfcl(**fields)
+        result = prepare_bfcl(**fields) if args.mode == "prepare-bfcl" else prepare_tool_seeds(**fields)
         print(json.dumps(result, indent=2))
         return
     publish(report, args.output)
