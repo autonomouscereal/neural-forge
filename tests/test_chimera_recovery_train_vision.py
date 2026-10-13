@@ -51,15 +51,14 @@ def test_streamed_vision_text_and_feature_gradients_match_eager_native_path(tmp_
     torch, module, engine, _, segment, targets, teacher = setup(tmp_path)
     model = engine.hybrid
     captures = []
-    handle = model.units[engine.placement.container].block.register_forward_hook(lambda _m, _a, out: captures.append(out))
     context = model.prepare(segment, media_grad=True)
     x = context["x"]
     contexts = model.contexts(x)
-    for i in range(model.num_layers):
-        layer = model.engine.layer(i, i + 1 if i + 1 < model.num_layers else None)
-        x = model.engine._run(layer, i, x, contexts)
-        x = model.apply_units(x, i, context)
-    handle.remove()
+    with V.capture_unit_block(model.units[engine.placement.container], captures):
+        for i in range(model.num_layers):
+            layer = model.engine.layer(i, i + 1 if i + 1 < model.num_layers else None)
+            x = model.engine._run(layer, i, x, contexts)
+            x = model.apply_units(x, i, context)
     text = module.d3d_head_loss(model, targets, denominator=3.)(model.final_norm(x), context)
     eager = text + .1 * (captures[0].float() - teacher).square().mean()
     eager.backward()
@@ -71,6 +70,7 @@ def test_streamed_vision_text_and_feature_gradients_match_eager_native_path(tmp_
     for name, value in engine.census.items():
         assert torch.allclose(value.grad, expected[name], atol=2e-5, rtol=2e-4), name
     assert all(any(float(value.grad.norm()) > 0 for name, value in engine.census.items() if name.startswith(group + ".")) for group in ("unit", "bridge", "lora"))
+    assert "block" not in model.units[engine.placement.container].__dict__
 
 
 def test_vision_qvl_bridge_lora_update_exact_resume_and_feature_alignment_refusal(tmp_path):
