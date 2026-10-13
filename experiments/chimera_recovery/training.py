@@ -14,6 +14,7 @@ import json
 import math
 import re
 import tempfile
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -252,6 +253,28 @@ class PackedRow:
     linkage: dict[str, Any]
 
 
+def native_token_ids(value: Any) -> list[int]:
+    """Extract one native conversation's IDs without changing token content.
+
+    The current actual Qwen tokenizer returns BatchEncoding even for native
+    apply_chat_template(tokenize=True). Iterating that object yields key names.
+    List/tensor and one-row batch containers are accepted, multiple rows refuse.
+    """
+    if isinstance(value, Mapping):
+        if "input_ids" not in value:
+            raise ReadinessError("native tokenization mapping lacks input_ids")
+        value = value["input_ids"]
+    if callable(getattr(value, "tolist", None)):
+        value = value.tolist()
+    if isinstance(value, tuple):
+        value = list(value)
+    if isinstance(value, list) and len(value) == 1 and isinstance(value[0], (list, tuple)):
+        value = list(value[0])
+    if not isinstance(value, list) or any(type(token) is not int for token in value):
+        raise ReadinessError("native tokenization must contain exactly one integer-ID row")
+    return value
+
+
 def pack_native_chat(record: dict[str, Any], tokenizer: Any, *, root: Path, max_length: int) -> PackedRow:
     """Call the real parent template, then identify assistant spans in that output.
 
@@ -288,9 +311,9 @@ def pack_native_chat(record: dict[str, Any], tokenizer: Any, *, root: Path, max_
         if selected:
             spans.append((header.end(), end + len("<|im_end|>")))
     encoded = tokenizer(rendered, add_special_tokens=False, return_offsets_mapping=True)
-    ids, offsets = list(encoded["input_ids"]), list(encoded["offset_mapping"])
-    exact = tokenizer.apply_chat_template(record["messages"], tokenize=True, **options)
-    if ids != list(exact) or len(ids) != len(offsets):
+    ids, offsets = native_token_ids(encoded), list(encoded["offset_mapping"])
+    exact = tokenizer.apply_chat_template(record["messages"], tokenize=True, return_dict=False, **options)
+    if ids != native_token_ids(exact) or len(ids) != len(offsets):
         raise ReadinessError("native template ids disagree with offset-tokenized rendered output")
     if len(ids) > max_length:
         raise ReadinessError("row exceeds max_length; truncation could sever tool call/result linkage")
