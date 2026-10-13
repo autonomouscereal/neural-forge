@@ -206,6 +206,29 @@ def test_train_only_immutable_replay_is_not_a_quality_claim(tmp_path):
                objective="fixture", supervised_units=1, objective_weight=1., active_families=["D2.lora"], input=R.I.pin(source), target=R.I.pin(source))
     with pytest.raises(R.Error, match="train-only"):
         R.replay_identity([row], dict(source=R.I.pin(source)), tmp_path)
+
+
+def test_actual_optimizer_gate_after_backward_prevents_revoked_update(tmp_path):
+    torch, M, _, construct = fixture(tmp_path)
+    union = construct()
+    rows, sources = replay(tmp_path, torch, M, union["hybrid"])
+    engine = R.UnionEngine(union, rows, sources, tmp_path, accumulation=2)
+    values = {name: value.detach().clone() for name, value in engine.census.items()}
+    calls = []
+    real = backward(torch, M)
+    def run(*args):
+        calls.append("backward")
+        return real(*args)
+    def revoked():
+        calls.append("gate")
+        raise R.Error("actual lease revoked before apply")
+    with pytest.raises(R.Error, match="lease revoked"):
+        engine.window(run, before_apply=revoked)
+    assert calls == ["backward", "backward", "gate"]
+    assert engine.step == engine.cursor == 0 and not engine.optimizer.state
+    assert all(torch.equal(value, values[name]) and value.grad is None for name, value in engine.census.items())
+    assert engine.window(real, before_apply=lambda: calls.append("admitted"))["applied"]
+    assert engine.cursor == 2 and engine.step == 1
     row["split"] = "train"
     assert R.replay_identity([row], dict(source=R.I.pin(source)), tmp_path)["exclusive_one_pass"]
     row["held"] = True
