@@ -148,6 +148,7 @@ def preflight(config_path):
                 base.get("base_sha256") != base.get("clone_sha256") or Path(base.get("clone_path", "")) != Path(config["omni"])):
             raise Error("stage base must be an immutable registered verified clone")
         R.require_sha(base["base_sha256"], "base_sha256")
+        verified["shared_r16"] = T.I.preflight_config(config, root, base["base_sha256"])
         if verified["parity"].get("verdict") != "PASS" or verified["parity"].get("base_sha256") != base["base_sha256"]:
             raise Error("hybrid parity must pass on exact stage base")
         if verified["runtime_assignment"].get("active") is not True or verified["runtime_assignment"].get("device") != config.get("device"):
@@ -242,10 +243,11 @@ def train(config_path, out, resume=None):
     plan = module.trainer_module().SitePlanConfig(rank=16, alpha=16., k3_rank=0, trunk_ffn_width=config["lora"]["trunk_ffn_width"], gain=False)
     hybrid = module.HybridD3(config["omni"], config["parent_config"], module.HybridOptions(dtype=getattr(torch, config["dtype"]), device=config["device"],
                             kernels=config["kernels"], lora=plan, lora_seed=config["seed"], plan=config.get("compose_plan")))
+    inherited = T.I.initialize_stage(hybrid, verified["shared_r16"], config_path.parent)
     identity = {"stage": stage, "config_sha256": check["config_sha256"], "base_sha256": verified["base"]["base_sha256"],
                 "cache_manifest_sha256": config["batches_manifest"]["sha256"], "teacher_cache_sha256": verified["batches"].get("source_manifest_sha256"),
                 "amendment_sha256": verified["preregistration"]["amendment_sha256"], "hybrid_module_sha256": config["hybrid_module"]["sha256"],
-                "driver_sha256": check["driver_sha256"], "engine_sha256": check["engine_sha256"], "heldout_groups_excluded": True}
+                "driver_sha256": check["driver_sha256"], "engine_sha256": check["engine_sha256"], "heldout_groups_excluded": True, "shared_r16": inherited}
     if stage == "D3c":
         identity["teacher_kind"] = "sealed_ACE_LM_top64_tail"
         engine = engine_module.MusicBandEngine(module, hybrid, config["optimizer"], identity, total_steps=config["steps"])
@@ -308,8 +310,9 @@ def train(config_path, out, resume=None):
             T.prune_safety_checkpoints(out, keep=2)
             last_safety = time.monotonic()
     save_dispatch_checkpoint(engine, out / "checkpoint-final", policy)
+    shared = T.I.export_from_engine(engine, out / "checkpoint-final", out / "shared-r16", verified["shared_r16"]["context"], stage, config.get("unit"))
     return {"schema": "chimera_recovery.native_stage_run.v1", "stage": stage, "status": "complete", "step": engine.step,
-            "training_complete": True, "registered": False, "requires_checkpoint_compose_adapter": True}
+            "training_complete": True, "registered": False, "requires_checkpoint_compose_adapter": True, "shared_r16": shared}
 
 
 def main(argv=None):
