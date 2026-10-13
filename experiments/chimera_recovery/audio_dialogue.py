@@ -33,7 +33,7 @@ TOKENIZER_PINS = {
 
 def pack_dialogue(record, tokenizer, *, media_rows, max_length):
     """Native generation-prefix anchor plus lossless media-ID insertion."""
-    if (record.get("route") != "audio_understand" or type(media_rows) is not int or media_rows < 1 or
+    if (record.get("route") not in {"audio_understand", "speech_understand"} or type(media_rows) is not int or media_rows < 1 or
             type(max_length) is not int or max_length < 1 or record.get("tools") or
             record.get("supervision", {}).get("policy") != "assistant_only" or
             record.get("supervision", {}).get("message_mask") != [False, True]):
