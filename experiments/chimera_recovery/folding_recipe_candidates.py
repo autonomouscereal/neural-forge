@@ -12,6 +12,19 @@ BASELINES = {
     "receipt": "c7fb1b0245d556c3af304ca6aeb9d78d9c294d39c682bcf93576e43488017257",
     "unit": "36df14de22b363e665d130fc5d6619ceb40e5c57ba98ec4c5ac22cfd72624c49",
 }
+# Independently reviewed 2026-10-13 live capture. Its only receipt diff is the
+# absence of the mirror's FP32 nonpersistent RoPE-buffer preservation; the
+# compare_prompts body is unchanged. This candidate fixes measurement admission
+# only and preserves each baseline's block construction without choosing a RoPE
+# policy. Unknown source bytes still fail closed.
+REVIEWED_BASELINES = {
+    "receipt": {
+        BASELINES["receipt"]: "historical_2026_campaign_mirror_fp32_rope_preservation",
+        "9fdf2db07651dd424e90d089fa528e59ea9c52844338d02bb9d2e988c089274e":
+            "live_2026_10_13_capture_no_fp32_rope_preservation",
+    },
+    "unit": {BASELINES["unit"]: "reviewed_2026_campaign_unit_builder"},
+}
 
 
 class Refusal(ValueError):
@@ -50,9 +63,12 @@ def validate_prompt_measurement(ids, reference, produced_full, reference_taps, p
 
 
 def patch_source(kind: str, source: Path) -> tuple[str, dict]:
-    raw = source.read_bytes()
+    return patch_bytes(kind, source.read_bytes())
+
+
+def patch_bytes(kind: str, raw: bytes) -> tuple[str, dict]:
     actual = hashlib.sha256(raw).hexdigest()
-    if kind not in BASELINES or actual != BASELINES[kind]:
+    if kind not in REVIEWED_BASELINES or actual not in REVIEWED_BASELINES[kind]:
         raise Refusal("source baseline differs; inspect before generating a correction")
     before = raw.decode().replace("\r\n", "\n")
     if kind == "receipt":
@@ -85,7 +101,8 @@ def patch_source(kind: str, source: Path) -> tuple[str, dict]:
         after = after.replace(old, new, 1)
     ast.parse(after)
     return after, {"schema": "chimera_recovery.future_recipe_candidate.v1", "kind": kind,
-                   "baseline_sha256": actual, "candidate_sha256": hashlib.sha256(after.encode()).hexdigest(),
+                   "baseline_sha256": actual, "baseline_revision": REVIEWED_BASELINES[kind][actual],
+                   "candidate_sha256": hashlib.sha256(after.encode()).hexdigest(),
                    "status": "private source candidate for review", "fold_launched": False,
                    "weights_changed": False, "recovery_checkpoint_changed": False}
 

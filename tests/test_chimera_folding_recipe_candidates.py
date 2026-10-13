@@ -39,6 +39,37 @@ def functions(text, names, namespace):
 
 
 class CandidateTests(unittest.TestCase):
+    def test_unreviewed_source_cannot_generate_a_candidate(self):
+        with self.assertRaisesRegex(candidate.Refusal, "baseline differs"):
+            candidate.patch_bytes("receipt", b"# unreviewed source\n")
+
+    def test_live_capture_has_separate_exact_pin_and_only_rope_construction_diff(self):
+        capture = Path(os.environ.get("CHIMERA_LIVE_FOLDING_SOURCES", "C:/Users/cereal/Documents/ai training/reviews/2026-10-13-folding/recovery-preparation/live-folding-sources/live_folding_sources.json"))
+        mirror = Path("C:/Users/cereal/Documents/ai training/neural-forge/reports/omni-campaign-2026-09/composite/tools/receipt_q27_streamed.py")
+        if not capture.is_file() or not mirror.is_file():
+            self.skipTest("both authentic source variants are not mounted")
+        record = json.loads(capture.read_text())["receipt_q27_streamed.py"]
+        live_raw = record["text"].encode()
+        # The capture's read_text() normalized the actual CRLF file. Restore
+        # that one reversible encoding only when it exactly matches its raw
+        # captured SHA; neither version receives an unreviewed-hash exception.
+        if hashlib.sha256(live_raw).hexdigest() != record["sha256"]:
+            live_raw = record["text"].replace("\n", "\r\n").encode()
+        self.assertEqual(hashlib.sha256(live_raw).hexdigest(), record["sha256"])
+        self.assertEqual(hashlib.sha256(mirror.read_bytes()).hexdigest(), candidate.BASELINES["receipt"])
+        historical = mirror.read_text()
+        live = record["text"]
+        parse_function = lambda text: ast.dump(next(node for node in ast.parse(text).body
+                                                   if isinstance(node, ast.FunctionDef) and node.name == "compare_prompts"))
+        self.assertEqual(parse_function(historical), parse_function(live))
+        historical_after, historical_receipt = candidate.patch_bytes("receipt", mirror.read_bytes())
+        live_after, live_receipt = candidate.patch_bytes("receipt", live_raw)
+        self.assertNotEqual(historical_receipt["baseline_revision"], live_receipt["baseline_revision"])
+        self.assertNotEqual(historical_receipt["candidate_sha256"], live_receipt["candidate_sha256"])
+        self.assertIn("rope_inv_freq = getattr", historical_after)
+        self.assertNotIn("rope_inv_freq = getattr", live_after)
+        self.assertEqual(parse_function(historical_after), parse_function(live_after))
+
     def test_pinned_originals_and_candidate_source_are_distinct(self):
         for kind in ("receipt", "unit"):
             path = SOURCE_ROOT / ("receipt_q27_streamed.py" if kind == "receipt" else "s7_unit_build.py")
