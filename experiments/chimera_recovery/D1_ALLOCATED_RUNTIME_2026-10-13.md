@@ -11,7 +11,7 @@ successor retains 917 fit rows / 62 validation rows, explicit real lengths,
 and global-exclusion pins remain required. The teacher uses direct S0 parent
 hidden-state forwards; this D1 job does not consume historical qtext KD caches.
 
-`d1_allocated.py prepare` writes a new candidate directory and an unbound
+`d1_allocated.py --baseline ... --source-manifest ... --out ...` writes a new candidate directory and an unbound
 allocation plan. Root first reviews that plan, prepares its dedicated output and
 lease directories, and uses the installed `C:/Users/cereal/hermes.py run` command
 template to acquire an idle two-member group. The plan specifies the actual
@@ -19,6 +19,7 @@ Torch2.11 image, read-only model/code/preparation/lease mounts and separate writ
 run/delta mounts. Its missing group/container fields must never be filled from
 historical status or a hand-written `active` flag.
 
+Use the exact published `tools/d1_allocated_root.py`, whose code SHA is pinned.
 Root then runs `d1_allocated_root.py bind --plan PLAN --plan-sha256 SHA --group
 ACTUAL_UUID --out NEW_ASSIGNMENT`. This reads only the parameterized exact group
 through the primary raw PostgreSQL backend, checks Docker identity/image/device
