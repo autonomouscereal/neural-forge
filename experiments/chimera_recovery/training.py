@@ -89,6 +89,11 @@ def route_name(value: str) -> str:
     return resolved
 
 
+def source_group(record: dict[str, Any]) -> str | None:
+    provenance = record.get("provenance", {})
+    return provenance.get("recovery_group_id", provenance.get("group_id", record.get("group_id", record.get("group", record.get("id")))))
+
+
 def check_json_schema(value: Any, schema: dict[str, Any], where: str) -> None:
     """Validate the conservative JSON-schema subset used by local tool fixtures.
 
@@ -822,7 +827,7 @@ def prepare_text(records: list[dict[str, Any]], tokenizer: Any, root: Path, out:
     groups = {}
     for record in records:
         record_split = "validation" if record.get("split") == "val" else record.get("split")
-        group = record.get("group_id", record.get("group", record.get("id")))
+        group = source_group(record)
         if not isinstance(group, str) or not group or record_split not in {"train", "validation", "test"}:
             quarantine.append({"id": record.get("id"), "split": record_split, "reason": "missing stable group identity or valid split"})
             continue
@@ -830,7 +835,7 @@ def prepare_text(records: list[dict[str, Any]], tokenizer: Any, root: Path, out:
     overlapping = {group for group, splits in groups.items() if len(splits) != 1}
     for record in records:
         record_split = "validation" if record.get("split") == "val" else record.get("split")
-        group = record.get("group_id", record.get("group", record.get("id")))
+        group = source_group(record)
         if not isinstance(group, str) or not group or record_split not in {"train", "validation", "test"}:
             continue
         if group in overlapping:
@@ -840,11 +845,15 @@ def prepare_text(records: list[dict[str, Any]], tokenizer: Any, root: Path, out:
             excluded.append({"id": record.get("id"), "split": record_split, "group": group})
             continue
         try:
+            if record.get("provenance", {}).get("split", record_split) != record_split:
+                raise ReadinessError("provenance split differs from row split")
             if record.get("quality", {}).get("train_ready") is False:
                 raise ReadinessError("quality.train_ready explicitly false")
             rows.append(pack_native_chat(record, tokenizer, root=root, max_length=max_length))
             accepted.append(record)
-        except (ReadinessError, KeyError, ValueError, TypeError) as error:
+        except Exception as error:
+            if isinstance(error, MemoryError):
+                raise
             quarantine.append({"id": record.get("id"), "route": record.get("route"), "split": record_split,
                                "group": group, "reason": str(error), "error_type": type(error).__name__})
     pad = getattr(tokenizer, "pad_token_id", None)

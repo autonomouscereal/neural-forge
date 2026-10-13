@@ -101,6 +101,13 @@ def test_terminal_tool_action_allowed_but_not_unresolved_history():
         t.validate_messages(r)
 
 
+def test_recovery_group_contract_takes_precedence_over_row_identity():
+    r = row()
+    r["group_id"] = "less-specific"
+    r["provenance"] = {"recovery_group_id": "connected-event-media-content-component", "group_id": "source-file"}
+    assert t.source_group(r) == "connected-event-media-content-component"
+
+
 def test_mask_can_exclude_earlier_assistant_turn_without_text_search():
     r = row()
     r["supervision"]["message_mask"][1] = False
