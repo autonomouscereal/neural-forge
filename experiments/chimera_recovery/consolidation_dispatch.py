@@ -25,10 +25,81 @@ SAFETY = dict(checkpoint_seconds=1800, keep_safety=2, consecutive_skips=8,
               skip_window=100, skip_fraction=.2, review_fraction=.25)
 LANES = {"short_text": O.TEXT, "long_text": O.TEXT, "k3": O.TEXT,
          "vision": O.VISION, "ace": O.GUIDED, "qimg": O.GUIDED,
-         "hy3d": O.VOLUME, "h3": O.GUIDED, "audio_ce": O.AUDIO, "speech_flow": O.SPEECH}
+         "hy3d": O.GEOMETRY, "h3": O.GUIDED, "music_code": O.MUSIC,
+         "audio_ce": O.AUDIO, "speech_flow": O.SPEECH}
 SOURCES = {O.TEXT: "chimera_recovery.text_replay_batches.v1", O.GUIDED: "chimera_recovery.native_batches.v1",
            O.MUSIC: "chimera_recovery.music_batches.v1", O.VISION: "chimera_recovery.vision_batches.v1",
-           O.AUDIO: "chimera_recovery.audio_batches.v1", O.SPEECH: "chimera_recovery.speech_flow_batches.v1"}
+           O.AUDIO: "chimera_recovery.audio_batches.v1", O.SPEECH: "chimera_recovery.speech_flow_batches.v1",
+           O.GEOMETRY: "recovery_geometry_flow_batches.v1"}
+GEOMETRY_STAGE = "D3b_geometry_supervised_flow"
+
+
+def reviewed_replay_plan(entry, root, amendment):
+    """Explicit dated replacement for two guided quotas; frozen history stays intact."""
+    value, path = read(entry, root)
+    order = list(C.STAGE_ORDER)
+    order[order.index("D3b.hy3d")] = GEOMETRY_STAGE
+    if (value.get("schema") != "chimera_recovery.d4_replay_amendment.v1"
+            or value.get("selected") is not True or value.get("dated") != "2026-10-13"
+            or value.get("preregistration_amendment_sha256") != amendment
+            or value.get("frozen_original_quotas") != C.QUOTAS or value.get("lineage_order") != order
+            or value.get("rationale") != "all eligible authentic source batches once; no repetition to fill guided quotas"
+            or set(value.get("lanes", {})) != {"hy3d", "h3", "music_code"}):
+        raise Error("D4 geometry/H3/music replay requires an exact selected dated amendment")
+    for lane, rule in value["lanes"].items():
+        ids = rule.get("batch_ids")
+        if (rule.get("mode") != "all_eligible_source_batches_once" or rule.get("objective") != LANES[lane]
+                or not isinstance(ids, list) or not ids or any(not isinstance(v, str) or not v for v in ids)
+                or len(set(ids)) != len(ids) or type(rule.get("count")) is not int or rule["count"] != len(ids)
+                or not rule.get("source_manifests")):
+            raise Error("D4 amended quota needs exact unique authenticated source membership")
+        for ref in rule["source_manifests"]:
+            I.pinned(ref, path.parent)
+    return dict(value=value, path=str(path), pin=I.pin(path))
+
+
+def prepare_replay_amendment(preregistration, source_manifests, out):
+    """Create a reviewable unselected successor from actual complete inventories.
+
+    No production acceptance, quota padding or claimed cache seals are created.
+    Root selects exact bytes after reviewing source-wide exclusions and coverage.
+    """
+    from . import train_media as T
+    out = Path(out)
+    if out.exists() or set(source_manifests) != {"hy3d", "h3", "music_code"}:
+        raise Error("preserve candidate; three exact native lane manifests required")
+    prior = T.verify_preregistration(preregistration, Path("."))
+    lanes = {}
+    for lane, refs in source_manifests.items():
+        ids, pins = [], []
+        for ref in refs:
+            data, path = read(ref, Path("."))
+            if (data.get("schema") != SOURCES[LANES[lane]] or data.get("sealed") is not True
+                    or data.get("heldout_groups_excluded") is not True
+                    or (lane != "hy3d" and data.get("split") != "train")):
+                raise Error("candidate needs actual complete admitted native source manifests")
+            if lane == "hy3d":
+                from . import train_geometry as G
+                G.cache_manifest(path, data.get("amendment", {}).get("sha256"))
+            batch_ids = [item.get("id") for item in data.get("batches", [])]
+            if not batch_ids or any(not isinstance(v, str) or not v for v in batch_ids):
+                raise Error("candidate actual source batch inventory missing")
+            ids.extend(batch_ids)
+            pins.append(I.pin(path))
+        if len(set(ids)) != len(ids):
+            raise Error("candidate source manifests repeat actual batch identity")
+        lanes[lane] = dict(mode="all_eligible_source_batches_once", objective=LANES[lane], source_manifests=pins,
+                           batch_ids=ids, count=len(ids))
+    order = list(C.STAGE_ORDER)
+    order[order.index("D3b.hy3d")] = GEOMETRY_STAGE
+    value = dict(schema="chimera_recovery.d4_replay_amendment.v1", selected=False, dated="2026-10-13",
+                 preregistration=preregistration, preregistration_amendment_sha256=prior["amendment_sha256"],
+                 frozen_original_quotas=C.QUOTAS, lineage_order=order, lanes=lanes,
+                 rationale="all eligible authentic source batches once; no repetition to fill guided quotas")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with out.open("xb") as stream:
+        stream.write(I.canonical(value) + b"\n")
+    return dict(candidate=I.pin(out), selected=False, production_ready=False, counts={lane: rule["count"] for lane, rule in lanes.items()})
 
 
 def read(ref, root):
@@ -41,7 +112,7 @@ def sealed(value):
         raise Error("D4 manifest seal differs")
 
 
-def replay_catalog(entry, root, amendment, *, compatible_amendments=()):
+def replay_catalog(entry, root, amendment, *, compatible_amendments=(), reviewed_plan=None):
     """Bind every selected row to one actual sealed manifest batch and receipt.
 
     Existing cache validators inspect tensor contents immediately before their
@@ -56,6 +127,10 @@ def replay_catalog(entry, root, amendment, *, compatible_amendments=()):
             or value.get("amendment_sha256") != amendment):
         raise Error("D4 replay needs a sealed train-only amended catalog")
     sources = dict(value.get("sources", {}), replay=I.pin(path))
+    if reviewed_plan is None or value.get("replay_amendment") != reviewed_plan["pin"]:
+        raise Error("D4 replay needs the selected source-membership/lineage amendment pin")
+    rules = reviewed_plan["value"]["lanes"]
+    sources["replay_amendment"] = reviewed_plan["pin"]
     exclusion, _ = read(value["exclusions"], path.parent)
     if exclusion.get("connected_groups_verified") is not True:
         raise Error("D4 global connected-group exclusion proof missing")
@@ -74,21 +149,24 @@ def replay_catalog(entry, root, amendment, *, compatible_amendments=()):
     R.replay_identity(rows, sources, path.parent)
     counts = {lane: 0 for lane in LANES}
     admitted_sources = {"audio_ce": set(), "speech_flow": set()}
+    amended_ids = {lane: set() for lane in rules}
     for row in rows:
         lane, objective = row.get("lane"), row["objective"]
         if lane not in LANES or objective != LANES[lane] or row["recovery_group_id"] in excluded:
             raise Error("D4 replay lane/objective or global heldout exclusion differs")
-        # Music token replay is an extra explicit objective, never silently
-        # counted as one of the five frozen 300 flow/vision pair budgets.
         if objective not in SOURCES:
-            raise Error("D4 unsupported cache/objective; new volume requires its own audited contract")
+            raise Error("D4 unsupported cache/objective")
         ref = row["source_manifest"]
         key = ref["sha256"]
         if key not in caches:
             data, manifest_path = read(ref, path.parent)
             if (data.get("schema") != SOURCES[objective] or data.get("sealed") is not True
-                    or data.get("split") != "train" or data.get("heldout_groups_excluded") is not True):
+                    or (objective != O.GEOMETRY and data.get("split") != "train")
+                    or data.get("heldout_groups_excluded") is not True):
                 raise Error("D4 source cache must be sealed train-only")
+            if objective == O.GEOMETRY:
+                from . import train_geometry as G
+                G.cache_manifest(manifest_path, data.get("amendment", {}).get("sha256"))
             items = data.get("batches", [])
             if not items or len({item.get("id") for item in items}) != len(items):
                 raise Error("D4 source batch IDs missing or duplicate")
@@ -97,19 +175,31 @@ def replay_catalog(entry, root, amendment, *, compatible_amendments=()):
         data, manifest_path, items = caches[key]
         item = items.get(row["source_batch_id"])
         source_group = row.get("source_recovery_group_id", row["recovery_group_id"])
+        receipt_key = "receipt" if objective == O.GEOMETRY else "teacher_receipt"
+        storage = data.get("storage") if objective == O.GEOMETRY else item.get("storage") if item else None
         if (not item or item.get("recovery_group_id") != source_group
                 or I.pinned(item["tensors"], manifest_path.parent) != I.pinned(row["input"], path.parent)
-                or I.pinned(item["teacher_receipt"], manifest_path.parent) != I.pinned(row["target"], path.parent)
-                or item.get("storage") != row.get("storage")):
+                or I.pinned(item[receipt_key], manifest_path.parent) != I.pinned(row["target"], path.parent)
+                or storage != row.get("storage")):
             raise Error("D4 row differs from authentic source batch membership")
         receipt, _ = read(row["target"], manifest_path.parent)
-        if (receipt.get("sealed") is not True or receipt.get("all_finite") is not True
+        source_amendment = receipt.get("amendment", {}).get("sha256") if objective == O.GEOMETRY else receipt.get("amendment_sha256", receipt.get("recovery_amendment_sha256"))
+        allowed_amendments = {amendment, *compatible_amendments}
+        if objective == O.GEOMETRY:
+            allowed_amendments.add(data["amendment"]["sha256"])
+        tensor_sha = receipt.get("tensors", {}).get("sha256") if objective == O.GEOMETRY else receipt.get("tensors_sha256")
+        if (receipt.get("sealed") is not True or (objective != O.GEOMETRY and receipt.get("all_finite") is not True)
                 or receipt.get("split") != "train" or receipt.get("held") is not False
                 or receipt.get("recovery_group_id") != source_group
-                or receipt.get("tensors_sha256") != row["input"]["sha256"]
-                or receipt.get("amendment_sha256", receipt.get("recovery_amendment_sha256")) not in {amendment, *compatible_amendments}
-                or row.get("source_amendment_sha256") != receipt.get("amendment_sha256", receipt.get("recovery_amendment_sha256"))):
+                or tensor_sha != row["input"]["sha256"] or source_amendment not in allowed_amendments
+                or row.get("source_amendment_sha256") != source_amendment):
             raise Error("D4 native receipt does not bind exact row/tensor/group/amendment")
+        if lane in rules:
+            declared = rules[lane]
+            declared_sources = {ref["sha256"] for ref in declared["source_manifests"]}
+            if key not in declared_sources or row["source_batch_id"] in amended_ids[lane]:
+                raise Error("D4 amended lane differs from exact source set or repeats a batch")
+            amended_ids[lane].add(row["source_batch_id"])
         if lane in {"short_text", "long_text", "k3"}:
             amount = row.get("real_tokens")
             if type(amount) is not int or amount < 1 or receipt.get("real_tokens") != amount:
@@ -135,9 +225,21 @@ def replay_catalog(entry, root, amendment, *, compatible_amendments=()):
             admitted_sources[lane].add(row["source_batch_id"])
     allowed = value.get("whole_row_token_overshoot", {})
     for lane, quota in C.QUOTAS.items():
+        if lane in rules:
+            continue
         excess = counts[lane] - quota
         if excess < 0 or (excess and (lane not in {"short_text", "long_text", "k3"} or allowed.get(lane) != excess)):
             raise Error("D4 frozen replay quota missing or unamended whole-row excess: " + lane)
+    for lane, rule in rules.items():
+        source_ids = set()
+        for ref in rule["source_manifests"]:
+            data, _ = read(ref, Path(reviewed_plan["path"]).parent)
+            ids = {item["id"] for item in data.get("batches", [])}
+            if source_ids & ids:
+                raise Error("D4 amended source manifests repeat batch identities")
+            source_ids |= ids
+        if source_ids != set(rule["batch_ids"]) or amended_ids[lane] != source_ids or counts[lane] != rule["count"]:
+            raise Error("D4 amended lane must replay every actual eligible source batch once: " + lane)
     if allowed:
         declaration, _ = read(value["budget_amendment"], path.parent)
         if (declaration.get("selected") is not True or declaration.get("dated") != "2026-10-13"
@@ -206,6 +308,13 @@ class NativeBackward:
         manifest_path = I.pinned(row["source_manifest"], self.root)
         source = json.loads(manifest_path.read_text(encoding="utf-8"))
         item = next(item for item in source["batches"] if item["id"] == row["source_batch_id"])
+        if row["objective"] == O.GEOMETRY:
+            from . import geometry_flow as G
+            from safetensors.torch import load_file
+            batch = G.inflate(load_file(str(I.pinned(row["input"], self.root)), device="cpu"))
+            compute = G.GeometryFlowAdapter(receipt_path, row["target"]["sha256"]).bind(batch)
+            batch = {key: value.to(hybrid.device) for key, value in batch.items()}
+            return O.geometry_backward(self.module, hybrid, batch, compute, row["supervised_units"], weight)
         # Canonical rows carry absolute pins, so the runtime's source guard can
         # hash every selected file independently of the old cache namespace.
         item = {**item, "tensors": row["input"], "teacher_receipt": row["target"]}
@@ -336,8 +445,8 @@ def attest_runtime(assignment, pg_rows, docker, cuda, host, *, now=None):
     return proof
 
 
-def accepted_lineage(entries, root, context):
-    if [entry.get("stage") for entry in entries] != list(C.STAGE_ORDER):
+def accepted_lineage(entries, root, context, *, stage_order=None):
+    if [entry.get("stage") for entry in entries] != list(stage_order or C.STAGE_ORDER):
         raise Error("D4 actual predecessor order must include audio CE and distinct speech flow")
     previous_native, previous_shared, sources = None, None, {}
     for index, entry in enumerate(entries):
@@ -400,9 +509,11 @@ def preflight(config_path):
                 or base.get("base_sha256") != base.get("clone_sha256") or base.get("clone_path") != config["omni"]):
             raise Error("D4 immutable registered D2 native clone receipt required")
         context = I.stage_context(config, base["base_sha256"], path.parent)
+        reviewed = reviewed_replay_plan(config["replay_amendment"], path.parent, verified["preregistration"]["amendment_sha256"])
+        verified["replay_amendment"] = reviewed
         verified["shared_r16"] = I.preflight_config(config, path.parent, base["base_sha256"])
         verified["native_state"] = N.preflight_config(config, path.parent, verified["shared_r16"])
-        lineage = accepted_lineage(config["accepted_stages"], path.parent, context)
+        lineage = accepted_lineage(config["accepted_stages"], path.parent, context, stage_order=reviewed["value"]["lineage_order"])
         if (lineage["native_sha256"] != verified["native_state"]["source_manifest_sha256"]
                 or lineage["shared_sha256"] != verified["shared_r16"]["source_manifest_sha256"]):
             raise Error("D4 terminal exports differ from actual accepted lineage")
@@ -418,7 +529,7 @@ def preflight(config_path):
                 raise Error("D4 source amendment is not an unchanged prefix of selected append-only amendment")
             source_amendments.add(old["amendment_sha256"])
         verified["replay"] = replay_catalog(config["replay_manifest"], path.parent,
-                    verified["preregistration"]["amendment_sha256"], compatible_amendments=source_amendments)
+                    verified["preregistration"]["amendment_sha256"], compatible_amendments=source_amendments, reviewed_plan=reviewed)
         # Exact currently executing helper bytes are part of this run identity.
         helpers = config["helpers"]
         expected = {Path(module.__file__).name: I.sha(Path(module.__file__)) for module in (R, R.D, O, C, I, N)}
@@ -573,17 +684,23 @@ def main(argv=None):
         if name == "train":
             command.add_argument("--out", type=Path, required=True)
             command.add_argument("--resume", type=Path)
+    candidate = commands.add_parser("prepare-replay-amendment", allow_abbrev=False)
+    candidate.add_argument("--preregistration", type=Path, required=True)
+    candidate.add_argument("--amendment-sha256", required=True)
+    for name in ("hy3d", "h3", "music-code", "out"):
+        candidate.add_argument("--" + name, type=Path, required=True)
     args = parser.parse_args(argv)
+    if args.command == "prepare-replay-amendment":
+        prior = {**I.pin(args.preregistration), "amendment_sha256": args.amendment_sha256}
+        print(json.dumps(prepare_replay_amendment(prior,
+            {"hy3d": [I.pin(args.hy3d)], "h3": [I.pin(args.h3)], "music_code": [I.pin(args.music_code)]}, args.out)))
+        return 0
     if args.command == "preflight":
         result = preflight(args.config)
         print(json.dumps({key: result[key] for key in ("production_ready", "candidate_preflight_passed", "blockers") if key in result}))
         return 0 if result.get("candidate_preflight_passed") else 2
     print(json.dumps(train(args.config, args.out, args.resume)))
     return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
 
 
 def policy_record(value):
@@ -650,6 +767,16 @@ def execute(engine, backward, out, *, gate, review_pointer=None, resume=None, cl
         policy = restored_policy(engine, Path(resume))
     if policy["consecutive_skips"] >= 8 or (len(policy["window"]) == 100 and sum(policy["window"]) > 20):
         raise Error("D4 existing skip-halt needs a new ruling; exact resume cannot erase it")
+    if policy["decode_review"] is not None:
+        review, review_path = read(policy["decode_review"], Path(resume))
+        if (review.get("schema") != "chimera_recovery.d4_decode_review.v1"
+                or review.get("run_identity_sha256") != I.digest(engine.identity)
+                or type(review.get("trained_step")) is not int
+                or not max(1, math.ceil(engine.total_steps * .25)) <= review["trained_step"] <= engine.step
+                or review.get("meaningful_prompt_conditioned_content") is not True or review.get("verdict") != "PASS"):
+            raise Error("D4 retained decode review no longer matches exact resumed run")
+        for field in ("full_answers", "outcomes", "evaluation_protocol", "baseline_answers"):
+            I.pinned(review[field], review_path.parent)
     out.mkdir(parents=True)
     save(engine, out / "checkpoint-initial", policy)
     last_safety = clock()
@@ -693,3 +820,7 @@ def execute(engine, backward, out, *, gate, review_pointer=None, resume=None, cl
         from . import consolidation_writer as W
         result["candidate_replacements"] = W.export_candidate(engine, checkpoint, out / "candidate-replacements")
     return result
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
