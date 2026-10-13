@@ -328,3 +328,31 @@ while the encoder, measured coordinates, amendment, native batch admission and
 dispatcher/composer requirements are missing. On the current24 non-speech rows,
 only8 are training examples; tone/chirp/noise families are split-held. This
 controlled source set does not provide speech/ASR labels or general sound coverage.
+
+`h3_audio_probe.py` is an executable standalone clean encoder proof using the
+actual source-pinned StageC and Comfy CPU path. It reads and resamples the entire
+PCM16 WAV, requires continuous source PTS and exact native800-sample hops,
+compares the full output bitwise with authentic StageC `read_audio`, and observes
+the real first-stage encoder input. It requires FP32 `[1,2,32000]` input for a
+one-second source, two bitwise-equal native `[1,32,2,40]` encodes, full32000-sample
+native decode, and lossless channel-major `[80,32]` packing. It records waveform
+reconstruction error, nominal `.025s` intervals, source/teacher/runtime hashes
+and actual tensor bytes. No waveform or latent padding/trimming is permitted.
+
+```bash
+CUDA_VISIBLE_DEVICES='' /opt/environments/python/comfyui/bin/python \
+  experiments/chimera_recovery/h3_audio_probe.py \
+  --audio /path/to/actual/sound.wav --audio-sha256 <actual-asset-sha256> \
+  --audio-vae /opt/ComfyUI/models/vae/minimax_h3_audio_vae_fp32.safetensors \
+  --stage-c /original/tools/stage_c_media_a.py --comfy-root /opt/ComfyUI \
+  --audio-source-sha256 <audited-comfy-ldm-minimax-audio_vae-source-sha256> \
+  --out /private/new/h3-standalone-audio-probe.json
+```
+
+This probe is CPU first and supplies no runtime allocator or GPU launch. A CPU
+failure is preserved in the receipt with the exact exception; no replacement
+implementation is inserted. A passing raw encoder proof grants no training
+admission: standalone native XYZ, the full parent model-space route, held-group
+batch admission and the distinct audio CE/read-policy production binding remain
+separate requirements. Nominal hop intervals do not claim local receptive-field
+support, which the encoder's convolution/attention can spread across time.
