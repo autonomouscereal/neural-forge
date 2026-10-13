@@ -456,15 +456,16 @@ def load_sources(path, api):
     if (corpus_receipt.get("schema") != "chimera_recovery.student_prefix_corpus.v1" or corpus_receipt.get("policy") != POLICY
             or corpus_receipt.get("objective") != OBJECTIVE or len(spec.get("sources", [])) != 1):
         raise Error("dedicated student-prefix round/corpus evidence differs")
-    checked(corpus_receipt["generation_receipt"])
-    checked(corpus_receipt["source_prompts"]); checked(corpus_receipt["source_prompt_manifest"]); checked(corpus_receipt["traces"])
     teacher_plan = checked(spec['teacher_plan'])
     rescoring = json.loads(checked(spec['rescoring_receipt']).read_text())
     if rescoring.get('passed') is not True or rescoring.get('teacher_plan') != spec['teacher_plan']:
         raise Error('singleton parent rescoring receipt differs')
     runtime_receipt = checked(rescoring['runtime_receipt'])
+    aliases = checked(rescoring['source_aliases']) if rescoring.get('source_aliases') else None
+    for key in ('generation_receipt','source_prompts','source_prompt_manifest','traces'):
+        P.checked(corpus_receipt[key], P.alias_data(aliases))
     actual = P.verify_capture(teacher_plan, checked(spec['student_prefix_corpus']),
-                              Path(spec['sources'][0]['qtext_cache']), runtime_receipt)
+                              Path(spec['sources'][0]['qtext_cache']), runtime_receipt, aliases)
     if actual != rescoring:
         raise Error('actual singleton parent rescoring evidence changed at run/resume')
     teacher_sha = spec.get("teacher_sha256")
@@ -502,6 +503,7 @@ def load_sources(path, api):
                     teacher_execution_profile_sha256=digest(actual['execution_profile']),
                     teacher_runtime_receipt_sha256=rescoring['runtime_receipt']['sha256'],
                     teacher_policy_helper_sha256=sha(Path(P.__file__)),
+                    teacher_source_aliases_sha256=None if aliases is None else sha(aliases),
                     cache_verifier={"path": verifier.__file__, "sha256": sha(Path(verifier.__file__))})
     return sources, identity
 
@@ -521,10 +523,11 @@ def bind_cache(corpus_manifest, cache, teacher_sha256, round_receipt, teacher_pl
     checked(corpus["corpus"]); checked(corpus["generation_receipt"])
     teacher_plan, rescoring_receipt = map(Path, (teacher_plan, rescoring_receipt))
     captured = json.loads(rescoring_receipt.read_text())
+    aliases = checked(captured['source_aliases']) if captured.get('source_aliases') else None
     if (captured.get('teacher_plan') != pin(teacher_plan) or captured.get('passed') is not True
-            or P.validate_plan(teacher_plan)['teacher_sha256'] != teacher_sha256):
+            or P.validate_plan(teacher_plan,P.alias_data(aliases))['teacher_sha256'] != teacher_sha256):
         raise Error('selected singleton parent plan/rescoring binding differs')
-    actual = P.verify_capture(teacher_plan, corpus_manifest, cache, checked(captured['runtime_receipt']))
+    actual = P.verify_capture(teacher_plan, corpus_manifest, cache, checked(captured['runtime_receipt']), aliases)
     if actual != captured:
         raise Error('actual singleton parent rescoring proof differs')
     manifest = json.loads((cache / "manifest.json").read_text())
