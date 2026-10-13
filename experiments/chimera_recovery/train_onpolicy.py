@@ -16,7 +16,7 @@ import json
 from pathlib import Path
 import tempfile
 
-from . import corpus as C, text_eval_seed as E, train_text as T
+from . import corpus as C, text_eval_seed as E, train_text as T, evaluation as V
 
 Error = T.ReadinessError
 POLICY = "chimera_recovery.student_prefix_one_pass.v1"
@@ -187,6 +187,11 @@ def validate_trace(seed, row, expected):
             or row.get("seed_sha256") != digest(seed) or row.get("input_messages_sha256") != seed["input_messages_sha256"]
             or seed.get("split") != "train" or seed.get("group_id") != row.get("group_id")):
         raise Error("student trace prompt/source/group identity differs")
+    tools = seed.get('input', {}).get('tools', [])
+    if tools and (row.get('native_tools_sha256') != digest(tools)
+                  or row.get('execution_scope') != 'initial_assistant_only_no_tool_dispatch'
+                  or row.get('tool_outcomes') != []):
+        raise Error("initial tool trace schemas/scope differ or unobserved outcomes were invented")
     for key in ("student_checkpoint_sha256", "tokenizer_sha256", "template_sha256", "generation"):
         if row.get(key) != expected.get(key) or expected.get(key) is None:
             raise Error("student trace native checkpoint/template/generation pin differs")
@@ -213,6 +218,129 @@ def validate_trace(seed, row, expected):
     if not isinstance(row.get("answer_text"), str) or row.get("answer_text_sha256") != digest(row["answer_text"]):
         raise Error("full recorded student answer bytes required")
     return prompt + generated, [False] * len(prompt) + [True] * len(generated)
+
+
+def source_tool_calls(row, recorded):
+    """Join real seed schemas, arguments and recorded results without dispatch."""
+    p = row.get('provenance') or {}
+    if (p.get('actual_tool_execution') is not True or recorded.get('id') != row.get('id')
+            or recorded.get('split') != p.get('split') or recorded.get('template_family') != p.get('template_family')
+            or digest(recorded.get('calls')) != p.get('execution_receipt_sha256')):
+        raise Error('authentic tool seed execution receipt mismatch')
+    tools = row.get('tools', [])
+    schemas = {t['function']['name']: t['function']['parameters'] for t in tools if t.get('type') == 'function'}
+    if not schemas or len(schemas) != len(tools) or not all(V.supported_eval_schema(value) for value in schemas.values()):
+        raise Error('authentic supported function schemas required')
+    recorded_calls = {c['call_id']: c for c in recorded['calls']}
+    result_messages = [m for m in row['messages'] if m.get('role') == 'tool']
+    results = {m['tool_call_id']: m for m in result_messages}
+    calls = [c for m in row['messages'] if m.get('role') == 'assistant' for c in m.get('tool_calls', [])]
+    if (len(recorded_calls) != len(calls) or len(recorded_calls) != len(recorded['calls'])
+            or len(results) != len(result_messages) or set(recorded_calls) != set(results)
+            or len({c['id'] for c in calls}) != len(calls)):
+        raise Error('tool seed full execution history is incomplete')
+    for call in calls:
+        fn, observed = call['function'], recorded_calls.get(call['id'])
+        arguments = json.loads(fn['arguments'])
+        result = json.loads(results[call['id']]['content'])
+        if (not observed or observed['tool_name'] != fn['name'] or observed['arguments'] != arguments
+                or fn['name'] not in schemas or V.check_eval_arguments(arguments, schemas[fn['name']])
+                or result != observed['result'] or digest(result) != observed['result_sha256']):
+            raise Error('tool seed schema/arguments/observed result differs')
+    return calls
+
+
+def add_tool_prompts(base, ready, execution_receipts, seed_report, output, per_family=3):
+    """Add first-assistant-only tool strata from genuine executed train families.
+
+    Prior source executions establish the seed provenance only; sampled student
+    calls will not inherit those outcomes or proceed into an unexecuted loop.
+    """
+    base, ready, execution_receipts, seed_report, output = map(Path, (base, ready, execution_receipts, seed_report, output))
+    if output.exists() or not 1 <= per_family <= 8:
+        raise Error('new tool prompt artifact and bounded cases per family required')
+    original = json.loads((base/'manifest.json').read_text())
+    text = list(C.iter_jsonl(base/'prompts.jsonl'))
+    if original.get('schema') != 'chimera_recovery.onpolicy_prompts.v1' or sha(base/'prompts.jsonl') != original['prompts_sha256']:
+        raise Error('base prompt inventory pin differs')
+    for path, wanted in original['source_pins'].items():
+        if sha(Path(path)) != wanted:
+            raise Error('prior prompt source moved before tool augmentation')
+    report = json.loads(seed_report.read_text())
+    for name, path in (('ready.jsonl', ready), ('execution_receipts.jsonl', execution_receipts)):
+        if report.get('artifacts', {}).get(name, {}).get('sha256') != sha(path):
+            raise Error('tool source report/raw inventory hash differs')
+    receipts = {r['id']: r for r in C.iter_jsonl(execution_receipts)}
+    episodes = list(C.iter_jsonl(ready))
+    if len(receipts) != len(episodes) or {r['id'] for r in episodes} != set(receipts):
+        raise Error('tool seed episode/execution inventory differs')
+    tool_pins = {'ready':pin(ready), 'execution_receipts':pin(execution_receipts), 'report':pin(seed_report)}
+    split_keys = {}
+    candidates = []
+    for row in episodes:
+        p = row.get('provenance') or {}
+        if any(p.get(key) != report.get(key) for key in ('source_code_sha256','tool_catalog_sha256')):
+            raise Error('tool seed source code/catalog pins differ from authentic report')
+        split = row.get('split', p.get('split'))
+        prefix = []
+        for m in row.get('messages', []):
+            if m.get('role') == 'assistant': break
+            if m.get('role') not in {'system','developer','user'}: raise Error('initial tool seed prefix contains a tool result')
+            prefix.append({'role': m['role'], 'content': m.get('content')})
+        keys = [('family',p.get('template_family')), ('group',group(row)), ('case',p.get('case_id')),
+                ('prompt',digest(prefix))] + [('source',v) for v in p.get('source_ids', [])]
+        for key in keys:
+            if not key[1] or split_keys.setdefault(key, split) != split:
+                raise Error('tool seed initial prompt/source family crosses splits')
+        if split != 'train': continue
+        if p.get('source_verified') is not True or (row.get('quality') or {}).get('train_ready') is not True:
+            raise Error('tool source is not admitted train')
+        calls = source_tool_calls(row, receipts.get(row['id'], {}))
+        if not prefix or prefix[-1]['role'] != 'user' or not calls:
+            raise Error('authentic initial tool call/prompt missing')
+        tools = row['tools']
+        candidates.append({'schema':'chimera_recovery.onpolicy_prompt.v1','id':digest(['student-prefix',row['id']]),
+             'route':'tool_call', 'group_id':group(row),'split':'train','input':{'messages':prefix,'tools':tools,'media':[]},
+             'input_messages_sha256':digest(prefix),'source_row_id':row['id'],'source_row_sha256':digest(row),
+             'source_file':tool_pins['ready'],'provenance':p,'template_family':p['template_family'],
+             'source_execution_receipts':tool_pins['execution_receipts'],'source_execution_record_sha256':digest(receipts[row['id']]),
+             'source_seed_report':tool_pins['report'],'native_tools_sha256':digest(tools),
+             'capture_scope':'initial_assistant_only_no_tool_dispatch',
+             'requested_facets':(row.get('quality') or {}).get('tool_routes', []),
+             'student_outcome_status':'unobserved; source executions are never model outcomes'})
+    # All frozen/held sources from the text seed artifact remain pinned.
+    holdout_paths = [Path(p) for p in original['heldout_source_pins'] if p != original['full_split_inventory']['path']]
+    with tempfile.TemporaryDirectory(prefix='onpolicy-tools-held.') as temporary:
+        snapshot = Path(temporary)/'held.jsonl'
+        with snapshot.open('wb') as handle:
+            for r in C.iter_jsonl(Path(original['full_split_inventory']['path'])):
+                if r.get('split',(r.get('provenance') or {}).get('split')) in {'validation','test'}: handle.write(canonical(r)+b'\n')
+            for r in episodes:
+                if r.get('split',(r.get('provenance') or {}).get('split')) != 'train': handle.write(canonical(r)+b'\n')
+        screens=[{**r,'input':{'messages':[{'role':'user','content':'\n'.join(m['content'] for m in r['input']['messages'])}]}} for r in candidates]
+        blocked,_,_,_=E.screen(screens,holdout_paths+[snapshot])
+    chosen, families = [], Counter()
+    for r in sorted(candidates, key=lambda r:digest([original['seed'],r['id']])):
+        if r['id'] in blocked or families[r['template_family']] >= per_family: continue
+        chosen.append(r); families[r['template_family']]+=1
+    if not chosen: raise Error('no frozen-disjoint genuine tool prompt strata')
+    for ref in tool_pins.values(): checked(ref)
+    for path,wanted in original['source_pins'].items():
+        if sha(Path(path)) != wanted: raise Error('prior prompt source changed during tool augmentation')
+    combined = text+chosen
+    manifest = {**original,'prompts_sha256':None,'rows':len(combined),'routes':dict(Counter(r['route'] for r in combined)),
+        'maximum_sampled_tokens':len(combined)*original['max_new_tokens'],
+        'previous_prompt_manifest':pin(base/'manifest.json'),'tool_sources':tool_pins,
+        'tool_prompt_rows':len(chosen),'tool_train_families':dict(families),'tool_screened_out':len(blocked),
+        'tool_capture_scope':'initial_assistant_only_no_tool_dispatch',
+        'tool_runtime_scope':'No sandbox execution occurs; retry/parallel/multiturn labels refer to seed families, not executed student trajectories',
+        'group_sampling':'Text one prompt per connected group; tool up to explicit per_family cases within disjoint train-only family',
+        'actual_sampled_tokens':0,'production_training_ready':False}
+    output.parent.mkdir(parents=True,exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=output.name+'.',dir=output.parent) as temporary:
+        root=Path(temporary); (root/'prompts.jsonl').write_bytes(b''.join(canonical(r)+b'\n' for r in combined))
+        manifest['prompts_sha256']=sha(root/'prompts.jsonl'); (root/'manifest.json').write_bytes(canonical(manifest)+b'\n'); root.rename(output)
+    return manifest
 
 
 def pack_traces(prompts, prompt_manifest, traces, generation_receipt, output):
@@ -453,6 +581,10 @@ def main():
     for key in ("corpus-manifest", "cache", "round-receipt", "output"):
         binding.add_argument("--" + key, type=Path, required=True)
     binding.add_argument("--teacher-sha256", required=True)
+    tools = sub.add_parser('add-tool-prompts')
+    for key in ('base','ready','execution-receipts','seed-report','output'):
+        tools.add_argument('--'+key,type=Path,required=True)
+    tools.add_argument('--per-family',type=int,default=3)
     args = vars(parser.parse_args()); mode = args.pop("mode")
     if mode == "prepare-prompts":
         result = prepare_prompts(**args)
@@ -460,6 +592,8 @@ def main():
         result = pack_traces(**args)
     elif mode == "bind-cache":
         result = bind_cache(**args)
+    elif mode == 'add-tool-prompts':
+        result = add_tool_prompts(**args)
     else:
         output = args.pop("output")
         if output.exists() or output.with_suffix(".receipt.json").exists():
