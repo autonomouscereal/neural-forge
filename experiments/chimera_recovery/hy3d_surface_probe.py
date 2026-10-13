@@ -161,6 +161,9 @@ def validate_config(config):
 def probe(*,root,weights,manifest,manifest_sha256,item_id,surface,mesh_path,conditioning,output,execute=False,threads=8,seed=20261013):
     if output.exists():
         raise ValueError("choose a new diagnostic output directory")
+    # Refuse an unwritable owned output before hashing/loading the parent or
+    # performing costly native inference. Container UID must own this mount.
+    output.mkdir(parents=True)
     pins=source_pins(root)
     if not A.SHA.fullmatch(str(manifest_sha256)) or A.file_sha(manifest)!=manifest_sha256:
         raise ValueError("immutable geometry preparation file pin differs")
@@ -238,7 +241,6 @@ def probe(*,root,weights,manifest,manifest_sha256,item_id,surface,mesh_path,cond
             if list(logits.shape)!=[1,len(queries),1] or not torch.isfinite(logits).all():
                 raise ValueError("genuine native geometry decoder query failed")
         hook.remove()
-        output.mkdir(parents=True)
         tensorfile=output/"target_latents.safetensors"
         save_file({"raw_latents":a.contiguous(),"model_space_latents":modelspace.contiguous(),
                    "target_only_encoder_query_xyz":qa.contiguous(),"decoded_features":decoded.contiguous(),
@@ -258,8 +260,6 @@ def probe(*,root,weights,manifest,manifest_sha256,item_id,surface,mesh_path,cond
                          "parent_logit_sign_not_inferred":True,"dense_reconstructed_mesh_not_verified":True},
                       blockers=["Actual geometric reconstruction metrics remain unverified.",
                                 "Genuine source-bound child image conditioning and target-independent native query-chart amendment remain required."])
-    else:
-        output.mkdir(parents=True)
     report["receipt_sha256"]=A.digest(report)
     (output/"probe.json").write_bytes(A.canonical(report)+b"\n")
     return report
