@@ -51,6 +51,39 @@ logit sign, claim dense reconstruction, or accept a poor reconstruction merely
 because tensors are finite. The diagnostic latent receipt never grants native
 training readiness.
 
+For the unchanged original-loader control, append
+`--native-surface-control --dense-resolution 32 --compare-posterior-sample`.
+The probe calls the genuine `SharpEdgeSurfaceLoader` with 81,920 uniform and
+zero sharp points from the original VAE config. It captures that actual surface
+once and seals it; the loader's unseeded `np.random.default_rng()` is not patched
+or declared repeatable. Encoding the captured bytes remains repeatable after
+resetting both Torch and libc RNGs. Original `normalize_mesh` is also called on
+the actual parent-loaded OBJ and its source-to-native affine, exact normalized
+bounds and surface-to-plane residual are recorded. The oracle and geometry
+metrics use that normalized mesh, including its exact native coordinate frame.
+
+The native default `posterior.sample()` is compared once using the prescribed
+20261013 seed, separately from mode; this comparison does not select a best seed
+or promote a favorable target. Actual unchanged `VanillaVolumeDecoder` and
+`MCSurfaceExtractor` evaluate a 33×33×33 grid with 2,048-query chunks, then extract
+the raw-logit zero isosurface. The native MC coordinate divisor remains 33 as
+written in the source. DMC's source convention is explicitly
+`sdf = -grid_logit / octree_resolution`; coarse occupancy still reports both
+sign interpretations. Bounded independent triangle-area samples provide both
+directions of surface Chamfer, coordinate bounds and p95 distances, with no
+claim of exact continuous triangle distance. These metrics and actual OBJ bytes
+are evidence for review, never an automatic geometry-quality admission.
+
+The first real uniform-sampler encode receipt at
+`reviews/2026-10-13-folding/recovery-preparation/hy3d-geometry-cpu-v3/probe.json`
+has file SHA `832d315146764d2d0c24aa27eafbb1e346fd1ff03094f4d725ffc7df45eb8e67`.
+Encode/query repeatability and the scale inverse passed. Its coarse oracle had
+4 true inside positives, 23 false inside negatives, 98 true outside negatives
+and zero false outside positives: overall accuracy .816 obscures inside recall
+.1481 and balanced accuracy .5741. It remains diagnostic and has not admitted
+any native targets. The subsequent parent-loader control uses a new namespace
+and preserves that failed quality evidence.
+
 Example CPU argv after copying the v2 preparation and mounting the genuine
 source/checkpoint plus root-owned CPU dependency overlay:
 
@@ -88,7 +121,11 @@ is silently reduced to obtain a quicker proof.
 ## Remaining native recovery requirements
 
 - Actual per-source VAE targets and acceptable geometric reconstruction evidence.
-- Source-bound child QVL image features for these exact corrected RGBA assets.
+- Source-bound child QVL image ingress for these exact corrected RGBA assets.
+  The existing 1,536-wide C11 patches are flattened, duplicated-frame normalized
+  RGB pixels, not learned teacher features. Their actual preprocessing, alpha
+  interpretation, merge-window ordering and positional metadata must be sealed.
+  Learned ViT block-output KD needs its own authentic teacher cache separately.
   The folded native HY3D unit dropped original DINO cross attention; metadata
   declaring an image does not replace actual image conditioning.
 - An explicit dated generation query-chart and objective amendment. Original

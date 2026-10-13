@@ -109,6 +109,118 @@ def convex_oracle(v,f):
     return grid[keep].astype(np.float32),(signed[keep]<0)
 
 
+def oracle_metrics(logits,inside):
+    """Report both logit interpretations; class imbalance must remain visible."""
+    import numpy as np
+    values=np.asarray(logits).reshape(-1);truth=np.asarray(inside,dtype=bool).reshape(-1)
+    if values.shape!=truth.shape or not np.isfinite(values).all() or not truth.any() or truth.all():
+        raise ValueError("finite paired oracle with both classes required")
+    result={"queries":len(truth),"inside":int(truth.sum()),"outside":int((~truth).sum())}
+    for name,prediction in (("positive_logit_as_inside",values>0),("negative_logit_as_inside",values<0)):
+        tp=int((prediction&truth).sum());tn=int((~prediction&~truth).sum())
+        fp=int((prediction&~truth).sum());fn=int((~prediction&truth).sum())
+        result[name]={"true_positive":tp,"true_negative":tn,"false_positive":fp,"false_negative":fn,
+                      "accuracy":(tp+tn)/len(truth),"inside_recall":tp/(tp+fn),
+                      "outside_recall":tn/(tn+fp),"balanced_accuracy":.5*(tp/(tp+fn)+tn/(tn+fp))}
+    return result
+
+
+def parent_surface(root,mesh_path,output,torch,seed):
+    """Call unchanged native loader once; its unseeded default_rng is not replaced."""
+    import numpy as np
+    import trimesh
+    module=importlib.import_module("_chimera_clean_hy3d_native.surface_loaders")
+    loaded=trimesh.load(str(mesh_path),force="mesh",merge_primitives=True)
+    bounds=loaded.bounds.copy();center=(bounds[0]+bounds[1])/2;scale=2*.9999/np.ptp(bounds,axis=0).max()
+    normalized=module.normalize_mesh(loaded.copy())
+    expected=(np.asarray(loaded.vertices)-center)*scale
+    if not np.allclose(normalized.vertices,expected,rtol=0,atol=1e-12):
+        raise ValueError("original loader normalized coordinate affine differs")
+    reset_cpu_rng(torch,seed)
+    surface=module.SharpEdgeSurfaceLoader(num_uniform_points=81920,num_sharp_points=0)(str(mesh_path))
+    arr=surface.cpu().numpy()
+    if (arr.shape!=(1,81920,7) or arr.dtype!=np.float32 or not np.isfinite(arr).all() or
+        np.any(arr[:,:,6]) or not np.allclose(np.linalg.norm(arr[:,:,3:6],axis=-1),1.,atol=.002)):
+        raise ValueError("actual parent surface dimensions/normals/sharp flag differ")
+    v=np.asarray(normalized.vertices);f=np.asarray(normalized.faces)
+    tri=v[f];normal=np.cross(tri[:,1]-tri[:,0],tri[:,2]-tri[:,0]);normal/=np.linalg.norm(normal,axis=-1)[:,None]
+    signed=np.einsum("qfi,fi->qf",arr[0,:,:3][:,None,:]-tri[None,:,0,:],normal).max(axis=1)
+    if np.max(np.abs(signed))>.002:
+        raise ValueError("native sampled surface does not cover the normalized actual target")
+    path=output/"captured_parent_surface.npy";np.save(path,arr,allow_pickle=False)
+    return arr,v,f,{"loader":"original SharpEdgeSurfaceLoader", "num_uniform_points":81920,"num_sharp_points":0,
+                    "sharpedge_flag":True,"actual_flag_unique":np.unique(arr[:,:,6]).tolist(),
+                    "surface":{"path":str(path),"sha256":A.file_sha(path),"shape":list(arr.shape)},
+                    "sampler_repeatability_claimed":False,"unseeded_default_rng_unchanged":True,
+                    "source_to_native_affine":{"bbox_min":bounds[0].tolist(),"bbox_max":bounds[1].tolist(),
+                         "bbox_center":center.tolist(),"uniform_scale":float(scale),"scale_argument":.9999,
+                         "formula":"(source_xyz - bbox_center) * uniform_scale"},
+                    "normalized_bbox_min":v.min(0).tolist(),"normalized_bbox_max":v.max(0).tolist(),
+                    "maximum_surface_plane_distance":float(np.max(np.abs(signed))),
+                    "native_surface_loader_parity":True,"generation_input_allowed":False}
+
+
+def sampled_surface(v,f,count,seed):
+    import numpy as np
+    v=np.asarray(v);f=np.asarray(f)
+    if (v.ndim!=2 or v.shape[1]!=3 or f.ndim!=2 or f.shape[1]!=3 or len(f)==0 or
+        f.min()<0 or f.max()>=len(v) or not np.isfinite(v).all() or not 64<=count<=8192):
+        raise ValueError("bounded finite actual triangle mesh required")
+    triangles=v[f];area=np.linalg.norm(np.cross(triangles[:,1]-triangles[:,0],triangles[:,2]-triangles[:,0]),axis=-1)
+    if not np.isfinite(area).all() or area.sum()<=0:
+        raise ValueError("actual mesh has no finite surface area")
+    rng=np.random.default_rng(seed);choice=rng.choice(len(f),count,p=area/area.sum())
+    uv=rng.random((count,2));a=np.sqrt(uv[:,0]);bary=np.stack([1-a,a*(1-uv[:,1]),a*uv[:,1]],axis=-1)
+    return np.einsum("ni,nij->nj",bary,triangles[choice])
+
+
+def mesh_metrics(target_v,target_f,reconstructed_v,reconstructed_f,seed=20261013,count=4096):
+    import numpy as np
+    truth=sampled_surface(target_v,target_f,count,seed)
+    observed=sampled_surface(reconstructed_v,reconstructed_f,count,seed+1)
+    # Bounded exact nearest neighbor between sampled point sets, no new runtime
+    # dependency. The continuous triangle surfaces are still only sampled.
+    def distances(first,second):
+        return np.concatenate([np.sqrt(((first[i:i+128,None,:]-second[None,:,:])**2).sum(-1).min(-1))
+                               for i in range(0,len(first),128)])
+    forward=distances(truth,observed);backward=distances(observed,truth)
+    return {"metric":"two_direction_triangle_area_uniform_sampled_surface_nearest_neighbor",
+            "samples_per_surface":count,"seed":seed,"units":"original loader normalized coordinate",
+            "target_to_reconstruction_mean":float(forward.mean()),"reconstruction_to_target_mean":float(backward.mean()),
+            "chamfer_l1_sum_of_means":float(forward.mean()+backward.mean()),
+            "chamfer_l2_sum_of_means":float((forward**2).mean()+(backward**2).mean()),
+            "target_to_reconstruction_p95":float(np.quantile(forward,.95)),
+            "reconstruction_to_target_p95":float(np.quantile(backward,.95)),
+            "exact_continuous_mesh_distance_claimed":False,
+            "target_bbox_min":np.asarray(target_v).min(0).tolist(),"target_bbox_max":np.asarray(target_v).max(0).tolist(),
+            "reconstruction_bbox_min":np.asarray(reconstructed_v).min(0).tolist(),
+            "reconstruction_bbox_max":np.asarray(reconstructed_v).max(0).tolist()}
+
+
+def dense_reconstruction(vae,decoded,vertices,faces,output,label,resolution,seed):
+    if resolution not in (16,32,48,64):
+        raise ValueError("bounded reviewed dense resolution required")
+    started=time.monotonic()
+    outputs=vae.latents2mesh(decoded,bounds=1.1,mc_level=0.,num_chunks=2048,
+                             octree_resolution=resolution,enable_pbar=False)
+    result={"method":"original VanillaVolumeDecoder + MCSurfaceExtractor", "resolution":resolution,
+            "actual_grid_queries":(resolution+1)**3,"bounds":1.1,"mc_level":0.,"num_chunks":2048,
+            "native_extractor_coordinate_divisor":resolution+1,"algorithm_changed":False,
+            "original_dmc_convention":"sdf = -grid_logit / octree_resolution",
+            "native_ready":False}
+    if len(outputs)!=1 or outputs[0] is None:
+        result.update(extracted=False,seconds=time.monotonic()-started,blocker="Original MC surface extraction returned no mesh.")
+        return result
+    v,f=outputs[0].mesh_v,outputs[0].mesh_f
+    result["metrics"]=mesh_metrics(vertices,faces,v,f,seed=seed)
+    path=output/(label+"_native_mc.obj")
+    path.write_text("".join("v "+" ".join(map(str,x))+"\n" for x in v)+
+                    "".join("f "+" ".join(str(int(i)+1) for i in x)+"\n" for x in f),encoding="utf-8")
+    result.update(extracted=True,vertices=len(v),triangles=len(f),seconds=time.monotonic()-started,
+                  mesh={"path":str(path),"sha256":A.file_sha(path)})
+    return result
+
+
 def reset_cpu_rng(torch,seed):
     # Genuine CPU torch_cluster fps uses libc rand for random_start, separately
     # from the Torch randperm generator. This affects only this owned process.
@@ -158,7 +270,8 @@ def validate_config(config):
     return p
 
 
-def probe(*,root,weights,manifest,manifest_sha256,item_id,surface,mesh_path,conditioning,output,execute=False,threads=8,seed=20261013):
+def probe(*,root,weights,manifest,manifest_sha256,item_id,surface,mesh_path,conditioning,output,execute=False,threads=8,seed=20261013,
+          native_surface_control=False,dense_resolution=0,compare_posterior_sample=False):
     if output.exists():
         raise ValueError("choose a new diagnostic output directory")
     # Refuse an unwritable owned output before hashing/loading the parent or
@@ -214,6 +327,10 @@ def probe(*,root,weights,manifest,manifest_sha256,item_id,surface,mesh_path,cond
                     raise ValueError("actual VAE tensor shape differs: "+name)
                 state[name]=value.float()
         vae.load_state_dict(state,strict=True);del state,expected
+        if native_surface_control:
+            arr,vertices,faces,control=parent_surface(root,mesh_path,output,torch,seed)
+            report.update(parent_surface_control=control,native_surface_loader_parity=True,
+                          surface_policy="unchanged_original_SharpEdgeSurfaceLoader_captured_once")
         measured={}
         def observe(module,args,out):
             if list(args[0].shape)!=[1,81920,3] or list(args[1].shape)!=[1,81920,4]:
@@ -240,12 +357,29 @@ def probe(*,root,weights,manifest,manifest_sha256,item_id,surface,mesh_path,cond
             logits=vae.geo_decoder(queries=query_tensor,latents=decoded)
             if list(logits.shape)!=[1,len(queries),1] or not torch.isfinite(logits).all():
                 raise ValueError("genuine native geometry decoder query failed")
+            report["oracle_confusion"]=oracle_metrics(logits[0,:,0].numpy(),inside)
+            if dense_resolution:
+                report["mode_dense_reconstruction"]=dense_reconstruction(vae,decoded,vertices,faces,output,"mode",dense_resolution,seed)
+            additional={}
+            if compare_posterior_sample:
+                reset_cpu_rng(torch,seed)
+                sampled=vae.encode(x,sample_posterior=True)
+                sample_decoded=vae.decode(sampled)
+                sample_logits=vae.geo_decoder(queries=query_tensor,latents=sample_decoded)
+                if not torch.isfinite(sampled).all() or not torch.isfinite(sample_logits).all():
+                    raise ValueError("native posterior.sample produced nonfinite output")
+                additional={"posterior_sample_raw_latents":sampled.contiguous(),"posterior_sample_geometry_logits":sample_logits.contiguous()}
+                report["prescribed_posterior_sample_control"]={"sample_seed":seed,"samples_compared":1,"best_seed_selection":False,
+                    "encoder_mode":"unchanged native posterior.sample()", "oracle_confusion":oracle_metrics(sample_logits[0,:,0].numpy(),inside)}
+                if dense_resolution:
+                    report["prescribed_posterior_sample_control"]["dense_reconstruction"]=dense_reconstruction(
+                        vae,sample_decoded,vertices,faces,output,"sample",dense_resolution,seed)
         hook.remove()
         tensorfile=output/"target_latents.safetensors"
         save_file({"raw_latents":a.contiguous(),"model_space_latents":modelspace.contiguous(),
                    "target_only_encoder_query_xyz":qa.contiguous(),"decoded_features":decoded.contiguous(),
                    "physical_oracle_queries":query_tensor.contiguous(),"native_geometry_logits":logits.contiguous(),
-                   "physical_oracle_inside":torch.from_numpy(inside).contiguous()},str(tensorfile))
+                   "physical_oracle_inside":torch.from_numpy(inside).contiguous(),**additional},str(tensorfile))
         report.update(encode_executed=True,encode_seconds=time.monotonic()-started,encoder_mode="posterior.mode()",
                       native_raw_latent_shape=list(a.shape),native_decoded_shape=list(decoded.shape),
                       repeated_encode_bitwise_equal=True,repeated_query_xyz_bitwise_equal=True,
@@ -272,9 +406,13 @@ def main(argv=None):
     p.add_argument("--prepared-manifest-sha256",required=True)
     p.add_argument("--item-id",required=True);p.add_argument("--execute",action="store_true")
     p.add_argument("--threads",type=int,default=8);p.add_argument("--seed",type=int,default=20261013)
+    p.add_argument("--native-surface-control",action="store_true")
+    p.add_argument("--dense-resolution",type=int,default=0,choices=(0,16,32,48,64))
+    p.add_argument("--compare-posterior-sample",action="store_true")
     a=p.parse_args(argv)
     result=probe(root=a.source_root,weights=a.weights,manifest=a.prepared_manifest,manifest_sha256=a.prepared_manifest_sha256,item_id=a.item_id,
-                 surface=a.surface,mesh_path=a.mesh,conditioning=a.conditioning,output=a.output,execute=a.execute,threads=a.threads,seed=a.seed)
+                 surface=a.surface,mesh_path=a.mesh,conditioning=a.conditioning,output=a.output,execute=a.execute,threads=a.threads,seed=a.seed,
+                 native_surface_control=a.native_surface_control,dense_resolution=a.dense_resolution,compare_posterior_sample=a.compare_posterior_sample)
     print(json.dumps({k:result[k] for k in ("item_id","encode_executed","native_train_ready","blockers","receipt_sha256")}))
 
 
