@@ -135,7 +135,7 @@ def production_fixture(tmp_path, monkeypatch):
     save_file({"input_ids": ids, "real_lengths": torch.tensor(lengths), "assistant_mask": masks}, str(corpus))
     cache = tmp_path / "synthetic_qtext_cache"
     shard = cache / "shard-00000"
-    shard.mkdir(parents=True)
+    cache.mkdir()
     row_table, positions, cached_ids, top_ids, offset = [], [], [], [], 0
     for row, length in enumerate(lengths):
         count = length - 1
@@ -143,19 +143,20 @@ def production_fixture(tmp_path, monkeypatch):
         positions.extend(range(count)); cached_ids.extend(ids[row, :count].tolist())
         top_ids.extend([[int(ids[row, pos + 1]), (int(ids[row, pos + 1]) + 1) % 32] for pos in range(count)])
         offset += count
-    import numpy as np
-    np.array(cached_ids, dtype="<u4").tofile(shard / "ids.u32")
-    np.array(positions, dtype="<u4").tofile(shard / "pos.u32")
-    np.array(top_ids, dtype="<i4").tofile(shard / "topk_ids.i32")
-    torch.tensor([[-.5, -2.]] * offset, dtype=torch.bfloat16).view(torch.int16).numpy().astype("<i2").tofile(shard / "topk_logprobs.bf16")
-    write_json(shard / "shard.json", {"positions": offset, "top_k": 2, "row_table": row_table})
     q = module.load_peer_module("qtext_teacher_cache")
+    # Use the real shard writer/checker, including all five raw-file seals.
+    shard_record = q.write_shard(cache, 0, {"ids": torch.tensor(cached_ids),
+        "pos": torch.tensor(positions), "topk_ids": torch.tensor(top_ids),
+        "topk_logprobs": torch.tensor([[-.5, -2.]] * offset, dtype=torch.bfloat16),
+        "lse": torch.zeros(offset)}, {"row_table": row_table}, 32, 2)
+    assert q.verify_shard(shard)["ok"]
     write_json(cache / "manifest.json", {"schema": q.MANIFEST_SCHEMA, "fixture_only": True,
         "all_finite": True, "all_structural_ok": True,
         "teacher": {"equal_before_and_after_every_session": True, "kind": "synthetic_fixture_targets_no_teacher_run"},
         "cache_config": {"top_k": 2, "vocab_rows": 32},
         "corpus": {"kind": "text", "path": str(corpus), "sha256": sha(corpus)},
-        "shards": [{"shard": "shard-00000", "shard_json_sha256": sha(shard / "shard.json")} ]})
+        "shards": [{"shard": "shard-00000", "shard_json_sha256": sha(shard / "shard.json"),
+                    "files": shard_record["files"]} ]})
     data = tmp_path / "data.json"
     write_json(data, {"sources": [{"name": "fixture", "kind": "text", "supervision": "assistant_only", "qtext_cache": str(cache), "corpus": str(corpus)}]})
     base_args = ["train", "--structured-recovery", "--source-plugin", str(plugin) + ":factory",
@@ -266,3 +267,26 @@ def test_actual_command_nonfinite_retry_reuses_rows_and_optimizer_matches_clean(
     assert_nested_equal(torch, load_file(str(clean / "adapters.safetensors")), load_file(str(retried / "adapters.safetensors")))
     assert_nested_equal(torch, torch.load(clean_safety / "ckpt-00000002" / "optimizer.pt", weights_only=False),
                         torch.load(retry_safety / "ckpt-00000002" / "optimizer.pt", weights_only=False))
+
+
+def test_actual_resume_refuses_same_size_raw_teacher_target_mutation(production_fixture):
+    module, run, _, _, root, _ = production_fixture
+    code, _, safety = run("target-seal", ["--max-steps-this-run", "1"])
+    assert code == 0
+    cache = root / "synthetic_qtext_cache"
+    manifest_before = sha(cache / "manifest.json")
+    shard_before = sha(cache / "shard-00000" / "shard.json")
+    target = cache / "shard-00000" / "topk_logprobs.bf16"
+    changed = bytearray(target.read_bytes())
+    changed[0] ^= 1  # Same length, finite nearby BF16 logprob; metadata stays fixed.
+    target.write_bytes(changed)
+    assert sha(cache / "manifest.json") == manifest_before
+    assert sha(cache / "shard-00000" / "shard.json") == shard_before
+    assert not module.load_peer_module("qtext_teacher_cache").verify_shard(cache / "shard-00000")["ok"]
+    try:
+        code, _, _ = run("target-seal-refused", ["--resume", str(safety / "ckpt-00000001")])
+    except RuntimeError as error:
+        assert any(term in str(error).lower() for term in ("sha", "digest", "verify", "integrity", "shard"))
+        code = 2
+    assert code == 2, "metadata identity must not permit changed raw teacher targets on resume"
+    assert not (root / "target-seal-refused" / "adapters.safetensors").exists()
