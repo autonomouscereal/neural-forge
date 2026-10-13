@@ -29,15 +29,28 @@ def pin(path):
     return {'path': str(path.resolve()), 'sha256': sha(path)}
 
 
-def checked(record):
+def checked(record, aliases=None):
     path = Path(record['path'])
+    if not path.is_file() and aliases and record.get('sha256') in aliases:
+        path = Path(aliases[record['sha256']])
     if not path.is_file() or sha(path) != record.get('sha256'):
         raise Error('student-prefix teacher evidence changed: ' + str(path))
     return path
 
 
-def read(record):
-    return json.loads(checked(record).read_text())
+def read(record, aliases=None):
+    return json.loads(checked(record, aliases).read_text())
+
+
+def alias_data(path):
+    if path is None:
+        return None
+    values = json.loads(Path(path).read_text())
+    if (not isinstance(values, dict) or any(not isinstance(k, str) or len(k) != 64
+            or any(c not in '0123456789abcdef' for c in k) or not isinstance(v, str)
+            or not Path(v).is_absolute() or not Path(v).is_file() or sha(Path(v)) != k for k,v in values.items())):
+        raise Error('source aliases must name existing unchanged SHA-pinned mounted files')
+    return values
 
 
 def publish(path, value):
@@ -56,14 +69,14 @@ def prepare_plan(prompt_manifest, execution_policy, shape_proof, distribution_re
     return publish(output, derive_plan(paths))
 
 
-def derive_plan(paths):
+def derive_plan(paths, aliases=None):
     required = {'prompt_manifest','execution_policy','shape_proof','distribution_review','paired_proof',
                 'native_parity','source_plan','portable_proof','writer','engine'}
     if set(paths) != required:
         raise Error('teacher plan is missing original source/proof pins')
     for value in paths.values():
-        checked(value)
-    docs = {key: read(value) for key, value in paths.items() if key not in {'writer', 'engine'}}
+        checked(value, aliases)
+    docs = {key: read(value, aliases) for key, value in paths.items() if key not in {'writer', 'engine'}}
     policy, shape, parity, source, portable = (docs[k] for k in
         ('execution_policy', 'shape_proof', 'native_parity', 'source_plan', 'portable_proof'))
     if (policy.get('schema') != 'chimera_recovery.text_teacher_execution_policy.v1'
@@ -92,7 +105,7 @@ def derive_plan(paths):
             or runtime.get('teacher_sha256') != paths['writer']['sha256']):
         raise Error('original parent/writer/K64 or reference runtime proof differs')
     for item in (runtime.get('compiler_image_proof'), runtime.get('actual_fla_kernel_proof')):
-        checked(item)
+        checked(item, aliases)
     files = {f['path']: f['sha256'] for f in parent['before']['files']}
     manifest = docs['prompt_manifest']
     if (manifest.get('schema') != 'chimera_recovery.onpolicy_prompts.v1'
@@ -110,6 +123,17 @@ def derive_plan(paths):
         'runtime_profile': {'image_id': image, 'python': runtime['python'], 'versions': versions,
                            'linear_attention_kernel': parity['linear_attention_kernel'],
                            'read_only_runtime_mount': runtime['venv_container']},
+        'writer_argv_template': [runtime['python'], runtime['teacher_path'], 'build-text',
+            '--model-dir','/models/parent','--teacher','q38-student-prefix-oct13-singleton-v1',
+            '--corpus','PINNED_PACKED_STUDENT_CORPUS','--out-root','NEW_ALLOCATED_CACHE_ROOT',
+            '--device','cuda:0','--dtype','bfloat16','--attn-implementation','sdpa',
+            '--linear-attn-kernel',parity['linear_attention_kernel']['requested'],
+            '--top-k','64','--vocab-rows','248320','--micro-batch','1',
+            '--max-batch-tokens','0','--batch-order','corpus','--rows-per-shard','256',
+            '--head-precision','fp32','--head-chunk-rows','256','--teacher-digest','full',
+            '--digest-threads','4','--host-resident','pageable','--ids-key','input_ids',
+            '--lengths-key','real_lengths','--verify-existing'],
+        'argv_is_preparation_template_not_launch': True,
         'prompt_rows': manifest['rows'], 'maximum_sampled_tokens': manifest['maximum_sampled_tokens'],
         'actual_sampled_tokens': 0, 'offline_paired_profile_changed': False,
         'production_runtime_receipt': None, 'student_generation_completed': False,
@@ -121,11 +145,11 @@ def derive_plan(paths):
     return result
 
 
-def validate_plan(path):
+def validate_plan(path, aliases=None):
     plan = json.loads(Path(path).read_text())
     if plan.get('schema') != SCHEMA or plan.get('profile') != PROFILE:
         raise Error('singleton complete-sequence teacher profile differs')
-    if derive_plan(plan['sources']) != plan:
+    if derive_plan(plan['sources'], aliases) != plan:
         raise Error('teacher plan was not derived from its exact selected source/proofs')
     return plan
 
@@ -188,30 +212,32 @@ def verify_records(plan, manifest, records, sessions, row_lengths, row_counts):
     return {'rows': len(seen), 'real_tokens': sum(row_lengths), 'supervised_positions': sum(row_counts)}
 
 
-def verify_capture(teacher_plan, corpus_manifest, cache, runtime_receipt):
+def verify_capture(teacher_plan, corpus_manifest, cache, runtime_receipt, source_aliases=None):
     """Authenticate real recorded metadata, original raw verifier and source tensors.
 
     Runtime receipt is produced from an actual allocated run, not by this helper.
     It binds each actual session to its external container/runtime proof.
     """
-    plan = validate_plan(teacher_plan)
+    aliases = alias_data(source_aliases)
+    plan = validate_plan(teacher_plan, aliases)
     cache, corpus_manifest = Path(cache).resolve(), Path(corpus_manifest).resolve()
     corpus = json.loads(corpus_manifest.read_text())
     manifest = json.loads((cache/'manifest.json').read_text())
     identity = corpus.get('identity', {})
     if (corpus.get('schema') != 'chimera_recovery.student_prefix_corpus.v1'
-            or corpus.get('source_prompt_manifest') != plan['sources']['prompt_manifest']
+            or corpus.get('source_prompt_manifest', {}).get('sha256') != plan['sources']['prompt_manifest']['sha256']
             or identity.get('tokenizer_sha256') != plan['native_tokenizer_sha256']
             or identity.get('template_sha256') != plan['native_template_sha256']
             or manifest.get('corpus', {}).get('sha256') != corpus['corpus']['sha256']):
         raise Error('rescoring changed native student traces/template/corpus')
     for key in ('corpus','generation_receipt','traces','source_prompts','source_prompt_manifest'):
-        checked(corpus[key])
+        checked(corpus[key], aliases)
     runtime_path = Path(runtime_receipt)
     observed = json.loads(runtime_path.read_text())
     if (observed.get('schema') != 'chimera_recovery.student_prefix_teacher_runtime.v1'
             or observed.get('passed') is not True or observed.get('teacher_plan_sha256') != sha(Path(teacher_plan))
             or observed.get('cache_manifest_sha256') != sha(cache/'manifest.json')
+            or observed.get('source_aliases') != (pin(source_aliases) if source_aliases else None)
             or observed.get('runtime_profile') != plan['runtime_profile']):
         raise Error('actual allocated singleton runtime/profile evidence is missing or different')
     records, sessions, pins = [], {}, []
@@ -231,7 +257,7 @@ def verify_capture(teacher_plan, corpus_manifest, cache, runtime_receipt):
             external = observed.get('sessions', {}).get(sid, {})
             if external.get('cache_session_sha256') != spin['sha256']:
                 raise Error('actual runtime proof references another teacher session')
-            proof = read(external['allocation_forward_proof'])
+            proof = read(external['allocation_forward_proof'], aliases)
             try:
                 allocation = str(uuid.UUID(proof.get('allocation_id', '')))
                 gpu = 'GPU-' + str(uuid.UUID(proof.get('gpu_uuid', '').removeprefix('GPU-')))
@@ -248,13 +274,13 @@ def verify_capture(teacher_plan, corpus_manifest, cache, runtime_receipt):
             pins.append(external['allocation_forward_proof'])
     import torch
     from safetensors.torch import load_file
-    native = load_file(str(checked(corpus['corpus'])))
+    native = load_file(str(checked(corpus['corpus'], aliases)))
     ids, lengths, mask = (native[k] for k in ('input_ids','real_lengths','assistant_mask'))
     if (ids.ndim != 2 or ids.dtype not in (torch.int32,torch.int64)
             or lengths.shape != (ids.shape[0],) or lengths.dtype not in (torch.int32,torch.int64) or mask.dtype != torch.bool
             or mask.shape != ids.shape or 'target_mask' not in native or not torch.equal(native['target_mask'], mask)):
         raise Error('student corpus needs identical target/assistant masks and exact real lengths')
-    traces = list(C.iter_jsonl(checked(corpus['traces'])))
+    traces = list(C.iter_jsonl(checked(corpus['traces'], aliases)))
     if len(traces) != len(lengths) or corpus['row_ids'] != [r['id'] for r in traces]:
         raise Error('complete original source traces are missing')
     for i, trace in enumerate(traces):
@@ -266,7 +292,7 @@ def verify_capture(teacher_plan, corpus_manifest, cache, runtime_receipt):
             raise Error('native corpus cropped/changed actual student sequence or assistant ownership')
     counts = [int(mask[i,1:int(lengths[i])].sum()) for i in range(len(lengths))]
     result = verify_records(plan, manifest, records, sessions, lengths.tolist(), counts)
-    spec = importlib.util.spec_from_file_location('student_prefix_original_qtext_verifier', checked(plan['sources']['writer']))
+    spec = importlib.util.spec_from_file_location('student_prefix_original_qtext_verifier', checked(plan['sources']['writer'], aliases))
     writer = importlib.util.module_from_spec(spec); spec.loader.exec_module(writer)
     for entry in manifest['shards']:
         if writer.verify_shard(cache/entry['shard']).get('ok') is not True:
@@ -281,6 +307,7 @@ def verify_capture(teacher_plan, corpus_manifest, cache, runtime_receipt):
     return {'schema': CAPTURE, 'passed': True, 'teacher_plan': pin(teacher_plan),
             'corpus_manifest': pin(corpus_manifest), 'cache_manifest': pin(cache/'manifest.json'),
             'runtime_receipt': pin(runtime_receipt), 'execution_profile': plan['profile'],
+            'source_aliases': pin(source_aliases) if source_aliases else None,
             'metadata_pins': pins, **result, 'production_training_ready': False}
 
 
@@ -294,6 +321,7 @@ def main():
     capture = sub.add_parser('seal-capture')
     for key in ('teacher-plan','corpus-manifest','cache','runtime-receipt','output'):
         capture.add_argument('--'+key, type=Path, required=True)
+    capture.add_argument('--source-aliases', type=Path)
     args = vars(parser.parse_args()); mode = args.pop('mode')
     if mode == 'prepare-plan':
         result = prepare_plan(**args)

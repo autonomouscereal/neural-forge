@@ -24,7 +24,7 @@ def make_plan(tmp_path, writer=None):
     runtime = {'image_id': 'sha256:'+'e'*64, 'python': '/fixture/python',
         'packages': {'torch':'fixture-torch','transformers':'fixture-transformers'},
         'teacher_sha256': P.sha(writer), 'venv_container': '/fixture/runtime',
-        'parent_config_sha256':'c'*64}
+        'parent_config_sha256':'c'*64,'teacher_path':'/fixture/original-writer.py'}
     for key in ('compiler_image_proof','actual_fla_kernel_proof'):
         runtime[key] = write(tmp_path/(key+'.json'), {'fixture_only':True})
     docs = {
@@ -103,6 +103,20 @@ def test_two_unequal_sequences_each_complete_once(teacher_plan):
     _,plan = teacher_plan
     actual = P.verify_records(plan,*metadata(plan))
     assert actual == {'rows':2,'real_tokens':14,'supervised_positions':5}
+
+
+def test_sha_alias_moves_locator_only_and_refuses_changed_mount(teacher_plan,tmp_path):
+    _,plan = teacher_plan
+    record = plan['sources']['writer']; source = Path(record['path'])
+    mounted = tmp_path/'mounted-original-writer.py'; mounted.write_bytes(source.read_bytes())
+    source.unlink()
+    aliases = tmp_path/'aliases.json'; write(aliases,{record['sha256']:str(mounted.resolve())})
+    mapping = P.alias_data(aliases)
+    assert P.checked(record,mapping) == mounted
+    assert P.validate_plan(teacher_plan[0],mapping) == plan
+    mounted.write_text('# incorrect new writer\n')
+    with pytest.raises(P.Error,match='unchanged SHA-pinned'): P.alias_data(aliases)
+    with pytest.raises(P.Error,match='evidence changed'): P.checked(record,mapping)
 
 
 @pytest.mark.parametrize('mutation', ['microbatch','padding','crop','batch_count','session_batch',
