@@ -36,7 +36,8 @@ def test_every_code_oracle_with_independent_pure_reference_program_and_wrong_pro
             continue
         function = t["oracle"]["function"]
         assert e.grade_semantics(t, response(REFERENCE[function]))["status"] == "pass"
-        assert e.grade_semantics(t, response(f"def {function}(*args):\n    return 999"))["status"] in {"fail", "ungraded"}
+        wrong = REFERENCE[function].splitlines()[0] + "\n    return 999"
+        assert e.grade_semantics(t, response(wrong))["status"] == "fail"
     # The alternate imperative implementation is a valid answer too.
     t = next(t for t in tasks if t["oracle"].get("function") == "stable_unique")
     alternate = "def stable_unique(xs):\n    out = []\n    for x in xs:\n        if x not in out:\n            out.append(x)\n    return out"
