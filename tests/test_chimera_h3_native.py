@@ -29,11 +29,11 @@ def source(root):
              'path':str(audio),'sha256':N.H.sha(audio)}]}
 
 class SourceTests(unittest.TestCase):
-    def test_raw_utf8_teacher_hash_and_canonical_admission_hash_bind_same_prompt(self):
+    def test_canonical_teacher_hash_and_raw_utf8_admission_hash_bind_same_prompt(self):
         import hashlib
         prompt='Source event at 0.125 seconds.';record={'messages':[{'content':prompt}]}
-        item={'prompt':prompt+N.SUFFIX,'source_prompt_sha256':hashlib.sha256(prompt.encode()).hexdigest()}
-        admission={'prompt_sha256':N.R.digest(prompt)}
+        item={'prompt':prompt+N.SUFFIX,'source_prompt_sha256':N.R.digest(prompt)}
+        admission={'prompt_sha256':hashlib.sha256(prompt.encode()).hexdigest()}
         self.assertNotEqual(item['source_prompt_sha256'],admission['prompt_sha256'])
         N.validate_conditioning(item,record,admission)
         bad=copy.deepcopy(item);bad['prompt']=prompt+N.SUFFIX+' changed'
