@@ -34,16 +34,47 @@ Separate existing registry/cache evidence:
 
 | Lane | Observed evidence | Remaining real requirements |
 |---|---|---|
-| Image generation | `reviews/2026-10-13-folding/recovery-preparation/qimg_native_full_v2.poll.json` records successful full conversion:1309 sealed native batches,739 heldout exclusions, no training started; native manifest SHA256 `d5868886226e07096028d63af702cff69bd8bf9c8cf793b521b5d2afcd2da3c2` | Exact registered immutable recovery base/parity, approved objective/optimizer config, runtime assignment, actual D3b updates, decode/content review, delta composition and before/after evaluation |
-| Music DiT generation | `live/adapter_metadata/ace_velocity/manifest.json` is sealed at2026-10-13T14:42:14Z, finite, teacher unchanged,964 shards/964 clips,109 captured heldout clips; file SHA256 `bb348e51c4476f6a12aed36b31c11586dc34fd4a50fc00a810e60666fcc3ffe3`. Media-admission-v2 admits691 clips, excludes273 | Actual authentic-code conditioner succeeds, full native conversion succeeds and seals; then D3b gates. CPU bounded-v2 failed importing Comfy/Triton (`0 active drivers`); a prepared bounded-v3 launch is not a success receipt |
-| Music prompt-to-code | `train_music.py` supplies a D3c engine with exact host band masters and LoRA ownership; root reports partial ACE-LM cache collection | Complete sealed ACE-LM top64+tail cache and native prompt/code alignment, heldout admission, production caller, pinned optimizer/amendment, actual updates and prompt-to-code evaluation. Code-conditioned DiT training alone cannot supply this |
-| QVL vision features | Root reports7492 sealed QVL feature shards; the captured p40 queue status records that feature check passed | Bind the exact feature cache to admitted image/video question/answer sources and current immutable base. Features alone do not supply answers, video time alignment, or a production D3d training receipt |
+| Image generation | Immutable media-admission-v3 admits1126 QIMG sources and excludes922; it removes183 sources that the earlier1309-batch v2 conversion admitted. Root reports actual v3 conversion completed with1126 sealed native batches. The older native manifest `d5868886226e07096028d63af702cff69bd8bf9c8cf793b521b5d2afcd2da3c2` remains historical evidence and is superseded for launch eligibility | Pin the full actual v3 completion/native manifest SHA in launch config; exact registered immutable recovery base/parity, approved objective/optimizer config, runtime assignment, actual D3b updates, decode/content review, delta composition and before/after evaluation |
+| Music DiT generation | `live/adapter_metadata/ace_velocity/manifest.json` is sealed at2026-10-13T14:42:14Z, finite, teacher unchanged,964 shards/964 clips,109 captured heldout clips; file SHA256 `bb348e51c4476f6a12aed36b31c11586dc34fd4a50fc00a810e60666fcc3ffe3`. Immutable media-admission-v3 admits691 clips, excludes273. Actual v5 authentic conditioning/native conversion completed2026-10-13T16:58:42Z:691 clips,2764 batches, native manifest SHA256 `6291173d03a3ffd09add51e19b0ca566d2ca714c9ed52166d9b9b6ffbcb89299` | Pin the actual native/conditioner manifests and exact v3 admission hash in the D3b launch config; exact immutable base/parity, optimizer/amendment, runtime assignment, actual updates and content/decode evaluation remain. The earlier CPU bounded-v2 import failure and v4 admission binding are historical and superseded by actual v5 completion |
+| Music prompt-to-code | `train_music.py` supplies a D3c engine with exact host band masters and LoRA ownership; root reports partial662 ACE-LM shards. V3 excludes all6667 source rows from native training while only4766 are source-train-eligible under the split | Complete sealed ACE-LM top64+tail cache and native prompt/code alignment, heldout admission, production caller, pinned optimizer/amendment, actual updates and prompt-to-code evaluation. Source eligibility and code-conditioned DiT training do not establish this |
+| QVL vision features | Root reports7492 sealed QVL feature shards. Immutable media-admission-v3 has2294 source-admitted cache candidates and5198 excluded; native answer/patch adapter remains unavailable | Bind the exact feature cache to admitted image/video question/answer sources and current immutable base. Features alone do not supply answers, video time alignment, or a production D3d training receipt |
 | H3 / HY3D | Root reports no active H3 cache namespace for the recovery fixtures. Actual synchronized clips and genuine OBJ files exist locally | New authentic native captures/converters below. No native target is inferred from raw file metadata |
 
 The QIMG/ACE registry caches are distinct corpora. Their hashes do not match the
 new procedural fixture source hash, so their teacher provenance cannot be copied
 onto these fixtures. Snapshot evidence is dated; the root should reconcile newer
 actual completion receipts before a launch.
+
+The newer admission ledger is
+`neural-forge/proof_outputs/chimera_media_admission_oct13_v3/manifest.json`,
+SHA256 `c3185e9a4c3392f4bce22015b96a83d2d7e484b952ea2508cf09bb5137eaa619`.
+Its cross-route source isolation covers21081 source groups and records zero
+intersection with the D2 training source groups. Counts above are source
+admission counts, not proof that the native adapters, teacher caches or training
+have completed.
+
+H3 strict capture preparation is now implemented separately in
+`h3_cache.py` and `README.h3_cache.md`. It prepares a pinned private Stage-C
+candidate, same-physical-mux items, a cache-contract preflight and numerical
+pair/packing helpers. The previous planned8 paired-file items are the source
+inventory; the strict candidate instead decodes both streams from each same
+mux and requires measured PTS continuity, origin equality, full frame map,
+captured joint noisy tensors and native audio velocity. Those changed item
+bytes require a new corpus SHA/cache namespace. Root's standard-library tests
+passed; Torch numerical tests and actual teacher captures remain separate.
+No actual H3 native training readiness follows from this preparation commit.
+
+Root has now run the H3 numerical CPU checks successfully and generated actual
+preparation artifacts under
+`proof_outputs/chimera_h3_capture_preparation_oct13_v1`:
+writer candidate SHA256
+`ea93146fd6fc483acb397aaf68bf6c3da6f974b41b63fcb8cd66f109b8f59794`,
+eight strict same-mux item rows SHA256
+`101fa78a92810630539544153313e93c910ede6615911d31d1e827ef1df1196a`.
+All11 H3 source/numerical checks now passed across root's focused CPU runs,
+including the two authentic source/chart checks under the explicit server
+mirror environment binding. These are preparation/contract checks;
+actual native H3 teacher capture and admission remain pending.
 
 ## Prepared local source and teacher job manifests
 
