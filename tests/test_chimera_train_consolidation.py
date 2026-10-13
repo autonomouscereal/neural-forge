@@ -111,6 +111,15 @@ def test_native_cumulative_activation_exact_forward_one_physical_owner(tmp_path)
     D.N.install_forward_adapter(hybrid)
     hybrid.add_bridge_deltas([3, 4])
     hybrid.add_emission_deltas([3, 4])
+    # The original convenience helper orders by type id: tiny type3 occupies
+    # feature20:24, type4 feature0:12. Cumulative descriptors rightly require
+    # physical-range order. Confirm refusal, then canonicalize only these new
+    # zero-initialized fixture deltas before assigning their training values.
+    with pytest.raises(D.Error, match="overlap or repeat"):
+        D.N.cumulative_interfaces(hybrid, "bridge")
+    for delta in hybrid.bridge_deltas + hybrid.head_deltas:
+        assert not delta.delta.detach().any()
+        delta.ranges.sort()
     with torch.no_grad():
         for delta in hybrid.bridge_deltas + hybrid.head_deltas:
             delta.delta.fill_(.004)
