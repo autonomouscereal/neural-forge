@@ -144,7 +144,9 @@ to replace a missing target with its own current prediction. CPU tests verify
 actual source-block/chart updates, missing-target refusal and exact resume.
 
 `train_music.py` implements D3c full65536 music embedding/head host FP32 masters
-and all-layer r16 LoRA. Each step clips the joint gradient and checks every
+and all-layer r16 LoRA. The KL softmax/update owns the64000 actually written code
+rows, matching the teacher; the1536 reserved music rows remain frozen and do not
+enter the KL tail. Each step clips the joint gradient and checks every
 gradient before any host-table or LoRA update. Ledger/text rows remain frozen.
 Checkpoint state includes per-row lazy Adam moments/counters, all-layer LoRA,
 RNG and the one-pass sampler. `music_cache.py` converts the actual media_b v2
