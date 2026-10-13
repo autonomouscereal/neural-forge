@@ -19,7 +19,8 @@ VISION = "text_answer_kd_plus_vit_feature_mse"
 AUDIO = "authored_audio_assistant_ce"
 SPEECH = "supervised_speech_rectified_flow"
 GEOMETRY = "supervised_geometry_rectified_flow"
-OBJECTIVES = {TEXT, GUIDED, MUSIC, VISION, AUDIO, SPEECH, GEOMETRY}
+EDIT = "supervised_image_edit_rectified_flow"
+OBJECTIVES = {TEXT, GUIDED, MUSIC, VISION, AUDIO, SPEECH, GEOMETRY, EDIT}
 
 
 def count_matches(expected, actual):
@@ -134,6 +135,13 @@ def geometry_backward(module, hybrid, batch, compute, units, weight):
     segment = geometry_segment(batch, media_placeholder=hybrid.media_placeholder)
     return module.full_depth_forward_backward(hybrid, segment,
         lambda normed, context: compute(hybrid.emission(normed, context)), loss_scale=weight_value(weight))[0]
+
+
+def image_edit_backward(module, hybrid, batch, compute, units, weight):
+    """Authentic adapter closure, one union optimizer, actual scalar denominator."""
+    from . import image_edit as E
+    count_matches(units, scalar_flow_count(batch['native_media_type_ids'], batch['native_media_loss_mask'], {1: hybrid.bands[1]}))
+    return E.full_depth_backward(module, hybrid, batch, compute, loss_scale=weight_value(weight))
 
 
 def music_backward(module, hybrid, batch, receipt, units, weight):
