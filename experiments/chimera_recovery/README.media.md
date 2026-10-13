@@ -248,3 +248,52 @@ explicit caller-supplied coordinates and returns an experimental proof with
 image conditioning through type6 and the combined context budget need a dated
 route/position policy amendment and actual parity/decode evidence. Preflight
 keeps these blockers explicit and selects no coordinate policy.
+
+## Assistant-only vision and video teacher cache
+
+`vl_teacher.py` wraps the original source-pinned `qtext_teacher_cache.py`1.0.5
+without editing it. It renders the full reference and native generation prompt
+with `enable_thinking:false`, requires exact expanded prompt IDs and media token
+types, and requires identical actual image/video tensors. Only the assistant
+body and native completion EOS receive targets. Its original collator receives
+the shifted input-indexed `store_mask`, with all prompt, media and right-padding
+positions excluded. Both wrapped functions are restored on every exit.
+
+The preparation copies and hashes actual media, verifies authored groundtruth
+files, preserves connected groups and held splits, and emits separate train,
+validation and test sources. The October13 seed contains48 supported visual
+fixtures and24 blocked non-speech audio fixtures. Video decoding preserves the
+original muxed file SHA and all eight visual frames; this teacher reads only
+the visual stream. Its cache is teacher-forced on operator-authored reference
+answers and supplies no free-generation performance claim.
+
+```bash
+python experiments/chimera_recovery/vl_teacher.py prepare \
+  --source /path/to/understanding_ready.jsonl --source-report /path/to/report.json \
+  --asset-root /path/to/assets --out /path/to/new/vl-fixtures \
+  --runtime-root /private/runtime/vl-fixtures --writer /original/tools/qtext_teacher_cache.py \
+  --writer-sha256 <actual-original-source-sha256>
+
+CUDA_VISIBLE_DEVICES='' python experiments/chimera_recovery/vl_teacher.py inspect \
+  --plan /private/runtime/vl-fixtures/manifest.json --plan-sha256 <sha256> \
+  --writer /original/tools/qtext_teacher_cache.py --writer-sha256 <sha256> \
+  --model-dir /home/cereal/models/Qwen3.8-27B-Uncensored \
+  --processor-dir /home/cereal/models/Qwen3.8-27B-Uncensored \
+  --out /private/runtime/new/vl-processor-inspection.json
+```
+
+After exclusive runtime allocation and actual native GPU parity/capacity checks,
+the explicit `build` command additionally requires `--inspection`, its SHA,
+`--split`, private `--out-root`, real `--allocator-receipt`, `--device cuda:0`
+and a new `--receipt`. It pins tokenizer/processor files, renderer, model config,
+writer, adapter and source identities. Initial settings are BF16 teacher,
+FP32 head, K64, head chunks256, microbatch2/max batch tokens8192, full immutable
+teacher digest and a unique assistant-only cache namespace. It does not acquire
+a GPU or grant runtime authorization; the allocator controls the actual card.
+The one-Qwen-streamer host-memory policy still applies.
+
+Native D3d training additionally needs source-aligned QVL features, the native
+answer-cache converter and full-response evaluation. The available ACE/H3
+generators do not provide an authentic speech or sound-semantic teacher. The
+24 audio understanding rows remain explicitly blocked until such a teacher
+and a native audio-to-answer input contract exist.
