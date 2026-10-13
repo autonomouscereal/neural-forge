@@ -22,14 +22,15 @@ def proof(frames=40):
     samples, duration = frames * 800, frames * .025
     return {'schema': 'chimera_recovery.h3_standalone_audio_probe.v1', 'probe_passed': True,
         'teacher_unchanged': True, 'model_space_verified': True,
-        'input_contract': {'target_samples': samples, 'target_rate': 32000, 'duration_seconds': duration, 'no_input_padding_or_trim': True},
+        'input_contract': {'target_samples': samples, 'target_rate': 32000, 'duration_seconds': duration, 'no_input_padding_or_trim': True,
+                           'source_samples': samples, 'source_rate': 32000},
         'measurement': {'raw_latent_shape': [1, 32, 2, frames], 'packed_shape': [2 * frames, 32],
             'decoded_shape': [1, 2, samples], 'measured_samples_per_latent_frame': 800, 'nominal_hop_seconds': .025,
             'encoder_repeat_bitwise_equal': True, 'channel_major_pack_bitwise_invertible': True,
             'latent_padded_frames': 0, 'latent_trimmed_frames': 0,
             'nominal_frame_interval_seconds': [[i * 800 / 32000, (i + 1) * 800 / 32000] for i in range(frames)]},
         'decode': {'waveform_padded_samples': 0, 'waveform_trimmed_samples': 0, 'first_pts_seconds': 0.,
-            'last_end_seconds': duration, 'target_samples': samples, 'resampler_flushed': True}}
+            'last_end_seconds': duration, 'target_samples': samples, 'source_decoded_samples': samples, 'resampler_flushed': True}}
 
 def test_native_pack_exact_band_stereo_scatter_read_mask_and_answer_ownership():
     torch = pytest.importorskip('torch')
