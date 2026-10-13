@@ -14,7 +14,7 @@ sys.modules[spec.name] = A
 spec.loader.exec_module(A)
 
 
-def setup(tmp_path):
+def setup(tmp_path, *, native_inheritance=False):
     torch = pytest.importorskip("torch")
     source = os.environ.get("CHIMERA_D3_BASELINE")
     if not source:
@@ -32,6 +32,10 @@ def setup(tmp_path):
         plan = module.trainer_module().SitePlanConfig(rank=4, alpha=4., k3_rank=0, trunk_ffn_width=module.TINY.TRUNK, gain=False)
         model = module.HybridD3(built["dir"], built["parent_config"], module.HybridOptions(dtype=torch.float32, device="cpu", kernels="torch",
                                 lora=plan, lora_seed=3, pin_boundaries=False, prefetch=False))
+        if native_inheritance:
+            context = {"fixture": True, "base_sha256": "a" * 64, "parent_config_sha256": "b" * 64, "hybrid_module_sha256": "c" * 64}
+            A.T.I.initialize_stage(model, {"mode": "initialize", "context": context}, tmp_path)
+            A.T.N.initialize_stage(model, {"mode": "initialize", "context": context}, tmp_path)
         return A.AudioCEEngine(module, model, "tiny_h3", optimizer, identity, total_steps=3)
     engine = construct()
     segment = module.tiny_segment(engine.hybrid.cfg, "h3", prompt=6, rows=5, seed=8, suffix=4)
@@ -51,6 +55,24 @@ def setup(tmp_path):
     segment["source_positions"] = {"h3": torch.zeros(1, length, 3)}
     kwargs = {"prompt_length": length - 4, "completion_eos_id": int(segment["ids"][0, -1])}
     return torch, module, engine, construct, segment, mask, kwargs
+
+
+def test_native_cumulative_interface_adapter_preserves_audio_fresh_gradients_and_resume(tmp_path):
+    torch, _, engine, construct, segment, mask, kwargs = setup(tmp_path, native_inheritance=True)
+    bridge = [tensor for name, tensor in engine.census.items() if name.startswith('bridge.')]
+    assert bridge and all(tensor.is_leaf and tensor.dtype == torch.float32 for tensor in bridge)
+    first = engine.train_step(segment, mask, **kwargs)
+    assert first['group_norms']['bridge'] > 0 and first['group_norms']['lora'] > 0 and first['group_norms']['unit'] > 0
+    checkpoint = tmp_path / 'native-audio-interrupted'
+    A.save_audio_checkpoint(engine, checkpoint)
+    engine.train_step(segment, mask, **kwargs)
+    resumed = construct()
+    assert A.resume_audio_checkpoint(resumed, checkpoint) is None
+    resumed.train_step(segment, mask, **kwargs)
+    assert all(torch.equal(engine.census[name], resumed.census[name]) for name in engine.census)
+    (checkpoint / 'audio_guard.json').write_text('{}', encoding='utf-8')
+    with pytest.raises(A.Error, match='guard'):
+        A.resume_audio_checkpoint(construct(), checkpoint)
 
 
 def test_ce_targets_shift_once_and_exclude_prompt_media_padding(tmp_path):
