@@ -209,6 +209,59 @@ loading or at the corresponding per-source join. A separate selected native
 chart/objective/preregistration amendment and actual native batch proof remain
 required before these clean targets can become recovery supervision.
 
+## Actual complete target preparation, 2026-10-13
+
+The genuine CPU warm session completed all 24 sources in 946.405 seconds,
+with 8 source-eligible train boxes and 16 held octahedron/tetrahedron sources.
+All 410 VAE tensors retained full-state digest
+`510a73e283a136245a0012e8ec42e8b2ec1939e40474bc657cce7302dc960b6b`;
+the original 7,365,943,290-byte whole checkpoint and every reviewed source were
+rechecked after completion. All three preregistered family representatives
+repeated posterior.sample and selected encoder queries bitwise on their frozen
+actual native surfaces. The unchanged sampler's unseeded default_rng remains
+explicit; no new surface was selected for a better score.
+
+Actual local receipts and all 96 emitted target/surface/mesh/receipt files are
+under `reviews/2026-10-13-folding/recovery-preparation/hy3d-target-session-v1`.
+Manifest **file** SHA is
+`5b5175c854e7dd17d96de5184e586eb05d124664c2734d1488fa88482ea7e9a0`;
+its separate canonical unsigned-body seal is
+`6edde5ce1a9aaad6abc4c5982f4c550bd892f085cb158246bc2b6942e06f6cc9`.
+All sources had inside recall 1.0 on the prescribed 125-query convex oracle.
+Boxes and tetrahedra classified every query correctly. Octahedron balanced
+accuracy ranged 0.9788135593–1.0 because some outside queries were false positives.
+
+| Actual native MC resolution | Family/source count | Sampled surface Chamfer L1, sum of directional means |
+| --- | --- | --- |
+| 16 | 8 boxes | 0.142677–0.175379 |
+| 16 | 7 octahedra | 0.125378–0.139374 |
+| 16 | 7 tetrahedra | 0.144342–0.154944 |
+| 32 | 1 held octahedron | 0.082468 |
+| 32 | 1 held tetrahedron | 0.098107 |
+
+These are original-loader normalized units with the unchanged native MC
+coordinate divisor. Surface distances use 4,096 area-weighted samples per mesh;
+they do not claim exact continuous-mesh distance or broad natural-object quality.
+The earlier frozen-box MC64 control remains a distinct recorded experiment.
+
+`geometry_targets.py` independently verifies all source/global/frozen joins,
+raw C11 file seals and actual original Torch parity, then reads every genuine
+six-tensor safetensors payload locally without loading a model. It verifies
+finite raw `[1,4096,64]`, exact original scale-factor model space, target-only
+encoder query membership in the captured `[1,81920,7]` native surface, normalized
+source frame and independently recomputed physical oracle/confusion values.
+Original normalization arithmetic order is preserved; the operator render's
+equivalent scale expression differed by at most two float64 ulps for some assets.
+All source mesh/image/surface bytes and collected output bytes remain pinned.
+
+The resulting `proof_outputs/chimera_geometry_targets_oct13_v1` contains a
+24-row `prepared_targets.jsonl` index. Its input references contain only the
+source image and source-bound raw C11 patch shard. Mesh, clean latents and
+encoder query XYZ stay in target-only references. Every row retains split and
+connected source group identity. All rows remain `native_train_ready=false` and
+`geometry_quality_admission_granted=false` pending explicit native chart,
+time conversion, objective selection and complete-sequence integration proof.
+
 Run focused local tests:
 
 ```powershell
