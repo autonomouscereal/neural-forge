@@ -22,23 +22,34 @@ def chart(answer_count=2, **kwargs):
                    source_pins=PINS, **kwargs)
 
 
-def proof():
+def proof(frames=40):
     return {"schema": "chimera_recovery.h3_standalone_audio_probe.v1", "probe_passed": True,
             "teacher_unchanged": True, "model_space_verified": True,
-            "input_contract": {"target_rate": 32000, "target_samples": 32000, "duration_seconds": 1.0,
+            "input_contract": {"target_rate": 32000, "target_samples": frames*800, "duration_seconds": frames/40,
                                "no_input_padding_or_trim": True},
-            "measurement": {"raw_latent_shape": [1,32,2,40], "packed_shape": [80,32],
-                            "decoded_shape": [1,2,32000], "measured_samples_per_latent_frame": 800,
+            "measurement": {"raw_latent_shape": [1,32,2,frames], "packed_shape": [2*frames,32],
+                            "decoded_shape": [1,2,frames*800], "measured_samples_per_latent_frame": 800,
                             "nominal_hop_seconds": .025, "encoder_repeat_bitwise_equal": True,
                             "channel_major_pack_bitwise_invertible": True, "latent_padded_frames": 0,
                             "latent_trimmed_frames": 0,
-                            "nominal_frame_interval_seconds": [[i/40,(i+1)/40] for i in range(40)]},
+                            "nominal_frame_interval_seconds": [[i/40,(i+1)/40] for i in range(frames)]},
             "decode": {"waveform_padded_samples": 0, "waveform_trimmed_samples": 0,
-                       "first_pts_seconds": 0., "last_end_seconds": 1., "target_samples": 32000,
+                       "first_pts_seconds": 0., "last_end_seconds": frames/40, "target_samples": frames*800,
                        "resampler_flushed": True}}
 
 
 class ChartTests(unittest.TestCase):
+    def test_variable_duration_requires_its_own_exact_actual_proof(self):
+        args=(4,180,366,list(range(4,364)),[0,1,2,3,364,365])
+        kwargs=dict(clean_encoder_receipt_sha256="a"*64,amendment_sha256="b"*64,source_pins=PINS)
+        with self.assertRaises(ValueError):
+            C.chart(*args,**kwargs)
+        with self.assertRaises(ValueError):
+            C.chart(*args,encoder_proof=proof(),**kwargs)
+        result=C.chart(*args,encoder_proof=proof(180),**kwargs)
+        self.assertEqual(result["contract"]["samples"],144000)
+        self.assertEqual(result["contract"]["derived_waveform_duration_seconds"],4.5)
+        self.assertEqual(result["native_media_positions"][0][-1],[4.4875,0.,.025,1.])
     def test_measured_time_and_stereo_row_identity(self):
         result = chart()
         positions = result["native_media_positions"][0]
