@@ -32,6 +32,7 @@ def load_module(path: Path, name: str):
 
 
 R = load_module(HERE / "training.py", "chimera_recovery_training_media")
+C = load_module(HERE / "media_cache.py", "chimera_recovery_band_storage")
 Error = R.ReadinessError
 FROZEN_BODY_SHA256 = "c24d21e08815d7acd2ce14aea989d16f84f167eb24a40597966be19284cb1370"
 FROZEN_BODY_BYTES = 15339
@@ -143,6 +144,8 @@ def preflight(config_path: Path) -> dict[str, Any]:
             R.ReadyObjectiveAdapter(receipt)
             if receipt["cache_sha256"] != item["tensors"]["sha256"] or receipt["corpus_sha256"] != batches.get("corpus_sha256"):
                 raise Error("native teacher receipt does not bind this exact tensor shard and admitted corpus")
+            if receipt.get("storage") != item.get("storage"):
+                raise Error("native compact storage differs from sealed teacher receipt")
             if receipt["recovery_amendment_sha256"] != verified["preregistration"]["amendment_sha256"]:
                 raise Error("native cache objective amendment differs from this run")
             if receipt["route"] != R.route_name(item["route"]):
@@ -221,6 +224,12 @@ def prune_safety_checkpoints(out: Path, keep: int = 2):
         shutil.rmtree(resolved)
 
 
+def load_native_batch(item: dict[str, Any], root: Path, device: str):
+    from safetensors.torch import load_file
+    stored = load_file(str(pinned_file(item["tensors"], root)), device=device)
+    return C.inflate_native_batch(stored, item["storage"]) if item.get("storage") else stored
+
+
 def capture_xd(module, engine, batches, root: Path, out: Path, device: str):
     """Capture exact frozen lower-stack state once into the existing sealed store."""
     import torch
@@ -231,7 +240,7 @@ def capture_xd(module, engine, batches, root: Path, out: Path, device: str):
                 "hybrid_module_sha256": engine.identity["hybrid_module_sha256"]}
     writer = module.XdChunkWriter(out, identity=identity, max_chunk_bytes=20 * 10**9, dtype=engine.hybrid.dtype)
     for item in batches:
-        batch = load_file(str(pinned_file(item["tensors"], root)), device=device)
+        batch = load_native_batch(item, root, device)
         R.validate_native_batch(item["route"], batch)
         segment = make_segment(batch, media_placeholder=engine.hybrid.media_placeholder)
         context = engine.hybrid.prepare(segment)
@@ -453,7 +462,7 @@ def train(config_path: Path, out: Path, resume: Path | None = None) -> dict[str,
         if engine.sampler_counter >= len(batches):
             raise Error("one-pass sampler exhausted before declared step budget")
         item = batches[engine.sampler_counter]
-        batch = load_file(str(pinned_file(item["tensors"], root)), device=config["device"])
+        batch = load_native_batch(item, root, config["device"])
         receipt = read_json(pinned_file(item["teacher_receipt"], root))
         compute = R.ReadyObjectiveAdapter(receipt).bind(item["route"], batch, hybrid.bands,
                                                     parent_signs={int(k): v for k, v in item.get("parent_signs", {}).items()})
