@@ -89,3 +89,94 @@ def test_mutated_source_and_unbound_frozen_eval_fail_closed(tmp_path):
     paths["qimg_items"].write_text("{}\n", encoding="utf-8")
     with pytest.raises(ValueError, match="source pin: qimg_items"):
         m.build_admission(**paths, expected_hashes=pins, output=tmp_path / "result")
+
+
+def followup_fixture(tmp_path, *, qvl_held=False, lm_held=False, ref_shared=False, wrong_lm_sha=False):
+    paths, pins = fixture(tmp_path)
+    prior = m.build_admission(**paths, expected_hashes=pins, output=tmp_path / "prior")
+    paths["previous_admission"] = tmp_path / "prior/manifest.json"
+    def body(kind, items, name):
+        content = {"kind": kind, "items": items, "n_items": len(items)}
+        content["corpus_sha256"] = c.digest({"schema": "omni-campaign.teacher_corpus.v1", "kind": kind, "items": items})
+        path = tmp_path / (name + ".json")
+        path.write_bytes(c.canonical(content))
+        paths[name] = path
+        return content
+    spec = {"caption": "A song.", "lyrics": "Genuine authored test lyrics", "seed": 11, "seconds": 60.0}
+    lm = {"id": "a:0:2#2222#lm0", "sha256": "f" * 64 if wrong_lm_sha else c.digest(spec),
+          **spec, "source_clip_sha256": "2" * 64, "held": lm_held}
+    lm_body = body("ace_prompts", [lm], "ace_lm_items")
+    qvl = {"id": "a:0:1#1111", "rid": "a:0:1", "sha256": "1" * 64, "path": "/sources/picture", "route": "image", "held": False}
+    qvl_body = body("qvl_images", [qvl], "qvl_items")
+    ref = {"id": "diagnostic-ref", "sha256": "1" * 64 if ref_shared else "4" * 64, "path": "/diagnostic/ref", "route": "dir", "held": False}
+    ref_body = body("qvl_images", [ref], "qvl_ref_items")
+    paths["vit_metadata"] = tmp_path / "vit.jsonl"
+    paths["vit_metadata"].write_bytes(c.canonical({"rid": "a:0:1", "image": {"sha256": "1" * 64, "path": "/sources/picture"}}) + b"\n")
+    def record(name, content, item, held, sealed):
+        r = {"source_corpus_file": str(paths[name]), "source_corpus_sha256": c.file_sha256(paths[name]),
+             "sidecar_count": 1, "first_sidecar": {"item_id": item["id"], "item": item, "corpus_sha256": content["corpus_sha256"]}}
+        if sealed:
+            r["manifest"] = {"schema": "omni-campaign.teacher_cache.v2", "finite": True,
+                "corpus": {"file_sha256": c.file_sha256(paths[name]), "sha256": content["corpus_sha256"]},
+                "shards": [{"item_id": item["id"], "meta": {"held": held}}]}
+            r["manifest_file_sha256"] = c.digest(r["manifest"])
+        return r
+    metadata = {"exit_code": 0, "data": {"records": [record("ace_lm_items", lm_body, lm, lm_held, False),
+        record("qvl_items", qvl_body, qvl, qvl_held, True), record("qvl_ref_items", ref_body, ref, False, True)]}}
+    paths["followup_metadata"] = tmp_path / "followup.json"
+    paths["followup_metadata"].write_bytes(c.canonical(metadata))
+    return paths, {name: c.file_sha256(path) for name, path in paths.items()}, prior
+
+
+def test_partial_lm_source_eligible_not_cache_ready_and_does_not_exclude_text(tmp_path):
+    paths, pins, prior = followup_fixture(tmp_path)
+    report = m.build_admission(**paths, expected_hashes=pins, output=tmp_path / "followup")
+    rows = {r["kind"]: r for r in c.iter_jsonl(tmp_path / "followup/admission.jsonl")}
+    assert rows["ace_lm"]["source_train_eligible"] and not rows["ace_lm"]["train_admitted"] and not rows["ace_lm"]["cache_ready"]
+    assert rows["ace"]["train_admitted"] and rows["qvl"]["train_admitted"]
+    assert rows["ace_lm"]["asset_sha256"] == "2" * 64
+    assert rows["ace_lm"]["teacher_item_sha256"] != rows["ace_lm"]["asset_sha256"]
+    assert not rows["qvl_ref"]["train_admitted"]
+    assert report["outputs"]["cross_route_training_exclusions"]["rows"] == 0
+    assert report["previous_admission"]["manifest_sha256"] == prior["manifest_sha256"]
+
+
+def test_new_teacher_held_flags_propagate_cross_route_to_text_and_prior_admission(tmp_path):
+    paths, pins, _ = followup_fixture(tmp_path, qvl_held=True, lm_held=True)
+    report = m.build_admission(**paths, expected_hashes=pins, output=tmp_path / "followup")
+    rows = {r["kind"]: r for r in c.iter_jsonl(tmp_path / "followup/admission.jsonl")}
+    assert not any(r["train_admitted"] for r in rows.values())
+    exclusions = list(c.iter_jsonl(tmp_path / "followup/cross_route_training_exclusions.jsonl"))
+    assert {r["id"] for r in exclusions} == {"song", "song-text", "picture"}
+    assert "qvl_captured_holdout" in rows["qimg"]["blockers"]
+    assert "ace_lm_captured_holdout" in rows["ace"]["blockers"]
+
+
+def test_diagnostic_reference_shared_asset_stays_excluded_across_routes(tmp_path):
+    paths, pins, _ = followup_fixture(tmp_path, ref_shared=True)
+    m.build_admission(**paths, expected_hashes=pins, output=tmp_path / "followup")
+    rows = {r["kind"]: r for r in c.iter_jsonl(tmp_path / "followup/admission.jsonl")}
+    assert not rows["qvl"]["train_admitted"] and not rows["qimg"]["train_admitted"]
+    assert "qvl_ref32_diagnostic_never_train" in rows["qvl"]["blockers"]
+
+
+def test_prompt_payload_sha_mismatch_and_unknown_cache_held_fail_closed(tmp_path):
+    paths, pins, _ = followup_fixture(tmp_path, wrong_lm_sha=True)
+    m.build_admission(**paths, expected_hashes=pins, output=tmp_path / "followup")
+    rows = {r["kind"]: r for r in c.iter_jsonl(tmp_path / "followup/admission.jsonl")}
+    assert "ace_lm_teacher_prompt_payload_mismatch" in rows["ace_lm"]["blockers"]
+    captured = json.loads(paths["followup_metadata"].read_text())
+    record = captured["data"]["records"][1]
+    record["manifest"]["shards"][0]["meta"].pop("held")
+    with pytest.raises(ValueError, match="held flag"):
+        m.followup_inventory(paths["qvl_items"], record)
+
+
+def test_multiple_images_per_source_rid_require_exact_asset_join(tmp_path):
+    paths, pins, _ = followup_fixture(tmp_path)
+    with paths["vit_metadata"].open("ab") as stream:
+        stream.write(c.canonical({"rid": "a:0:1", "image": {"sha256": "9" * 64, "path": "/sources/other-image"}}) + b"\n")
+    pins["vit_metadata"] = c.file_sha256(paths["vit_metadata"])
+    m.build_admission(**paths, expected_hashes=pins, output=tmp_path / "followup")
+    qvl = next(r for r in c.iter_jsonl(tmp_path / "followup/admission.jsonl") if r["kind"] == "qvl")
+    assert qvl["train_admitted"] and qvl["asset_sha256"] == "1" * 64
