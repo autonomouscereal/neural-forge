@@ -16,13 +16,18 @@ from pathlib import Path
 import platform
 import sys
 import time
+from types import SimpleNamespace
 import wave
 
 STAGE_SHA = "fa936d72ebb0545acc3d2d2ac8e2bdc4477f370c73947352a0f20bcb23718fdf"
 VAE_SHA = "8e505d95dd1561d47abd43d4238fd40d9bb1ae9e147ed0a4cba778d76ae4db48"
+AUDIO_SOURCE_SHA = "3e00d398b25d68dc39ca0eb589fc7549f3693b6bfaf08ef920e7ad2a7a803cba"
 SOURCE_PINS = {
     "comfy/sd.py": "7efb10f22252446069a0b88f0a8bc2d94713696d9f946d7757a0981ae8101b58",
     "comfy/latent_formats.py": "f13259cbd815a339a474976522eb6aae10fb16c8397f13b41e50ddd107f8caf8",
+    "comfy/model_base.py": "b7e425e0325c632249de429ebfc96d540aa0d87d313fedf89ebd00ed78238722",
+    "comfy/supported_models.py": "e638a7bd0964683db583a290be2ca7a7f9e6ff0cd5d8e5103495786a246292ee",
+    "comfy/ldm/minimax/audio_vae.py": AUDIO_SOURCE_SHA,
 }
 RATE, HOP, CHANNELS = 32000, 800, 32
 
@@ -70,7 +75,9 @@ def wav_contract(path, expected_sha):
 
 
 def verify_sources(stage, comfy_root, audio_source_sha):
-    pins = {**SOURCE_PINS, "comfy/ldm/minimax/audio_vae.py": require_sha(audio_source_sha)}
+    if require_sha(audio_source_sha) != AUDIO_SOURCE_SHA:
+        raise Error("audio source differs from actual audited H3 runtime")
+    pins = SOURCE_PINS
     if sha(stage) != STAGE_SHA:
         raise Error("audited StageC source differs")
     for relative, expected in pins.items():
@@ -198,8 +205,11 @@ def load_runtime(stage, comfy_root):
     import comfy.sd
     import comfy.ldm.minimax.audio_vae
     import comfy.latent_formats
+    import comfy.model_base
+    import comfy.supported_models
     for relative, module in (("comfy/sd.py", comfy.sd), ("comfy/ldm/minimax/audio_vae.py", comfy.ldm.minimax.audio_vae),
-                             ("comfy/latent_formats.py", comfy.latent_formats)):
+                             ("comfy/latent_formats.py", comfy.latent_formats), ("comfy/model_base.py", comfy.model_base),
+                             ("comfy/supported_models.py", comfy.supported_models)):
         if Path(module.__file__).resolve() != (comfy_root / relative).resolve():
             raise Error("Comfy imported another runtime checkout: " + relative)
     if torch.cuda.is_initialized():
@@ -207,6 +217,39 @@ def load_runtime(stage, comfy_root):
     runtime.update({"python": platform.python_version(), "cpu_optional_triton_disabled": True,
                     "replacement_modules_used": False})
     return original, runtime
+
+
+def model_space_transform(raw, *, model_base=None, supported_models=None, latent_formats=None):
+    """Call actual inherited H3 transform without constructing the giant DiT.
+
+    Explicit modules allow mathematical protocol fixtures; production imports
+    are pinned and checked by verify_sources/load_runtime before this call.
+    """
+    import torch
+    if model_base is None:
+        import comfy.model_base as model_base
+        import comfy.supported_models as supported_models
+        import comfy.latent_formats as latent_formats
+    if (supported_models.MiniMaxH3.latent_format is not latent_formats.MiniMaxH3AV or
+            model_base.MiniMaxH3.process_latent_in is not model_base.BaseModel.process_latent_in or
+            model_base.MiniMaxH3.process_latent_out is not model_base.BaseModel.process_latent_out):
+        raise Error("actual H3 model-space method or latent-format ownership differs")
+    context = SimpleNamespace(latent_format=supported_models.MiniMaxH3.latent_format())
+    if (context.latent_format.scale_factor != 1.0 or
+            latent_formats.MiniMaxH3AV.process_in is not latent_formats.LatentFormat.process_in or
+            latent_formats.MiniMaxH3AV.process_out is not latent_formats.LatentFormat.process_out):
+        raise Error("actual H3 raw/model latent transform is not the audited unit-scale inheritance")
+    with torch.inference_mode():
+        native = model_base.MiniMaxH3.process_latent_in(context, raw).float().cpu()
+        inverse = model_base.MiniMaxH3.process_latent_out(context, native).float().cpu()
+        packed = raw[0].permute(1, 2, 0).reshape(2 * raw.shape[-1], CHANNELS).contiguous()
+        packed_model = model_base.MiniMaxH3.process_latent_in(context, packed).float().cpu()
+    if not torch.equal(native, raw) or not torch.equal(inverse, raw) or not torch.equal(packed_model, packed):
+        raise Error("actual parent raw/model-space or packed transform is not bitwise identity")
+    return native, packed_model, {"parent_class": "comfy.model_base.MiniMaxH3", "latent_format": "MiniMaxH3AV",
+        "method": "actual inherited BaseModel.process_latent_in/out", "scale_factor": 1.0,
+        "raw_to_model_bitwise_equal": True, "inverse_bitwise_equal": True, "packed_transform_bitwise_equal": True,
+        "full_dit_constructed": False, "scope": "parent's pure latent transform only; no diffusion forward or standalone XYZ parity claim"}
 
 
 def imported_comfy_sources(comfy_root):
@@ -251,6 +294,9 @@ def run(args):
         vae, result["vae"] = original.load_vae(args.audio_vae)
         tensors, result["measurement"] = prove_vae(vae, waveform, contract)
         tensors["input_waveform_stereo32k"] = waveform.contiguous()
+        native, packed_model, result["model_space_transform"] = model_space_transform(tensors["x0_raw_audio"])
+        tensors.update({"x0_model_audio": native.contiguous(), "packed_model_audio": packed_model.contiguous()})
+        result["model_space_verified"] = True
         source_after = imported_comfy_sources(args.comfy_root)
         if any(source_after.get(path) != expected for path, expected in source_before.items()):
             raise Error("imported Comfy implementation changed during native proof")
@@ -274,7 +320,7 @@ def run(args):
                 result["probe_passed"] = False
                 result["failure"] = {"type": "Error", "message": "parent VAE bytes changed during proof"}
     result["remaining_blockers"] = ["audited standalone native/source spatial XYZ policy required; existing H3 helper uses video grid",
-        "raw VAE to full H3 parent model-space route parity required", "sealed globally held-excluded source/batch admission required",
+        "sealed globally held-excluded source/batch admission required",
         "distinct audio CE/read-policy amendment, production dispatch and sequential shared-adapter composition required"]
     args.out.write_bytes(canonical(result) + b"\n")
     return result
