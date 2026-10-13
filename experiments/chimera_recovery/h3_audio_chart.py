@@ -30,6 +30,19 @@ def validate_encoder_proof(proof, *, require_model_space=True):
     if type(samples) is not int or samples <= 0 or samples % HOP or samples > 2048 * HOP:
         raise ValueError("audio chart needs a bounded measured waveform divisible by the actual 800-sample hop")
     frames, duration = samples // HOP, samples / SAMPLE_RATE
+    source_samples, source_rate = inp.get("source_samples"), inp.get("source_rate")
+    # PyAV frame ends are a rational PTS plus a floating sample duration. This
+    # final addition can round by one ULP (5.525 -> 5.5249999999999995). Exact
+    # integer coverage remains mandatory; permit only sub-nanosecond endpoint
+    # representation error, matching the source-audited decode_full contract.
+    endpoint = dec.get("last_end_seconds")
+    if (type(source_samples) is not int or source_samples <= 0 or
+            type(source_rate) is not int or source_rate <= 0 or
+            source_samples * SAMPLE_RATE != samples * source_rate or
+            dec.get("source_decoded_samples") != source_samples or
+            type(endpoint) not in (float, int) or not math.isfinite(endpoint) or
+            not math.isclose(endpoint, duration, rel_tol=0., abs_tol=1e-9)):
+        raise ValueError("audio chart needs exact source sample coverage and a matching finite PCM endpoint")
     if (proof.get("schema") != "chimera_recovery.h3_standalone_audio_probe.v1" or
             proof.get("probe_passed") is not True or proof.get("teacher_unchanged") is not True or
             inp.get("target_rate") != SAMPLE_RATE or inp.get("duration_seconds") != duration or
@@ -41,7 +54,7 @@ def validate_encoder_proof(proof, *, require_model_space=True):
             meas.get("channel_major_pack_bitwise_invertible") is not True or
             any(meas.get(k) != 0 for k in ("latent_padded_frames", "latent_trimmed_frames")) or
             any(dec.get(k) != 0 for k in ("waveform_padded_samples", "waveform_trimmed_samples")) or
-            dec.get("first_pts_seconds") != 0.0 or dec.get("last_end_seconds") != duration or
+            dec.get("first_pts_seconds") != 0.0 or
             dec.get("target_samples") != samples or dec.get("resampler_flushed") is not True):
         raise ValueError("audio chart requires actual full-duration, full-coverage stereo encoder evidence")
     intervals = meas.get("nominal_frame_interval_seconds")

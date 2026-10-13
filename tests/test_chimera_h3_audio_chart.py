@@ -26,6 +26,7 @@ def proof(frames=40):
     return {"schema": "chimera_recovery.h3_standalone_audio_probe.v1", "probe_passed": True,
             "teacher_unchanged": True, "model_space_verified": True,
             "input_contract": {"target_rate": 32000, "target_samples": frames*800, "duration_seconds": frames/40,
+                               "source_rate": 24000, "source_samples": frames*600,
                                "no_input_padding_or_trim": True},
             "measurement": {"raw_latent_shape": [1,32,2,frames], "packed_shape": [2*frames,32],
                             "decoded_shape": [1,2,frames*800], "measured_samples_per_latent_frame": 800,
@@ -34,11 +35,24 @@ def proof(frames=40):
                             "latent_trimmed_frames": 0,
                             "nominal_frame_interval_seconds": [[i/40,(i+1)/40] for i in range(frames)]},
             "decode": {"waveform_padded_samples": 0, "waveform_trimmed_samples": 0,
+                       "source_decoded_samples": frames*600,
                        "first_pts_seconds": 0., "last_end_seconds": frames/40, "target_samples": frames*800,
                        "resampler_flushed": True}}
 
 
 class ChartTests(unittest.TestCase):
+    def test_pcm_endpoint_rounding_requires_exact_sample_coverage(self):
+        doc = proof(221)
+        doc["decode"]["last_end_seconds"] = 5.5249999999999995
+        self.assertTrue(C.validate_encoder_proof(doc))
+        for section, key, value in (("decode", "last_end_seconds", 5.525 + 1/32000),
+                                    ("decode", "last_end_seconds", float("nan")),
+                                    ("decode", "source_decoded_samples", 132599),
+                                    ("input_contract", "source_samples", 132599),
+                                    ("input_contract", "source_rate", 24001)):
+            bad = proof(221); bad[section][key] = value
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                C.validate_encoder_proof(bad)
     def test_variable_duration_requires_its_own_exact_actual_proof(self):
         args=(4,180,366,list(range(4,364)),[0,1,2,3,364,365])
         kwargs=dict(clean_encoder_receipt_sha256="a"*64,amendment_sha256="b"*64,source_pins=PINS)
