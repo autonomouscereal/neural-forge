@@ -65,12 +65,38 @@ def validate_inputs(model, segment, target, weights, prompt_length):
         raise Error('speaking noisy feature/clean emission allocation or source coordinates invalid')
 
 
-def sample_latents(engine, segment, *, prompt_length, seed, steps=32):
+def sampling_duration(native_rows, feature_width, requested_frames, *, fixture=False):
+    """Declare caller-selected native duration without implying duration learning."""
+    if type(native_rows) is not int or native_rows < 1:
+        raise Error('speaking sampler needs a positive native row count')
+    if fixture:
+        if requested_frames is not None:
+            raise Error('mathematical speaking fixture cannot claim physical audio duration')
+        return {'requested_native_audio_rows': native_rows,
+            'requested_latent_frames_per_channel': None, 'requested_duration_seconds': None,
+            'requested_output_samples_per_channel': None, 'requested_sample_rate': None,
+            'duration_scope': 'mathematical fixture; no physical audio duration claim',
+            'duration_predicted_by_model': False, 'audio_eos_predicted_by_model': False}
+    if (type(requested_frames) is not int or not 1 <= requested_frames <= 2048 or
+            feature_width != 32 or native_rows != 2 * requested_frames):
+        raise Error('production speaking sampling requires explicit T matching channel-major 2T by32 native rows')
+    return {'requested_native_audio_rows': native_rows,
+        'requested_latent_frames_per_channel': requested_frames,
+        'requested_duration_seconds': requested_frames * 800 / 32000,
+        'requested_output_samples_per_channel': requested_frames * 800,
+        'requested_sample_rate': 32000,
+        'duration_scope': 'caller-selected fixed native40Hz grid; decoded length requires separate verification',
+        'duration_predicted_by_model': False, 'audio_eos_predicted_by_model': False}
+
+
+def sample_latents(engine, segment, *, prompt_length, seed, steps=32, requested_frames=None):
     """Target-free Euler flow from Gaussian noise, returning model-space audio.
 
     The input waveform/target is never an argument. Any supplied feature values
     are discarded before the first forward. Physical time/chart and native text
-    prefix remain fixed. Actual VAE decode and independent ASR/listening review
+    prefix remain fixed. Production requires the caller to select T explicitly;
+    neither utterance duration nor an audio EOS is learned by this sampler.
+    Actual VAE decode and independent ASR/listening review
     are separate source-pinned diagnostics, not invented here.
     """
     import torch
@@ -84,6 +110,8 @@ def sample_latents(engine, segment, *, prompt_length, seed, steps=32):
     n = sample['types'].numel()
     flo, fhi = model.bands[3]['feature']
     elo, ehi = model.bands[3]['emission']
+    duration = sampling_duration(n, fhi - flo, requested_frames,
+        fixture=engine.identity.get('fixture') is True)
     noisy = torch.randn((1, n, fhi - flo), generator=torch.Generator(device='cpu').manual_seed(seed), dtype=torch.float32).to(model.device)
     sample['features'][..., flo:fhi] = noisy.to(sample['features'].dtype)
     dummy = torch.zeros_like(sample['features'])
@@ -103,6 +131,7 @@ def sample_latents(engine, segment, *, prompt_length, seed, steps=32):
             raise Error('speaking sampler produced nonfinite native latent')
         trajectory.append({'sigma': sigma, 'next_sigma': next_sigma, 'latent_sha256': R.tensor_sha256(noisy.cpu())})
     return noisy.detach(), {'schema': 'chimera_recovery.speech_flow_sample.v1', 'seed': seed, 'steps': steps,
+        **duration,
         'integration': 'Euler in canonical dx/dsigma velocity, descending sigma1to0', 'trajectory': trajectory,
         'objective': OBJECTIVE, 'clean_target_supplied_to_sampler': False, 'prediction_kind': 'x0',
         'foreign_codec_ids_used': False, 'decoded_waveform_ready': False, 'native_parent_xyz_parity': False}
