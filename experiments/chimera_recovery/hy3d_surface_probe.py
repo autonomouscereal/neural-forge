@@ -59,7 +59,7 @@ def source_item(manifest,item_id,surface,conditioning):
     # Resolve the immutable source JSONL next to the copied manifest. Explicit
     # remapped input paths are accepted only if bytes match the original seals.
     ref=body["outputs"]["source_ready"]
-    p=manifest.parent/Path(ref["path"]).name
+    p=manifest.parent/Path(str(ref["path"]).replace("\\","/")).name
     if A.file_sha(p)!=ref["sha256"]:
         raise ValueError("full geometry source inventory changed")
     records=list(A.rows(p))

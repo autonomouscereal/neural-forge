@@ -37,6 +37,16 @@ class SurfaceProbeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"pairing changed"):
             P.source_item(self.base/"manifest.json","mesh2026",self.surface,self.image)
 
+    def test_windows_manifest_path_remaps_on_linux_without_identity_waiver(self):
+        p=self.seal();v=__import__("json").loads(p.read_text())
+        v["outputs"]["source_ready"]["path"]="C:\\Users\\operator\\source_ready.jsonl"
+        v.pop("manifest_sha256");v["manifest_sha256"]=A.digest(v);p.write_bytes(A.canonical(v))
+        row,_,_=P.source_item(p,"mesh2026",self.surface,self.image)
+        self.assertEqual(row["id"],"mesh2026")
+        (self.base/"source_ready.jsonl").write_text("{}\n")
+        with self.assertRaisesRegex(ValueError,"inventory changed"):
+            P.source_item(p,"mesh2026",self.surface,self.image)
+
     def test_target_query_xyz_or_modified_surface_refuse(self):
         row=copy.deepcopy(self.row);row["geometry_target"]["surface"]["generation_input_allowed"]=True
         with self.assertRaisesRegex(ValueError,"pairing changed"):P.source_item(self.seal(row),"mesh2026",self.surface,self.image)
