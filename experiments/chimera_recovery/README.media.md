@@ -295,8 +295,9 @@ The one-Qwen-streamer host-memory policy still applies.
 Native D3d training additionally needs source-aligned QVL features, the native
 answer-cache converter and full-response evaluation. The available ACE/H3
 generators do not provide an authentic speech or sound-semantic teacher. The
-24 audio understanding rows remain explicitly blocked until such a teacher
-and a native audio-to-answer input contract exist.
+24 audio understanding rows remain blocked pending an authentic native input
+contract and answer objective. Speech parents recovered from memory can add
+general speech supervision after their own source/mapping audit.
 
 `train_audio.AudioCEEngine` prepares a distinct supervised clean-audio lane
 through the real full-depth hybrid. It uses authored assistant CE over exact
@@ -319,3 +320,11 @@ prompt-only H3 read-policy amendment, globally held-excluded source admission,
 exact response evaluation and sequential shared-adapter composition are required.
 Speech parents recovered from memory need their own audited mapping; this lane
 does not establish ASR or general sound understanding.
+
+`audio_preflight.py` validates actual WAV sample coverage, source and groundtruth
+hashes, exact authored answer labels, event bounds and held source groups. It
+emits a source-ready receipt with `production_training_ready:false` and exits2
+while the encoder, measured coordinates, amendment, native batch admission and
+dispatcher/composer requirements are missing. On the current24 non-speech rows,
+only8 are training examples; tone/chirp/noise families are split-held. This
+controlled source set does not provide speech/ASR labels or general sound coverage.
