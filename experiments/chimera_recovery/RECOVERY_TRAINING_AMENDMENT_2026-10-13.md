@@ -87,8 +87,8 @@ explicit blockers, never a `ready` verdict from metadata-only checks.
 D1 production launcher passes `--preregistration` into the trainer itself.
 The trainer validates before opening checkpoints, includes the observed
 document pin in the resume identity, and seals the initial receipt before the
-first weight update. Existing resource allocator, disk/RAM floors, thermal
-rulings, clone protection and exact optimizer resume remain required.
+first weight update. Existing resource allocator, disk/RAM floors, clone
+protection and exact optimizer resume remain required.
 
 Preparation and CPU contract tests do not launch recovery training or prove
 model recovery. Keep original checkpoints and active queues untouched while
