@@ -1,5 +1,6 @@
 """D3d native QVL fixture: full objective parity and optimizer/resume proof."""
 import dataclasses
+import copy
 import importlib.util
 import os
 from pathlib import Path
@@ -56,7 +57,12 @@ def test_streamed_vision_text_and_feature_gradients_match_eager_native_path(tmp_
     contexts = model.contexts(x)
     with V.capture_unit_block(model.units[engine.placement.container], captures):
         for i in range(model.num_layers):
-            layer = model.engine.layer(i, i + 1 if i + 1 < model.num_layers else None)
+            # The streaming engine reuses one frozen buffer per layer kind.
+            # Eager autograd needs independent weights until backward completes.
+            layer = copy.deepcopy(model.engine.layer(i, i + 1 if i + 1 < model.num_layers else None))
+            # Preserve the actual trainable bank; deepcopy's adapter tensors are
+            # not the masters whose gradients are compared below.
+            model.bank.bind(layer, i)
             x = model.engine._run(layer, i, x, contexts)
             x = model.apply_units(x, i, context)
     text = module.d3d_head_loss(model, targets, denominator=3.)(model.final_norm(x), context)
