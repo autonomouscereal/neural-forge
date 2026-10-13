@@ -56,7 +56,8 @@ def verify_preregistration(entry: dict[str, Any], root: Path) -> dict[str, Any]:
     start, end = raw.find(b"## 1. Scope"), raw.find(b"\n## Amendments")
     if start < 0 or end <= start:
         raise Error("frozen preregistration markers missing")
-    body = raw[start:end]
+    # Campaign stage2_preregistration_digest includes the marker's leading LF.
+    body = raw[start:end + 1]
     if __import__("hashlib").sha256(body).hexdigest() != FROZEN_BODY_SHA256 or len(body) != FROZEN_BODY_BYTES:
         raise Error("frozen D1-D4 preregistration body moved")
     amendment = raw[end:]
