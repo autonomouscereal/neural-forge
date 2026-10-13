@@ -1,7 +1,8 @@
 # Chimera Omni recovery preparation amendment — 2026-10-13
 
 User direction: prepare recovery training for tool calling, intelligence and all
-modalities first; optimize folding after preparation. This amendment is a
+modalities first. Audit prior folding methods in parallel and backlog changes
+while recovering the existing checkpoint. This amendment is a
 candidate for the stage-D preregistration. Append it below `## Amendments`
 before an affected production step. The frozen 15,339-byte body with SHA-256
 `c24d21e08815d7acd2ce14aea989d16f84f167eb24a40597966be19284cb1370`
@@ -45,6 +46,13 @@ Prompt, tool-result and padding targets have zero CE, EOS, Qwen KD, K3 KD,
 unlikelihood and JSD weights. Keep text predictions within `[0, 248320)`.
 Never train the music/ledger bands on text examples.
 
+The initial structured tool recovery pass sets `ul_lambda=0`. Repeated JSON
+keys, function names and schema delimiters are legitimate syntax; generic
+repeat-token unlikelihood would penalize correct tool calls. Preserve the
+original unlikelihood setting for its original non-tool replay lane. A later
+syntax-aware tool unlikelihood objective requires a separate dated amendment
+and held-out tool validation.
+
 Caches for this lane must be generated from its new packed token IDs and bound
 to their SHA-256; flattened-text caches cannot be reused by label or shape.
 Apply the existing D2 trainable sites and optimizer contract. The initial
@@ -76,7 +84,10 @@ For denoising, clean targets are available to the loss only. They cannot be
 copied into ordinary conditioning features. Legitimate inpainting/editing
 context is explicitly role/mask limited. D3b keeps the preregistered
 guided-velocity MSE objective: production adapters must explicitly select
-`flow_param=velocity`; endpoint/x0 smoke tests do not establish this objective.
+the reviewed guided-velocity callback. The prepared D3 patch adds
+`--flow-objective guided_velocity --objective-adapter /path/to/training.py`
+to its rate proof; the production driver must bind this same objective to
+sealed batches. Endpoint/x0 smoke tests do not establish this objective.
 Require native/hybrid forward and gradient parity, decoder contracts, finite
 targets, actual adapter/driver availability and parameter census before the
 affected route trains. Unready routes have executable prerequisite jobs and
@@ -95,5 +106,5 @@ model recovery. Keep original checkpoints and active queues untouched while
 preparing private candidates. Publish a route-by-route readiness report with
 verified data/caches, code versions, loss objectives, trainable sites, held-out
 evaluation and remaining external prerequisites. Preserve stage promotion's
-existing content/no-regression rule. Folding optimization starts after this
-training preparation is complete.
+existing content/no-regression rule. Folding changes wait until recovery of
+the current model; the historical objective/adoption audit proceeds in parallel.
