@@ -198,3 +198,53 @@ hybrid parity/module and prereg pins. Stage-specific batch manifests use
 `refit_batches.v1`, `music_batches.v1` or `vision_batches.v1`. Preflight executes
 without Torch/model loading and returns blockers for absent or partial inputs.
 No production training job was launched by this preparation.
+
+## HY3D source audit and explicit native experiment
+
+`hy3d_cache.py` validates the actual30-step guided CFG5 trajectory, increasing
+parent time0→1, canonical velocity `-v_guided`, every Euler transition and final
+latent, the independent upstream pipeline equality, and decoded vertex/face
+geometry. The clean endpoint has noise level0 and is excluded from the current
+positive-noise training objective. A decoded mesh alone supplies no semantic
+geometry claim: charts and icons require exclusion, and physical-object sources
+need connected-group/complete-held-inventory admission.
+
+The image reconstruction uses the exact captured `ImageProcessorV2`: OpenCV
+string-path BGR/BGRA input, alpha crop/recenter with border0.15, area resize,
+white background composition, RGB conversion, cubic512 resize, nearest mask,
+and normalization to[-1,1]. The bounded audit compares both reconstructed
+tensors bitwise with the real stored image and mask. It loads no model weights
+and never grants training admission, including when the partial raw cache passes.
+
+```bash
+CUDA_VISIBLE_DEVICES='' python experiments/chimera_recovery/hy3d_cache.py \
+  --mode audit-source --cache /path/to/hy3d-trajectory-cache \
+  --items /path/to/hy3d_stagec_d256.json --index 0 \
+  --source-sha256 <actual-source-shard-sha256> \
+  --source-audit /path/to/runtime_contract_inspection.json \
+  --out /path/to/new/hy3d-source-audit.json
+
+python experiments/chimera_recovery/hy3d_cache.py --mode preflight \
+  --cache /path/to/fully-sealed/hy3d-trajectory-cache \
+  --items /path/to/hy3d_stagec_d256.json --manifest-sha256 <actual-manifest-sha256> \
+  --admission /path/to/genuine-geometry-admission/manifest.json \
+  --source-audit /path/to/runtime_contract_inspection.json \
+  --out /path/to/new/hy3d-preflight.json
+```
+
+The pinned parent config sets `use_pos_emb:false` and contains no learned query
+slots. Shared projections, full self-attention and image cross-attention make
+its latent velocity permutation equivariant. The existing HY3D native block
+also has no RoPE, but the composite dropped DINO image cross-attention; its
+shared bridge adds linear/Fourier spatial tags, and the hybrid trunk has
+sequential RoPE and causal/linear recurrence. Zero external coordinates do not
+by themselves reproduce the full teacher contract.
+
+`experimental_native_pack` concretely allocates independent native image
+features at640:2176, noisy volume inputs at576:640 and canonical targets
+at320:384. Image and leading time rows receive zero target loss. It requires
+explicit caller-supplied coordinates and returns an experimental proof with
+`production_ready:false`. Current `volume_generate` dispatch admits only type7;
+image conditioning through type6 and the combined context budget need a dated
+route/position policy amendment and actual parity/decode evidence. Preflight
+keeps these blockers explicit and selects no coordinate policy.
