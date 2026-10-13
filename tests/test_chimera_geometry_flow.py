@@ -129,6 +129,8 @@ class TensorTests(unittest.TestCase):
         self.assertTrue(torch.equal(batch["native_media_positions"][:, F.IMAGE_ROWS], torch.full((1, 4), -1.)))
         self.assertFalse(bool(batch["native_media_positions"][:, F.IMAGE_ROWS + 1:].any()))
         self.assertEqual(batch["charted_source_positions"].shape, (1, 3 + F.MEDIA_ROWS, 3))
+        self.assertTrue(torch.equal(batch["native_media_update_mask"], batch["native_media_loss_weights"].bool()))
+        self.assertEqual(int(batch["native_media_update_mask"].sum()), F.LATENT_ROWS)
         F.validate_batch(F.inflate(F.compact(batch)), self.record, self.prefix, self.image, self.clean, .3)
 
     def test_target_noise_time_row_and_objective_mask_are_numerical(self):
