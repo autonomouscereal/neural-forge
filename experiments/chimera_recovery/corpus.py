@@ -279,14 +279,41 @@ def labeled_json(text: Any, label: str) -> Any:
         return None
 
 
-def adapt_bfcl_schema(value: Any) -> Any:
+def adapt_bfcl_schema(value: Any, *, annotations: list | None = None, path: str = "$") -> Any:
+    """Adapt captured BFCL spellings; drop only provably redundant optional tags.
+
+    JSON Schema's explicit object ``required`` list is the authority. A BFCL
+    optional tag is removable only when that list proves the tagged property is
+    optional. Contradictory or unknown annotations remain unsupported rather
+    than being interpreted from descriptions, defaults or example arguments.
+    """
     if isinstance(value, dict):
-        result = {k: adapt_bfcl_schema(v) for k, v in value.items()}
+        result = {k: adapt_bfcl_schema(v, annotations=annotations, path=f"{path}.{k}") for k, v in value.items()}
         if isinstance(result.get("type"), str):
             result["type"] = {"dict": "object", "float": "number", "list": "array", "tuple": "array"}.get(result["type"], result["type"])
+        properties, required = result.get("properties"), result.get("required")
+        if (result.get("type") == "object" and isinstance(properties, dict)
+                and isinstance(required, list) and all(isinstance(k, str) for k in required)
+                and set(required).issubset(properties)):
+            removed = []
+            for name, parameter in properties.items():
+                if not isinstance(parameter, dict) or name in required:
+                    continue
+                tag = parameter.get("optional")
+                if tag is True or type(tag) is str and tag == "True":
+                    removed.append({"path": f"{path}.properties.{name}.optional", "value": tag})
+                    del parameter["optional"]
+            tag = result.get("optional")
+            if (isinstance(tag, list) and all(isinstance(k, str) for k in tag)
+                    and set(tag).issubset(properties) and not set(tag).intersection(required)):
+                removed.append({"path": f"{path}.optional", "value": tag})
+                del result["optional"]
+            if annotations is not None:
+                annotations.extend({**item, "basis": "captured explicit required list excludes these declared properties",
+                                    "required": list(required)} for item in removed)
         return result
     if isinstance(value, list):
-        return [adapt_bfcl_schema(v) for v in value]
+        return [adapt_bfcl_schema(v, annotations=annotations, path=f"{path}[{index}]") for index, v in enumerate(value)]
     return value
 
 
@@ -300,7 +327,9 @@ def recover_bfcl(raw: dict) -> dict | None:
     target = next((p for p in parsed_json_objects(raw.get("response")) if isinstance(p, dict) and p.get("answer_format") == "bfcl_ground_truth_json"), None)
     if not isinstance(captured, list) or not target:
         return None
-    tools = [{"type": "function", "function": adapt_bfcl_schema(s)} for s in captured if isinstance(s, dict)]
+    optional_annotations = []
+    tools = [{"type": "function", "function": adapt_bfcl_schema(s, annotations=optional_annotations, path=f"$[{index}]")}
+             for index, s in enumerate(captured) if isinstance(s, dict)]
     schemas = {d["function"].get("name"): d["function"].get("parameters", {}) for d in tools}
     calls = []
     selections = []
@@ -332,6 +361,7 @@ def recover_bfcl(raw: dict) -> dict | None:
     return {"tools": tools, "messages": [{"role": "user", "content": raw["instruction"]}, {"role": "assistant", "content": None, "tool_calls": calls}],
             "receipt": {"basis": "captured labeled BFCL schemas and explicit acceptable ground-truth alternatives; no execution result asserted",
                         "original_schemas": captured, "original_acceptable_targets": target, "selections": selections,
+                        "removed_optional_annotations": optional_annotations,
                         "type_aliases": {"dict": "object", "float": "number", "list": "array", "tuple": "array"}}}
 
 
@@ -375,6 +405,15 @@ def normalize_record(raw: dict, *, source_file: str = "", source_sha256: str = "
                 tools = payload["tools"]
             if not tools and isinstance(payload.get("functions"), list):
                 tools = [{"type": "function", "function": definition} for definition in payload["functions"]]
+    # Permit replay of earlier normalized BFCL rows through this same adapter.
+    # Ordinary OpenAI/catalog schemas are not rewritten. Original captured
+    # schemas and acceptable alternatives remain in the existing receipt.
+    if raw.get("schema") == SCHEMA and isinstance(provenance.get("bfcl_schema_target_adaptation"), dict):
+        annotations = []
+        tools = adapt_bfcl_schema(tools, annotations=annotations, path="$.tools")
+        if annotations:
+            receipt = provenance["bfcl_schema_target_adaptation"]
+            receipt["removed_optional_annotations"] = list(receipt.get("removed_optional_annotations", [])) + annotations
     if not messages:
         messages = []
         if isinstance(raw.get("instruction"), str) and raw["instruction"].strip():
@@ -503,7 +542,7 @@ def supported_schema(schema: Any) -> bool:
     """Conservative executable subset; unsupported schemas remain quarantined."""
     if not isinstance(schema, dict):
         return False
-    allowed = {"type", "properties", "required", "additionalProperties", "items", "enum", "description", "title", "default", "optional"}
+    allowed = {"type", "properties", "required", "additionalProperties", "items", "enum", "description", "title", "default"}
     if set(schema) - allowed or "type" in schema and schema["type"] not in {"object", "array", "string", "integer", "number", "boolean", "null"}:
         return False
     if "properties" in schema and (not isinstance(schema["properties"], dict) or not all(supported_schema(v) for v in schema["properties"].values())):
