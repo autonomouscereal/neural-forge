@@ -206,14 +206,15 @@ def batches(path, amendment_sha):
     T.pinned_file(data['charted_attention'], path.parent)
     seen, source_sigma = set(), set()
     for item in data['batches']:
-        if not item.get('id') or item['id'] in seen or item.get('route') != 'speech_generate':
+        if not item.get('id') or item['id'] in seen or item.get('route') != 'speech_generate' or item.get('storage') != F.STORAGE:
             raise Error('speaking row/sigma identities must be unique exact generation rows')
         seen.add(item['id'])
         T.pinned_file(item['tensors'], path.parent)
         receipt = T.read_json(T.pinned_file(item['teacher_receipt'], path.parent))
         if (receipt.get('id') != item['id'] or receipt.get('source_id') != item.get('source_id') or
                 receipt.get('recovery_group_id') != item.get('recovery_group_id') or
-                receipt.get('tensors_sha256') != item['tensors']['sha256'] or receipt.get('amendment_sha256') != amendment_sha):
+                receipt.get('tensors_sha256') != item['tensors']['sha256'] or receipt.get('amendment_sha256') != amendment_sha or
+                receipt.get('storage') != item.get('storage')):
             raise Error('speaking cache manifest/row receipt differs')
         pair = (item['source_id'], receipt.get('sigma'))
         if pair in source_sigma or receipt.get('sigma') not in F.SIGMAS:

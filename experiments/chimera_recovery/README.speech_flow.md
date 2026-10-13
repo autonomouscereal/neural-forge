@@ -43,6 +43,11 @@ official synthetic voice as intended TTS input. The native assistant generation
 prefix is preserved; noisy audio rows follow it. There are no reference answer
 tokens or text CE targets in this objective. Physical40Hz/stereo observations
 support the explicit new generation chart; no native parent XYZ parity is claimed.
+Cache storage uses the existing audited `native_band.v1` format: only32 active
+input channels and32 target channels are written, with noise/positions/IDs
+unchanged. The loader inflates the exact6144-channel native layout at each step;
+tests prove bitwise equality. This avoids storing thousands of zero channels
+four times for each speech source.
 
 Production config schema is `chimera_recovery.speech_flow_stage_config.v1`,
 stage`D3d_speech_flow`,objective`supervised_speech_rectified_flow`,read policy
