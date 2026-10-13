@@ -886,13 +886,13 @@ def audit_campaign(campaign: Path) -> dict[str, Any]:
                             values[name.id] = ast.literal_eval(node.value)
                         except (ValueError, TypeError):
                             pass
-        raw = prereg.read_bytes()
+        raw = prereg.read_bytes().replace(b"\r\n", b"\n")
         start = raw.find(values.get("STAGE2_PREREGISTRATION_SECTION", "## 1. Scope").encode())
         end = raw.find(values.get("STAGE2_PREREGISTRATION_NEXT_SECTION", "\n## Amendments").encode(), start)
         if start < 0 or end < 0:
             blockers.append("preregistration frozen-body markers absent")
         else:
-            body = raw[start:end]
+            body = raw[start:end + 1]
             observed = hashlib.sha256(body).hexdigest()
             pin = {"sha256": observed, "bytes": len(body), "expected_sha256": values.get("STAGE2_PREREGISTRATION_SHA256"),
                    "expected_bytes": values.get("STAGE2_PREREGISTRATION_BYTE_LENGTH"), "whole_document_sha256": sha(prereg)}
@@ -942,9 +942,10 @@ def build_readiness(campaign: Path, records: list[dict[str, Any]], root: Path) -
 def bind_text_cache(packed_manifest: Path, cache: Path, *, teacher_sha256: str) -> dict[str, Any]:
     """Return a usable D2 data config only after a matching teacher cache is sealed.
 
-    The production QTextCache still re-verifies each shard and structural tensor
-    contents; this step proves the mask-bearing corpus and requested teacher
-    identity, and creates the explicit assistant_only policy it requires.
+    This binds the seal and shard-manifest digests, mask-bearing corpus and
+    requested teacher identity. The baseline QTextCache does not verify raw-file
+    hashes/contents: the production driver must independently do that before
+    any update. This binding alone never claims production readiness.
     """
     require_sha(teacher_sha256, "teacher_sha256")
     packed = json.loads(packed_manifest.read_text(encoding="utf-8"))
@@ -981,7 +982,7 @@ def bind_text_cache(packed_manifest: Path, cache: Path, *, teacher_sha256: str) 
                          "corpus": str(shard.resolve()), "supervision": "assistant_only", "weight": 1.0}],
             "recovery_binding": {"schema": "chimera_recovery.text_cache_binding.v1", "packed_manifest_sha256": sha(packed_manifest),
                                  "teacher_manifest_sha256": sha(path), "teacher_sha256": teacher_sha256,
-                                 "production_training_ready": False}}
+                                 "raw_teacher_tensors_verified": False, "production_training_ready": False}}
 
 
 def prepare_text(records: list[dict[str, Any]], tokenizer: Any, root: Path, out: Path, max_length: int, *, split: str = "train") -> dict[str, Any]:
