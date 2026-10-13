@@ -141,7 +141,8 @@ class AuthenticatedSourcePreparationTests(unittest.TestCase):
         bindings = {"hybrid_module": str(module), "immutable_base_receipt": str(base), "parity_receipt": str(parity),
                     "runtime_assignment": str(runtime), "batches_manifest": str(data_path), "omni": str(clone),
                     "parent_config": str(parent), "device": "cpu", "kernels": "fixture-none",
-                    "trunk_ffn_width": 16, "python": "fixture-python"}
+                    "trunk_ffn_width": 16, "python": "fixture-python",
+                    "shared_r16": {"mode": "initialize", "first_refit": True}, "native_state": {"mode": "initialize", "first_refit": True}}
         return job["id"], write("bindings.json", bindings), data_path, data, receipt_path, receipt
 
     def test_bound_actual_file_references_still_require_native_preflight(self):
@@ -157,6 +158,21 @@ class AuthenticatedSourcePreparationTests(unittest.TestCase):
         self.assertEqual(config["sampling_policy"], "one_pass")
         with self.assertRaisesRegex(jobs.Refusal, "new materialized"):
             jobs.materialize(self.plan_path, self.plan_sha, ident, bindings, out)
+
+    def test_missing_successor_policies_and_nonfirst_native_initialization_refused(self):
+        ident, path, _, _, _, _ = self.fixture_bindings()
+        original = jobs.read_json(path)
+        for field in ("shared_r16", "native_state"):
+            with self.subTest(field=field):
+                value = {key: item for key, item in original.items() if key != field}
+                path.write_bytes(jobs.canonical(value))
+                with self.assertRaisesRegex(jobs.Refusal, "bindings need"):
+                    jobs.materialize(self.plan_path, self.plan_sha, ident, path, self.root / (field + "-missing.json"))
+        value = copy.deepcopy(original)
+        value["native_state"]["first_refit"] = False
+        path.write_bytes(jobs.canonical(value))
+        with self.assertRaisesRegex(ValueError, "first D3a"):
+            jobs.materialize(self.plan_path, self.plan_sha, ident, path, self.root / "not-first.json")
 
     def test_partial_old_amendment_holdout_and_duplicate_batches_fail_closed(self):
         ident, bindings, path, original, _, _ = self.fixture_bindings()
