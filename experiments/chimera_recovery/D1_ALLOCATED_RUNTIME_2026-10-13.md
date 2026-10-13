@@ -78,8 +78,10 @@ prerequisite. The original v4 queue documents this gate as host RAM exclusion
 (lines20–23). The actual v4 trainer opens only the child/parent checkpoints and
 the successor IDs (lines1215–1261), obtains frozen K3 weight slices from the child
 (line972), and streams direct parent states (lines1337–1356). Its K3 cache work is
-independent. The amendment retains no active K3 process, initial100GiB available
+independent. The amendment retains no active K3 teacher-cache process, initial100GiB available
 RAM, no foreign selected-card processes/queues, exact allocator ownership and
 fresh root checks before every apply. Root must coordinate the resource window;
-the monitor refuses later updates if another K3 process starts. Completion
+the monitor refuses later updates if another K3 teacher-cache process starts.
+Other K3 folding work is not covered by that process regex; available RAM and
+the actual selected-card ownership checks apply independently. Completion
 history remains diagnostic metadata, and all original v4/v6 artifacts stay intact.

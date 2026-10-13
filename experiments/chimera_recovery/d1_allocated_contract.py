@@ -27,7 +27,7 @@ RESOURCE_AMENDMENT = dict(
     teacher_dependency="Direct immutable Qwen parent hidden-state forwards; frozen K3 weights already in OMNI1 child",
     removed_prerequisite="K3 pass0..3 completion and four sealed external K3 caches",
     rationale="External K3 caches are unused by D1; historical completion gate was host RAM exclusion",
-    retained_checks=["No live K3 process", "No foreign selected-GPU processes or legacy selected-GPU queues",
+    retained_checks=["No live K3 teacher-cache process", "No foreign selected-GPU processes or legacy selected-GPU queues",
                      "Initial MemAvailable at least100GiB", "Exact live two-GPU PG/Docker assignment",
                      "Fresh root resource proof before every optimizer apply", "Unchanged source/base/recipe seals"],
     selection="Explicit builder path and exact amendment SHA required; no automatic policy adoption")
