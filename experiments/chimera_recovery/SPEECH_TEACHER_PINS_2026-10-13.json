@@ -1,0 +1,275 @@
+{
+  "schema": "chimera_recovery.speech_teacher_pins.v1",
+  "dated": "2026-10-13",
+  "public_metadata_source_sha256": "e96417410cf957f5c7fb3236061e61b7e61b22771a60a95c58a881b03a7766f3",
+  "api_source_sha256": "91e9e87a1b9af86c14a0da101cd835d472ec378fe4a7be2c41b898f1600b59d5",
+  "verified_wheel_api_sha256": "ff7f81d144ad5dc777168d67829fddb6c6d1a004f9afd7b178163669eb7eda06",
+  "models": [
+    {
+      "model_id": "Qwen/Qwen3-ASR-0.6B",
+      "revision": "5eb144179a02acc5e5ba31e748d22b0cf3e303b0",
+      "api_url": "https://huggingface.co/api/models/Qwen/Qwen3-ASR-0.6B?blobs=true",
+      "api_sha256": "87523e456ffdb4d6c0c83f709badb8e424fa7b6b88edb36fe2e4e2fd0ee4169b",
+      "files": [
+        {
+          "path": ".gitattributes",
+          "size": 1519,
+          "blob_id": "a6344aac8c09253b3b630fb776ae94478aa0275b",
+          "lfs": null
+        },
+        {
+          "path": "README.md",
+          "size": 57456,
+          "blob_id": "3a67d43f21febda213ff36efdb60ef10019af7f3",
+          "lfs": null
+        },
+        {
+          "path": "chat_template.json",
+          "size": 1161,
+          "blob_id": "c44736493efd71ec96218cc626904698cdb13235",
+          "lfs": null
+        },
+        {
+          "path": "config.json",
+          "size": 6193,
+          "blob_id": "8113d596dec2d1a2ef4552edfe005ee84d16d9ec",
+          "lfs": null
+        },
+        {
+          "path": "generation_config.json",
+          "size": 142,
+          "blob_id": "7382a4d347c0a865b76bb1b8277f66a5ac312854",
+          "lfs": null
+        },
+        {
+          "path": "merges.txt",
+          "size": 1671853,
+          "blob_id": "31349551d90c7606f325fe0f11bbb8bd5fa0d7c7",
+          "lfs": null
+        },
+        {
+          "path": "model.safetensors",
+          "size": 1876091704,
+          "blob_id": "02eacfa01edf43c4bc94f412723f5b515762e326",
+          "lfs": {
+            "sha256": "79d6cbd4c98c7bbffe9db2edac07f56cd6637d0d5944b27f6c2b8353840323ea",
+            "size": 1876091704,
+            "pointerSize": 135
+          }
+        },
+        {
+          "path": "preprocessor_config.json",
+          "size": 330,
+          "blob_id": "8f7f07346466d5d494ec0d4969d1c3d0190eed72",
+          "lfs": null
+        },
+        {
+          "path": "tokenizer_config.json",
+          "size": 12487,
+          "blob_id": "b93109843922a40c6654c5449d3bf95372267c66",
+          "lfs": null
+        },
+        {
+          "path": "vocab.json",
+          "size": 2776833,
+          "blob_id": "4783fe10ac3adce15ac8f358ef5462739852c569",
+          "lfs": null
+        }
+      ],
+      "configs": {
+        "config.json": {
+          "sha256": "76d3ae4601ce939830b2517f4a6cadb86cc51316c3900af6b020b051c21a478c"
+        },
+        "preprocessor_config.json": {
+          "sha256": "45e120a4eda2c20c5d7f2ea9354e63536bf35e27aa573fb7cdf78017b378770d"
+        },
+        "generation_config.json": {
+          "sha256": "1da527824d81e07118facff437e03f2e24a23311e3bdeb2368973fe77e5f275c"
+        }
+      }
+    },
+    {
+      "model_id": "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice",
+      "revision": "85e237c12c027371202489a0ec509ded67b5e4b5",
+      "api_url": "https://huggingface.co/api/models/Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice?blobs=true",
+      "api_sha256": "9e39a30a15621679037a128f810758f71d2a4337fd9c9f418ba91c55762733b8",
+      "files": [
+        {
+          "path": ".gitattributes",
+          "size": 1519,
+          "blob_id": "a6344aac8c09253b3b630fb776ae94478aa0275b",
+          "lfs": null
+        },
+        {
+          "path": "README.md",
+          "size": 3263,
+          "blob_id": "ed613da23a5e133a506b13b79055854938b9e67c",
+          "lfs": null
+        },
+        {
+          "path": "config.json",
+          "size": 4908,
+          "blob_id": "5e8d5fc100536984e3a89bd87ef08e59e322b29b",
+          "lfs": null
+        },
+        {
+          "path": "generation_config.json",
+          "size": 245,
+          "blob_id": "1872b16d4535564abf2db5d6debe6cddd82b7f2e",
+          "lfs": null
+        },
+        {
+          "path": "merges.txt",
+          "size": 1671839,
+          "blob_id": "20024bfe7c83998e9aeaf98a0cd6a2ce6306c2f0",
+          "lfs": null
+        },
+        {
+          "path": "model.safetensors",
+          "size": 1811626576,
+          "blob_id": "7fcbae5382ce4359e3b538bad87c7bad6b931050",
+          "lfs": {
+            "sha256": "bc3c7e785eb961179c25450d1acff03f839e0002f2f3a5aeb67b5735c0fa2adb",
+            "size": 1811626576,
+            "pointerSize": 135
+          }
+        },
+        {
+          "path": "preprocessor_config.json",
+          "size": 127,
+          "blob_id": "0525dd953bb9241912f7147666f0d535165d5d4f",
+          "lfs": null
+        },
+        {
+          "path": "speech_tokenizer/config.json",
+          "size": 2336,
+          "blob_id": "06cc8dc4c5ec8a1929086b71b98c313020d9268b",
+          "lfs": null
+        },
+        {
+          "path": "speech_tokenizer/configuration.json",
+          "size": 76,
+          "blob_id": "ab58e2eaf53cd14a1a2a7527d9261ceea93a24cd",
+          "lfs": null
+        },
+        {
+          "path": "speech_tokenizer/model.safetensors",
+          "size": 682293092,
+          "blob_id": "026d66bfb5d730dcfd56450c5e9e51b3ef4e0712",
+          "lfs": {
+            "sha256": "836b7b357f5ea43e889936a3709af68dfe3751881acefe4ecf0dbd30ba571258",
+            "size": 682293092,
+            "pointerSize": 134
+          }
+        },
+        {
+          "path": "speech_tokenizer/preprocessor_config.json",
+          "size": 234,
+          "blob_id": "ba40914f4f49ab98a8ca545d4892ef7291a39592",
+          "lfs": null
+        },
+        {
+          "path": "tokenizer_config.json",
+          "size": 7344,
+          "blob_id": "6ff9fd60cc623bb54bbd603cbd418c97a11528d7",
+          "lfs": null
+        },
+        {
+          "path": "vocab.json",
+          "size": 2776833,
+          "blob_id": "4783fe10ac3adce15ac8f358ef5462739852c569",
+          "lfs": null
+        }
+      ],
+      "configs": {
+        "config.json": {
+          "sha256": "81aca2b6fac304944d8acf345272d8a9a727d5fc2e2e66b222ab4729340c7455"
+        },
+        "preprocessor_config.json": {
+          "sha256": "efdde1022ea9d76928bf7a9cd53139138f5ba2e466e837f08f6105ab1af1c119"
+        },
+        "generation_config.json": {
+          "sha256": "f1b90b4513f3b34c62851049e2492d7b4c5940daf1276f89c82b8ef04127f3aa"
+        },
+        "speech_tokenizer/config.json": {
+          "sha256": "ee65bb901c876664ab8707c487157aa1a6ee57c65969b28fb5ec9dc211e68167"
+        },
+        "speech_tokenizer/preprocessor_config.json": {
+          "sha256": "fcb3805e597e786d4067706e602f6688524640f8d3396790e2e09b5942fcbdfb"
+        }
+      }
+    }
+  ],
+  "packages": [
+    {
+      "package": "qwen-asr",
+      "version": "0.0.6",
+      "requires_python": ">=3.9",
+      "requires_dist": [
+        "transformers==4.57.6",
+        "nagisa==0.2.11",
+        "soynlp==0.0.493",
+        "accelerate==1.12.0",
+        "qwen-omni-utils",
+        "librosa",
+        "soundfile",
+        "sox",
+        "gradio",
+        "flask",
+        "pytz",
+        "vllm==0.14.0; extra == \"vllm\""
+      ],
+      "files": [
+        {
+          "filename": "qwen_asr-0.0.6-py3-none-any.whl",
+          "size": 141603,
+          "sha256": "b9c55a38413298f3a990a4475467399daec6e8f4172363053fc42e2166c2dfd3",
+          "url": "https://files.pythonhosted.org/packages/01/12/d3027a7e4dc2eea0b12a4bf8414a7109f055004e1771666e01d8859d3ca0/qwen_asr-0.0.6-py3-none-any.whl",
+          "uploaded": "2026-01-30T03:24:00.820856Z"
+        },
+        {
+          "filename": "qwen_asr-0.0.6.tar.gz",
+          "size": 146666,
+          "sha256": "294893f2340dc2d58d1f1d1cb8ce26ac0a79f254805ab432dda2892bd5c8d13c",
+          "url": "https://files.pythonhosted.org/packages/7f/5b/56c5175d1a4d6ed8602003385570304305e4ae9c40b999d12d75a70c0561/qwen_asr-0.0.6.tar.gz",
+          "uploaded": "2026-01-30T03:24:02.697843Z"
+        }
+      ]
+    },
+    {
+      "package": "qwen-tts",
+      "version": "0.1.1",
+      "requires_python": ">=3.9",
+      "requires_dist": [
+        "transformers==4.57.3",
+        "accelerate==1.12.0",
+        "gradio",
+        "librosa",
+        "torchaudio",
+        "soundfile",
+        "sox",
+        "onnxruntime",
+        "einops"
+      ],
+      "files": [
+        {
+          "filename": "qwen_tts-0.1.1-py3-none-any.whl",
+          "size": 113529,
+          "sha256": "11a290d8dabc7ef91a90c54478c8ab19b3edb1d85c0882313721892bdc4af15d",
+          "url": "https://files.pythonhosted.org/packages/31/01/95f3ae26f5b7eb2105f69ad2c15af5a28b9ebdd1258a0b27541f5ebd6225/qwen_tts-0.1.1-py3-none-any.whl",
+          "uploaded": "2026-02-06T04:10:51.716041Z"
+        },
+        {
+          "filename": "qwen_tts-0.1.1.tar.gz",
+          "size": 114131,
+          "sha256": "afba5fa235806a6883f46a389e67540b46f8a55da457216bf1d7342903814780",
+          "url": "https://files.pythonhosted.org/packages/39/5d/b339c4f34f22ce838d39d1c015bbad103cd4003f6826ac3afaf1553973a0/qwen_tts-0.1.1.tar.gz",
+          "uploaded": "2026-02-06T04:10:53.454359Z"
+        }
+      ]
+    }
+  ],
+  "native_training_admission_granted": false,
+  "runtime_policy": "separate private environments; omit GUI dependencies; no global mutation; verify actual resolved imports",
+  "readiness": "pins only; parent owns genuine download/runtime/inference receipts"
+}

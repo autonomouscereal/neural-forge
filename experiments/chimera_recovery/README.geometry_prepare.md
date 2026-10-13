@@ -1,0 +1,269 @@
+# Actual geometry preparation, 2026-10-13
+
+`geometry_prepare.py` reuses the original 24 authored closed meshes, preserves
+their exact OBJ bytes, and corrects their conditioning images. Each new image
+uses pixel-center barycentric rasterization, camera depth testing and exact RGBA
+object coverage. The previous renderer sorted faces using original vertex Y,
+which did not establish visible-face order for its rotated camera. No chart,
+icon, caption, wireframe, or mesh coordinates appear in the new rendered image.
+
+The complete original 144-fixture asset inventory and original groundtruth are
+reverified. Global source admission traverses the complete normalized registry,
+evaluation index, prior media admission, cross-route exclusions and frozen
+prompts. Derived renders retain original source IDs, family groups and target
+mesh hashes; view changes cannot evade a held-out family. The geometry manifest
+has its own `recovery_geometry_preparation.v1` schema, while its typed admission
+rows use `recovery_geometry_admission.v1`. The nested global-source checks reuse
+the tested source graph algorithm from `audio_admission.py`; its legacy schema
+name does not grant audio or native 3D readiness.
+
+The prepared target surface is `[1,81920,7]` float32: normalized XYZ, face normals
+and a zero sharp-edge flag. The recorded operator sampler draws uniformly by
+real triangle area with seeded barycentric coordinates. Normalization matches
+the installed loader's `.9999` centered-cube scale and retains its FP16
+intermediate. This sampler is an explicit reproducible preprocessing policy,
+**not parity with the stochastic upstream SharpEdgeSurfaceLoader**. The real
+encoder probe recomputes the entire surface from the sealed mesh. Surface XYZ
+and the encoder's selected query XYZ are target-side data only.
+
+Generate a new namespace (PowerShell, repository root):
+
+```powershell
+C:/Python314/python.exe experiments/chimera_recovery/geometry_prepare.py `
+  --pins 'C:/Users/cereal/Documents/ai training/proof_outputs/chimera_audio_admission_pins_oct13_v1.json' `
+  --asset-root 'C:/Users/cereal/Documents/ai training/proof_outputs/chimera_media_seed_oct13_v2' `
+  --output 'C:/Users/cereal/Documents/ai training/proof_outputs/chimera_geometry_prepare_oct13_v2'
+```
+
+`hy3d_surface_probe.py` defaults to preflight. Add `--execute` only for the owned
+CPU proof. It verifies the whole original 7,365,943,290-byte checkpoint SHA,
+reviewed config and source files, the copied manifest hash, exact mesh/image/
+surface seals, and the real CPU FPS binary. It loads only the original 410 VAE
+tensors, widened from their actual storage to FP32 with strict keys and shapes.
+It calls actual `ShapeVAE.encode(surface, sample_posterior=False)` twice, captures
+the real encoder query points with a read-only forward hook, checks bitwise
+repeat after explicit Torch/NumPy/Python/libc RNG resets, uses the original
+`scale_factor=1.0039506158752403`, and runs the actual decoder and geometry head.
+
+The bounded geometric oracle uses independent convex-mesh half-space containment
+on a 5×5×5 grid and reports both logit-sign accuracies. It does not infer native
+logit sign, claim dense reconstruction, or accept a poor reconstruction merely
+because tensors are finite. The diagnostic latent receipt never grants native
+training readiness.
+
+For the unchanged original-loader control, append
+`--native-surface-control --dense-resolution 32 --compare-posterior-sample`.
+The probe calls the genuine `SharpEdgeSurfaceLoader` with 81,920 uniform and
+zero sharp points from the original VAE config. It captures that actual surface
+once and seals it; the loader's unseeded `np.random.default_rng()` is not patched
+or declared repeatable. Encoding the captured bytes remains repeatable after
+resetting both Torch and libc RNGs. Original `normalize_mesh` is also called on
+the actual parent-loaded OBJ and its source-to-native affine, exact normalized
+bounds and surface-to-plane residual are recorded. The oracle and geometry
+metrics use that normalized mesh, including its exact native coordinate frame.
+
+The native default `posterior.sample()` is compared once using the prescribed
+20261013 seed, separately from mode; this comparison does not select a best seed
+or promote a favorable target. Actual unchanged `VanillaVolumeDecoder` and
+`MCSurfaceExtractor` evaluate a 33×33×33 grid with 2,048-query chunks, then extract
+the raw-logit zero isosurface. The native MC coordinate divisor remains 33 as
+written in the source. DMC's source convention is explicitly
+`sdf = -grid_logit / octree_resolution`; coarse occupancy still reports both
+sign interpretations. Bounded independent triangle-area samples provide both
+directions of surface Chamfer, coordinate bounds and p95 distances, with no
+claim of exact continuous triangle distance. These metrics and actual OBJ bytes
+are evidence for review, never an automatic geometry-quality admission.
+
+The first real uniform-sampler encode receipt at
+`reviews/2026-10-13-folding/recovery-preparation/hy3d-geometry-cpu-v3/probe.json`
+has file SHA `832d315146764d2d0c24aa27eafbb1e346fd1ff03094f4d725ffc7df45eb8e67`.
+Encode/query repeatability and the scale inverse passed. Its coarse oracle had
+4 true inside positives, 23 false inside negatives, 98 true outside negatives
+and zero false outside positives: overall accuracy .816 obscures inside recall
+.1481 and balanced accuracy .5741. It remains diagnostic and has not admitted
+any native targets. The subsequent parent-loader control uses a new namespace
+and preserves that failed quality evidence.
+
+The actual unchanged parent-loader v4 control separated sampler and posterior
+behavior. Mode still had inside recall .2593 and sampled Chamfer L1 .3106.
+One prescribed default `posterior.sample()` on the same captured surface passed
+all 125 oracle queries and achieved sampled Chamfer L1 .0992 at MC32. Its receipt
+is `reviews/2026-10-13-folding/recovery-preparation/hy3d-geometry-cpu-v4/probe.json`,
+file SHA `dc0b8b4164e421c32a5dec12a8e49770c14eec7ceb6ea6474e6680d4f49f6f70`.
+
+The v5 control reused that exact frozen surface through the full v4 receipt,
+source row, mesh, config/source and byte seals. It repeated the prescribed native
+posterior sample and query points bitwise; the complete safetensors SHA remained
+`0dbf99baf314a99e03d74ef624b92236e25afe83d90f15b1f85471431a66963f`.
+Native MC64 evaluated 274,625 queries without changing its coordinate divisor
+65, and sampled Chamfer L1 improved to .076634 (direction means .038370/.038265;
+p95 .066614/.066549). The v5 receipt file SHA is
+`1228ec0cf999bbdb93791f249422c8073eb4553d72778c96159acc1d99eeabf3`.
+This proves repeatable native default-sample reconstruction for the one tested
+box; it neither selects a favorable seed nor admits all mesh families.
+
+To reproduce finer extraction of that exact capture, use a fresh namespace and
+append `--frozen-parent-surface`, `--parent-surface-receipt` and
+`--parent-surface-receipt-sha256` with the actual v4 files/pin, plus
+`--dense-resolution 64 --dense-sample-only`. A new sampler call, mismatched mesh,
+source row, parent source or artifact seal is refused by the frozen-capture
+join. Both sample encodes run the original CPU FPS and Gaussian sampler.
+
+Example CPU argv after copying the v2 preparation and mounting the genuine
+source/checkpoint plus root-owned CPU dependency overlay:
+
+```bash
+CUDA_VISIBLE_DEVICES='' HY3DGEN_DEBUG=0 PYTHONDONTWRITEBYTECODE=1 \
+PYTHONPATH=/opt/cpu-deps OMP_NUM_THREADS=8 MKL_NUM_THREADS=8 \
+/opt/environments/python/comfyui/bin/python -B \
+  experiments/chimera_recovery/hy3d_surface_probe.py \
+  --source-root /home/cereal/comfyui/custom_nodes/ComfyUI-Hunyuan3d-2-1 \
+  --weights /home/cereal/comfyui/models/checkpoints/hunyuan_3d_v2.1.safetensors \
+  --prepared-manifest /work/geometry-v2/manifest.json \
+  --prepared-manifest-sha256 '<actual v2 manifest file SHA>' \
+  --item-id geometry-corrected-media-seed-05ed11dae684f64e9798e8af \
+  --surface /work/geometry-v2/assets/media-seed-05ed11dae684f64e9798e8af/target_surface.npy \
+  --mesh /work/geometry-v2/assets/media-seed-05ed11dae684f64e9798e8af/target_geometry.obj \
+  --conditioning /work/geometry-v2/assets/media-seed-05ed11dae684f64e9798e8af/physical_object_rgba.png \
+  --output /work/geometry-proof-v1 --threads 8 --execute
+```
+
+The current source audit found the installed parent and runtime intact but FPS
+missing. Root separately prepared a read-only private CPU overlay and proved
+the genuine CPU FPS operation. Torch seeding alone did not control its libc
+random start; resetting both generators repeated the operation in all eight
+recorded runs. This probe pins that actual `1.6.3+pt26cpu` binary and the existing
+Torch `2.6.0+cu124` runtime, without changing the FPS algorithm or service packages.
+Root's actual dependency receipt is
+`reviews/2026-10-13-folding/recovery-preparation/hy3d-cpu-fps-v2/probe.json`,
+SHA `7557bd55046a8fb202a684e29f2ced3cc13eea2a49fb8540fb1eb2bdd99115b1`.
+
+The VAE has 327,746,177 parameters, about 1.22 GiB in FP32. Full surface cross
+attention uses 4,096 query rows against 81,920 source points; CPU runtime and peak
+RAM must be measured by the actual owned job. No query count or source geometry
+is silently reduced to obtain a quicker proof.
+
+## Remaining native recovery requirements
+
+- Actual per-source VAE targets and acceptable geometric reconstruction evidence.
+- Source-bound child QVL image ingress for these exact corrected RGBA assets.
+  The existing 1,536-wide C11 patches are flattened, duplicated-frame normalized
+  RGB pixels, not learned teacher features. Their actual preprocessing, alpha
+  interpretation, merge-window ordering and positional metadata must be sealed.
+  Learned ViT block-output KD needs its own authentic teacher cache separately.
+  The folded native HY3D unit dropped original DINO cross attention; metadata
+  declaring an image does not replace actual image conditioning.
+- An explicit dated generation query-chart and objective amendment. Original
+  HY3D uses no position embeddings and treats its latent set permutation
+  equivariantly. Its mesh encoder chooses queries from clean target XYZ. Those
+  points cannot be supplied to a generation model that has not observed them.
+- A native complete-sequence batch/conditioning proof and actual trained
+  reconstruction evaluation, before any native readiness claim.
+
+The existing `hy3d_cache.py` remains an experimental guided-teacher packer and
+cannot consume this separate clean-VAE source admission as a sealed trajectory
+cache. These assets support a distinct supervised flow proposal; they do not
+repair or relabel the earlier planar/icon teacher targets.
+
+`geometry_conditioning.py` prepares compact, source-sealed raw C11 image ingress
+for every corrected render. It rechecks all global preparation input hashes and
+the complete source/admission joins, retains 8 train-eligible and 16 held family
+identities, and never loads mesh targets or assistant answers into features.
+The exact pinned resize function executes in isolation from the source module's
+service/model entry points. NumPy patches retain both duplicated temporal frames
+and every original normalized RGB pixel. `verify_ingress` separately executes
+the original pinned Torch patchify and its `_torch` helper for all sources, with
+bitwise grid/row/pixel/position checks. The raw RGBA policy is explicit PIL RGB
+conversion with verified black transparent-pixel RGB; it does not claim parity
+with HY3D's white-background DINO preprocessor. Its `.npz` feature payload is
+input data only, with no learned features, teacher targets, latent queries or
+training-readiness claim.
+
+`hy3d_target_session.py` prepares the complete 24-source target set in one warm,
+bounded CPU session. Its immutable plan fixes seed20261013 before execution,
+uses the original surface loader once per mesh, repeats the sampled posterior
+for the first source of each family, and records the actual native normalized
+affine. Every source is genuinely encoded as raw `[1,4096,64]` and original
+model-space `[1,4096,64]`, decoded through the original `[1,4096,1024]` features,
+queried against independent convex geometry, and extracted using native MC16.
+The first non-box representative of each family uses MC32. Query XYZ remains
+diagnostic target data; compact clean targets contain no noisy inputs or guided
+velocity claim. Per-source receipts preserve 8 source-eligible train and 16 held
+identities. An initial and final digest over all 410 actual loaded VAE tensors,
+source rechecks and a final whole-checkpoint hash attest the unchanged warm model.
+
+The current actual preparation plan is
+`proof_outputs/chimera_hy3d_target_plan_oct13_v1/plan.json`, file SHA
+`e91cefa39863713ea986dec05b386a47bb06859cd03b098ca598e86eff742931`.
+Its CPU launch uses a separate namespace, 8 threads, 32GiB, no GPU/network, and
+a 1200-second timeout. Progress receipts are incomplete until the final manifest
+is written after all 24 targets and model-integrity checks. The target session
+does not silently drop failed/held sources or grant quality/training admission.
+
+Generate the plan locally with `hy3d_target_session.py plan` using the exact
+prepared-manifest and its file pin. The `run` subcommand requires the plan/file
+pin, copied full manifest/source/admission inventories and their exact assets,
+the reviewed native source root, original checkpoint and a fresh owned output.
+Code, source, asset, admission and held split changes are refused before model
+loading or at the corresponding per-source join. A separate selected native
+chart/objective/preregistration amendment and actual native batch proof remain
+required before these clean targets can become recovery supervision.
+
+## Actual complete target preparation, 2026-10-13
+
+The genuine CPU warm session completed all 24 sources in 946.405 seconds,
+with 8 source-eligible train boxes and 16 held octahedron/tetrahedron sources.
+All 410 VAE tensors retained full-state digest
+`510a73e283a136245a0012e8ec42e8b2ec1939e40474bc657cce7302dc960b6b`;
+the original 7,365,943,290-byte whole checkpoint and every reviewed source were
+rechecked after completion. All three preregistered family representatives
+repeated posterior.sample and selected encoder queries bitwise on their frozen
+actual native surfaces. The unchanged sampler's unseeded default_rng remains
+explicit; no new surface was selected for a better score.
+
+Actual local receipts and all 96 emitted target/surface/mesh/receipt files are
+under `reviews/2026-10-13-folding/recovery-preparation/hy3d-target-session-v1`.
+Manifest **file** SHA is
+`5b5175c854e7dd17d96de5184e586eb05d124664c2734d1488fa88482ea7e9a0`;
+its separate canonical unsigned-body seal is
+`6edde5ce1a9aaad6abc4c5982f4c550bd892f085cb158246bc2b6942e06f6cc9`.
+All sources had inside recall 1.0 on the prescribed 125-query convex oracle.
+Boxes and tetrahedra classified every query correctly. Octahedron balanced
+accuracy ranged 0.9788135593–1.0 because some outside queries were false positives.
+
+| Actual native MC resolution | Family/source count | Sampled surface Chamfer L1, sum of directional means |
+| --- | --- | --- |
+| 16 | 8 boxes | 0.142677–0.175379 |
+| 16 | 7 octahedra | 0.125378–0.139374 |
+| 16 | 7 tetrahedra | 0.144342–0.154944 |
+| 32 | 1 held octahedron | 0.082468 |
+| 32 | 1 held tetrahedron | 0.098107 |
+
+These are original-loader normalized units with the unchanged native MC
+coordinate divisor. Surface distances use 4,096 area-weighted samples per mesh;
+they do not claim exact continuous-mesh distance or broad natural-object quality.
+The earlier frozen-box MC64 control remains a distinct recorded experiment.
+
+`geometry_targets.py` independently verifies all source/global/frozen joins,
+raw C11 file seals and actual original Torch parity, then reads every genuine
+six-tensor safetensors payload locally without loading a model. It verifies
+finite raw `[1,4096,64]`, exact original scale-factor model space, target-only
+encoder query membership in the captured `[1,81920,7]` native surface, normalized
+source frame and independently recomputed physical oracle/confusion values.
+Original normalization arithmetic order is preserved; the operator render's
+equivalent scale expression differed by at most two float64 ulps for some assets.
+All source mesh/image/surface bytes and collected output bytes remain pinned.
+
+The resulting `proof_outputs/chimera_geometry_targets_oct13_v1` contains a
+24-row `prepared_targets.jsonl` index. Its input references contain only the
+source image and source-bound raw C11 patch shard. Mesh, clean latents and
+encoder query XYZ stay in target-only references. Every row retains split and
+connected source group identity. All rows remain `native_train_ready=false` and
+`geometry_quality_admission_granted=false` pending explicit native chart,
+time conversion, objective selection and complete-sequence integration proof.
+
+Run focused local tests:
+
+```powershell
+C:/Python314/python.exe -m unittest tests.test_chimera_geometry_prepare tests.test_chimera_hy3d_surface_probe -v
+```

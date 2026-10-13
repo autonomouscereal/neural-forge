@@ -40,12 +40,12 @@ def source_record():
     return c
 
 
-def write_tensor_fixture(path: Path):
+def write_tensor_fixture(path: Path, video_spatial_size=6):
     # Header-only structural fixture with actual allocated zero payload bytes.
     # It exercises seals/layout, not numerical teacher correctness.
     shapes = {k: [1] for k in h3.REQUIRED_TENSORS}
     for key in ("x_t_video", "v_video", "x0hat_video", "item.x0_video"):
-        shapes[key] = [1, 24, 7, 12, 12]
+        shapes[key] = [1, 24, 7, video_spatial_size, video_spatial_size]
     for key in ("x_t_audio", "v_audio", "v_audio_native", "x0hat_audio", "item.x0_audio"):
         shapes[key] = [1, 32, 2, 37]
     header, data, cursor = {}, bytearray(), 0
@@ -140,6 +140,21 @@ class ContractTests(unittest.TestCase):
             self.assertFalse(result["capture_contract_ok"])
             self.assertTrue(any("legacy" in p for p in result["problems"]))
 
+    def test_old_assumed_8x_video_downsampling_is_not_the_measured_96px_window(self):
+        with tempfile.TemporaryDirectory() as d:
+            directory = Path(d)
+            manifest, side = sealed_fixture(directory)
+            tensor = directory / "shard-000000.safetensors"
+            write_tensor_fixture(tensor, video_spatial_size=12)
+            side["sha256"] = h3.sha(tensor)
+            tensor.with_suffix(".json").write_bytes(h3.canonical(side))
+            manifest["shards"][0].update(sha256=h3.sha(tensor), bytes=tensor.stat().st_size,
+                sidecar_sha256=h3.sha(tensor.with_suffix(".json")))
+            reseal(directory, manifest)
+            result = h3.preflight(directory, "f" * 64)
+            self.assertFalse(result["capture_contract_ok"])
+            self.assertTrue(any("geometry differs" in p for p in result["problems"]))
+
     def test_pinned_writer_candidate_ast_and_actual_capture_anchors(self):
         p = SOURCE_ROOT / "distill/tools/stage_c_media_a.py"
         if not p.exists():
@@ -151,6 +166,20 @@ class ContractTests(unittest.TestCase):
                        '"source_frame_indices": picks', '"source_frame_pts": source_pts'):
             self.assertIn(anchor, candidate)
         self.assertFalse(receipt["teacher_job_launched"])
+
+    def test_writer_resolves_real_namespace_package_without_executing_model(self):
+        import subprocess
+        import sys
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "comfy/ldm/minimax/model.py"
+            source.parent.mkdir(parents=True)
+            source.write_text("raise RuntimeError('model must not execute for source lookup')\n")
+            script = "from pathlib import Path\nimport sys\nsys.path.insert(0," + repr(str(root)) + ")\n"
+            script += h3.WRITER_HELPERS
+            script += "\nimport comfy\nassert comfy.__file__ is None\n"
+            script += "assert h3_model_source_path().resolve() == Path(" + repr(str(source)) + ").resolve()\n"
+            subprocess.run([sys.executable, "-B", "-c", script], check=True, capture_output=True, text=True, timeout=15)
 
     def test_dual_clock_schedule_differs_from_video_clock(self):
         sa, slope = h3.schedule(0.6)
