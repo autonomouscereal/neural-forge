@@ -152,7 +152,7 @@ def audit(ce_manifest, ce_sha, ce_source_dir, flow_manifest, flow_sha, flow_sour
     coverage(admitted, ce_entries, flow_entries, F.SIGMAS)
     if torch.cuda.is_initialized():
         raise ValueError('CUDA initialized during CPU-only replay reconstruction')
-    result = {'schema': SCHEMA, 'sealed': True, 'passed': True, 'complete_source_traversal': True,
+    result = {'schema': SCHEMA, 'sealed': True, 'passed': True, 'verified': True, 'complete_source_traversal': True,
         'source_manifests': {'audio_ce': pin(ce_manifest), 'speech_flow': pin(flow_manifest), 'joint_clean': pin(clean_path)},
         'source_admissions': {'joint': ce['source_admission'], 'speech': flow['source_admission']},
         'source': ce['source'], 'amendment_sha256': amendment_sha, 'proofs': proofs,

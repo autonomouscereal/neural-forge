@@ -19,7 +19,12 @@ CUDA_VISIBLE_DEVICES='' python audio_replay_index.py \
   --out /audit/replay-index.json
 ```
 
-Output schema is `chimera_recovery.audio_speech_replay_index.v1`. Each entry
+Output schema is `chimera_recovery.audio_speech_replay_index.v1`, with
+`sealed`, `passed`, `verified`, and `complete_source_traversal` all true only
+after all reconstructions pass. Source manifest pins are absolute paths in the
+original preparation mount namespace; batch pins retain their original bytes.
+Any relative batch path resolves against its native source manifest parent.
+Each entry
 preserves the original batch ID, receipt/tensor SHA, storage contract, objective,
 source manifest/admission, source row SHA, producer and union group IDs, prompt
 length, native row count, latent frames per channel, and amendment. The CE
