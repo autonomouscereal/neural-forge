@@ -152,7 +152,7 @@ def install_joint_bank(hybrid, joint):
     normally binds once, which would retain a stale concatenation graph after
     the first backward; this wrapper refreshes the actual site references.
     """
-    if (I.digest(hybrid.source.identity()) != joint.binding["source_identity_sha256"]
+    if (I.digest(hybrid.engine.source.identity()) != joint.binding["source_identity_sha256"]
             or any(value.grad is not None for value in joint.tensors.values()) or hasattr(hybrid, "_recovery_joint_bank")):
         raise Error("D4 joint bank must attach once to exact pre-D2 source before optimizer use")
     hybrid.bank = hybrid.engine.bank = joint
