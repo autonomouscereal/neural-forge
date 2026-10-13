@@ -15,8 +15,12 @@ both media hashes, and shard sidecar SHA256 seals. It refuses waveform silence,
 padding, audio discontinuities, unmatched PTS origins, or a different MiniMax
 `model.py` source from the chart recipe pin
 `882c280b05aa60cd17f231e5e2389b921b52880fb3b4e23574c0aba5f2bd5024`.
-This is a private candidate for review and a bounded actual capture; its
-decoder instrumentation has not been tested against the remote ComfyUI runtime.
+The updated writer was exercised on the genuine ComfyUI runtime on October13.
+All eight same-mux VAE captures completed and their repeated encodes matched
+the sealed cache bitwise. The writer resolves the namespace package's native
+model source with `importlib.util.find_spec`; `comfy.__file__` is null in that
+runtime. This proves source decoding and latent capture, not diffusion targets
+or recovery of the child model.
 
 The bounded source is the eight **training** joint fixtures in
 `proof_outputs/chimera_modality_jobs_oct13_v1/manifest.json`. The preparation
@@ -106,6 +110,18 @@ production binding is deliberately separate:
   `prediction_kind:raw`, explicit feature/emission layouts, noisy suballocations,
   parent signs `{2:+1,3:+1}`, and the entire measured AV alignment contract.
 
-No actual H3 teacher cache, native training admission, trained recovery
-checkpoint, speech transcription coverage or performance result is asserted by
-these preparation files.
+Actual VAE capture manifest SHA is
+`72aa63260aeadaa244255734d7b51ddefcb27400ced933b62670580eda3c885e`.
+Independent reconstruction proof SHA is
+`dc641418c8c673772f3d2f77f1059429006c408092a93fdfee33d69d0fc532d7`.
+The source-bound writer SHA is
+`751c0c31cf61837b09611abb1575b766bfc82e5fefceeffbcbe16bdd48b651c9`.
+Proofs are retained under the task's
+`reviews/2026-10-13-folding/recovery-preparation/h3-joint-{encode,roundtrip}-v2`.
+All24 measured tone peaks agree before/after native decode, but raw waveform
+SNR is negative and coverage is only one procedural family. Native video
+decoding includes a singleton leading batch axis. The extra267 audio decoder
+tail samples are explicitly recorded as the one latent padding frame's tail,
+with the full tensors retained. These diagnostics grant no quality/admission
+pass. Authentic BF16 text capture is in progress; genuine velocity targets,
+native training admission and recovered-model results remain outstanding.
