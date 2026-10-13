@@ -179,6 +179,36 @@ with HY3D's white-background DINO preprocessor. Its `.npz` feature payload is
 input data only, with no learned features, teacher targets, latent queries or
 training-readiness claim.
 
+`hy3d_target_session.py` prepares the complete 24-source target set in one warm,
+bounded CPU session. Its immutable plan fixes seed20261013 before execution,
+uses the original surface loader once per mesh, repeats the sampled posterior
+for the first source of each family, and records the actual native normalized
+affine. Every source is genuinely encoded as raw `[1,4096,64]` and original
+model-space `[1,4096,64]`, decoded through the original `[1,4096,1024]` features,
+queried against independent convex geometry, and extracted using native MC16.
+The first non-box representative of each family uses MC32. Query XYZ remains
+diagnostic target data; compact clean targets contain no noisy inputs or guided
+velocity claim. Per-source receipts preserve 8 source-eligible train and 16 held
+identities. An initial and final digest over all 410 actual loaded VAE tensors,
+source rechecks and a final whole-checkpoint hash attest the unchanged warm model.
+
+The current actual preparation plan is
+`proof_outputs/chimera_hy3d_target_plan_oct13_v1/plan.json`, file SHA
+`e91cefa39863713ea986dec05b386a47bb06859cd03b098ca598e86eff742931`.
+Its CPU launch uses a separate namespace, 8 threads, 32GiB, no GPU/network, and
+a 1200-second timeout. Progress receipts are incomplete until the final manifest
+is written after all 24 targets and model-integrity checks. The target session
+does not silently drop failed/held sources or grant quality/training admission.
+
+Generate the plan locally with `hy3d_target_session.py plan` using the exact
+prepared-manifest and its file pin. The `run` subcommand requires the plan/file
+pin, copied full manifest/source/admission inventories and their exact assets,
+the reviewed native source root, original checkpoint and a fresh owned output.
+Code, source, asset, admission and held split changes are refused before model
+loading or at the corresponding per-source join. A separate selected native
+chart/objective/preregistration amendment and actual native batch proof remain
+required before these clean targets can become recovery supervision.
+
 Run focused local tests:
 
 ```powershell
