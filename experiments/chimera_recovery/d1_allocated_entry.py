@@ -71,10 +71,12 @@ def candidate_record(expected, root=Path("/candidate")):
 
 def trainer_argv(candidate, assignment_sha):
     source = candidate["successor"]
-    return ["--child", "/models/child", "--parent", "/models/parent", "--preregistration", source["preregistration"],
-            "--ids", source["ids"], "--seq-len", "4096", "--lengths-key", "lengths", "--held-rows", str(source["held_rows"]),
-            "--source-manifest", source["manifest"], "--source-manifest-sha256", source["manifest_sha256"],
+    mapped = lambda path: R.map_source(candidate["source_path_map"], path)
+    return ["--child", "/models/child", "--parent", "/models/parent", "--preregistration", mapped(source["preregistration"]),
+            "--ids", mapped(source["ids"]), "--seq-len", "4096", "--lengths-key", "lengths", "--held-rows", str(source["held_rows"]),
+            "--source-manifest", mapped(source["manifest"]), "--source-manifest-sha256", source["manifest_sha256"],
             "--source-validator-sha256", candidate["files"]["tools/d1_source_contract.py"],
+            "--source-path-map", "/candidate/source_path_map.json", "--source-path-map-sha256", candidate["files"]["source_path_map.json"],
             "--runtime-assignment", "/lease/assignment.json", "--runtime-assignment-sha256", assignment_sha,
             "--devices", "cuda:0,cuda:1", "--dtype", "bfloat16", "--train-dtype", "float32", "--master-dtype", "float32",
             "--epochs", "2", "--tokens-per-step", "32768", "--micro-tokens", "8192", "--lr", "2e-5", "--warmup-steps", "10",

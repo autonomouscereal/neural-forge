@@ -30,7 +30,7 @@ def plan(runtime_candidate, lease_source, run_source, delta_source):
         ("parent", "/mnt/ai_data/omni-campaign/s0-probe-sep04", "/models/parent", True),
         ("candidate", runtime_candidate, "/candidate", True),
         ("chimera", "/home/cereal/omni-campaign/import/rq27b/tree_ef1ffb9", "/chimera", True),
-        ("successor", PREPARATION, PREPARATION, True),
+        ("successor", PREPARATION, "/inputs/successor", True),
         ("lease", lease_source, "/lease", True),
         ("run", run_source, "/runout", False), ("delta", delta_source, "/deltaout", False))]
     return dict(schema="chimera_recovery.d1_allocation_plan.v1", owner=OWNER, server="ai", stage="D1",
@@ -49,6 +49,40 @@ def plan(runtime_candidate, lease_source, run_source, delta_source):
                 training_launched=False, registration_scope="No automatic model/ledger registration; audit actual completed delta separately")
 
 
+def portable_validator(raw):
+    """Add resolution to the exact reviewed validator; retain original seals/pins."""
+    if hashlib.sha256(raw).hexdigest() != "68a178ddf618b1d9b72e055bf6f1eda2a350e8d5e928cbaac7d1b5d62bf1f303":
+        raise R.Error("Exact reviewed D1 successor validator required")
+    text = raw.decode()
+    def change(before, after):
+        nonlocal text
+        if text.count(before) != 1:
+            raise R.Error("Portable D1 validator source anchor differs")
+        text = text.replace(before, after, 1)
+    change('SCHEMA = "chimera_recovery.d1_source_successor.v1"',
+           'SCHEMA = "chimera_recovery.d1_source_successor.v1"\n_SOURCE_MAP = None\n\n'
+           'def resolved_source(path):\n'
+           '    if _SOURCE_MAP is None:\n        return str(path)\n'
+           '    from d1_allocated_contract import map_source\n    return map_source(_SOURCE_MAP, path)\n\n'
+           'def configure_source_map(args):\n    global _SOURCE_MAP\n'
+           '    path = getattr(args, "source_path_map", None)\n    digest = getattr(args, "source_path_map_sha256", None)\n'
+           '    if bool(path) != bool(digest):\n        raise ValueError("D1 source mapping path/SHA must be supplied together")\n'
+           '    if path:\n        from d1_allocated_contract import source_map_record\n'
+           '        _SOURCE_MAP = source_map_record(path, digest)\n    else:\n        _SOURCE_MAP = None')
+    change('    path = Path(pin["path"])', '    path = Path(resolved_source(pin["path"]))')
+    change('    return Path(left).resolve() == Path(right).resolve()',
+           '    return Path(resolved_source(left)).resolve() == Path(resolved_source(right)).resolve()')
+    change('def manifest_record(path, expected_sha):\n', 'def manifest_record(path, expected_sha):\n    path = resolved_source(path)\n')
+    change('    manifest = manifest_record(path, expected_sha)', '    path = resolved_source(path)\n    manifest = manifest_record(path, expected_sha)')
+    change('def validate_args(args, trainer_source):\n', 'def validate_args(args, trainer_source):\n    configure_source_map(args)\n')
+    change('    parser.add_argument("--sha256", required=True)',
+           '    parser.add_argument("--sha256", required=True)\n    parser.add_argument("--source-path-map")\n'
+           '    parser.add_argument("--source-path-map-sha256")')
+    change('    args = parser.parse_args()\n', '    args = parser.parse_args()\n    configure_source_map(args)\n')
+    compile(text, "d1_source_contract.py", "exec")
+    return text.encode()
+
+
 def prepare(baseline, source_manifest, source_sha, clone_receipt, registry_receipt, campaign_tools, campaign_ledger,
             runtime_candidate, lease_source, run_source, delta_source, out):
     for path in (runtime_candidate, lease_source, run_source, delta_source):
@@ -65,7 +99,7 @@ def prepare(baseline, source_manifest, source_sha, clone_receipt, registry_recei
         raise R.Error("Actual independent clone receipt/registry evidence differs")
     manifest = S.manifest_record(source_manifest, source_sha)
     files = {"tools/d1_trunk_recovery.py": R.patch_trainer((baseline / "tools/d1_trunk_recovery.py").read_bytes()),
-             "tools/d1_source_contract.py": (baseline / "tools/d1_source_contract.py").read_bytes(),
+             "tools/d1_source_contract.py": portable_validator((baseline / "tools/d1_source_contract.py").read_bytes()),
              "tools/d1_allocated_contract.py": Path(R.__file__).read_bytes(),
              "tools/d1_allocated_entry.py": Path(E.__file__).read_bytes(),
              "tools/d1_allocated_root.py": Path(__file__).with_name("d1_allocated_root.py").read_bytes(),
@@ -73,14 +107,14 @@ def prepare(baseline, source_manifest, source_sha, clone_receipt, registry_recei
              "tools/stage2_training_receipt.py": (campaign_tools / "stage2_training_receipt.py").read_bytes(),
              "tools/oc_seal.py": (campaign_ledger / "oc_seal.py").read_bytes(),
              "evidence/actual-clone-receipt.json": Path(clone_receipt).read_bytes(),
-             "evidence/actual-registry-clone.json": Path(registry_receipt).read_bytes()}
-    if hashlib.sha256(files["tools/d1_source_contract.py"]).hexdigest() != "68a178ddf618b1d9b72e055bf6f1eda2a350e8d5e928cbaac7d1b5d62bf1f303":
-        raise R.Error("Exact reviewed D1 successor validator required")
+             "evidence/actual-registry-clone.json": Path(registry_receipt).read_bytes(),
+             "source_path_map.json": R.canonical(R.SOURCE_MAP) + b"\n"}
     for name, raw in files.items():
         if name.endswith(".py"):
             compile(raw, name, "exec")
     candidate = dict(schema="chimera_recovery.d1_allocated_candidate.v1", prepared_date="2026-10-13",
                      image_id=IMAGE, clone_directory_sha256=CLONE_DIGEST, actual_counts=manifest["actual_counts"],
+                     source_path_map=R.SOURCE_MAP, original_source_manifest_bytes_unchanged=True,
                      successor=dict(manifest=str(PurePosixPath(manifest["dataset"]["path"]).parent / "manifest.json"),
                                     manifest_sha256=source_sha, seal_sha256=manifest["seal_sha256"],
                                     ids=manifest["dataset"]["path"], held_rows=manifest["actual_counts"]["held_rows"],
@@ -94,6 +128,7 @@ def prepare(baseline, source_manifest, source_sha, clone_receipt, registry_recei
     allocation_plan = plan(runtime_candidate, lease_source, run_source, delta_source)
     allocation_plan["candidate_receipt_sha256"] = hashlib.sha256(R.canonical(candidate) + b"\n").hexdigest()
     allocation_plan["root_controller_sha256"] = candidate["files"]["tools/d1_allocated_root.py"]
+    allocation_plan["source_path_map_sha256"] = candidate["files"]["source_path_map.json"]
     files["candidate_receipt.json"] = R.canonical(candidate) + b"\n"
     files["allocation_plan.json"] = R.canonical(allocation_plan) + b"\n"
     out.parent.mkdir(parents=True, exist_ok=True)

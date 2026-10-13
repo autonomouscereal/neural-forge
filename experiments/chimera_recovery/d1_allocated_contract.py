@@ -11,6 +11,28 @@ SCHEMA = "chimera_recovery.d1_allocated_runtime.v1"
 PROOF = "chimera_recovery.d1_allocator_live.v1"
 Error = ValueError
 OWNER = "codex-chimera-recovery-01a1326f"
+SOURCE_ROOT = "/home/cereal/omni-campaign/distill/codex-preparation-01a1326f-20261013"
+SOURCE_MAP = dict(schema="chimera_recovery.d1_source_path_map.v1", source_root=SOURCE_ROOT,
+                  container_root="/inputs/successor", semantics="resolve_only_original_manifest_bytes_and_sha256s_preserved")
+
+
+def source_map_record(path, expected):
+    value = read(path, expected)
+    if value != SOURCE_MAP:
+        raise Error("D1 exact source resolver map required; sealed provenance paths cannot be rewritten")
+    return value
+
+
+def map_source(value, path):
+    if value != SOURCE_MAP:
+        raise Error("D1 unknown source mapping")
+    original = PurePosixPath(str(path))
+    if ".." in original.parts:
+        raise Error("D1 source mapping cannot escape the declared input root")
+    prefix = PurePosixPath(value["source_root"])
+    if original == prefix or prefix in original.parents:
+        return str(PurePosixPath(value["container_root"]) / original.relative_to(prefix))
+    return str(path)
 
 
 def canonical(value):
@@ -82,8 +104,8 @@ def assignment_record(path, expected):
     if roles["child"]["source"] == roles["parent"]["source"]:
         raise Error("D1 teacher and child cannot alias")
     if ("successor" not in roles or roles["successor"]["read_only"] is not True
-            or roles["successor"]["source"] != roles["successor"]["target"]):
-        raise Error("D1 successor manifest uses exact unchanged absolute read-only paths")
+            or roles["successor"]["source"] != SOURCE_ROOT or roles["successor"]["target"] != "/inputs/successor"):
+        raise Error("D1 original successor sources require explicit portable read-only mapping")
     for role, target in (("run", "/runout"), ("delta", "/deltaout")):
         if role not in roles or roles[role]["target"] != target or roles[role]["read_only"] is not False:
             raise Error("D1 requires dedicated output mounts")
@@ -96,6 +118,7 @@ def assignment_record(path, expected):
             or value.get("image_id") != "sha256:20e01d3a0d9cd8eda1cde410870c8111918f1e6e06cadfc9016dd4069c223164"
             or not re.fullmatch(r"[a-f0-9]{64}", value.get("chimera_source_sha256", ""))
             or not re.fullmatch(r"[a-f0-9]{64}", value.get("root_controller_sha256", ""))
+            or not re.fullmatch(r"[a-f0-9]{64}", value.get("source_path_map_sha256", ""))
             or not re.fullmatch(r"[a-f0-9]{64}", value.get("candidate_receipt_sha256", ""))):
         raise Error("D1 exact reviewed Torch2.11 image/candidate/name pins required")
     return value
@@ -196,6 +219,9 @@ def validate_step(args, *, now=None, proof_path=None, candidate_root=None):
     if (candidate.get("schema") != "chimera_recovery.d1_allocated_candidate.v1"
             or sha(__file__) != candidate["files"].get("tools/d1_allocated_contract.py")):
         raise Error("D1 actual runtime validator code differs from pinned candidate")
+    if candidate["files"].get("source_path_map.json") != assignment["source_path_map_sha256"]:
+        raise Error("D1 source resolver differs from runtime assignment")
+    source_map_record(candidate_root / "source_path_map.json", assignment["source_path_map_sha256"])
     if hasattr(args, "devices"):
         required = dict(devices="cuda:0,cuda:1", child="/models/child", parent="/models/parent", dtype="bfloat16",
                         train_dtype="float32", master_dtype="float32", base_digest="full",
@@ -203,7 +229,8 @@ def validate_step(args, *, now=None, proof_path=None, candidate_root=None):
                         epochs=2, tokens_per_step=32768, micro_tokens=8192, lr=2e-5, warmup_steps=10,
                         min_lr_frac=0.1, clip=1.0, seed=0, loss_site="residual", layers="all",
                         out="/runout/trainer", delta_out="/deltaout/trainer", min_free_gib=60,
-                        max_rows=None, max_steps=None, stop_after_layer=None)
+                        max_rows=None, max_steps=None, stop_after_layer=None,
+                        source_path_map="/candidate/source_path_map.json", source_path_map_sha256=candidate["files"]["source_path_map.json"])
         if any(getattr(args, key, None) != value for key, value in required.items()):
             raise Error("D1 direct trainer arguments violate allocated runtime/source contract")
         if sha(candidate_root / "tools/d1_trunk_recovery.py") != candidate["files"]["tools/d1_trunk_recovery.py"]:
@@ -222,7 +249,7 @@ def patch_trainer(raw):
         if text.count(before) != 1:
             raise Error("D1 allocated trainer source anchor differs")
         text = text.replace(before, after, 1)
-    change('TOOL_VERSION = "1.2.6-source-successor"', 'TOOL_VERSION = "1.2.7-allocated-successor"')
+    change('TOOL_VERSION = "1.2.6-source-successor"', 'TOOL_VERSION = "1.2.8-portable-allocated-successor"')
     change("    source_record = source_contract.validate_args(args, Path(__file__))",
            "    import d1_allocated_contract as runtime_contract\n    runtime_record = runtime_contract.validate_step(args)\n"
            "    source_record = source_contract.validate_args(args, Path(__file__))")
@@ -234,6 +261,8 @@ def patch_trainer(raw):
            '"preregistration": preregistration, "source_contract": source_record, "allocated_runtime": runtime_record,\n                  "rows":')
     anchor = '    ap.add_argument("--source-validator-sha256", default=None)'
     change(anchor, anchor + '\n    ap.add_argument("--runtime-assignment", required=True)\n'
-           '    ap.add_argument("--runtime-assignment-sha256", required=True)')
+           '    ap.add_argument("--runtime-assignment-sha256", required=True)\n'
+           '    ap.add_argument("--source-path-map", required=True)\n'
+           '    ap.add_argument("--source-path-map-sha256", required=True)')
     compile(text, "d1_trunk_recovery.py", "exec")
     return text.encode()

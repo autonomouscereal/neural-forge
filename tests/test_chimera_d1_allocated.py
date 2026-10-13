@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import tempfile
 import unittest
@@ -30,6 +30,7 @@ def fixture():
                  allocation_group_id="00000000-0000-0000-0000-000000000003", torch_version="2.11.0+cu130",
                  candidate_receipt_sha256="a" * 64, chimera_source_sha256="b" * 64,
                  root_controller_sha256=R.sha(H.__file__),
+                 source_path_map_sha256="c" * 64,
                  gpus=[dict(uuid=f"GPU-00000000-0000-0000-0000-00000000000{i+1}", host_index=index, container_ordinal=i)
                        for i, index in enumerate([0, 4])])
     uuids = [gpu["uuid"] for gpu in value["gpus"]]
@@ -55,8 +56,11 @@ class AllocatedTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.value, self.rows, self.docker, self.cuda, self.host = fixture()
         self.now = datetime(2026, 10, 13, 20, 10, tzinfo=timezone.utc)
+        (self.root / "source_path_map.json").write_bytes(R.canonical(R.SOURCE_MAP))
+        self.value["source_path_map_sha256"] = R.sha(self.root / "source_path_map.json")
         candidate = dict(schema="chimera_recovery.d1_allocated_candidate.v1",
-                         files={"tools/d1_allocated_contract.py": R.sha(R.__file__)}, successor=dict(manifest_sha256="9" * 64))
+                         files={"tools/d1_allocated_contract.py": R.sha(R.__file__), "source_path_map.json": self.value["source_path_map_sha256"]},
+                         successor=dict(manifest_sha256="9" * 64))
         (self.root / "candidate_receipt.json").write_bytes(R.canonical(candidate) + b"\n")
         self.value["candidate_receipt_sha256"] = R.sha(self.root / "candidate_receipt.json")
         self.save_assignment()
@@ -255,6 +259,79 @@ class AllocatedTests(unittest.TestCase):
         self.save_assignment()
         with self.assertRaisesRegex(ValueError, "validator code"):
             self.step(self.proof())
+
+    def test_actual_installed_allocator_mount_validation_compatibility(self):
+        source = Path(os.environ.get("HERMES_REMOTE_RUNTIME", "D:/relay/worktrees/local-hermes-collaboration/best/local-hermes/remote_runtime.py"
+                                     if os.name == "nt" else "/home/cereal/local-hermes/remote_runtime.py"))
+        if not source.exists():
+            self.skipTest("set HERMES_REMOTE_RUNTIME to actual installed allocator source")
+        tree = ast.parse(source.read_text(encoding="utf-8"))
+        functions = {"mount_path", "paths_overlap", "validate_mounts"}
+        constants = {"MOUNT_SCHEMA_KEYS", "UNSAFE_MOUNT_ROOTS", "SENSITIVE_MOUNT_PARTS"}
+        nodes = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in functions
+                 or isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id in constants for target in node.targets)]
+        class ExistingDirectory:
+            """Filesystem existence only is modeled; all real allocator validation executes."""
+            def __init__(self, value): self.value = value
+            def resolve(self, strict): return PurePosixPath(self.value)
+            def is_dir(self): return True
+        namespace = dict(PurePosixPath=PurePosixPath, Path=ExistingDirectory, re=re,
+                         os=argparse.Namespace(access=lambda *args: True, W_OK=os.W_OK))
+        exec(compile(ast.Module(body=nodes, type_ignores=[]), str(source), "exec"), namespace)
+        mounts = [{key: item[key] for key in ("source", "target", "read_only")} for item in self.value["mounts"]]
+        result = namespace["validate_mounts"](dict(kind="generic", mounts=mounts))
+        self.assertEqual(len(result), 8)
+        self.assertIn("/inputs/successor", [item["target"] for item in result])
+        old = copy.deepcopy(mounts)
+        next(item for item in old if item["target"] == "/inputs/successor")["target"] = B.PREPARATION
+        with self.assertRaisesRegex(ValueError, "home root"):
+            namespace["validate_mounts"](dict(kind="generic", mounts=old))
+        self.assertRegex(B.IMAGE, r"^sha256:[a-f0-9]{64}$")
+
+    def test_portable_validator_preserves_original_pin_and_detects_changed_bytes(self):
+        path = V4 / "tools/d1_source_contract.py"
+        if not path.exists():
+            self.skipTest("set D1_REVIEWED_V4 to exact staged reviewed v4 source")
+        raw = path.read_bytes()
+        published = B.portable_validator(raw)
+        namespace = dict(__name__="published_portable_validator", __file__=str(path))
+        exec(compile(published, "actual-published-portable-validator", "exec"), namespace)
+        data = self.root / "authentic-source.jsonl"
+        data.write_bytes(b'{"id":"original","split":"train"}\n')
+        original_path = B.PREPARATION + "/corpus-schema-v2/train.jsonl"
+        pin = dict(path=original_path, sha256=R.sha(data))
+        original = copy.deepcopy(pin)
+        mapped = R.map_source(R.SOURCE_MAP, original_path)
+        self.assertEqual(mapped, "/inputs/successor/corpus-schema-v2/train.jsonl")
+        namespace["Path"] = lambda value: data if str(value) == mapped else Path(value)
+        with mock.patch.dict("sys.modules", {"d1_allocated_contract": R}):
+            namespace["configure_source_map"](argparse.Namespace(source_path_map=str(self.root / "source_path_map.json"),
+                                                          source_path_map_sha256=self.value["source_path_map_sha256"]))
+            self.assertEqual(namespace["checked_pin"](pin), data)
+            self.assertTrue(namespace["same_path"](original_path, mapped))
+            self.assertEqual(pin, original)
+            data.write_bytes(b'{"id":"altered"}\n')
+            with self.assertRaisesRegex(ValueError, "source pin"):
+                namespace["checked_pin"](pin)
+        with self.assertRaisesRegex(ValueError, "escape"):
+            R.map_source(R.SOURCE_MAP, original_path + "/../../foreign")
+        with self.assertRaisesRegex(ValueError, "reviewed"):
+            B.portable_validator(raw + b"# changed validator\n")
+
+    def test_unreconciled_pg_group_grants_no_authority_and_does_not_probe_container(self):
+        plan = B.plan(B.PREPARATION + "/d1-v6", "/home/cereal/omni-campaign/distill/runtime_leases/D1-fixture",
+                      "/home/cereal/omni-campaign/distill/d1/fixture", "/mnt/lexar/omni-campaign/deltas/fixture")
+        plan["root_controller_sha256"] = R.sha(H.__file__)
+        path = self.root / "plan.json"
+        path.write_bytes(R.canonical(plan))
+        conn = mock.Mock(fetch=mock.AsyncMock(return_value=[]), close=mock.AsyncMock())
+        transport = mock.Mock()
+        args = argparse.Namespace(plan=path, plan_sha256=R.sha(path), group=uuid.UUID(self.value["allocation_group_id"]), out=self.root / "new-binding.json")
+        with mock.patch.object(H, "connection", mock.AsyncMock(return_value=conn)), mock.patch.object(H, "remote", transport):
+            with self.assertRaisesRegex(ValueError, "not fully reconciled"):
+                asyncio.run(H.bind(args))
+        transport.assert_not_called()
+        self.assertFalse(args.out.exists())
 
 
 def contextlib_stderr():
