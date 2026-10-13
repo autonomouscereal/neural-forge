@@ -6,6 +6,7 @@ packers are separately proved bitwise by the captured diagnostic tensors.
 """
 from __future__ import annotations
 import argparse
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -46,6 +47,12 @@ def rows(path):
     if len({row['id'] for row in result}) != len(result):
         raise Error('source IDs must occur exactly once')
     return result
+
+def validate_conditioning(item, record, entry):
+    prompt=record['messages'][0]['content']
+    if (item.get('prompt')!=prompt+SUFFIX or entry.get('prompt_sha256')!=R.digest(prompt) or
+            item.get('source_prompt_sha256')!=hashlib.sha256(prompt.encode('utf-8')).hexdigest()):
+        raise Error('native teacher window prompt differs from the raw UTF8 source and canonical admission identities')
 
 def source_candidate(record):
     """Verify original authored media, without altering its source row."""
@@ -261,10 +268,9 @@ def prepare_cache(cache, manifest_sha, encode_cache, items_path, admission_path,
                 raise Error('captured model-space clean source differs from exact genuine raw encode/zero-padding join')
             if (contract['source_row_sha256']!=entry['source_row_sha256'] or entry['source_row_sha256']!=R.digest(record) or
                     contract['source_group_id']!=record['provenance']['group_id'] or contract['split']!=entry['split'] or
-                    contract['video_sha256']!=entry['asset_sha256'] or
-                    item['prompt']!=record['messages'][0]['content']+SUFFIX or
-                    item.get('source_prompt_sha256')!=entry['prompt_sha256']):
+                    contract['video_sha256']!=entry['asset_sha256']):
                 raise Error('teacher conditioning, physical origin, row, source group or split differs')
+            validate_conditioning(item,record,entry)
             pair=H.validate_pair(tensors,target,index,float(manifest['plan']['cfg']))
             prefix=M.prompt_prefix(tokenizer,item['prompt'])
             batch=H.pack_pair(pair,torch.tensor([prefix],dtype=torch.int64),bridge,media_token_id=M.MEDIA_PLACEHOLDER)
@@ -380,6 +386,7 @@ def validate_batch(cpu_batch, receipt, manifest_root, *, aliases=None):
     selected=[(i,t) for i,t in enumerate(side['targets']) if t['target']==target_id]
     if len(selected)!=1:raise Error('runtime original captured target is ambiguous')
     index,target=selected[0];item=items[target['item_index']];encoded=clean[target['item_index']]
+    validate_conditioning(item,original,eligible)
     joined=(data['item.index']==target['item_index']).nonzero().flatten()
     if (item['id']!=ident or target['id']!=ident or diagnostic['id']!=ident or
             target['h3_source_contract']['source_row_sha256']!=R.digest(original) or

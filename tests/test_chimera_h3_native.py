@@ -29,6 +29,18 @@ def source(root):
              'path':str(audio),'sha256':N.H.sha(audio)}]}
 
 class SourceTests(unittest.TestCase):
+    def test_raw_utf8_teacher_hash_and_canonical_admission_hash_bind_same_prompt(self):
+        import hashlib
+        prompt='Source event at 0.125 seconds.';record={'messages':[{'content':prompt}]}
+        item={'prompt':prompt+N.SUFFIX,'source_prompt_sha256':hashlib.sha256(prompt.encode()).hexdigest()}
+        admission={'prompt_sha256':N.R.digest(prompt)}
+        self.assertNotEqual(item['source_prompt_sha256'],admission['prompt_sha256'])
+        N.validate_conditioning(item,record,admission)
+        bad=copy.deepcopy(item);bad['prompt']=prompt+N.SUFFIX+' changed'
+        with self.assertRaises(N.Error):N.validate_conditioning(bad,record,admission)
+        bad=copy.deepcopy(item);bad['source_prompt_sha256']=admission['prompt_sha256']
+        with self.assertRaises(N.Error):N.validate_conditioning(bad,record,admission)
+
     def test_parent_identity_checks_bytes_without_equating_hash_timings(self):
         before={'parent':{'sha256':'a'*64,'bytes':123,'inode':1,'mtime_ns':2,'hash_seconds':25.8}}
         after=copy.deepcopy(before);after['parent']['hash_seconds']=16.4
