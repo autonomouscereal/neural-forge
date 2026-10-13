@@ -39,3 +39,21 @@ are small authored recolor fixtures; held translation/removal fixtures measure
 transfer separately. Broader source-backed editing data, accepted predecessor
 weights, full-depth parity, free generated held edits and graded answers remain
 necessary before accepting a recovery checkpoint.
+
+D4 dispatch uses `lane=image_edit` and the separate
+`supervised_image_edit_rectified_flow` objective. Its selected replay amendment
+adds the exact 32 authenticated source/sigma IDs, each with 65536 output scalars,
+after the supervised geometry stage and before the H3 stage. The existing guided
+QIMG route and historical frozen quotas retain their original meanings. The
+callback scales its mean loss by the accumulation window's measured denominator;
+it creates no second optimizer.
+
+`consolidation_dispatch prepare-replay-amendment` requires `--hy3d`, `--h3`,
+`--music-code`, and `--image-edit` manifests plus the selected preregistration.
+`--image-edit-source-aliases` is a pinned SHA-to-absolute-path JSON mapping for
+portable read-only mounts. Production config uses `image_edit_source_aliases`
+and binds the current adapter, driver, and dependency helper files. The source
+validator still reconstructs actual before/noisy-after/reference tensors on CPU
+before any device transfer or backward. Earlier immutable cache amendments are
+accepted only when their verified documents remain unchanged prefixes of the
+selected append-only preregistration; cache bytes are never relabelled.

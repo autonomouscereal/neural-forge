@@ -19,15 +19,15 @@ def write(path, value):
 
 
 def test_reviewed_membership_preserves_original_quotas_and_only_replaces_geometry_lineage(tmp_path):
-    order = list(D.C.STAGE_ORDER)
-    order[order.index("D3b.hy3d")] = G.STAGE
+    order = D.replay_lineage_order()
+    assert order.index(D.EDIT_STAGE)==order.index(G.STAGE)+1
     source = write(tmp_path / "source.json", {"fixture": True, "not_a_production_seal": True})
     value = dict(schema="chimera_recovery.d4_replay_amendment.v1", selected=True, dated="2026-10-13",
         preregistration_amendment_sha256="a" * 64, frozen_original_quotas=copy.deepcopy(D.C.QUOTAS), lineage_order=order,
         rationale="all eligible authentic source batches once; no repetition to fill guided quotas",
         lanes={lane: dict(mode="all_eligible_source_batches_once", objective=D.LANES[lane],
                          source_manifests=[source], batch_ids=[lane + "-fixture"], count=1)
-               for lane in ("hy3d", "h3", "music_code")})
+               for lane in D.AMENDED_LANES})
     ref = write(tmp_path / "amend.json", value)
     checked = D.reviewed_replay_plan(ref, tmp_path, "a" * 64)
     assert checked["value"]["frozen_original_quotas"]["hy3d"] == 300
@@ -35,6 +35,7 @@ def test_reviewed_membership_preserves_original_quotas_and_only_replaces_geometr
     for mutate in (lambda v: v.update(selected=False), lambda v: v["lineage_order"].reverse(),
                    lambda v: v["lanes"]["hy3d"].update(batch_ids=["same", "same"], count=2),
                    lambda v: v["lanes"]["h3"].update(count=300),
+                   lambda v: v['lanes'].pop('image_edit'),
                    lambda v: v["frozen_original_quotas"].update(hy3d=32)):
         changed = copy.deepcopy(value)
         mutate(changed)

@@ -26,12 +26,21 @@ SAFETY = dict(checkpoint_seconds=1800, keep_safety=2, consecutive_skips=8,
 LANES = {"short_text": O.TEXT, "long_text": O.TEXT, "k3": O.TEXT,
          "vision": O.VISION, "ace": O.GUIDED, "qimg": O.GUIDED,
          "hy3d": O.GEOMETRY, "h3": O.GUIDED, "music_code": O.MUSIC,
-         "audio_ce": O.AUDIO, "speech_flow": O.SPEECH}
+         "audio_ce": O.AUDIO, "speech_flow": O.SPEECH, "image_edit": O.EDIT}
 SOURCES = {O.TEXT: "chimera_recovery.text_replay_batches.v1", O.GUIDED: "chimera_recovery.native_batches.v1",
            O.MUSIC: "chimera_recovery.music_batches.v1", O.VISION: "chimera_recovery.vision_batches.v1",
            O.AUDIO: "chimera_recovery.audio_batches.v1", O.SPEECH: "chimera_recovery.speech_flow_batches.v1",
-           O.GEOMETRY: "recovery_geometry_flow_batches.v1"}
+           O.GEOMETRY: "recovery_geometry_flow_batches.v1", O.EDIT: "chimera_recovery.image_edit_batches.v1"}
 GEOMETRY_STAGE = "D3b_geometry_supervised_flow"
+EDIT_STAGE = "D3b_image_edit_supervised_flow"
+AMENDED_LANES = {"hy3d", "h3", "music_code", "image_edit"}
+
+
+def replay_lineage_order():
+    order=list(C.STAGE_ORDER)
+    order[order.index('D3b.hy3d')]=GEOMETRY_STAGE
+    order.insert(order.index(GEOMETRY_STAGE)+1,EDIT_STAGE)
+    return order
 
 
 def canonical_gpu_uuid(value):
@@ -46,15 +55,14 @@ def canonical_gpu_uuid(value):
 def reviewed_replay_plan(entry, root, amendment):
     """Explicit dated replacement for two guided quotas; frozen history stays intact."""
     value, path = read(entry, root)
-    order = list(C.STAGE_ORDER)
-    order[order.index("D3b.hy3d")] = GEOMETRY_STAGE
+    order = replay_lineage_order()
     if (value.get("schema") != "chimera_recovery.d4_replay_amendment.v1"
             or value.get("selected") is not True or value.get("dated") != "2026-10-13"
             or value.get("preregistration_amendment_sha256") != amendment
             or value.get("frozen_original_quotas") != C.QUOTAS or value.get("lineage_order") != order
             or value.get("rationale") != "all eligible authentic source batches once; no repetition to fill guided quotas"
-            or set(value.get("lanes", {})) != {"hy3d", "h3", "music_code"}):
-        raise Error("D4 geometry/H3/music replay requires an exact selected dated amendment")
+            or set(value.get("lanes", {})) != AMENDED_LANES):
+        raise Error("D4 geometry/H3/music/edit replay requires an exact selected dated amendment")
     for lane, rule in value["lanes"].items():
         ids = rule.get("batch_ids")
         if (rule.get("mode") != "all_eligible_source_batches_once" or rule.get("objective") != LANES[lane]
@@ -67,7 +75,7 @@ def reviewed_replay_plan(entry, root, amendment):
     return dict(value=value, path=str(path), pin=I.pin(path))
 
 
-def prepare_replay_amendment(preregistration, source_manifests, out):
+def prepare_replay_amendment(preregistration, source_manifests, out, *, image_edit_aliases=None):
     """Create a reviewable unselected successor from actual complete inventories.
 
     No production acceptance, quota padding or claimed cache seals are created.
@@ -75,8 +83,8 @@ def prepare_replay_amendment(preregistration, source_manifests, out):
     """
     from . import train_media as T
     out = Path(out)
-    if out.exists() or set(source_manifests) != {"hy3d", "h3", "music_code"}:
-        raise Error("preserve candidate; three exact native lane manifests required")
+    if out.exists() or set(source_manifests) != AMENDED_LANES:
+        raise Error("preserve candidate; four exact native lane manifests required")
     prior = T.verify_preregistration(preregistration, Path("."))
     lanes = {}
     for lane, refs in source_manifests.items():
@@ -84,12 +92,15 @@ def prepare_replay_amendment(preregistration, source_manifests, out):
         for ref in refs:
             data, path = read(ref, Path("."))
             if (data.get("schema") != SOURCES[LANES[lane]] or data.get("sealed") is not True
-                    or data.get("heldout_groups_excluded") is not True
-                    or (lane != "hy3d" and data.get("split") != "train")):
+                    or (lane != 'image_edit' and data.get("heldout_groups_excluded") is not True)
+                    or (lane not in {"hy3d", 'image_edit'} and data.get("split") != "train")):
                 raise Error("candidate needs actual complete admitted native source manifests")
             if lane == "hy3d":
                 from . import train_geometry as G
                 G.cache_manifest(path, data.get("amendment", {}).get("sha256"))
+            if lane == 'image_edit':
+                from . import train_image_edit as E
+                E.cache_manifest(path,data.get('amendment_sha256'),aliases=image_edit_aliases)
             batch_ids = [item.get("id") for item in data.get("batches", [])]
             if not batch_ids or any(not isinstance(v, str) or not v for v in batch_ids):
                 raise Error("candidate actual source batch inventory missing")
@@ -99,8 +110,7 @@ def prepare_replay_amendment(preregistration, source_manifests, out):
             raise Error("candidate source manifests repeat actual batch identity")
         lanes[lane] = dict(mode="all_eligible_source_batches_once", objective=LANES[lane], source_manifests=pins,
                            batch_ids=ids, count=len(ids))
-    order = list(C.STAGE_ORDER)
-    order[order.index("D3b.hy3d")] = GEOMETRY_STAGE
+    order = replay_lineage_order()
     value = dict(schema="chimera_recovery.d4_replay_amendment.v1", selected=False, dated="2026-10-13",
                  preregistration=preregistration, preregistration_amendment_sha256=prior["amendment_sha256"],
                  frozen_original_quotas=C.QUOTAS, lineage_order=order, lanes=lanes,
@@ -121,7 +131,7 @@ def sealed(value):
         raise Error("D4 manifest seal differs")
 
 
-def replay_catalog(entry, root, amendment, *, compatible_amendments=(), reviewed_plan=None):
+def replay_catalog(entry, root, amendment, *, compatible_amendments=(), reviewed_plan=None, image_edit_aliases=None):
     """Bind every selected row to one actual sealed manifest batch and receipt.
 
     Existing cache validators inspect tensor contents immediately before their
@@ -149,7 +159,7 @@ def replay_catalog(entry, root, amendment, *, compatible_amendments=(), reviewed
     audio_index, _ = read(value["audio_speech_index"], path.parent)
     if (audio_index.get("schema") != "chimera_recovery.audio_speech_replay_index.v1"
             or any(audio_index.get(key) is not True for key in ("sealed", "passed", "verified", "complete_source_traversal", "source_reconstruction_bitwise_equal"))
-            or audio_index.get("amendment_sha256") != amendment):
+            or audio_index.get("amendment_sha256") not in {amendment, *compatible_amendments}):
         raise Error("D4 audio/speech replay requires the fully reconstructed admitted native index")
     sources["audio_speech_index"] = value["audio_speech_index"]
     indexed = {row["id"]: row for row in audio_index["entries"]}
@@ -170,12 +180,15 @@ def replay_catalog(entry, root, amendment, *, compatible_amendments=(), reviewed
         if key not in caches:
             data, manifest_path = read(ref, path.parent)
             if (data.get("schema") != SOURCES[objective] or data.get("sealed") is not True
-                    or (objective != O.GEOMETRY and data.get("split") != "train")
-                    or data.get("heldout_groups_excluded") is not True):
+                    or (objective not in {O.GEOMETRY,O.EDIT} and data.get("split") != "train")
+                    or (objective != O.EDIT and data.get("heldout_groups_excluded") is not True)):
                 raise Error("D4 source cache must be sealed train-only")
             if objective == O.GEOMETRY:
                 from . import train_geometry as G
                 G.cache_manifest(manifest_path, data.get("amendment", {}).get("sha256"))
+            if objective == O.EDIT:
+                from . import train_image_edit as E
+                E.cache_manifest(manifest_path,data.get('amendment_sha256'),aliases=image_edit_aliases)
             items = data.get("batches", [])
             if not items or len({item.get("id") for item in items}) != len(items):
                 raise Error("D4 source batch IDs missing or duplicate")
@@ -197,12 +210,15 @@ def replay_catalog(entry, root, amendment, *, compatible_amendments=(), reviewed
         if objective == O.GEOMETRY:
             allowed_amendments.add(data["amendment"]["sha256"])
         tensor_sha = receipt.get("tensors", {}).get("sha256") if objective == O.GEOMETRY else receipt.get("tensors_sha256")
-        if (receipt.get("sealed") is not True or (objective != O.GEOMETRY and receipt.get("all_finite") is not True)
-                or receipt.get("split") != "train" or receipt.get("held") is not False
+        if (receipt.get("sealed") is not True or (objective not in {O.GEOMETRY,O.EDIT} and receipt.get("all_finite") is not True)
+                or (objective != O.EDIT and (receipt.get("split") != "train" or receipt.get("held") is not False))
                 or receipt.get("recovery_group_id") != source_group
                 or tensor_sha != row["input"]["sha256"] or source_amendment not in allowed_amendments
                 or row.get("source_amendment_sha256") != source_amendment):
             raise Error("D4 native receipt does not bind exact row/tensor/group/amendment")
+        if objective == O.EDIT and (row['supervised_units']!=65536 or receipt.get('supervised_units')!=65536
+                or receipt.get('denominator_kind')!='native_output_scalar_mse'):
+            raise Error('D4 editing measured native output scalar denominator differs')
         if lane in rules:
             declared = rules[lane]
             declared_sources = {ref["sha256"] for ref in declared["source_manifests"]}
@@ -269,9 +285,10 @@ def replay_catalog(entry, root, amendment, *, compatible_amendments=(), reviewed
 
 class NativeBackward:
     """Dispatch trusted validators and native losses; never execute dataset code."""
-    def __init__(self, module, root, objective_config, *, h3_validator=None, config_root=None, h3_aliases=None):
+    def __init__(self, module, root, objective_config, *, h3_validator=None, config_root=None, h3_aliases=None, image_edit_aliases=None):
         self.module, self.root, self.objective_config = module, Path(root), objective_config
         self.h3_validator, self.config_root, self.h3_aliases = h3_validator, Path(config_root or root), h3_aliases
+        self.image_edit_aliases=image_edit_aliases
 
     def authenticate_guided_source(self, row, item, batch, receipt, manifest_root):
         """The signed loss adapter alone cannot prove genuine H3 target provenance."""
@@ -343,6 +360,11 @@ class NativeBackward:
         item = {**item, "tensors": row["input"], "teacher_receipt": row["target"]}
         batch = T.load_native_batch(item, manifest_path.parent, "cpu")
         objective, units = row["objective"], row["supervised_units"]
+        if objective==O.EDIT:
+            from . import image_edit as E
+            compute=E.ImageEditAdapter(receipt,manifest_path.parent,aliases=self.image_edit_aliases).bind(batch)
+            batch={key:value.to(hybrid.device) for key,value in batch.items()}
+            return O.image_edit_backward(self.module,hybrid,batch,compute,units,weight)
         if objective == O.TEXT:
             self.text_batch(row, batch, receipt)
             batch = {key: value.to(hybrid.device) for key, value in batch.items()}
@@ -405,6 +427,10 @@ def verify_helpers(config, root, rows):
         expected['h3_native.py'] = I.sha(Path(H.__file__))
         expected['train_media.py'] = I.sha(Path(T.__file__))
         aliases = h3_source_aliases(config.get('h3_source_aliases'), root)
+    if any(row.get('lane') == 'image_edit' for row in rows):
+        from . import image_edit as E, train_image_edit as Q
+        expected.update({p.name:I.sha(p) for p in (Path(E.__file__),Path(Q.__file__))})
+        expected.update(E.dependency_pins())
     helpers = config['helpers']
     if any(name not in helpers or helpers[name]['sha256'] != digest or I.sha(I.pinned(helpers[name], root)) != digest
            for name,digest in expected.items()):
@@ -572,7 +598,7 @@ def preflight(config_path):
                 or lineage["shared_sha256"] != verified["shared_r16"]["source_manifest_sha256"]):
             raise Error("D4 terminal exports differ from actual accepted lineage")
         verified["lineage"] = lineage
-        source_amendments = set()
+        source_amendments = {config['preregistration']['sha256']}
         selected = I.pinned(config["preregistration"], path.parent).read_bytes().replace(b"\r\n", b"\n")
         tail = selected[selected.find(b"\n## Amendments"):]
         for entry in config.get("compatible_cache_preregistrations", []):
@@ -582,8 +608,11 @@ def preflight(config_path):
             if not tail.startswith(prior):
                 raise Error("D4 source amendment is not an unchanged prefix of selected append-only amendment")
             source_amendments.add(old["amendment_sha256"])
+            source_amendments.add(entry['sha256'])
+        verified['image_edit_source_aliases']=h3_source_aliases(config.get('image_edit_source_aliases'),path.parent)
         verified["replay"] = replay_catalog(config["replay_manifest"], path.parent,
-                    verified["preregistration"]["amendment_sha256"], compatible_amendments=source_amendments, reviewed_plan=reviewed)
+                    verified["preregistration"]["amendment_sha256"], compatible_amendments=source_amendments, reviewed_plan=reviewed,
+                    image_edit_aliases=verified['image_edit_source_aliases'])
         # Exact currently executing helper bytes are part of this run identity.
         verified['h3_source_aliases'] = verify_helpers(config, path.parent, verified['replay']['rows'])
     except (ValueError, KeyError, TypeError, OSError) as exc:
@@ -719,12 +748,14 @@ def train(config_path, out, resume=None):
                              "streamed_trainer": config["streamed_trainer"], **config["helpers"]}.items()})
     if config.get('h3_source_aliases') is not None:
         replay['sources']['h3_source_aliases'] = I.pin(I.pinned(config['h3_source_aliases'], root))
+    if config.get('image_edit_source_aliases') is not None:
+        replay['sources']['image_edit_source_aliases']=I.pin(I.pinned(config['image_edit_source_aliases'],root))
     engine = R.UnionEngine(union, replay["rows"], replay["sources"], Path(replay["root"]),
                            accumulation=config["accumulation"], clip_norm=config["clip_norm"])
     engine.identity["replay"]["supervised_denominators"] = replay["measured_supervised_units"]
     return execute(engine, NativeBackward(module, Path(replay["root"]), config["text_objective"],
                    h3_validator=config['helpers'].get('h3_native.py'), config_root=root,
-                   h3_aliases=verified.get('h3_source_aliases')), out,
+                   h3_aliases=verified.get('h3_source_aliases'),image_edit_aliases=verified.get('image_edit_source_aliases')), out,
                    gate=gate, review_pointer=config.get("decode_review_pointer"), resume=resume)
 
 
@@ -740,13 +771,16 @@ def main(argv=None):
     candidate = commands.add_parser("prepare-replay-amendment", allow_abbrev=False)
     candidate.add_argument("--preregistration", type=Path, required=True)
     candidate.add_argument("--amendment-sha256", required=True)
-    for name in ("hy3d", "h3", "music-code", "out"):
+    for name in ("hy3d", "h3", "music-code", "image-edit", "out"):
         candidate.add_argument("--" + name, type=Path, required=True)
+    candidate.add_argument('--image-edit-source-aliases',type=Path)
     args = parser.parse_args(argv)
     if args.command == "prepare-replay-amendment":
         prior = {**I.pin(args.preregistration), "amendment_sha256": args.amendment_sha256}
         print(json.dumps(prepare_replay_amendment(prior,
-            {"hy3d": [I.pin(args.hy3d)], "h3": [I.pin(args.h3)], "music_code": [I.pin(args.music_code)]}, args.out)))
+            {"hy3d": [I.pin(args.hy3d)], "h3": [I.pin(args.h3)], "music_code": [I.pin(args.music_code)],
+             'image_edit':[I.pin(args.image_edit)]}, args.out,
+             image_edit_aliases=h3_source_aliases(I.pin(args.image_edit_source_aliases),Path('.')) if args.image_edit_source_aliases else None)))
         return 0
     if args.command == "preflight":
         result = preflight(args.config)
