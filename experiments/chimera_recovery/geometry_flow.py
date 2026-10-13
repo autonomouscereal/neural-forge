@@ -183,6 +183,7 @@ def build_batch(record, prefix, image, clean, *, sigma):
             "native_media_valid_mask": torch.ones(1, MEDIA_ROWS, dtype=torch.bool),
             "native_media_positions": positions, "native_media_noise_levels": levels,
             "native_media_canonical_sigma": canonical, "native_media_loss_weights": weights,
+            "native_media_update_mask": weights.bool(),
             "native_media_loss_mask": weights.clone(), "charted_source_positions": source_positions}
 
 
@@ -256,7 +257,7 @@ def velocity_loss(prediction, batch):
 def model_inputs(batch):
     """Only genuine prompt, raw pixels, time and noisy latent enter native model."""
     keys = ("input_ids", "native_media_features", "native_media_indices", "native_media_type_ids",
-            "native_media_valid_mask", "native_media_positions", "native_media_noise_levels")
+            "native_media_valid_mask", "native_media_positions", "native_media_noise_levels", "native_media_update_mask")
     return {**{k: batch[k] for k in keys}, "native_media_only": True, "native_media_target_kind": "velocity",
             "charted_source_positions": {"hy3d": batch["charted_source_positions"]}}
 
