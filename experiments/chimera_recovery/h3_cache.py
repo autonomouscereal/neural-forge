@@ -464,6 +464,15 @@ WRITER_HELPERS = '''
 H3_JOINT_CONTRACT = "chimera_recovery.h3_joint_capture.v1"
 H3_EXPECTED_MODEL_SHA256 = "882c280b05aa60cd17f231e5e2389b921b52880fb3b4e23574c0aba5f2bd5024"
 
+def h3_model_source_path():
+    # ComfyUI's top-level package can be a namespace: __file__ is then None.
+    # Resolve the actual module without executing its model implementation.
+    import importlib.util
+    spec = importlib.util.find_spec("comfy.ldm.minimax.model")
+    if spec is None or not isinstance(spec.origin, str):
+        raise SystemExit("MiniMax source has no inspectable module origin")
+    return Path(spec.origin)
+
 def h3_joint_source(item, geo, args):
     c = item.get("h3_source_contract", {})
     w = c.get("window", {})
@@ -484,7 +493,7 @@ def h3_joint_source(item, geo, args):
         raise SystemExit("H3 window/resampling contract hash differs")
     # Same physical file is necessary; measured decoder PTS checks below are
     # also necessary. Names/rates/durations alone are not origin proof.
-    model_source = Path(comfy.__file__).parent / "ldm" / "minimax" / "model.py"
+    model_source = h3_model_source_path()
     if sha256_file(model_source) != H3_EXPECTED_MODEL_SHA256:
         raise SystemExit("MiniMax source differs from the pinned native chart recipe")
     return {**c, "minimax_model_sha256": H3_EXPECTED_MODEL_SHA256}
@@ -542,9 +551,6 @@ def writer_candidate(source: Path) -> tuple[str, dict[str, Any]]:
         if after.count(old) != 1:
             raise Refusal("pinned writer patch anchor missing or ambiguous: " + old[:80])
         after = after.replace(old, new, 1)
-    # The original imports comfy lazily inside functions. The helper accesses the
-    # loaded module explicitly, after common_runtime has established ComfyUI.
-    after = after.replace('    model_source = Path(comfy.__file__).parent', '    import comfy\n    model_source = Path(comfy.__file__).parent', 1)
     ast.parse(after)
     return after, {"schema": "chimera_recovery.h3_writer_candidate.v1", "baseline_sha256": STAGE_C_SHA256,
                    "candidate_sha256": hashlib.sha256(after.encode()).hexdigest(), "patch_anchors": len(replacements),

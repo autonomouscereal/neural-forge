@@ -102,3 +102,90 @@ def test_incomplete_admission_never_grants_source_readiness(tmp_path):
     outer.write_bytes(C.R.canonical(manifest) + b'\n')
     with pytest.raises(C.Error, match='globally'):
         C.admission(C.pin(outer), tmp_path, source)
+
+
+def encoder_fixture(tmp_path, monkeypatch, *, speech=False, held=False):
+    row, admitted, source, rows, manifest, outer, asset = fixture_admission(tmp_path)
+    if speech:
+        row['route'] = 'speech_understand'
+        row['provenance'] = {'independent_asr_exact_match': True, 'synthetic_official_voice': True,
+                             'user_reference_voice_used': False}
+    if held:
+        row['split'] = admitted['split'] = 'test'
+        admitted.update(source_train_eligible=False, train_admitted=False, blockers=['heldout'])
+    source.write_bytes(C.R.canonical(row) + b'\n')
+    admitted['source_row_sha256'] = C.R.digest(row)
+    rows.write_bytes(C.R.canonical(admitted) + b'\n')
+    manifest['sources']['source'] = C.pin(source)
+    manifest['outputs']['admission'] = C.pin(rows)
+    outer.write_bytes(C.R.canonical(manifest) + b'\n')
+    calls = []
+    def encode(args):
+        # Only orchestration is substituted here; this is not an H3 proof.
+        calls.append(args)
+        args.out.write_bytes(b'{"fixture":true}\n')
+        return {'probe_passed': True, 'model_space_verified': True}
+    monkeypatch.setattr(C.P, 'run', encode)
+    monkeypatch.setenv('CUDA_VISIBLE_DEVICES', '')
+    return row, source, outer, calls
+
+
+def test_admitted_encoder_keeps_held_rows_diagnostic_without_lifting_admission(tmp_path, monkeypatch):
+    row, source, seal, calls = encoder_fixture(tmp_path, monkeypatch, speech=True, held=True)
+    result = C.encode_admitted_source(source, seal, C.R.sha(seal), Path('stage'), Path('comfy'), Path('vae'), tmp_path / 'encoded')
+    assert len(calls) == len(result['entries']) == 1
+    assert result['entries'][0]['source_row_sha256'] == C.R.digest(row)
+    assert calls[0].audio_sha256 == row['media'][0]['sha256']
+    assert result['complete_source_traversal'] is True
+    assert result['native_admission_granted'] is False and result['training_started'] is False
+
+
+def test_admitted_speech_encoder_refuses_missing_independent_asr(tmp_path, monkeypatch):
+    row, source, seal, calls = encoder_fixture(tmp_path, monkeypatch, speech=True)
+    # Rebind a genuinely different source snapshot; the ASR policy still must reject it.
+    row['provenance']['independent_asr_exact_match'] = False
+    source.write_bytes(C.R.canonical(row) + b'\n')
+    data = C.T.read_json(seal)
+    admission_rows = Path(data['outputs']['admission']['path'])
+    admitted = json.loads(admission_rows.read_text())
+    admitted['source_row_sha256'] = C.R.digest(row)
+    admission_rows.write_bytes(C.R.canonical(admitted) + b'\n')
+    data['sources']['source'], data['outputs']['admission'] = C.pin(source), C.pin(admission_rows)
+    seal.write_bytes(C.R.canonical(data) + b'\n')
+    with pytest.raises(C.Error, match='independent ASR'):
+        C.encode_admitted_source(source, seal, C.R.sha(seal), Path('stage'), Path('comfy'), Path('vae'), tmp_path / 'encoded')
+    assert not calls and not (tmp_path / 'encoded/manifest.json').exists()
+
+
+def test_admitted_encoder_partial_failure_cannot_seal(tmp_path, monkeypatch):
+    _, source, seal, _ = encoder_fixture(tmp_path, monkeypatch)
+    monkeypatch.setattr(C.P, 'run', lambda args: {'probe_passed': False, 'model_space_verified': False})
+    with pytest.raises(C.Error, match='partial outputs diagnostic'):
+        C.encode_admitted_source(source, seal, C.R.sha(seal), Path('stage'), Path('comfy'), Path('vae'), tmp_path / 'encoded')
+    assert not (tmp_path / 'encoded/manifest.json').exists()
+
+
+@pytest.mark.parametrize('count', [0, 1])
+def test_reused_session_must_seal_exact_completed_waveform_inventory(tmp_path, monkeypatch, count):
+    _, source, seal, calls = encoder_fixture(tmp_path, monkeypatch)
+    class Session:
+        def __init__(self, args):
+            self.args = args
+        def seal(self):
+            return {'sealed': True, 'actual_waveforms': count}
+    session_calls = []
+    def run(args, *, session=None):
+        session_calls.append(session)
+        args.out.write_bytes(b'{"fixture":true}\n')
+        return {'probe_passed': True, 'model_space_verified': True}
+    monkeypatch.setattr(C.P, 'EncoderSession', Session)
+    monkeypatch.setattr(C.P, 'run', run)
+    target = tmp_path / 'encoded'
+    if count == 0:
+        with pytest.raises(C.Error, match='every source row'):
+            C.encode_admitted_source(source, seal, C.R.sha(seal), Path('stage'), Path('comfy'), Path('vae'), target, reuse_runtime=True)
+        assert not (target / 'manifest.json').exists()
+    else:
+        result = C.encode_admitted_source(source, seal, C.R.sha(seal), Path('stage'), Path('comfy'), Path('vae'), target, reuse_runtime=True)
+        assert result['encoder_session']['sealed'] and result['encoder_session']['actual_waveforms'] == 1
+    assert len(session_calls) == 1 and isinstance(session_calls[0], Session) and not calls

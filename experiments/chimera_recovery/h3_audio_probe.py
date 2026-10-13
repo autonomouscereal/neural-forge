@@ -7,6 +7,7 @@ used. A successful proof is one prerequisite for the distinct audio CE lane.
 """
 from __future__ import annotations
 import argparse
+import copy
 import hashlib
 import importlib.util
 import json
@@ -90,7 +91,7 @@ def tensor_sha(value):
     import torch
     value = value.detach().to(device="cpu").contiguous()
     return hashlib.sha256(canonical({"shape": list(value.shape), "dtype": str(value.dtype)}) +
-                          value.view(torch.uint8).numpy().tobytes()).hexdigest()
+                          value.reshape(-1).view(torch.uint8).numpy().tobytes()).hexdigest()
 
 
 def decode_full(path, contract):
@@ -269,7 +270,67 @@ def imported_comfy_sources(comfy_root):
     return result
 
 
-def run(args):
+class EncoderSession:
+    """One actual CPU VAE load; every waveform still receives its own proof.
+
+    Per-wave parent-file hashes remain unchanged. A clean cache must additionally
+    seal the session's actual in-memory parameter/buffer identity after traversal.
+    No learned output or previous waveform encoding is reused.
+    """
+    def __init__(self, args):
+        import torch
+        if os.environ.get('CUDA_VISIBLE_DEVICES') != '' or torch.cuda.is_initialized():
+            raise Error('reusable encoder requires explicit CUDA-hidden CPU runtime')
+        self.paths = {key: str(Path(getattr(args, key)).resolve()) for key in ('stage_c', 'comfy_root', 'audio_vae')}
+        self.sources = verify_sources(args.stage_c, args.comfy_root, args.audio_source_sha256)
+        if sha(args.audio_vae) != VAE_SHA:
+            raise Error('session actual H3 audio VAE parent file differs')
+        self.original, self.runtime = load_runtime(args.stage_c, args.comfy_root)
+        self.vae, self.metadata = self.original.load_vae(args.audio_vae)
+        self.imported_sources = imported_comfy_sources(args.comfy_root)
+        self.initial_state = self.state_sha()
+        self.rows, self.closed = 0, False
+
+    def state_sha(self):
+        digest = hashlib.sha256()
+        for name, value in sorted(self.vae.first_stage_model.state_dict().items()):
+            digest.update(name.encode('utf-8'))
+            digest.update(tensor_sha(value).encode('ascii'))
+        return digest.hexdigest()
+
+    def check(self, args):
+        if self.closed or {key: str(Path(getattr(args, key)).resolve()) for key in self.paths} != self.paths:
+            raise Error('encoder session identity changed or already sealed')
+        if verify_sources(args.stage_c, args.comfy_root, args.audio_source_sha256) != self.sources:
+            raise Error('encoder session source bytes changed')
+        self.check_imports()
+
+    def check_imports(self):
+        current = imported_comfy_sources(Path(self.paths['comfy_root']))
+        if any(current.get(path) != expected for path, expected in self.imported_sources.items()):
+            raise Error('reusable encoder imported implementation changed during traversal')
+        # A genuine first encode can import further implementation modules.
+        # Retain their exact file digests and reject any later removal/change.
+        self.imported_sources.update(current)
+
+    def seal(self):
+        if self.closed or self.rows < 1:
+            raise Error('encoder session requires a nonempty completed traversal before seal')
+        self.check_imports()
+        after = self.state_sha()
+        if (after != self.initial_state or sha(Path(self.paths['audio_vae'])) != VAE_SHA or
+                verify_sources(Path(self.paths['stage_c']), Path(self.paths['comfy_root']), AUDIO_SOURCE_SHA) != self.sources):
+            raise Error('actual reusable VAE weights/buffers/imported source changed during traversal')
+        self.closed = True
+        return {'schema': 'chimera_recovery.h3_cpu_encoder_session.v1', 'sealed': True, 'actual_waveforms': self.rows,
+            'one_actual_vae_load': True, 'each_wave_encoded_twice': True, 'each_wave_decoded': True,
+            'per_wave_parent_file_sha_verified_before_and_after': True, 'teacher_unchanged': True,
+            'initial_state_sha256': self.initial_state, 'final_state_sha256': after, 'teacher_sha256': VAE_SHA,
+            'sources': self.sources, 'imported_python_sources': self.imported_sources,
+            'cpu_only': True, 'training_started': False}
+
+
+def run(args, *, session=None):
     result = {"schema": "chimera_recovery.h3_standalone_audio_probe.v1", "production_training_ready": False,
               "training_started": False, "native_xyz_verified": False, "model_space_verified": False,
               "native_admission_granted": False, "adapter_sha256": sha(Path(__file__)), "cpu_only": True}
@@ -284,14 +345,25 @@ def run(args):
         result["teacher_sha256_before"] = weights_before
         if weights_before != VAE_SHA:
             raise Error("actual H3 audio VAE parent file differs")
-        original, result["runtime"] = load_runtime(args.stage_c, args.comfy_root)
+        if session is None:
+            original, result['runtime'] = load_runtime(args.stage_c, args.comfy_root)
+        else:
+            if not isinstance(session, EncoderSession):
+                raise Error('reusable runtime must be the actual verified encoder session')
+            session.check(args)
+            original, result['runtime'] = session.original, copy.deepcopy(session.runtime)
+            result['encoder_session_initial_state_sha256'] = session.initial_state
+            result['reused_verified_cpu_runtime'] = True
         source_before = imported_comfy_sources(args.comfy_root)
         waveform, result["decode"] = decode_full(args.audio, contract)
         reference, metadata = original.read_audio(str(args.audio), seconds=contract["duration_seconds"], start=0., rate=RATE)
         if metadata.get("audio") != "decoded" or metadata.get("padded_samples") != 0 or not torch.equal(reference, waveform):
             raise Error("full no-trim decode differs from actual pinned StageC read_audio")
         result["stage_c_decode_bitwise_equal"] = True
-        vae, result["vae"] = original.load_vae(args.audio_vae)
+        if session is None:
+            vae, result['vae'] = original.load_vae(args.audio_vae)
+        else:
+            vae, result['vae'] = session.vae, copy.deepcopy(session.metadata)
         tensors, result["measurement"] = prove_vae(vae, waveform, contract)
         tensors["input_waveform_stereo32k"] = waveform.contiguous()
         native, packed_model, result["model_space_transform"] = model_space_transform(tensors["x0_raw_audio"])
@@ -309,6 +381,9 @@ def run(args):
             raise Error("preserve existing native probe tensors; choose a new output")
         save_file(tensors, str(target))
         result["tensors"] = {"path": str(target), "sha256": sha(target), "keys": sorted(tensors)}
+        if session is not None:
+            session.check_imports()
+            session.rows += 1
     except (Exception, SystemExit) as exc:
         result["probe_passed"] = False
         result["failure"] = {"type": type(exc).__name__, "message": str(exc)}

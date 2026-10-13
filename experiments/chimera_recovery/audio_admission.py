@@ -76,6 +76,8 @@ def identities(record):
     for media in record.get("media", []):
         if SHA.fullmatch(str(media.get("sha256", ""))):
             result.add("asset:" + media["sha256"])
+        if SHA.fullmatch(str(media.get("source_media_sha256", ""))):
+            result.add("asset:" + media["source_media_sha256"])
         if media.get("path"):
             result.add("asset-path:" + str(media["path"]).replace("\\", "/"))
     # An observation's generic instruction is not its content identity: its

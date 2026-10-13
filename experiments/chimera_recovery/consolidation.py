@@ -20,7 +20,7 @@ FROZEN_BYTES = 15339
 QUOTAS = {"short_text": 2500000, "long_text": 500000, "k3": 1000000,
           "vision": 300, "ace": 300, "qimg": 300, "hy3d": 300, "h3": 300}
 OPTIMIZER_FAMILIES = {"D2.lora", "D2.k3_lora", "D2.gain", "D3.unit", "D3.emission", "D3.bridge", "D3.music_embed", "D3.music_head", "D3.shared_lora"}
-STAGE_ORDER = ("D2", "D3a", "D3b.ace", "D3b.qimg", "D3b.hy3d", "D3b.h3", "D3c", "D3d")
+STAGE_ORDER = ("D2", "D3a", "D3b.ace", "D3b.qimg", "D3b.hy3d", "D3b.h3", "D3c", "D3d", "D3d_audio_ce", "D3d_speech_flow")
 REQUIRED_STAGE_ROLES = set(STAGE_ORDER)
 
 

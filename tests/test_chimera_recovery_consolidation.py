@@ -104,7 +104,8 @@ def test_optimizer_physical_alias_and_rate_vs_prior_base_rejected():
 
 def test_full_shared_banks_require_actual_sequential_carry_not_sibling_addition():
     chain = states()
-    assert d4.sequential_states(chain, initial_shared_bank_sha256=digest("initial-r16"))["stages"] == 8
+    assert d4.sequential_states(chain, initial_shared_bank_sha256=digest("initial-r16"))["stages"] == 10
+    assert d4.STAGE_ORDER[-2:] == ("D3d_audio_ce", "D3d_speech_flow")
     chain[3]["parent_state_sha256"] = chain[1]["state_sha256"]
     with pytest.raises(d4.Error, match="sequential_lineage"):
         d4.sequential_states(chain, initial_shared_bank_sha256=digest("initial-r16"))
@@ -242,7 +243,7 @@ def test_executable_pinned_job_never_certifies_production_and_catches_changed_ch
     job, values, _ = files(tmp_path, monkeypatch)
     report = d4.validate_job(job)
     assert report["production_ready"] is False and report["weights_changed"] is False
-    assert report["lineage"]["stages"] == 8
+    assert report["lineage"]["stages"] == 10
     (tmp_path / "D3b.ace.bin").write_bytes(b"changed checkpoint")
     with pytest.raises(d4.Error, match="pinned_source_bytes_changed"):
         d4.validate_job(job)
