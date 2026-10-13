@@ -448,6 +448,34 @@ def test_real_native_tensor_contract_rejects_alias_leakage():
         t.validate_native_batch("image_generate", batch)
 
 
+def test_h3_single_stream_requires_source_coordinates_and_joint_requires_same_window():
+    torch = pytest.importorskip("torch")
+    features = torch.zeros(1, 2, 6144)
+    batch = {"input_ids": torch.zeros(1, 8, dtype=torch.int64), "native_media_features": features,
+             "native_media_type_ids": torch.full((1, 2), 3, dtype=torch.int64),
+             "native_media_indices": torch.tensor([[3, 4]]), "native_media_valid_mask": torch.ones(1, 2, dtype=torch.bool),
+             "native_media_positions": torch.zeros(1, 2, 4), "native_media_targets": torch.zeros_like(features),
+             "native_media_loss_mask": torch.ones(1, 2), "native_media_noise_levels": torch.full((1, 2), .5)}
+    with pytest.raises(t.ReadinessError, match="authentic packed"):
+        t.validate_native_batch("audio_generate", batch)
+    batch["charted_source_positions"] = torch.zeros(1, 8, 3)
+    assert t.validate_native_batch("audio_generate", batch)["valid_media_rows"] == 2
+    batch["native_media_type_ids"][0, 0] = 2
+    allocation = {"2": [384, 480], "3": [480, 512]}
+    receipt = {"schema": "chimera_recovery.native_flow_cache.v1", "sealed": True, "all_finite": True,
+               "all_structural_ok": True, "guided_teacher": True, "no_clean_target_in_inputs": True,
+               **{key: "a" * 64 for key in ("cache_sha256", "corpus_sha256", "teacher_sha256", "recovery_amendment_sha256")},
+               "route": "joint_av", "target_kind": "canonical_velocity", "prediction_kind": "canonical_velocity",
+               "input_layout": "feature", "target_layout": "emission", "noisy_feature_bands": allocation,
+               "noisy_feature_bands_sha256": t.digest(allocation)}
+    bands = {2: {"feature": (384, 480), "emission": (128, 224)}, 3: {"feature": (480, 512), "emission": (224, 256)}}
+    with pytest.raises(t.ReadinessError, match="same source window"):
+        t.ReadyObjectiveAdapter(receipt).bind("joint_av", batch, bands)
+    receipt["av_alignment"] = {"same_origin": True, "source_media_sha256": "c" * 64, "start_seconds": 1.25}
+    loss = t.ReadyObjectiveAdapter(receipt).bind("joint_av", batch, bands)(features.clone())
+    assert float(loss) == 0.
+
+
 def test_sealed_teacher_cache_binding_refuses_wrong_identity(tmp_path):
     shard = tmp_path / "corpus.safetensors"
     shard.write_bytes(b"prepared data contract fixture")

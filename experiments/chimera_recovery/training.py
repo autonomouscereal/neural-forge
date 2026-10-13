@@ -472,7 +472,7 @@ def validate_native_batch(route: str, batch: dict[str, Any]) -> dict[str, Any]:
             raise ReadinessError("loss weights supervise padding or no media row")
         if not bool(torch.isfinite(sigma[valid]).all()) or bool(((sigma <= 0) | (sigma > 1))[valid].any()):
             raise ReadinessError("flow training requires finite 0 < sigma <= 1")
-        if name == "joint_av":
+        if any(int(kind) in (2, 3) for kind in torch.unique(types[valid]).tolist()):
             source = batch.get("charted_source_positions")
             if source is None or source.shape != (b, ids.shape[1], 3) or not bool(torch.isfinite(source).all()):
                 raise ReadinessError("H3 requires authentic packed [B,S,3] source positions")
@@ -625,6 +625,14 @@ class ReadyObjectiveAdapter:
         active_types = {int(value) for value in types[mask > 0].unique().tolist()}
         if not active_types.issubset(allocation):
             raise ReadinessError("sealed cache lacks supervised modality noisy-channel allocation")
+        if route_name(route) == "joint_av":
+            alignment = self.cache_receipt.get("av_alignment", {})
+            if active_types != {2, 3} or alignment.get("same_origin") is not True:
+                raise ReadinessError("joint AV requires both supervised streams from the same source window")
+            require_sha(alignment.get("source_media_sha256"), "av_alignment.source_media_sha256")
+            start = alignment.get("start_seconds")
+            if not isinstance(start, (int, float)) or isinstance(start, bool) or not math.isfinite(start) or start < 0:
+                raise ReadinessError("joint AV requires a finite pinned source-window start")
         for kind in active_types:
             lo, hi = allocation[kind]
             flo, fhi = bands[kind]["feature"]
