@@ -28,8 +28,9 @@ Every sealed cache receipt pins `noisy_feature_bands` and its canonical JSON
 SHA256. No loss silently selects the first channels of a conditioning band.
 Native ACE packs source64, chunk-mask64 and noisy64 in c*2+k order, so its noisy
 suballocation is feature256:384 to emission0:128. Music generation additionally
-requires the source and chunk-mask features to be zero under a target-free
-generation recipe; the old clean-source S8 stimulus is rejected. The tiny random
+requires the authentic teacher-code detokenizer source and one-valued chunk
+masks, with exact code IDs bound to the native music vocabulary and receipts.
+The old clean-source S8 stimulus and earlier zero-source recipe are rejected. The tiny random
 fixture explicitly declares its own six noisy channels and never claims native
 ACE recipe validation. The optional existing D3 rate hook now also requires
 `--noisy-feature-bands <allocation.json>` with its velocity adapter.
@@ -95,8 +96,40 @@ CUDA_VISIBLE_DEVICES='' python experiments/chimera_recovery/media_cache.py \
 ```
 
 `--limit` produces a bounded CPU preparation proof with an unsealed batch
-manifest; the production driver refuses it. Omit it only for an authorized full
-cache conversion. ACE needs an additional audited semantic-code conditioning
-prefix and its actual teacher source/chunk-mask recipe. H3/HY3D conversion needs
-their genuine synchronized and geometry cache contracts. QIMG preparation does
-not claim those adapters are available.
+manifest; the production driver refuses it. Omit it only for a full cache
+conversion. Storage is `native_band.v1`: the actual typed feature and emission
+bands are saved once and expanded to6144 channels on load. Expansion is tested
+bitwise against the original dense tensors, including optional channel masks.
+
+`ace_cache.py condition` uses the exact pinned Comfy ACE classes and32 actual
+quantizer/detokenizer tensors from the sealed teacher checkpoint on CPU, without
+loading the full DiT. It derives the source latent from the captured audio codes,
+using the authentic35847 padding code. `prepare` binds the resulting sealed
+conditioning to each admitted teacher shard and packs feature0:384 as
+source64/chunk-mask64/noisy64 in c*2+k order, with emission0:128 as velocity.
+The actual teacher generated noise on CUDA: the converter consumes its sealed
+x_t verbatim and checks the authentic scheduler and item-hash seeds. It never
+substitutes a CPU noise approximation. Chunk masks are ones, with the teacher's
+right padding set to zero. The final half-token of a313-frame target has a
+channel mask and proportional row weight, so invented padding has zero gradient.
+
+```bash
+CUDA_VISIBLE_DEVICES='' python experiments/chimera_recovery/ace_cache.py condition \
+  --cache /path/to/sealed/ace-velocity-cache --manifest-sha256 <sha256> \
+  --items /path/to/ace_clips_stagec_d964.json --admission /path/to/admission/manifest.json \
+  --comfy-root /opt/ComfyUI --weights /path/to/acestep_v1.5_turbo.safetensors \
+  --out /path/to/new/ace-conditioning --limit 2
+
+CUDA_VISIBLE_DEVICES='' python experiments/chimera_recovery/ace_cache.py prepare \
+  --cache /path/to/sealed/ace-velocity-cache --manifest-sha256 <sha256> \
+  --items /path/to/ace_clips_stagec_d964.json --admission /path/to/admission/manifest.json \
+  --conditioning /path/to/ace-conditioning/manifest.json \
+  --tokenizer /home/cereal/models/Qwen3.8-27B-Uncensored \
+  --amendment-sha256 <sha256> --out /path/to/new/native-ace --limit 2
+```
+
+Teacher semantic codes derived from the clean clip are legitimate declared
+conditioning for this D3b lane; the full clean latent never enters student
+features. This prepares code-conditioned music denoising. Prompt-to-code
+generation still requires D3c. H3/HY3D conversion needs their genuine synchronized
+and geometry cache contracts; these adapters do not claim those lanes ready.

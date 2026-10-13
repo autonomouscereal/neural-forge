@@ -78,6 +78,16 @@ def sha(path: Path) -> str:
     return h.hexdigest()
 
 
+def tensor_sha256(value: Any) -> str:
+    """Canonical tensor identity used for exact native conditioning bindings."""
+    tensor = value.detach().contiguous().cpu()
+    out = hashlib.sha256()
+    out.update(str(tensor.dtype).replace("torch.", "").encode())
+    out.update(json.dumps(list(tensor.shape)).encode())
+    out.update(tensor.numpy().tobytes())
+    return out.hexdigest()
+
+
 def require_sha(value: Any, name: str) -> str:
     if not isinstance(value, str) or re.fullmatch("[0-9a-f]{64}", value) is None:
         raise ReadinessError(f"{name}: expected lowercase sha256")
@@ -472,6 +482,10 @@ def validate_native_batch(route: str, batch: dict[str, Any]) -> dict[str, Any]:
             raise ReadinessError("loss weights supervise padding or no media row")
         if not bool(torch.isfinite(sigma[valid]).all()) or bool(((sigma <= 0) | (sigma > 1))[valid].any()):
             raise ReadinessError("flow training requires finite 0 < sigma <= 1")
+        channels = batch.get("native_media_channel_loss_mask")
+        if channels is not None and (channels.shape != target.shape or channels.dtype != torch.bool or
+                bool(channels[~valid].any()) or not bool(channels[weights > 0].any(-1).all())):
+            raise ReadinessError("flow channel mask must be bool [B,M,F] with real supervised channels and no padding rows")
         if any(int(kind) in (2, 3) for kind in torch.unique(types[valid]).tolist()):
             source = batch.get("charted_source_positions")
             if source is None or source.shape != (b, ids.shape[1], 3) or not bool(torch.isfinite(source).all()):
@@ -482,7 +496,7 @@ def validate_native_batch(route: str, batch: dict[str, Any]) -> dict[str, Any]:
 
 def native_velocity_loss(prediction: Any, target: Any, types: Any, weights: Any, bands: dict[int, tuple[int, int]], *,
                          prediction_kind: str, target_kind: str, x_t: Any = None, sigma: Any = None,
-                         parent_signs: dict[int, float] | None = None) -> Any:
+                         parent_signs: dict[int, float] | None = None, channel_mask: Any = None) -> Any:
     """Type-balanced emission-band MSE in canonical velocity (x_t - x0)/sigma.
 
     Frozen D3b specifies guided-velocity matching. A current x0 emission head can
@@ -498,6 +512,8 @@ def native_velocity_loss(prediction: Any, target: Any, types: Any, weights: Any,
     active = weights > 0
     if not bool(active.any()):
         raise ReadinessError("velocity objective has no supervised media rows")
+    if channel_mask is not None and (channel_mask.shape != prediction.shape or channel_mask.dtype != torch.bool):
+        raise ReadinessError("velocity channel mask must be bool with full emission shape")
     def convert(tensor, kind, rows, lo, hi, modality):
         value = tensor[..., lo:hi][rows].float()
         if kind == "canonical_velocity":
@@ -527,14 +543,23 @@ def native_velocity_loss(prediction: Any, target: Any, types: Any, weights: Any,
         if not bool(torch.isfinite(pred).all()) or not bool(torch.isfinite(truth).all()):
             raise ReadinessError("velocity objective contains non-finite prediction or teacher")
         row_weights = weights[rows].float()
-        losses.append(((pred - truth).square().mean(-1) * row_weights).sum() / row_weights.sum())
+        squared = (pred - truth).square()
+        if channel_mask is not None:
+            channels = channel_mask[..., lo:hi][rows]
+            counts = channels.sum(-1)
+            if not bool((counts > 0).all()):
+                raise ReadinessError("supervised velocity row has no actual teacher channels")
+            per_row = (squared * channels).sum(-1) / counts
+        else:
+            per_row = squared.mean(-1)
+        losses.append((per_row * row_weights).sum() / row_weights.sum())
     return torch.stack(losses).mean()
 
 
 def flow_velocity_loss(prediction: Any, x0_target: Any, types: Any, mask: Any, bands: dict[int, dict[str, Any]], *,
                        param: str = "x0", x_t: Any = None, sigma: Any = None,
                        signs: dict[int, float] | None = None, target_kind: str = "x0", x_t_layout: str = "feature",
-                       noisy_feature_bands: dict[int, tuple[int, int]] | None = None) -> Any:
+                       noisy_feature_bands: dict[int, tuple[int, int]] | None = None, channel_mask: Any = None) -> Any:
     """D3 flow_x0_loss-compatible hook, with a velocity objective.
 
     Python `param` names the emission head parameterization. It does not select
@@ -569,7 +594,7 @@ def flow_velocity_loss(prediction: Any, x0_target: Any, types: Any, mask: Any, b
             raise ReadinessError("noisy input layout must be explicit feature or emission")
     return native_velocity_loss(prediction, x0_target, types, mask, emission,
                                 prediction_kind="parent_raw" if param == "raw" else param,
-                                target_kind=target_kind, x_t=x_t, sigma=sigma, parent_signs=signs)
+                                target_kind=target_kind, x_t=x_t, sigma=sigma, parent_signs=signs, channel_mask=channel_mask)
 
 
 @dataclass(frozen=True)
@@ -645,15 +670,27 @@ class ReadyObjectiveAdapter:
             if (allocation.get(4) != (256, 384) or tuple(bands[4]["feature"]) != (0, 384) or
                     tuple(bands[4]["emission"]) != (0, 128)):
                 raise ReadinessError("ACE generation requires audited noisy channels 256:384 -> emission 0:128")
-            if self.cache_receipt.get("conditioning_contract") != {
-                    "ace_source_latents": "zeros", "ace_chunk_masks": "zeros", "regime": "generation_without_target_reference"}:
-                raise ReadinessError("ACE generation must declare target-free source and chunk-mask conditioning")
-            if bool((x_t[..., :256][types == 4] != 0).any()):
-                raise ReadinessError("ACE generation source/chunk conditioning contains nonzero target reference")
+            condition = self.cache_receipt.get("conditioning_contract", {})
+            if (condition.get("ace_source_latents") != "authentic_code_detokenizer" or
+                    condition.get("ace_chunk_masks") != "ones_with_right_padding_zero" or
+                    condition.get("regime") != "teacher_audio_code_conditioned_generation" or condition.get("full_clean_latent_in_inputs") is not False):
+                raise ReadinessError("ACE generation requires authentic code conditioning; old clean target reference/zero-source fixtures are refused")
+            for key in ("source_band_sha256", "chunk_band_sha256", "codes_sha256", "conditioning_manifest_sha256", "ace_step15_sha256", "model_base_sha256"):
+                require_sha(condition.get(key), "ACE conditioning " + key)
+            source_rows, chunk_rows = x_t[..., :128][types == 4], x_t[..., 128:256][types == 4]
+            if tensor_sha256(source_rows) != condition["source_band_sha256"] or tensor_sha256(chunk_rows) != condition["chunk_band_sha256"]:
+                raise ReadinessError("ACE native conditioning band digest moved")
+            code_indices = batch.get("ace_code_indices")
+            if code_indices is None or code_indices.ndim != 2 or code_indices.shape[0] != types.shape[0] or code_indices.dtype != __import__("torch").int64:
+                raise ReadinessError("ACE requires exact in-sequence native music-code conditioning indices")
+            code_ids = batch["input_ids"].gather(1, code_indices) - 252416
+            if bool(((code_ids < 0) | (code_ids >= 64000)).any()) or tensor_sha256(code_ids.to(__import__("torch").int32).flatten()) != condition["codes_sha256"]:
+                raise ReadinessError("ACE native conditioning code IDs differ from captured teacher codes")
         def compute(prediction):
             return flow_velocity_loss(prediction, target, types, mask, bands,
                                       param=self.cache_receipt["prediction_kind"], target_kind=self.cache_receipt["target_kind"],
-                                      x_t=x_t, sigma=sigma, signs=parent_signs, noisy_feature_bands=allocation)
+                                      x_t=x_t, sigma=sigma, signs=parent_signs, noisy_feature_bands=allocation,
+                                      channel_mask=batch.get("native_media_channel_loss_mask"))
         return compute
 
 
