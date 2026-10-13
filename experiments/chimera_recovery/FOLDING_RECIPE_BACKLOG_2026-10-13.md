@@ -51,13 +51,30 @@ C:/Python314/python.exe -B experiments/chimera_recovery/folding_recipe_candidate
 C:/Python314/python.exe -B experiments/chimera_recovery/folding_recipe_candidates.py unit --source 'C:/Users/cereal/Documents/ai training/neural-forge/reports/omni-campaign-2026-09/composite/tools/s7_unit_build.py' --out 'C:/Users/cereal/Documents/ai training/proof_outputs/chimera_folding_recipe_candidates_oct13/s7_unit_build_candidate.py'
 ```
 
-Seven focused tests include a mocked CLI dispatch that proves the requested
+Nine focused tests include a mocked CLI dispatch that proves the requested
 HY3D parent reaches the time-reference argument, and five CPU Torch regressions
 for valid complete parity, missing taps, non-finite observations, malformed
 band masks and broadcast/missing-prompt geometry. Set
 `CHIMERA_H3_CAMPAIGN_SOURCE=/home/cereal/omni-campaign` on the supported server
 CPU runtime to bind the source mirror. Those tests do not invoke a builder or
 load any model weights.
+
+The 2026-10-13 live capture of `receipt_q27_streamed.py` has SHA
+`9fdf2db07651dd424e90d089fa528e59ea9c52844338d02bb9d2e988c089274e`;
+the independently reviewed historical mirror has SHA
+`c7fb1b0245d556c3af304ca6aeb9d78d9c294d39c682bcf93576e43488017257`.
+Their sole source difference removes the historical mirror's FP32 preservation
+of nonpersistent RoPE frequencies around `block.to(dtype=...)`. Their
+`compare_prompts` functions are identical, so the measurement defects remain
+present in the live source. The generator accepts these two exact pins under
+separate revision labels and preserves each source's block construction.
+This measurement candidate does not select or change the RoPE policy. The
+additional tests compare the authenticated capture, unchanged measurement
+ASTs and distinct candidate identities; every unreviewed source hash is
+refused. Set `CHIMERA_LIVE_FOLDING_SOURCES` to the actual capture JSON to run
+that two-variant comparison on another host.
+The live raw file is CRLF; its capture text was LF-normalized. The test
+reconstructs CRLF and requires the exact captured raw SHA before patching.
 
 ## Integration limits to preserve as explicit future recipe work
 
