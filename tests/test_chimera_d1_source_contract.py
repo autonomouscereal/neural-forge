@@ -4,6 +4,7 @@ import importlib.util
 import json
 from pathlib import Path
 import struct
+import subprocess
 import sys
 
 import pytest
@@ -140,3 +141,11 @@ def test_actual_candidate_trainer_refuses_source_before_opening_checkpoint(tmp_p
     assert 'manifest["shards"]' not in launch and "text_rows0-977.safetensors" not in launch
     assert receipt["training_launched"] is False and receipt["qtext_optional_corpus_args"][-1] == "lengths"
     assert C.sha(trainer_path) == receipt["files"]["tools/d1_trunk_recovery.py"]
+    assert receipt["production_launch_enabled"] is False
+    template = json.loads((out / "runtime_assignment.template.json").read_text())
+    assert template["required_gpu_count"] == 2 and template["active"] is False
+    bash = Path("C:/Program Files/Git/bin/bash.exe")
+    if bash.is_file():
+        for arguments in ([], ["--run"], ["--dry-run", "--extra"]):
+            result = subprocess.run([str(bash), str(out / "queues/d1_launch.sh"), *arguments], capture_output=True, text=True, timeout=10)
+            assert result.returncode == 2 and "production launch is blocked" in result.stderr
