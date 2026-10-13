@@ -116,3 +116,57 @@ The retained held families require before/after actual model geometry evaluation
 using fixed noise draws and native MC extraction, not cache-replay accuracy or
 finite tensors. The source corpus covers only small authored polyhedra; it does
 not establish natural-object, texture, arbitrary topology or full 3D competence.
+
+## Actual native bridge/time/permutation investigation
+
+The exact original OMNI1 clone config (file SHA
+`3516b587ce80461745b772eb92bf1d3c0ffd40fc5e0d82d83c037ad872c99b02`)
+has 69 layers: charted ACE32, H3 33, HY3D34, QIMG35 and QVL36. H3 has one
+read/write site only, layer33. Actual native source, original checkpoint,
+all 10 loaded bridge tensors and four original time tensors were independently
+pinned. `geometry_bridge_probe.py` executed two prescribed real targets (first
+box and first held octahedron), full 5,121 image/time/noisy-latent rows and the
+original decoder, entirely on CPU. Model states were unchanged after comparison.
+
+The actual proof is
+`reviews/2026-10-13-folding/recovery-preparation/geometry-bridge-cpu-v1/probe.json`,
+file SHA `087edd5e34e027394fc797be7a466bb641a90a2e791da2fed8def73c6581ad19`.
+Measured comparison runtime was 139.258 seconds, excluding initial parent loading.
+All reported model arithmetic was an explicit FP32 reference widening of genuine
+stored tensors. This was boundary/decoder computation, not a full trunk forward
+or a test of trained generation quality.
+
+The original scheduler executed noise2→data5 under its native velocity3 and
+progress .25,.5,.75,1, producing2.75,3.5,4.25,5 exactly. The actual flow pipeline
+uses native time0=noise,1=data. Its unused `scale_noise` helper has opposite
+naming and must not be substituted for the actual flow pipeline. Current OMNI1
+passes supplied noise levels directly into Fourier features and noise_proj.
+The unchanged S7 pairing time row also used native progress under the name sigma.
+Therefore this new recovery path must keep **canonical corruption sigma**
+separate from **type7 bridge progress1−sigma**. The actual projection pre-hook
+observed that direct progress exactly at canonical .2,.5,.8. Original parent
+time-token values at sigma versus1−sigma differed by relative L2 .696668 and
+1.135411 off midpoint, so the conversion materially changes the time path.
+This does not prove the bridge/trunk reproduces the parent evolved time token.
+
+Original decoder permutation equivariance passed prespecified atol/rtol2e−4
+for both real targets (relative L2 1.63e−6 and8.04e−7). The same 125 physical
+queries retained logits with max error2.38e−7 and3.93e−6. Equality was numerical,
+not bitwise. Actual latent query XYZ was unused in this decoder investigation.
+
+Constant-zero latent bridge coordinates preserved row permutation to max
+1.91e−6 and relative L2≤3.02e−9; its unchanged cos(0) contribution is constant
+across slots. Actual time sentinel and image coordinates were retained. Fixed
+ordinal slot coordinates caused relative L2 .160–.177 and max differences up
+to1.022 after permuting noisy rows without their assigned slot identities.
+Image/time embeddings matched exactly between policies. No quality experiment
+selected a better model: the result demonstrates the additional slot identity
+signal introduced by ordinal coordinates.
+
+The recommended pretraining baseline is now **position-free latent bridge
+coordinates**, while keeping actual image grid/time sentinel and explicit
+source-blind sequence metadata. This recommendation follows measured boundary
+symmetry and avoids adding an unproved latent slot identity; it is not a claim
+of learned superiority. Host sequence order/RoPE/recurrence still break original
+latent-set parity. Any ordinal alternative remains a separately preregistered
+ablation requiring actual held geometry evaluation.

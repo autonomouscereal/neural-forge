@@ -45,16 +45,17 @@ def mount_access(mounts, mountinfo):
 def cuda_evidence():
     import torch
     count = torch.cuda.device_count()
-    uuids, finite = [], True
+    uuids, uuid_raw, finite = [], [], True
     for ordinal in range(count):
         properties = torch.cuda.get_device_properties(ordinal)
-        uuids.append(str(properties.uuid))
+        uuid_raw.append(str(properties.uuid))
+        uuids.append(R.canonical_gpu_uuid(properties.uuid))
         with torch.cuda.device(ordinal):
             value = torch.ones((2, 2), device=f"cuda:{ordinal}", dtype=torch.bfloat16)
             finite = finite and bool(torch.isfinite(value @ value).all())
             torch.cuda.synchronize(ordinal)
         del value
-    return dict(device_count=count, ordinals=list(range(count)), uuids=uuids,
+    return dict(device_count=count, ordinals=list(range(count)), uuids=uuids, uuid_raw=uuid_raw,
                 python_executable=sys.executable,
                 torch_version=str(torch.__version__), bf16_matmul_finite=finite)
 

@@ -247,20 +247,36 @@ def fresh_union_optimizer(groups, previous_rates, *, betas=(.9, .95), eps=1e-8, 
         raise Error("D4 union misses an actual D2/D3 trainable family")
     if set(groups) != set(previous_rates) or set(groups) - FAMILIES:
         raise Error("D4 source optimizer rates must bind every actual family")
-    owners, parameters, storage = {}, [], set()
+    owners, parameters, storage, ledger = {}, [], set(), {}
     for family, named in sorted(groups.items()):
-        previous = Decimal(str(previous_rates[family]))
-        if not previous.is_finite() or previous <= 0 or not named:
+        rates = previous_rates[family]
+        if isinstance(rates, dict) and set(rates) != set(named):
+            raise Error("D4 per-leaf previous rate ledger must match the exact physical census")
+        if not named:
             raise Error("D4 positive pinned previous optimizer rate and nonempty group required")
+        buckets = {}
         for name, tensor in sorted(named.items()):
+            try:
+                previous = Decimal(str(rates[name] if isinstance(rates, dict) else rates))
+            except Exception:
+                raise Error("D4 invalid pinned previous optimizer rate") from None
+            if not previous.is_finite() or previous <= 0:
+                raise Error("D4 positive pinned previous optimizer rate and nonempty group required")
             token = (str(tensor.device), tensor.untyped_storage().data_ptr())
             if (name in owners or token in storage or not tensor.is_leaf or not tensor.requires_grad or tensor.dtype != torch.float32
                     or not tensor.is_contiguous() or tensor.numel() < 1 or not bool(torch.isfinite(tensor).all())):
                 raise Error("D4 tensor has duplicate physical optimizer owner or is not a trainable fp32 leaf")
             owners[name], storage = family, storage | {token}
-        parameters.append(dict(name=family, params=list(named.values()), lr=float(previous * Decimal("0.3")),
-                               base_lr=float(previous * Decimal("0.3")), previous_base_lr=float(previous)))
+            ledger[name] = dict(family=family, previous_base_lr=str(previous), base_lr=str(previous * Decimal("0.3")))
+            buckets.setdefault(previous, []).append((name, tensor))
+        for previous, members in sorted(buckets.items()):
+            # One whole physical leaf receives one rate. Compact native slices
+            # must not average conflicting source rates inside that same leaf.
+            parameters.append(dict(name=family, parameter_names=[name for name, _ in members],
+                                   params=[value for _, value in members], lr=float(previous * Decimal("0.3")),
+                                   base_lr=float(previous * Decimal("0.3")), previous_base_lr=float(previous)))
     optimizer = torch.optim.AdamW(parameters, betas=betas, eps=eps, weight_decay=0.)
     if optimizer.state:
         raise Error("D4 union optimizer must start without previous Adam state")
-    return optimizer, dict(owners=owners, ownership_sha256=I.digest(owners), single_optimizer=True, previous_state_imported=False)
+    return optimizer, dict(owners=owners, ownership_sha256=I.digest(owners), rate_ledger=ledger,
+                           rate_ledger_sha256=I.digest(ledger), single_optimizer=True, previous_state_imported=False)

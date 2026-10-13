@@ -67,10 +67,15 @@ prefix and chart. At25% of budget it stops until the stable configured
 `speech_decode_review` path has actual held target-free sampler/VAE/ASR review
 under the exact run identity. Accepted evidence is pinned with every checkpoint.
 
-`sample_latents(engine,segment,prompt_length=...,seed=...)` has no target
+`sample_latents(engine,segment,prompt_length=...,seed=...,requested_frames=T)` has no target
 argument. It discards every supplied feature value, initializes Gaussian noise,
 then follows the selected32-step endpoint-to-velocity Euler path. It returns
-model-space native latents plus trajectory hashes. Actual H3 VAE waveform decode
+model-space native latents plus trajectory hashes. Production requires an explicit
+caller-selected `T`, matching `2T` channel-major32-wide rows. Receipts preserve
+that request, its nominal `T/40` seconds and `800T` samples per stereo channel.
+This sampler predicts neither duration nor an audio EOS; decoded duration is a
+separate measurement. Mathematical fixtures cannot claim physical duration.
+Actual H3 VAE waveform decode
 and independent ASR/listening remain separate required review operations. A
 finite latent or low teacher-forced loss does not show intelligible speech.
 
