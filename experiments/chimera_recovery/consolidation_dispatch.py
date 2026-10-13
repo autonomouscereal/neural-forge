@@ -34,6 +34,15 @@ SOURCES = {O.TEXT: "chimera_recovery.text_replay_batches.v1", O.GUIDED: "chimera
 GEOMETRY_STAGE = "D3b_geometry_supervised_flow"
 
 
+def canonical_gpu_uuid(value):
+    """Normalize Torch's bare UUID without relaxing exact PG/Docker identity."""
+    import uuid
+    try:
+        return "GPU-" + str(uuid.UUID(str(value).removeprefix("GPU-")))
+    except (ValueError, TypeError, AttributeError):
+        raise Error("invalid actual GPU UUID") from None
+
+
 def reviewed_replay_plan(entry, root, amendment):
     """Explicit dated replacement for two guided quotas; frozen history stays intact."""
     value, path = read(entry, root)
@@ -431,7 +440,7 @@ def attest_runtime(assignment, pg_rows, docker, cuda, host, *, now=None):
             or host.get("mem_available_gib", 0) < minimum or host.get("foreign_gpu_processes")
             or host.get("source_tree_sha256") != assignment["source_tree_sha256"]):
         raise Error("D4 fresh host memory/foreign process/source proof refused")
-    if (cuda.get("uuids") != uuids or cuda.get("device_count") != len(uuids)
+    if ([canonical_gpu_uuid(v) for v in cuda.get("uuids", [])] != uuids or cuda.get("device_count") != len(uuids)
             or cuda.get("ordinals") != list(range(len(uuids))) or cuda.get("bf16_matmul_finite") is not True
             or cuda.get("torch_version") != assignment["torch_version"] or cuda.get("python_executable") != assignment["image_python"]):
         raise Error("D4 actual CUDA UUID/ordinal/Torch/BF16 runtime differs")
@@ -634,7 +643,7 @@ def train(config_path, out, resume=None):
     gate()
     if (str(torch.__version__) != assignment["torch_version"] or sys.executable != assignment["image_python"] or not torch.cuda.is_available()
             or torch.cuda.device_count() != len(assignment["gpu_uuids"])
-            or [str(torch.cuda.get_device_properties(i).uuid) for i in range(torch.cuda.device_count())] != assignment["gpu_uuids"]):
+            or [canonical_gpu_uuid(torch.cuda.get_device_properties(i).uuid) for i in range(torch.cuda.device_count())] != assignment["gpu_uuids"]):
         raise Error("D4 actual in-container Torch/CUDA membership differs")
     mountinfo = Path("/proc/self/mountinfo").read_text()
     mounts = {line.split()[4].replace("\\040", " "): "ro" in line.split()[5].split(",")

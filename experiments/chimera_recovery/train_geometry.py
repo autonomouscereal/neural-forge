@@ -273,7 +273,7 @@ def train(config_path, out, resume=None):
     assignment = verified["runtime"]
     if (sys.executable != assignment["image_python"] or str(torch.__version__) != assignment["torch_version"]
             or not torch.cuda.is_available() or torch.cuda.device_count() != len(assignment["gpu_uuids"])
-            or [str(torch.cuda.get_device_properties(i).uuid) for i in range(torch.cuda.device_count())] != assignment["gpu_uuids"]):
+            or [D.canonical_gpu_uuid(torch.cuda.get_device_properties(i).uuid) for i in range(torch.cuda.device_count())] != assignment["gpu_uuids"]):
         raise Error("geometry actual allocated image/interpreter/CUDA membership differs")
     mountinfo = Path("/proc/self/mountinfo").read_text()
     mounts = {line.split()[4].replace("\\040", " "): "ro" in line.split()[5].split(",")

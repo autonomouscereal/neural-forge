@@ -88,6 +88,43 @@ class AllocatedTests(unittest.TestCase):
         self.now += timedelta(seconds=10)
         self.assertEqual(original, self.step(self.proof()))
 
+    def test_actual_cuda_bare_prefixed_and_uuid_object_identity(self):
+        expected = [item[4:] for item in self.cuda['uuids']]
+        for observed in (expected, self.cuda['uuids'], [uuid.UUID(item) for item in expected]):
+            with self.subTest(observed=observed):
+                cuda = dict(self.cuda, uuids=observed)
+                proof = R.attest(self.value, self.digest, self.rows, self.docker, cuda, self.host, self.now)
+                self.assertTrue(proof['valid'])
+        for observed in (list(reversed(expected)), [expected[0], expected[0]],
+                         [expected[0], '00000000-0000-0000-0000-000000000099'],
+                         [expected[0], 'GPU-invalid'], [expected[0], None]):
+            with self.subTest(observed=observed), self.assertRaises(ValueError):
+                R.attest(self.value, self.digest, self.rows, self.docker,
+                         dict(self.cuda, uuids=observed), self.host, self.now)
+
+    def test_actual_entry_collects_raw_uuid_and_normalizes_before_bf16_probe(self):
+        raw = '2ce6a95c-7b1f-644a-3808-d781732a0582'
+        # Only the hardware transport/math operations are modeled. Execute the
+        # published entry function, which previously rejected this real format.
+        value = mock.MagicMock()
+        torch = mock.MagicMock()
+        torch.__version__ = R.IMAGE_TORCH
+        torch.cuda.device_count.return_value = 1
+        torch.cuda.get_device_properties.return_value.uuid = raw
+        torch.ones.return_value = value
+        torch.isfinite.return_value.all.return_value = True
+        with mock.patch.dict('sys.modules', {'torch': torch}):
+            evidence = E.cuda_evidence()
+        self.assertEqual(evidence['uuid_raw'], [raw])
+        self.assertEqual(evidence['uuids'], ['GPU-' + raw])
+        self.assertTrue(evidence['bf16_matmul_finite'])
+        torch.cuda.synchronize.assert_called_once_with(0)
+        torch.cuda.get_device_properties.return_value.uuid = 'GPU-malformed'
+        torch.ones.reset_mock()
+        with mock.patch.dict('sys.modules', {'torch': torch}), self.assertRaisesRegex(ValueError, 'UUID'):
+            E.cuda_evidence()
+        torch.ones.assert_not_called()
+
     def test_source_code_and_readonly_lease_aliases_refused(self):
         for role in ("lease", "candidate", "child"):
             value = copy.deepcopy(self.value)

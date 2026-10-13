@@ -3,6 +3,7 @@ import copy
 from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
+import uuid
 
 import pytest
 from experiments.chimera_recovery import consolidation_dispatch as D, consolidation_objectives as O
@@ -17,11 +18,11 @@ def write(path, value):
 def runtime_fixture():
     assignment = dict(schema="chimera_recovery.d4_allocated_runtime.v1", job_sha256="a" * 64,
         allocation_group_id="61852066-afdd-4f24-a4b3-06d5c9c830e0", container_id="c" * 64,
-        container_name="fixture-only", image_id="sha256:" + "d" * 64, gpu_uuids=["GPU-fixture"],
+        container_name="fixture-only", image_id="sha256:" + "d" * 64, gpu_uuids=["GPU-2ce6a95c-7b1f-644a-3808-d781732a0582"],
         root_controller_sha256="b" * 64, source_tree_sha256="e" * 64, max_proof_age_seconds=45,
         torch_version="fixture", image_python="/fixture/python", minimum_mem_available_gib=2,
         mounts=[dict(source="/fixture/input", target="/inputs/fixture", read_only=True)])
-    pg = [dict(group_id=assignment["allocation_group_id"], gpu_uuid="GPU-fixture", state="running", owner="codex", server="ai",
+    pg = [dict(group_id=assignment["allocation_group_id"], gpu_uuid=assignment["gpu_uuids"][0], state="running", owner="codex", server="ai",
                kind="generic", name="fixture-only", container_id=assignment["container_id"], details={"gpu_uuids": assignment["gpu_uuids"]})]
     docker = dict(Id=assignment["container_id"], Image=assignment["image_id"], Name="/fixture-only", State={"Running": True},
         Config={"Labels": {"ai.local.gpu-controller": "v1", "ai.local.allocation": assignment["allocation_group_id"],
@@ -53,6 +54,22 @@ def test_live_root_proof_cannot_be_replaced_by_active_metadata_or_foreign_contro
     config = {"source": "a", "runtime_assignment": "before", "decode_review_pointer": "x"}
     assert D.job_digest(config) == D.job_digest(dict(config, runtime_assignment="after", decode_review_pointer="y"))
     assert D.job_digest(config) != D.job_digest(dict(config, source="b"))
+
+
+def test_actual_cuda_uuid_format_canonicalization_keeps_authoritative_identity():
+    assignment, pg, docker, cuda, host = runtime_fixture()
+    now = datetime(2026, 10, 13, 21, 0, tzinfo=timezone.utc)
+    bare = assignment['gpu_uuids'][0].removeprefix('GPU-')
+    for value in (bare, 'GPU-' + bare, uuid.UUID(bare)):
+        proof = D.attest_runtime(assignment, pg, docker, dict(cuda, uuids=[value]), host, now=now)
+        assert proof['gpu_uuids'] == assignment['gpu_uuids']
+    for value in ('GPU-invalid', None, '00000000-0000-0000-0000-000000000099'):
+        with pytest.raises(D.Error, match='UUID|CUDA'):
+            D.attest_runtime(assignment, pg, docker, dict(cuda, uuids=[value]), host, now=now)
+    foreign_pg = copy.deepcopy(pg)
+    foreign_pg[0]['gpu_uuid'] = bare
+    with pytest.raises(D.Error, match='PG'):
+        D.attest_runtime(assignment, foreign_pg, docker, dict(cuda, uuids=[bare]), host, now=now)
 
 
 def test_unknown_cli_modes_and_missing_actual_states_refuse_before_torch(tmp_path):

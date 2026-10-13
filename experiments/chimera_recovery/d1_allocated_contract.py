@@ -33,6 +33,14 @@ RESOURCE_AMENDMENT = dict(
     selection="Explicit builder path and exact amendment SHA required; no automatic policy adoption")
 
 
+def canonical_gpu_uuid(value):
+    """Parse the actual128-bit identity; Torch's bare UUID gets NVIDIA's prefix."""
+    try:
+        return "GPU-" + str(uuid.UUID(str(value).removeprefix("GPU-")))
+    except (ValueError, TypeError, AttributeError):
+        raise Error("invalid actual GPU UUID") from None
+
+
 def resource_policy_record(path, expected):
     value = read(path, expected)
     if value not in (DEFAULT_RESOURCE_POLICY, RESOURCE_AMENDMENT):
@@ -215,7 +223,7 @@ def attest(assignment, assignment_sha, rows, docker, cuda, host, now=None):
     verify_pg(assignment, rows)
     verify_docker(assignment, docker)
     verify_host(assignment, host)
-    if (cuda.get("device_count") != 2 or cuda.get("uuids") != uuids or cuda.get("torch_version") != assignment["torch_version"]
+    if (cuda.get("device_count") != 2 or [canonical_gpu_uuid(v) for v in cuda.get("uuids", [])] != uuids or cuda.get("torch_version") != assignment["torch_version"]
             or cuda.get("python_executable") != assignment["image_python"]
             or cuda.get("bf16_matmul_finite") is not True or cuda.get("ordinals") != [0, 1]):
         raise Error("D1 actual in-container CUDA ordinals/UUIDs/BF16 runtime differ")
