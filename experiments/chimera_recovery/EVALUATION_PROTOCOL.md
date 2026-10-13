@@ -12,6 +12,17 @@ alternatives** are retained; captured optional empty alternatives permit omissio
 only for non-required parameters. These tasks grade proposed calls and parallel
 batches. No successful execution, error, retry or multi-turn result is invented.
 
+`prepare-tool-seeds` consumes the sealed operator-authored 2026 seed corpus,
+execution receipts and report. It validates family/case/source/parameter split
+isolation and every recorded call/result join before deriving validation or test
+oracles. Numeric/string bounds, filename patterns and conditional required fields
+in the authentic local catalog remain enforced. These supplemental scenarios use
+real bounded local tool executions, but are synthetic format coverage and cannot
+be reported as a realistic tool benchmark. Runner inputs contain initial messages
+and scripted follow-up timing; observed outcomes remain evaluator-only. A prepared
+source-evidence compatibility check uses the fixture trajectories and is explicitly
+**not a model evaluation**. Actual model runs require fresh recorded tool outcomes.
+
 `inputs.jsonl` contains only runner-visible inputs. `tasks.jsonl` also contains
 private grading oracles: never feed the whole task record to the model, tokenize
 its oracle, or include targets in the prompt. Keep both files frozen before the
