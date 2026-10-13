@@ -225,12 +225,9 @@ def activate_native_interfaces(module, hybrid):
     for key, value in sorted(hybrid._recovery_native_interfaces.items()):
         desc = hybrid._recovery_native_descriptors[key]
         N.checked_sparse(value, desc, hybrid)
-        ranges = []
-        for lo, hi in sorted(desc["ranges"]):
-            if ranges and lo <= ranges[-1][1]:
-                ranges[-1] = (ranges[-1][0], max(hi, ranges[-1][1]))
-            else:
-                ranges.append((lo, hi))
+        # Preserve adjacent type-band boundaries. Native descriptors authorize
+        # each exact band, not an invented combined (type3,type4) interval.
+        ranges = [tuple(pair) for pair in desc["ranges"]]
         delta = module.SliceDelta(desc["name"], tuple(desc["shape"]), ranges, desc["axis"], hybrid.device)
         selected = [value[lo:hi] if desc["axis"] == 0 else value[:, lo:hi] for lo, hi in ranges]
         with torch.no_grad():
