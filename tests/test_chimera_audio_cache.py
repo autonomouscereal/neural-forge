@@ -163,3 +163,29 @@ def test_admitted_encoder_partial_failure_cannot_seal(tmp_path, monkeypatch):
     with pytest.raises(C.Error, match='partial outputs diagnostic'):
         C.encode_admitted_source(source, seal, C.R.sha(seal), Path('stage'), Path('comfy'), Path('vae'), tmp_path / 'encoded')
     assert not (tmp_path / 'encoded/manifest.json').exists()
+
+
+@pytest.mark.parametrize('count', [0, 1])
+def test_reused_session_must_seal_exact_completed_waveform_inventory(tmp_path, monkeypatch, count):
+    _, source, seal, calls = encoder_fixture(tmp_path, monkeypatch)
+    class Session:
+        def __init__(self, args):
+            self.args = args
+        def seal(self):
+            return {'sealed': True, 'actual_waveforms': count}
+    session_calls = []
+    def run(args, *, session=None):
+        session_calls.append(session)
+        args.out.write_bytes(b'{"fixture":true}\n')
+        return {'probe_passed': True, 'model_space_verified': True}
+    monkeypatch.setattr(C.P, 'EncoderSession', Session)
+    monkeypatch.setattr(C.P, 'run', run)
+    target = tmp_path / 'encoded'
+    if count == 0:
+        with pytest.raises(C.Error, match='every source row'):
+            C.encode_admitted_source(source, seal, C.R.sha(seal), Path('stage'), Path('comfy'), Path('vae'), target, reuse_runtime=True)
+        assert not (target / 'manifest.json').exists()
+    else:
+        result = C.encode_admitted_source(source, seal, C.R.sha(seal), Path('stage'), Path('comfy'), Path('vae'), target, reuse_runtime=True)
+        assert result['encoder_session']['sealed'] and result['encoder_session']['actual_waveforms'] == 1
+    assert len(session_calls) == 1 and isinstance(session_calls[0], Session) and not calls

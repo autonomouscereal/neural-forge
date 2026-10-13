@@ -207,7 +207,7 @@ def encode_source(source, source_preflight, source_preflight_sha, asset_root, st
     (out / 'manifest.json').write_bytes(R.canonical(manifest) + b'\n')
     return manifest
 
-def encode_admitted_source(source, admission_path, admission_sha, stage_c, comfy_root, audio_vae, out):
+def encode_admitted_source(source, admission_path, admission_sha, stage_c, comfy_root, audio_vae, out, *, reuse_runtime=False):
     """Full speech/procedural source traversal from a real global admission seal.
 
     Every retained source candidate, including holdouts, receives an independent
@@ -221,6 +221,8 @@ def encode_admitted_source(source, admission_path, admission_sha, stage_c, comfy
     rows = source_rows(source)
     out.mkdir(parents=True)
     entries = []
+    session = P.EncoderSession(SimpleNamespace(stage_c=stage_c, comfy_root=comfy_root,
+        audio_vae=audio_vae, audio_source_sha256=P.AUDIO_SOURCE_SHA)) if reuse_runtime else None
     for number, (ident, record) in enumerate(rows.items()):
         row = admitted[ident]
         if record['route'] == 'speech_understand' and (
@@ -230,8 +232,9 @@ def encode_admitted_source(source, admission_path, admission_sha, stage_c, comfy
             raise Error('speech clean encoding requires source-sealed exact independent ASR and official synthetic voice provenance')
         audio = Path(row['asset_path'])
         destination = out / f'{number:06d}.json'
-        result = P.run(SimpleNamespace(audio=audio, audio_sha256=row['asset_sha256'], stage_c=stage_c,
-            comfy_root=comfy_root, audio_vae=audio_vae, audio_source_sha256=P.AUDIO_SOURCE_SHA, out=destination))
+        args = SimpleNamespace(audio=audio, audio_sha256=row['asset_sha256'], stage_c=stage_c,
+            comfy_root=comfy_root, audio_vae=audio_vae, audio_source_sha256=P.AUDIO_SOURCE_SHA, out=destination)
+        result = P.run(args, session=session) if session is not None else P.run(args)
         if result.get('probe_passed') is not True or result.get('model_space_verified') is not True:
             raise Error('actual admitted audio encoder failed; partial outputs diagnostic only: ' + ident)
         entries.append({'id': ident, 'source_row_sha256': R.digest(record), 'encoder_proof': pin(destination)})
@@ -239,6 +242,10 @@ def encode_admitted_source(source, admission_path, admission_sha, stage_c, comfy
         'source': pin(source), 'source_admission': admission_pin, 'entries': entries,
         'adapter_sha256': R.sha(Path(__file__)), 'encoder_adapter_sha256': R.sha(HERE / 'h3_audio_probe.py'),
         'native_admission_granted': False, 'training_started': False}
+    if session is not None:
+        manifest['encoder_session'] = session.seal()
+        if manifest['encoder_session']['actual_waveforms'] != len(entries):
+            raise Error('reusable encoder must prove every source row independently')
     (out / 'manifest.json').write_bytes(R.canonical(manifest) + b'\n')
     return manifest
 
@@ -333,6 +340,7 @@ def main(argv=None):
     for name in ('source', 'admission', 'stage-c', 'comfy-root', 'audio-vae', 'out'):
         admitted.add_argument('--' + name, type=Path, required=True)
     admitted.add_argument('--admission-sha256', required=True)
+    admitted.add_argument('--reuse-runtime', action='store_true', help='one source-verified CPU VAE load; each waveform still encoded twice/decoded')
     native = sub.add_parser('prepare')
     for name in ('source', 'clean-manifest', 'admission', 'tokenizer-dir', 'charted-attention', 'out'):
         native.add_argument('--' + name, type=Path, required=True)
@@ -344,7 +352,8 @@ def main(argv=None):
         result = encode_source(args.source, args.source_preflight, args.source_preflight_sha256, args.asset_root,
             args.stage_c, args.comfy_root, args.audio_vae, args.out)
     elif args.command == 'encode-admitted-source':
-        result = encode_admitted_source(args.source, args.admission, args.admission_sha256, args.stage_c, args.comfy_root, args.audio_vae, args.out)
+        result = encode_admitted_source(args.source, args.admission, args.admission_sha256, args.stage_c, args.comfy_root, args.audio_vae, args.out,
+                                       reuse_runtime=args.reuse_runtime)
     else:
         result = prepare(args.source, args.clean_manifest, args.clean_manifest_sha256, args.admission, args.admission_sha256,
             args.tokenizer_dir, args.amendment_sha256, args.charted_attention, args.out, max_length=args.max_length)

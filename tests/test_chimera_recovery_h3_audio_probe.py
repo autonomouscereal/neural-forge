@@ -143,3 +143,59 @@ def test_latent_scale_or_h3_override_drift_refuses():
     modules["model_base"].MiniMaxH3.process_latent_in = lambda self, value: value + 1
     with pytest.raises(P.Error, match="ownership differs"):
         P.model_space_transform(raw, **modules)
+
+
+def session_fixture(tmp_path, monkeypatch):
+    """Actual Torch parameters/buffers; substituted loader is not native proof."""
+    torch = pytest.importorskip('torch')
+    model = torch.nn.Linear(2, 2)
+    model.register_buffer('scalar_count', torch.tensor(17, dtype=torch.int64))
+    calls, imports = [], {'comfy/initial.py': 'a' * 64}
+    args = SimpleNamespace(stage_c=tmp_path / 'stage.py', comfy_root=tmp_path / 'comfy',
+        audio_vae=tmp_path / 'vae.safetensors', audio_source_sha256=P.AUDIO_SOURCE_SHA)
+    def load(path):
+        calls.append(path)
+        return SimpleNamespace(first_stage_model=model), {'fixture': True}
+    monkeypatch.setenv('CUDA_VISIBLE_DEVICES', '')
+    monkeypatch.setattr(P, 'verify_sources', lambda *unused: {'fixture': 'source-pins'})
+    monkeypatch.setattr(P, 'sha', lambda unused: P.VAE_SHA)
+    monkeypatch.setattr(P, 'load_runtime', lambda *unused: (SimpleNamespace(load_vae=load), {'fixture': True}))
+    monkeypatch.setattr(P, 'imported_comfy_sources', lambda unused: dict(imports))
+    return P.EncoderSession(args), args, model, calls, imports
+
+
+def test_reusable_session_one_load_tracks_lazy_imports_and_seals_nonempty_state(tmp_path, monkeypatch):
+    session, args, _, calls, imports = session_fixture(tmp_path, monkeypatch)
+    with pytest.raises(P.Error, match='nonempty'):
+        session.seal()
+    session.check(args)
+    imports['comfy/genuine-lazy.py'] = 'b' * 64
+    session.check(args)
+    session.rows = 2
+    receipt = session.seal()
+    assert len(calls) == 1 and receipt['actual_waveforms'] == 2 and receipt['sealed']
+    assert receipt['initial_state_sha256'] == receipt['final_state_sha256']
+    assert receipt['imported_python_sources'] == imports
+    with pytest.raises(P.Error, match='already sealed'):
+        session.check(args)
+
+
+@pytest.mark.parametrize('owner', ['weight', 'scalar_count'])
+def test_reusable_session_refuses_parameter_or_buffer_mutation(tmp_path, monkeypatch, owner):
+    session, _, model, _, _ = session_fixture(tmp_path, monkeypatch)
+    import torch
+    with torch.no_grad():
+        getattr(model, owner).add_(1)
+    session.rows = 1
+    with pytest.raises(P.Error, match='weights/buffers'):
+        session.seal()
+
+
+def test_reusable_session_refuses_imported_file_and_runtime_path_drift(tmp_path, monkeypatch):
+    session, args, _, _, imports = session_fixture(tmp_path, monkeypatch)
+    changed = SimpleNamespace(**dict(vars(args), audio_vae=tmp_path / 'other.safetensors'))
+    with pytest.raises(P.Error, match='identity changed'):
+        session.check(changed)
+    imports['comfy/initial.py'] = 'c' * 64
+    with pytest.raises(P.Error, match='implementation changed'):
+        session.check(args)
