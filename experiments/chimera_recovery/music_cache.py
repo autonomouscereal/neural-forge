@@ -50,7 +50,10 @@ def sealed_source(cache, items_path, expected_sha, *, teacher=TEACHER):
             R.digest(config) != manifest.get("config_sha256") or M.read_json(cache / "cache_config.json") != config):
         raise Error("source run configuration is not its sealed canonical digest")
     corpus = M.read_json(items_path)
-    kind = "ace_prompts" if teacher == TEACHER else "qvl_images"
+    kinds = {TEACHER: "ace_prompts", "qvl32_vit_l13": "qvl_images", "hy3d_trajectories": "hy3d_images"}
+    if teacher not in kinds:
+        raise Error("unsupported authentic media_b teacher kind")
+    kind = kinds[teacher]
     if (corpus.get("schema") != "omni-campaign.teacher_corpus.v1" or corpus.get("kind") != kind or
             R.sha(items_path) != manifest.get("corpus", {}).get("file_sha256") or
             corpus.get("corpus_sha256") != manifest["corpus"].get("sha256") or
