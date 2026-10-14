@@ -36,18 +36,24 @@ def optimizer_options(value):
     return dict(value)
 
 
-def cache_manifest(path, amendment_sha):
-    """Metadata/source proof before opening a model; tensor proof remains per call."""
+def checked_cache_header(data, amendment_sha):
+    """Use the actual producer's sigma_grid with all original seal/source guards."""
     G = geometry_module()
-    path = Path(path)
-    data = T.read_json(path)
     if (data.get("schema") != G.SCHEMA or data.get("stage") != STAGE or data.get("objective") != OBJECTIVE
             or any(data.get(k) is not True for k in ("sealed", "complete_source_traversal", "heldout_groups_excluded", "training_admission_selected"))
             or data.get("amendment", {}).get("sha256") != amendment_sha or data.get("storage") != G.COMPACT
             or data.get("adapter_sha256") != I.sha(Path(G.__file__)) or data.get("dependencies") != G.dependency_pins()
-            or data.get("sigmas") != G.SIGMAS or data.get("policy") != G.POLICY
+            or data.get("sigma_grid") != G.SIGMAS or data.get("policy") != G.POLICY
             or data.get("manifest_sha256") != I.digest({k: v for k, v in data.items() if k != "manifest_sha256"})):
         raise Error("geometry requires the complete selected source-authenticated compact cache")
+    return data
+
+
+def cache_manifest(path, amendment_sha):
+    """Metadata/source proof before opening a model; tensor proof remains per call."""
+    G = geometry_module()
+    path = Path(path)
+    data = checked_cache_header(T.read_json(path), amendment_sha)
     seen, pairs, selected = set(), set(), set()
     for item in data.get("batches", []):
         if not item.get("id") or item["id"] in seen or not item.get("recovery_group_id"):
