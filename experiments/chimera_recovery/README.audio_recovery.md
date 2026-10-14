@@ -1,6 +1,7 @@
 # Actual native audio recovery preparation (2026-10-13)
 
-`train_audio.py` owns `D3d_audio_ce` after vision D3d and before D4. It teaches
+`train_audio.py` owns `D3d_audio_ce` after vision D3d and before the selected
+`D3d_speech_flow` speaking stage, which precedes D4. It teaches
 audio observation to assistant text with real clean H3 audio latents and authored
 answers. It does not teach speech output. The new chart is an explicit standalone
 observation convention, not measured parity with the parent's video grid.

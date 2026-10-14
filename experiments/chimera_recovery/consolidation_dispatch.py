@@ -131,6 +131,49 @@ def sealed(value):
         raise Error("D4 manifest seal differs")
 
 
+def guided_receipt_metadata(lane, receipt, item, manifest):
+    """Actual guided producer schema; no receipt relabel or broad fallback.
+
+    Full source/tensor validation remains mandatory immediately before loss.
+    H3 source/group/dual-clock reconstruction is never replaced by this join.
+    """
+    routes={'ace':('music_generate','ace_dit_L12'), 'qimg':('image_generate','qimg_mmdit_L30_img'),
+            'h3':('joint_av','h3_dit_L25_curve6')}
+    if lane not in routes:raise Error('unknown actual guided source lane')
+    route,unit=routes[lane]
+    source=receipt.get('source',{})
+    if (manifest.get('schema')!='chimera_recovery.native_batches.v1' or
+        any(manifest.get(k) is not True for k in ('sealed','complete_source_traversal','heldout_groups_excluded'))
+        or manifest.get('split')!='train' or receipt.get('schema')!='chimera_recovery.native_flow_cache.v1'
+        or receipt.get('route')!=route or item.get('route')!=route or item.get('unit')!=unit
+        or receipt.get('corpus_sha256')!=manifest.get('corpus_sha256')
+        or receipt.get('cache_sha256')!=item['tensors']['sha256']
+        or receipt.get('storage')!=item.get('storage')
+        or source.get('recovery_group_id')!=item.get('recovery_group_id')
+        or source.get('manifest_sha256')!=manifest.get('source_cache_manifest_sha256')):
+        raise Error('guided actual source/route/unit/tensor/group/manifest identity differs')
+    if any(k in receipt and receipt[k]!=expected for k,expected in
+           {'split':'train','held':False,'recovery_group_id':source['recovery_group_id'],
+            'tensors_sha256':receipt['cache_sha256']}.items()):
+        raise Error('contradictory guided source holdout/tensor metadata')
+    # Use the original recipe validator; source membership alone cannot bless
+    # an arbitrary target parameterization, clean-input leakage or noise band.
+    from . import train_media as T
+    T.R.ReadyObjectiveAdapter(receipt)
+    for key in ('manifest_sha256','shard_sha256','sidecar_sha256'):
+        T.R.require_sha(source.get(key),'guided.source.'+key)
+    if lane=='h3':
+        if (not isinstance(item.get('source_id'),str) or source.get('source_id')!=item['source_id']
+            or item['source_id'] in manifest.get('uncached_held_source_ids',[])
+            or type(source.get('target_index')) is not int or source['target_index']<0
+            or source.get('diagnostic_sha256')!=item['tensors']['sha256']):
+            raise Error('H3 original source/target/held diagnostic membership differs')
+    elif not isinstance(source.get('item_id'),str) or not source['item_id']:
+        raise Error('guided original teacher item identity missing')
+    return dict(tensors_sha256=receipt['cache_sha256'],recovery_group_id=source['recovery_group_id'],
+        split='train',held=False,source_id=source.get('source_id',source.get('item_id')))
+
+
 def replay_catalog(entry, root, amendment, *, compatible_amendments=(), reviewed_plan=None, image_edit_aliases=None):
     """Bind every selected row to one actual sealed manifest batch and receipt.
 
@@ -209,10 +252,11 @@ def replay_catalog(entry, root, amendment, *, compatible_amendments=(), reviewed
         allowed_amendments = {amendment, *compatible_amendments}
         if objective == O.GEOMETRY:
             allowed_amendments.add(data["amendment"]["sha256"])
-        tensor_sha = receipt.get("tensors", {}).get("sha256") if objective == O.GEOMETRY else receipt.get("tensors_sha256")
+        metadata=guided_receipt_metadata(lane,receipt,item,data) if lane in {'ace','qimg','h3'} else receipt
+        tensor_sha = receipt.get("tensors", {}).get("sha256") if objective == O.GEOMETRY else metadata.get("tensors_sha256")
         if (receipt.get("sealed") is not True or (objective not in {O.GEOMETRY,O.EDIT} and receipt.get("all_finite") is not True)
-                or (objective != O.EDIT and (receipt.get("split") != "train" or receipt.get("held") is not False))
-                or receipt.get("recovery_group_id") != source_group
+                or (objective != O.EDIT and (metadata.get("split") != "train" or metadata.get("held") is not False))
+                or metadata.get("recovery_group_id") != source_group
                 or tensor_sha != row["input"]["sha256"] or source_amendment not in allowed_amendments
                 or row.get("source_amendment_sha256") != source_amendment):
             raise Error("D4 native receipt does not bind exact row/tensor/group/amendment")
@@ -421,6 +465,9 @@ def verify_helpers(config, root, rows):
     """Pin the actual source guards used by this selected replay, before a model."""
     expected = {Path(module.__file__).name: I.sha(Path(module.__file__)) for module in (R, R.D, O, C, I, N)}
     expected[Path(__file__).name] = I.sha(Path(__file__))
+    if config.get('selected_policy') is not None:
+        from . import recovery_readiness as P
+        expected['recovery_readiness.py'] = I.sha(Path(P.__file__))
     aliases = None
     if any(row.get('lane') == 'h3' for row in rows):
         from . import h3_native as H, train_media as T
@@ -561,6 +608,7 @@ def accepted_lineage(entries, root, context, *, stage_order=None):
 
 def preflight(config_path):
     from . import train_media as T
+    from . import recovery_readiness as P
     path = Path(config_path)
     config = json.loads(path.read_text(encoding="utf-8"))
     blockers, verified = [], {}
@@ -577,6 +625,7 @@ def preflight(config_path):
     check("runtime_assignment", lambda: read(config["runtime_assignment"], path.parent)[0])
     check("d2_binding", lambda: read(config["d2_binding"], path.parent)[0])
     check("previous_rate_ledger", lambda: read(config["previous_rate_ledger"], path.parent)[0])
+    check('selected_policy',lambda:P.verify_policy(config['selected_policy'],path.parent,config))
     try:
         if (config.get("safety") != SAFETY or config.get("dtype") not in {"float32", "bfloat16"}
                 or type(config.get("seed")) is not int or type(config.get("accumulation")) is not int or config["accumulation"] < 1
@@ -613,6 +662,9 @@ def preflight(config_path):
         verified["replay"] = replay_catalog(config["replay_manifest"], path.parent,
                     verified["preregistration"]["amendment_sha256"], compatible_amendments=source_amendments, reviewed_plan=reviewed,
                     image_edit_aliases=verified['image_edit_source_aliases'])
+        P.verify_replay_policy(verified['selected_policy'],verified['replay'])
+        if verified['replay']['sources']['audio_speech_index']['sha256'] != verified['selected_policy']['audio_speech_index']['sha256']:
+            raise Error('D4 selected fully reconstructed audio/speech index changed')
         # Exact currently executing helper bytes are part of this run identity.
         verified['h3_source_aliases'] = verify_helpers(config, path.parent, verified['replay']['rows'])
     except (ValueError, KeyError, TypeError, OSError) as exc:
@@ -734,7 +786,9 @@ def train(config_path, out, resume=None):
     d2_plan = trainer.SitePlanConfig(rank=64, alpha=64., k3_rank=32, k3_alpha=32., gain=True, trunk_ffn_width=config["trunk_ffn_width"])
     d2 = trainer.AdapterBank(trainer.build_site_plan(hybrid.text_config, d2_plan), hybrid.bank.layer_types, config["device"], config["seed"])
     binding = R.D.verify_d2_source(config["d2_binding"], root, original, d2)
-    rates = lambda groups: previous_rates(groups, config["accepted_stages"], binding, verified["previous_rate_ledger"], root)
+    from . import recovery_readiness as P
+    rates = lambda groups: P.verify_derived_rates(previous_rates(groups, config["accepted_stages"], binding,
+                verified["previous_rate_ledger"], root), verified['selected_policy'])
     union = R.construct_union(module, hybrid, original, d2, binding,
                 dict(source=config["native_state"]["source"], receipt=native),
                 dict(source=config["shared_r16"]["source"], receipt=shared), rates)
@@ -745,7 +799,7 @@ def train(config_path, out, resume=None):
     replay["sources"].update(verified["lineage"]["sources"])
     replay["sources"].update({key: I.pin(I.pinned(ref, root)) for key, ref in
                             {"preregistration": config["preregistration"], "rates": config["previous_rate_ledger"],
-                             "streamed_trainer": config["streamed_trainer"], **config["helpers"]}.items()})
+                             "streamed_trainer": config["streamed_trainer"], "selected_policy":config['selected_policy'], **config["helpers"]}.items()})
     if config.get('h3_source_aliases') is not None:
         replay['sources']['h3_source_aliases'] = I.pin(I.pinned(config['h3_source_aliases'], root))
     if config.get('image_edit_source_aliases') is not None:
