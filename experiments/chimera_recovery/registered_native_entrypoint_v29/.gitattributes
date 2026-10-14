@@ -1,0 +1,5 @@
+*.py text eol=lf
+*.json text eol=lf
+source_original/*.py binary
+candidate/streamed_kd_trainer.py binary
+candidate/*.patch binary

@@ -1,0 +1,17 @@
+{
+  "deployed_trainer": {
+    "path": "/home/cereal/omni-campaign/distill/tools/streamed_kd_trainer.py",
+    "sha256": "77091f8ab1581c1edac3e3f1c1e5d727d60f8fb8465745c03a6eb6b12f0567da"
+  },
+  "deployed_hybrid": {
+    "path": "/home/cereal/omni-campaign/distill/tools/d3_hybrid_module.py",
+    "sha256": "540fca2d9d976da336c8d24ae5369c5a303ff37367cae54a9bcfc762a7e95197"
+  },
+  "source_base_commit": "81f549884203193efdff6a842054937410ab0ddc",
+  "owner_branch": "codex/work/codex/chimera-training-recovery-oct13-eae1b72e2c3f",
+  "candidate_branch": "codex/work/codex/chimera-seven-native-entrypoint-v29-owner-base-3e0d60ee1fcc",
+  "training_GPU_authority_owner_thread_from_user": "01a10f78-c196-73a0-a5ad-717c1fd030e6",
+  "relay_context_available": false,
+  "peer_identity_borrowed": false,
+  "deployment_or_training_authority_granted_by_this_file": false
+}
