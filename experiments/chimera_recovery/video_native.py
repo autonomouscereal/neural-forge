@@ -7,6 +7,7 @@ Original capture files and their stale FFmpeg-description field stay unchanged.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import json
 from pathlib import Path
 import struct
@@ -21,17 +22,48 @@ except ImportError:
 V, T, A = B.V, B.T, B.A
 ANSWER_SOURCE_SHA = "055dc61f1593c2dd62e909b5078e0ef236aabeea9d8961c40c8df97222fb7726"
 POLICY = "temporal_video_native_answer_feature_binding_2026-10-13.v1"
+_SOURCE_ALIASES={}
+
+
+@contextmanager
+def source_aliases(entries):
+    """Explicit byte-identical transport only; original JSON paths stay intact."""
+    global _SOURCE_ALIASES
+    if _SOURCE_ALIASES:raise ValueError('nested source alias contexts forbidden')
+    checked={}
+    for original,spec in entries.items():
+        if original in checked:raise ValueError('duplicate source alias')
+        checked[original]={'path':str(A.pinned(spec,'byte-identical transport alias')),'sha256':spec['sha256']}
+    _SOURCE_ALIASES=checked
+    try:yield
+    finally:_SOURCE_ALIASES={}
+
+
+def pinned(spec,label):
+    alias=_SOURCE_ALIASES.get(str(spec['path']))
+    if alias is not None:
+        if alias['sha256']!=spec['sha256']:raise ValueError('alias source seal differs: '+label)
+        return A.pinned(alias,label)
+    return A.pinned(spec,label)
+
+
+def pin_identity(value):
+    if isinstance(value,list):return [pin_identity(v) for v in value]
+    if isinstance(value,dict):
+        return {k:pin_identity(v) for k,v in value.items()
+                if not (k=='path' and 'sha256' in value and (str(v).startswith('/') or ':' in str(v)))}
+    return value
 
 
 def json_pin(path, sha):
-    return json.loads(A.pinned({"path":str(path),"sha256":sha},"video native source").read_text())
+    return json.loads(pinned({"path":str(path),"sha256":sha},"video native source").read_text())
 
 
 def mirror_file(entry, mirror):
     if mirror is None:
-        return A.pinned(entry,"immutable source shard")
+        return pinned(entry,"immutable source shard")
     path=Path(mirror)/Path(entry["path"]).name
-    return A.pinned({"path":str(path),"sha256":entry["sha256"]},"explicit same-byte source mirror")
+    return pinned({"path":str(path),"sha256":entry["sha256"]},"explicit same-byte source mirror")
 
 
 def safetensors_numpy(path):
@@ -164,7 +196,7 @@ def review_capture(*,cache_manifest,cache_manifest_sha256,capture_receipt,captur
         for message in row['messages']:
             for item in message.get('content',[]):
                 if item.get('type')=='video':
-                    p=B.contained(plan.parent,item['path']);A.pinned({'path':str(p),'sha256':item['sha256']},'actual video asset')
+                    p=B.contained(plan.parent,item['path']);pinned({'path':str(p),'sha256':item['sha256']},'actual video asset')
                     media[item['path']]=A.file_sha(p)
     if A.digest({'jsonl_sha256':A.file_sha(plan.parent/source['path']),'media':sorted(media.items())})!=raw['corpus']['sha256']:
         raise ValueError("actual writer corpus/media content identity differs")
@@ -178,7 +210,7 @@ def review_capture(*,cache_manifest,cache_manifest_sha256,capture_receipt,captur
     arrays={}
     for name,dtype,shape in [('ids.u32','<u4',(792,)),('pos.u32','<u4',(792,)),('lse.f32','<f4',(792,)),
                              ('topk_ids.i32','<i4',(792,64)),('topk_logprobs.bf16','<u2',(792,64))]:
-        spec=entry['files'][name];p=A.pinned({'path':str(base/name),'sha256':spec['sha256']},'actual raw '+name)
+        spec=entry['files'][name];p=pinned({'path':str(base/name),'sha256':spec['sha256']},'actual raw '+name)
         if p.stat().st_size!=spec['bytes']:raise ValueError("raw file byte-size mismatch")
         arrays[name]=np.fromfile(p,dtype=dtype).reshape(shape)
     if not np.isfinite(arrays['lse.f32']).all():raise ValueError("nonfinite actual LSE")
@@ -225,8 +257,9 @@ def review_capture(*,cache_manifest,cache_manifest_sha256,capture_receipt,captur
 
 def bind_stock_control(review,control_root,producer_sources):
     """Read the unchanged source receipts/files; no asserted parity flag suffices."""
-    production=json_pin(Path(review['source_cache']['path']),review['source_cache']['sha256'])
-    request=json_pin(Path(review['source_request']['path']),review['source_request']['sha256'])
+    production_path=pinned(review['source_cache'],'original capture cache')
+    production=json_pin(production_path,review['source_cache']['sha256'])
+    request=json_pin(pinned(review['source_request'],'original request'),review['source_request']['sha256'])
     control_path=control_root/'native-run.video-control.json';proof=json.loads(control_path.read_text())
     parity_path=control_root/'native-run.json';parity=json.loads(parity_path.read_text())
     manifests=list((control_root/'cache').rglob('manifest.json'))
@@ -234,8 +267,8 @@ def bind_stock_control(review,control_root,producer_sources):
     manifest_path=manifests[0];raw=json.loads(manifest_path.read_text())
     execution=json.loads((control_root/'execution.json').read_text())
     execution_binding(control_root/'execution.json',review['source_request']['sha256'],request,'control')
-    execution_binding(Path(review['source_capture_execution']['path']),review['source_request']['sha256'],request,'capture')
-    A.pinned(review['source_capture_execution'],'original capture execution seal')
+    execution_binding(pinned(review['source_capture_execution'],'capture execution'),review['source_request']['sha256'],request,'capture')
+    pinned(review['source_capture_execution'],'original capture execution seal')
     if (execution.get('schema')!='recovery_video_teacher_execution.v1' or execution.get('exit_code')!=0 or
             execution.get('failure') is not None or execution.get('job')!='control' or
             execution.get('code_sha256')!=request['sources']['video_capture_job.py']['sha256'] or
@@ -257,10 +290,10 @@ def bind_stock_control(review,control_root,producer_sources):
             compared.get('topk_ids_equal_all_positions') is not True or compared.get('topk_id_mismatch_positions')!=0 or
             compared.get('logprob_max_abs_diff_vs_reference_rounded_to_bf16')!=0 or compared.get('lse_max_abs_diff')!=0):
         raise ValueError('actual all792 ordered IDs/BF16 logprobs/FP32 LSE parity required')
-    actual_decoder(proof,json_pin(Path(review['source_ingress']['path']),review['source_ingress']['sha256']),request)
+    actual_decoder(proof,json_pin(pinned(review['source_ingress'],'original ingress'),review['source_ingress']['sha256']),request)
     for name,spec in request['sources'].items():
         p=producer_sources/name
-        A.pinned({'path':str(p),'sha256':spec['sha256']},'immutable producer source '+name)
+        pinned({'path':str(p),'sha256':spec['sha256']},'immutable producer source '+name)
     placement=proof.get('stock_placement',{})
     if (placement.get('reference_placement_only_changed') is not True or
             placement.get('original_forward_and_exact_id_gate_unchanged') is not True or
@@ -274,17 +307,17 @@ def bind_stock_control(review,control_root,producer_sources):
     left_processor=json.loads(json.dumps(production['cache_config']['processor']))
     right_processor=json.loads(json.dumps(raw['cache_config']['processor']))
     stale_versions=[left_processor['video_decoder'].pop('version'),right_processor['video_decoder'].pop('version')]
-    capture=json_pin(Path(review['source_capture']['path']),review['source_capture']['sha256'])
+    capture=json_pin(pinned(review['source_capture'],'original capture'),review['source_capture']['sha256'])
     if left_processor!=right_processor or capture['decoder_proof']!=proof['decoder_proof']:
         raise ValueError('actual decoder/processor controls differ')
     if len(raw['shards'])!=len(production['shards']):raise ValueError('control raw shard coverage differs')
     for left,right in zip(production['shards'],raw['shards']):
         if left['files']!=right['files'] or left['shard']!=right['shard']:raise ValueError('independent capture/control raw arrays differ')
         p=manifest_path.parent/right['shard'];sidecar=json_pin(p/'shard.json',right['shard_json_sha256'])
-        if sidecar['files']!=right['files'] or sidecar['row_table']!=json.loads((Path(review['source_cache']['path']).parent/left['shard']/'shard.json').read_text())['row_table']:
+        if sidecar['files']!=right['files'] or sidecar['row_table']!=json.loads((production_path.parent/left['shard']/'shard.json').read_text())['row_table']:
             raise ValueError('control raw row tables/source IDs differ')
         for name,spec in right['files'].items():
-            file=A.pinned({'path':str(p/name),'sha256':spec['sha256']},'independent stock-control raw '+name)
+            file=pinned({'path':str(p/name),'sha256':spec['sha256']},'independent stock-control raw '+name)
             if file.stat().st_size!=spec['bytes']:raise ValueError('control raw byte-size differs')
     return {'source_control':V.pin(control_path),'source_original_parity':V.pin(parity_path),
             'source_control_cache':V.pin(manifest_path),'source_control_execution':V.pin(control_root/'execution.json'),
@@ -312,7 +345,7 @@ def finalize(*,review,review_sha256,control_root,producer_sources,output):
     from safetensors.numpy import save_file, load_file
     output.mkdir(parents=True);(output/'shards').mkdir();result=[]
     for entry in prepared['shards']:
-        source=A.pinned(entry,'actual independently reviewed native row')
+        source=pinned(entry,'actual independently reviewed native row')
         with np.load(source,allow_pickle=False) as z:arrays={k:np.array(z[k],copy=True) for k in z.files}
         if (entry.get('split')!='train' or entry.get('held') is not False or entry.get('assistant_positions')!=99 or
                 arrays['teacher_features'].shape!=(1,144,1152) or int(arrays['answer.q_w'].sum())!=99):
@@ -350,14 +383,14 @@ def validate_native_row(*,batch,entry,manifest,manifest_path):
             manifest.get('code_sha256')!=A.file_sha(Path(__file__)) or manifest.get('rounding_policy')!=Q.POLICY or
             manifest.get('quantized_answer_source_sha256')!=A.file_sha(Path(Q.__file__))):
         raise ValueError('matched-stock source-pinned temporal native binding required')
-    review_path=A.pinned(manifest['source_review'],'original independent review')
+    review_path=pinned(manifest['source_review'],'original independent review')
     source_review=T.json_pin(review_path,manifest['source_review']['sha256'],'recovery_video_capture_review.v1')
     original=next((x for x in source_review['shards'] if x['source_id']==entry['source_id']),None)
     if original is None or any(entry[k]!=original[k] for k in ('source_row_sha256','asset_sha256','split','held','global_group_id')):
         raise ValueError('native row differs from original global source identity')
     if entry['held'] is not False or entry['split']!='train':raise ValueError('held rows cannot enter optimizer')
-    A.pinned(entry,'sealed native tensor row')
-    p=A.pinned(entry['source_review_shard'],'original native preview')
+    pinned(entry,'sealed native tensor row')
+    p=pinned(entry['source_review_shard'],'original native preview')
     with np.load(p,allow_pickle=False) as z:expected={k:np.array(z[k],copy=True) for k in z.files}
     supplied={k:(v.detach().cpu().numpy() if hasattr(v,'detach') else np.asarray(v)) for k,v in batch.items()}
     if set(supplied)!=set(expected) or any(not np.array_equal(supplied[k],expected[k]) or supplied[k].dtype!=expected[k].dtype for k in expected):
@@ -365,15 +398,15 @@ def validate_native_row(*,batch,entry,manifest,manifest_path):
     # Reauthenticate evidence at the receiver: every source/response seal remains
     # pinned, including actual raw LSE/BF16 probability storage and stock receipts.
     for spec in ('source_cache','source_features','source_ingress','global_join','source_request'):
-        A.pinned(manifest[spec],'native evidence '+spec)
+        pinned(manifest[spec],'native evidence '+spec)
     for spec in ('source_control','source_original_parity','source_control_cache','source_control_execution'):
-        A.pinned(manifest['stock_control'][spec],'native stock evidence '+spec)
-    A.pinned(manifest['source_capture_execution'],'native capture entry receipt')
-    control_path=Path(manifest['stock_control']['source_control']['path'])
+        pinned(manifest['stock_control'][spec],'native stock evidence '+spec)
+    pinned(manifest['source_capture_execution'],'native capture entry receipt')
+    control_path=pinned(manifest['stock_control']['source_control'],'actual stock control')
     sources=manifest['stock_control']['producer_sources']
-    producer_root=Path(sources['video_answer.py']['path']).parent
+    producer_root=pinned(sources['video_answer.py'],'original producer entry').parent
     current_stock=bind_stock_control(source_review,control_path.parent,producer_root)
-    if current_stock!=manifest['stock_control']:raise ValueError('native stock-control semantics differ')
+    if pin_identity(current_stock)!=pin_identity(manifest['stock_control']):raise ValueError('native stock-control semantics differ')
     return {'verified':True,'source_id':entry['source_id'],'native_length':int(expected['input_ids'].shape[1]),
             'assistant_positions':int(expected['answer.q_w'].sum()),'media_rows':144,'teacher_feature_width':1152,
             'new_observation_chart':V.POLICY,'full_parent_trunk_parity_claimed':False}
