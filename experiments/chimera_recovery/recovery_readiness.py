@@ -74,6 +74,7 @@ class Locator:
             or re.fullmatch('[a-f0-9]{64}', k) is None for k, v in self.aliases.items())):
             raise Error("aliases must map exact SHA256 to absolute actual paths")
         self.observed, self.missing, self.changed_graph_edges = {}, {}, {}
+        self.graph_seen = set()
 
     def file(self, ref, root, *, required=True):
         if not isinstance(ref, dict) or not isinstance(ref.get("path"), str):
@@ -103,7 +104,7 @@ class Locator:
 
     def graph(self, value, root, seen=None):
         """Authenticate supplied file edges, recurse JSON only; never invent pins."""
-        seen = set() if seen is None else seen
+        seen = self.graph_seen if seen is None else seen
         if isinstance(value, dict):
             if isinstance(value.get("path"), str) and re.fullmatch('[a-f0-9]{64}', str(value.get("sha256"))):
                 try:
@@ -119,8 +120,9 @@ class Locator:
                         'required':dict(value),'observed':pin(original),
                         'reason':'historical pinned bytes differ at the recorded path; immutable original required'}
                     return
-                if path is not None and path.suffix == ".json" and value["sha256"] not in seen:
-                    seen.add(value["sha256"])
+                identity = (value['sha256'],str(path.parent)) if path is not None else None
+                if path is not None and path.suffix == ".json" and identity not in seen:
+                    seen.add(identity)
                     self.graph(json.loads(path.read_text(encoding="utf-8")), path.parent, seen)
                 return
             for child in value.values(): self.graph(child, root, seen)
