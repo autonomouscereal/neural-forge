@@ -102,6 +102,28 @@ class CanaryContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "empty reference"):
             C.transcript_metrics("", "anything")
 
+    def test_partial_outputs_require_preserved_timeout_and_exact_missing_ids(self):
+        rows = [{"id": "a", "text": "A boat moves.", "speaker": "Ryan"},
+                {"id": "b", "text": "A train stops.", "speaker": "Vivian"}]
+        failure = "TimeoutError: 600 second CPU model-task budget exhausted"
+        result = {"request_sha256": "producer", "rows": [rows[0]], "complete": False, "failure": failure}
+        request = {"parent_request_sha256": "producer"}
+        with self.assertRaisesRegex(ValueError, "explicit preserved timeout"):
+            C.tts_capture(request, result, rows)
+        request["partial_tts_capture"] = {"reason": "bounded_task_timeout", "preserved_failure": failure, "missing_ids": ["b"]}
+        outputs, scope = C.tts_capture(request, result, rows)
+        self.assertEqual(set(outputs), {"a"})
+        self.assertFalse(scope["producer_complete"])
+        self.assertEqual(scope["preserved_failure"], failure)
+        for key, changed in (("missing_ids", []), ("preserved_failure", "other failure")):
+            bad = copy.deepcopy(request)
+            bad["partial_tts_capture"][key] = changed
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, "explicit preserved timeout"):
+                C.tts_capture(bad, result, rows)
+        bad = dict(result, complete=True)
+        with self.assertRaisesRegex(ValueError, "complete TTS result scope differs"):
+            C.tts_capture(request, bad, rows)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -67,3 +67,8 @@ duration matching, and both the new and baseline ASR models score that output
 and the identical baseline original waveform without transcript prompt cues.
 Failures and partial results remain diagnostic, and no output is admitted to
 the optimizer or substituted into an existing seal.
+
+A timed-out TTS task remains incomplete. An explicitly sealed partial-capture
+successor may score its actually completed waveforms, while preserving the exact
+timeout and missing IDs. ASR scope then records every original reference plus
+only those completed new outputs; it never marks the original TTS task passed.
