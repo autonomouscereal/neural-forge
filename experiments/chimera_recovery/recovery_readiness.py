@@ -73,7 +73,7 @@ class Locator:
         if (not isinstance(self.aliases, dict) or any(not isinstance(v, str) or not Path(v).is_absolute()
             or re.fullmatch('[a-f0-9]{64}', k) is None for k, v in self.aliases.items())):
             raise Error("aliases must map exact SHA256 to absolute actual paths")
-        self.observed, self.missing = {}, {}
+        self.observed, self.missing, self.changed_graph_edges = {}, {}, {}
 
     def file(self, ref, root, *, required=True):
         if not isinstance(ref, dict) or not isinstance(ref.get("path"), str):
@@ -106,7 +106,19 @@ class Locator:
         seen = set() if seen is None else seen
         if isinstance(value, dict):
             if isinstance(value.get("path"), str) and re.fullmatch('[a-f0-9]{64}', str(value.get("sha256"))):
-                path = self.file(value, root, required=False)
+                try:
+                    path = self.file(value, root, required=False)
+                except Error as exc:
+                    # A historical receipt may point at an editable worktree. The
+                    # audit preserves its original pin and reports unavailable
+                    # historical bytes; direct target/helper reads remain strict.
+                    if not str(exc).startswith("pinned bytes changed:"): raise
+                    original = Path(value["path"])
+                    original = original if original.is_absolute() else Path(root)/original
+                    self.changed_graph_edges[(value['path'],value['sha256'])] = {
+                        'required':dict(value),'observed':pin(original),
+                        'reason':'historical pinned bytes differ at the recorded path; immutable original required'}
+                    return
                 if path is not None and path.suffix == ".json" and value["sha256"] not in seen:
                     seen.add(value["sha256"])
                     self.graph(json.loads(path.read_text(encoding="utf-8")), path.parent, seen)
@@ -260,6 +272,8 @@ def inspect(request_path):
         native_targets=inventory, absent_targets=absent, audio_speech_index=replay, evidence=evidence,
         lineage_order=D.replay_lineage_order(), execution_dependencies=dependencies,
         authenticated_files=list(locator.observed.values()), missing_files=list(locator.missing.values()),
+        changed_graph_edges=list(locator.changed_graph_edges.values()),
+        full_source_graph_verified=not locator.missing and not locator.changed_graph_edges,
         metadata_membership_verified=all(v['metadata_membership_verified'] for v in inventory.values()),
         full_target_preflight_passed=False,
         accepted_states_created=False, runtime_acquired=False, training_launched=False, production_ready=False)
@@ -269,6 +283,8 @@ def cpu_targets(request_path, roles):
     """Use the real native validators; original producer paths must be mounted."""
     if os.environ.get("CUDA_VISIBLE_DEVICES") != "": raise Error("explicit CUDA-hidden CPU required")
     result = inspect(request_path)
+    if not result['full_source_graph_verified']:
+        raise Error('full unchanged source graph/mounts required before CPU target reconstruction')
     request = json.loads(Path(request_path).read_text(encoding="utf-8"))
     if not roles or len(set(roles)) != len(roles) or set(roles)-set(request["targets"]): raise Error("explicit unique actual target roles required")
     import torch

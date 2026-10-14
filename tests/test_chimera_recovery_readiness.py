@@ -59,6 +59,16 @@ class ReadinessTests(unittest.TestCase):
         d,p=self.cache('audio_ce');rp=Path(d['batches'][0]['teacher_receipt']['path'])
         rp.write_text(rp.read_text().replace('"assistant_targets": 3','"assistant_targets": 9'))
         with self.assertRaisesRegex(R.Error,'bytes changed'):R.membership('audio_ce',d,p,R.Locator())
+    def test_changed_historical_graph_edge_is_reported_without_authenticating_changed_bytes(self):
+        path=self.root/'historical-helper.py';path.write_bytes(b'old code')
+        ref=R.pin(path);path.write_bytes(b'new code')
+        locator=R.Locator();locator.graph({'historical_helper':ref},self.root)
+        self.assertEqual(len(locator.changed_graph_edges),1)
+        edge=next(iter(locator.changed_graph_edges.values()))
+        self.assertEqual(edge['required'],ref)
+        self.assertEqual(edge['observed']['sha256'],R.sha(path))
+        self.assertNotIn(R.sha(path),[r['received']['sha256'] for r in locator.observed.values()])
+        with self.assertRaisesRegex(R.Error,'bytes changed'):locator.file(ref,self.root)
     def test_missing_receipt_is_inventory_dependency_not_passed_membership(self):
         d,p=self.cache('audio_ce');Path(d['batches'][0]['teacher_receipt']['path']).unlink();l=R.Locator()
         result=R.membership('audio_ce',d,p,l)
