@@ -102,6 +102,32 @@ def transcript_metrics(expected, actual):
             "word_edit_distance": previous[-1], "reference_words": len(a), "wer": previous[-1] / len(a)}
 
 
+def tts_capture(request, generated, rows):
+    """Score genuine completed outputs without relabelling a timed-out task."""
+    if generated.get("request_sha256") != request["parent_request_sha256"]:
+        raise ValueError("matching bounded TTS producer identity missing")
+    outputs = {row["id"]: row for row in generated["rows"]}
+    expected = {row["id"]: row for row in rows}
+    if len(outputs) != len(generated["rows"]) or not set(outputs) <= set(expected):
+        raise ValueError("TTS and ASR comparison coverage differs")
+    missing = sorted(set(expected) - set(outputs))
+    if generated.get("complete") is True:
+        if missing or request.get("partial_tts_capture"):
+            raise ValueError("complete TTS result scope differs")
+    else:
+        partial = request.get("partial_tts_capture") or {}
+        if (not outputs or not missing or partial.get("reason") != "bounded_task_timeout" or
+                partial.get("missing_ids") != missing or
+                partial.get("preserved_failure") != generated.get("failure") or
+                generated.get("failure") != "TimeoutError: 600 second CPU model-task budget exhausted"):
+            raise ValueError("incomplete TTS requires explicit preserved timeout/captured scope")
+    for identity, output in outputs.items():
+        if output.get("text") != expected[identity]["text"] or output.get("speaker") != expected[identity]["speaker"]:
+            raise ValueError("captured TTS text/voice changed")
+    return outputs, {"producer_complete": generated["complete"], "captured_outputs": len(outputs),
+                     "missing_ids": missing, "preserved_failure": generated.get("failure")}
+
+
 def verify_model(request, mode, plan):
     if __package__:
         from .speech_teacher_comparison import verify_download
@@ -187,6 +213,7 @@ def run(request, mode, output):
         result["teacher"] = verified
         save(output / "result.json", result)
         if mode == "tts":
+            expected_results = len(rows)
             from qwen_tts import Qwen3TTSModel
             model = Qwen3TTSModel.from_pretrained(str(modeldir), device_map="cpu", dtype=torch.float32, attn_implementation="eager", local_files_only=True)
             result["model_loaded"] = True
@@ -225,16 +252,17 @@ def run(request, mode, output):
         else:
             from qwen_asr import Qwen3ASRModel
             generated = pinned(request["tts_result"])
-            if generated.get("complete") is not True or generated.get("request_sha256") != request["parent_request_sha256"]:
-                raise ValueError("matching bounded TTS result incomplete")
-            outputs_by_id = {row["id"]: row for row in generated["rows"]}
-            if set(outputs_by_id) != {row["id"] for row in rows}:
-                raise ValueError("TTS and ASR comparison coverage differs")
+            outputs_by_id, capture_scope = tts_capture(request, generated, rows)
+            result["tts_capture_scope"] = capture_scope
+            expected_results = len(rows) + len(outputs_by_id)
             model = Qwen3ASRModel.from_pretrained(str(modeldir), dtype=torch.float32, device_map="cpu", max_inference_batch_size=1, max_new_tokens=256, attn_implementation="eager", local_files_only=True)
             result["model_loaded"] = True
             for row in rows:
-                gen = outputs_by_id[row["id"]]
-                for name, asset in (("baseline_original", row["baseline_original_audio"]), ("candidate_generated", {"path": gen["audio"], "sha256": gen["audio_sha256"]})):
+                assets = [("baseline_original", row["baseline_original_audio"])]
+                gen = outputs_by_id.get(row["id"])
+                if gen is not None:
+                    assets.append(("candidate_generated", {"path": gen["audio"], "sha256": gen["audio_sha256"]}))
+                for name, asset in assets:
                     if sha(asset["path"]) != asset["sha256"]:
                         raise ValueError("full ASR waveform changed")
                     values, rate = sf.read(asset["path"], dtype="float32")
@@ -255,7 +283,8 @@ def run(request, mode, output):
                     result["rows"].append(item)
                     save(output / "result.json", result)
                     print(json.dumps({"mode": mode, "id": row["id"], "waveform_kind": name, "wer": item["wer"]}), flush=True)
-        result["complete"] = len(result["rows"]) == len(rows) * (1 if mode == "tts" else 2)
+        result["expected_scoring_rows"] = expected_results
+        result["complete"] = len(result["rows"]) == expected_results
         result["inference_performed"] = True
     except Exception as error:
         result["failure"] = type(error).__name__ + ": " + str(error)
