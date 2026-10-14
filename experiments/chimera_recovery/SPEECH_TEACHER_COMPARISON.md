@@ -54,3 +54,16 @@ text decoder is causal. The TTS talker/code predictor is causal. These selected
 models provide understanding and speech generation through separate paths; the
 source does not establish a single fully bidirectional speech/text decoder or a
 compatible Chimera codec-index mapping.
+
+`speech_teacher_canary.py` is a separate, explicitly invoked Linux CPU
+qualification driver. Its sealed request permits at most four unchanged train
+references, preserves complete baseline PCM bytes, checks actual downloaded
+parent files and implementation sources, and fixes FP32/eager inference to the
+already validated private runtimes. It requires explicit CUDA invisibility,
+four CPU threads, 32 GiB available host RAM before a task, a 24 GiB virtual
+address-space cap and a 600 second task alarm. Each model gets a fresh process;
+there is no dtype/kernel fallback. The TTS output remains complete without
+duration matching, and both the new and baseline ASR models score that output
+and the identical baseline original waveform without transcript prompt cues.
+Failures and partial results remain diagnostic, and no output is admitted to
+the optimizer or substituted into an existing seal.
