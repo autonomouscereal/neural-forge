@@ -69,6 +69,16 @@ class ReadinessTests(unittest.TestCase):
         self.assertEqual(edge['observed']['sha256'],R.sha(path))
         self.assertNotIn(R.sha(path),[r['received']['sha256'] for r in locator.observed.values()])
         with self.assertRaisesRegex(R.Error,'bytes changed'):locator.file(ref,self.root)
+    def test_identical_json_in_other_directory_does_not_skip_relative_source_authentication(self):
+        a=self.root/'a';b=self.root/'b';a.mkdir();b.mkdir()
+        (a/'payload').write_bytes(b'authentic');(b/'payload').write_bytes(b'changed')
+        content=json.dumps({'source':{'path':'payload','sha256':R.sha(a/'payload')}}).encode()
+        for directory in (a,b):(directory/'source.json').write_bytes(content)
+        locator=R.Locator()
+        locator.graph(R.pin(a/'source.json'),self.root)
+        locator.graph(R.pin(b/'source.json'),self.root)
+        self.assertEqual(len(locator.changed_graph_edges),1)
+        self.assertEqual(next(iter(locator.changed_graph_edges.values()))['observed']['path'],str(b/'payload'))
     def test_missing_receipt_is_inventory_dependency_not_passed_membership(self):
         d,p=self.cache('audio_ce');Path(d['batches'][0]['teacher_receipt']['path']).unlink();l=R.Locator()
         result=R.membership('audio_ce',d,p,l)
