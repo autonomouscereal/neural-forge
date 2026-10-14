@@ -22,6 +22,20 @@ def small():
 
 
 class QuantizedAnswerTests(unittest.TestCase):
+    def test_transport_alias_requires_same_bytes_and_original_seal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'actual.json';path.write_bytes(b'{"actual":true}\n')
+            original='C:\\Users\\cereal\\Documents\\ai training\\fixture.json'
+            spec={'path':str(path),'sha256':N.A.file_sha(path)}
+            with N.source_aliases({original:spec}):
+                self.assertEqual(N.pinned({'path':original,'sha256':spec['sha256']},'transport'),path)
+                with self.assertRaisesRegex(ValueError,'seal'):N.pinned({'path':original,'sha256':'0'*64},'bad')
+                with self.assertRaisesRegex(ValueError,'nested'):
+                    with N.source_aliases({original:spec}):pass
+            path.write_bytes(b'changed')
+            with self.assertRaisesRegex(ValueError,'changed'):
+                with N.source_aliases({original:spec}):pass
+
     def test_once_shift_bits_and_no_normalization(self):
         args=small();answer,proof=Q.dense_answer(*args)
         self.assertEqual(answer['q_w'].tolist(),[0,1,1,0])

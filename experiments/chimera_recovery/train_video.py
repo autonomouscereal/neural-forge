@@ -23,7 +23,8 @@ OWNERSHIP=['qvl32_vit_L13','type6_bridge','shared_r16_lora']
 
 
 def selected_policy(manifest_path,manifest_sha,amendment_path,amendment_sha,selection_path,selection_sha):
-    manifest=N.T.json_pin(manifest_path,manifest_sha,'chimera_recovery.temporal_video_native_binding.v1')
+    actual=N.pinned({'path':str(manifest_path),'sha256':manifest_sha},'exact native tensor manifest')
+    manifest=N.T.json_pin(actual,manifest_sha,'chimera_recovery.temporal_video_native_binding.v1')
     amendment=N.json_pin(amendment_path,amendment_sha)
     selection=N.json_pin(selection_path,selection_sha)
     if (amendment.get('schema')!='recovery_temporal_video_amendment.v1' or amendment.get('source_year')!=2026 or
@@ -50,7 +51,7 @@ def selected_policy(manifest_path,manifest_sha,amendment_path,amendment_sha,sele
 
 class VideoAdapter:
     def __init__(self,*,manifest_path,manifest_sha256,amendment_path,amendment_sha256,selection_path,selection_sha256):
-        self.manifest_path=Path(manifest_path)
+        self.manifest_path=N.pinned({'path':str(manifest_path),'sha256':manifest_sha256},'native video manifest')
         self.manifest_sha256=manifest_sha256
         self.amendment_sha256=amendment_sha256
         self.manifest,self.amendment,self.selection=selected_policy(self.manifest_path,manifest_sha256,
@@ -64,7 +65,7 @@ class VideoAdapter:
         """Authenticate all immutable tensors and actual controls before a model."""
         total=0
         for entry in self.entries.values():
-            batch=N.safetensors_numpy(A.pinned(entry,'native temporal video tensor'))
+            batch=N.safetensors_numpy(N.pinned(entry,'native temporal video tensor'))
             total+=N.validate_native_row(batch=batch,entry=entry,manifest=self.manifest,
                                         manifest_path=self.manifest_path)['assistant_positions']
         if total!=792:raise ValueError('all792 actual assistant targets required')
