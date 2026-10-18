@@ -1,0 +1,274 @@
+{
+  "schema": "chimera_omni.media_fold.receipt.v1",
+  "created_at_utc": "2026-09-02T10:26:15.881789+00:00",
+  "kind": "c15_pairs",
+  "geometry": {
+    "name": "minimax_h3_video_vae_fp16.safetensors",
+    "modality": "video",
+    "latent_channels": 24,
+    "sample_rate_hz": 44100,
+    "hop_samples": 0,
+    "channels": 3,
+    "channel_in_latent": false,
+    "spatial_stride": 16,
+    "temporal_stride": 4,
+    "frame_rate_hz": 0.0,
+    "notes": {
+      "kind": "comfy",
+      "path": "/opt/ComfyUI/models/vae/minimax_h3_video_vae_fp16.safetensors",
+      "comfy_kitchen_stubbed": false,
+      "forced_cpu": false,
+      "expected_class": "comfy.ldm.minimax.vae.MiniMaxH3VideoVAE",
+      "sd_py_lines": "942-964",
+      "latent_dim": 3,
+      "first_stage_class": "MiniMaxH3VideoVAE",
+      "vae_dtype": "torch.float16",
+      "device": "cuda:0",
+      "posterior": "mean",
+      "path_mode": "direct",
+      "crop_input": true,
+      "downscale_ratio": [
+        "callable",
+        16,
+        16
+      ],
+      "upscale_ratio": [
+        "callable",
+        16,
+        16
+      ]
+    },
+    "pairing": "measured_group4_latent1",
+    "latent_group": 1,
+    "temporal_group_size": 4,
+    "selected_latent_frames": [
+      1,
+      2,
+      3,
+      4,
+      6
+    ],
+    "skipped_latent_frames": [
+      0,
+      5
+    ],
+    "measured_group_sizes": [
+      1,
+      4
+    ],
+    "measured_uniform": false,
+    "context": 0,
+    "d_raw": 3072,
+    "d_latent": 24,
+    "d_centre": 3072,
+    "centre_offset": 0,
+    "rows": 9600,
+    "clips": 120,
+    "chimera_patch": 16,
+    "chimera_tubelet": 4,
+    "chimera_native_feature_dim": 3072,
+    "alignment": "measured per-frame ownership (perturbation probe)",
+    "merged_from": 2,
+    "merged_clip_totals": [
+      60,
+      60
+    ],
+    "declared_clips_sum": 120,
+    "merged_alignments": [
+      {
+        "pairing": "measured_group4_latent1",
+        "temporal_group_size": 4,
+        "latent_group": 1,
+        "selected_latent_frames": [
+          1,
+          2,
+          3,
+          4,
+          6
+        ],
+        "skipped_latent_frames": [
+          0,
+          5
+        ],
+        "measured_group_sizes": [
+          1,
+          4
+        ],
+        "measured_uniform": false,
+        "alignment": "measured per-frame ownership (perturbation probe)"
+      },
+      {
+        "pairing": "measured_group4_latent1",
+        "temporal_group_size": 4,
+        "latent_group": 1,
+        "selected_latent_frames": [
+          1,
+          2,
+          3,
+          4,
+          6
+        ],
+        "skipped_latent_frames": [
+          0,
+          5
+        ],
+        "measured_group_sizes": [
+          1,
+          4
+        ],
+        "measured_uniform": false,
+        "alignment": "measured per-frame ownership (perturbation probe)"
+      }
+    ]
+  },
+  "pairs": {
+    "path": "pairs/h3v_g4_64_strictmerge/pairs.safetensors",
+    "bytes": 237158944,
+    "file_sha256": "33bd57c0c9ae829ee3881430b8c2f43f19175aac9b2f175fc945f96438d3843f",
+    "state_sha256": "bff5fdee1770d338eb323b02ce5e1982f43fc1692880a877488b65898483d7ad",
+    "parameters": 59251200,
+    "tensors": {
+      "channel_index": {
+        "dtype": "torch.int64",
+        "shape": [
+          9600
+        ],
+        "sha256": "42e524ef5058f26ba10002c8a6ed6d3b9bd3c9b4dc14d9a94d82e9b6c7ccc037"
+      },
+      "clip_index": {
+        "dtype": "torch.int64",
+        "shape": [
+          9600
+        ],
+        "sha256": "474bfcef8fdf5e2b22f56abc574c3bc1fd930be6ac6396dd8b4a03b76c97bb2e"
+      },
+      "frame_index": {
+        "dtype": "torch.int64",
+        "shape": [
+          9600
+        ],
+        "sha256": "1ed31ba9448cec02b0969c630accfc0a084617f2b9b0795c7c721c0adb7dc546"
+      },
+      "latent": {
+        "dtype": "torch.float32",
+        "shape": [
+          9600,
+          24
+        ],
+        "sha256": "e4ec34500bf1a05569be74eaf293d87fe88c0662181adaf74d1ecbb0738e9eea"
+      },
+      "raw": {
+        "dtype": "torch.float32",
+        "shape": [
+          9600,
+          3072
+        ],
+        "sha256": "026b31fa98eca8c9363da1edd3617c86cfe7e091cb710d9ee0045aaccbb794bd"
+      },
+      "roundtrip": {
+        "dtype": "torch.float32",
+        "shape": [
+          9600,
+          3072
+        ],
+        "sha256": "2c4e02b02932678bc11e54ad9f8957f4cb92aa1afc8840824cf4994b39ddc8f4"
+      },
+      "split": {
+        "dtype": "torch.int64",
+        "shape": [
+          9600
+        ],
+        "sha256": "535c4dcdadc06cf44883b1572197a06ad00e517eb857c059d9ddd8824c088e21"
+      }
+    }
+  },
+  "split": {
+    "fit_rows": 7200,
+    "holdout_rows": 2400,
+    "split_by": "clip"
+  },
+  "runtime": {
+    "python": "3.12.3 (main, Jun 19 2026, 12:46:00) [GCC 13.3.0]",
+    "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39",
+    "cwd": "/home/cereal/omni-campaign/media",
+    "torch": "2.11.0+cu128",
+    "torch_cuda": "12.8",
+    "cuda_available": true,
+    "nvidia_smi": [
+      "0, NVIDIA GeForce RTX 3090, GPU-4ead7f3a-cc79-fa5b-de42-ef024e27f561, 662 MiB",
+      "1, Tesla P40, GPU-c95fb5b3-f97c-bfb2-9760-79fe107ffe6d, 21405 MiB",
+      "2, Tesla P40, GPU-a92b0dfe-83f8-11ff-db0d-c65921f365b4, 7 MiB",
+      "3, Tesla P40, GPU-08b615f9-8dbe-3edd-d59f-f6ebe8212ca8, 7 MiB",
+      "4, NVIDIA GeForce RTX 3090, GPU-2ce6a95c-7b1f-644a-3808-d781732a0582, 18 MiB",
+      "5, Tesla P40, GPU-ce4a1da0-baa8-3d62-419c-a28f6565610f, 7 MiB",
+      "6, Quadro RTX 8000, GPU-f5a09535-fc85-a027-50f7-734b344747dd, 8 MiB"
+    ]
+  },
+  "merged_from": [
+    {
+      "dir": "/home/cereal/omni-campaign/media/pairs/h3v_g4_64_c0",
+      "rows": 4800,
+      "clips": 60,
+      "receipt_sha256": "73e21db4c1a637b36e0f033682ec21a084d88e1bc58e2a534588b3f08d4e5669",
+      "pairs_sha256": "2a343d093df1766245fe595e1914b4ddd2b4077076c091ce550743ad5846670e",
+      "alignment": {
+        "pairing": "measured_group4_latent1",
+        "temporal_group_size": 4,
+        "latent_group": 1,
+        "selected_latent_frames": [
+          1,
+          2,
+          3,
+          4,
+          6
+        ],
+        "skipped_latent_frames": [
+          0,
+          5
+        ],
+        "measured_group_sizes": [
+          1,
+          4
+        ],
+        "measured_uniform": false,
+        "alignment": "measured per-frame ownership (perturbation probe)"
+      }
+    },
+    {
+      "dir": "/home/cereal/omni-campaign/media/pairs/h3v_g4_64_c1",
+      "rows": 4800,
+      "clips": 60,
+      "receipt_sha256": "8edd59e212634bbe41fc4561b6ed76d0a7da59f10584c23f185f9022ba4d800b",
+      "pairs_sha256": "f425c572b7404fd7feff556763615a7ab79cd8d238ec1dd9a30575a6ecda1a0e",
+      "alignment": {
+        "pairing": "measured_group4_latent1",
+        "temporal_group_size": 4,
+        "latent_group": 1,
+        "selected_latent_frames": [
+          1,
+          2,
+          3,
+          4,
+          6
+        ],
+        "skipped_latent_frames": [
+          0,
+          5
+        ],
+        "measured_group_sizes": [
+          1,
+          4
+        ],
+        "measured_uniform": false,
+        "alignment": "measured per-frame ownership (perturbation probe)"
+      }
+    }
+  ],
+  "argv": {
+    "pairs": [
+      "pairs/h3v_g4_64_c0",
+      "pairs/h3v_g4_64_c1"
+    ],
+    "out": "pairs/h3v_g4_64_strictmerge"
+  }
+}

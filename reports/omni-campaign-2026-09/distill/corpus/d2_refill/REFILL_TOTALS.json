@@ -1,0 +1,96 @@
+{
+ "clean_form": {
+  "clean_manifest_sha256": "5f25c817fa06eb0030e32db6c88bfd50ee0233b9a2e6073cb3db096378cb8d52",
+  "f_clean": 1.0,
+  "kd_positions_clean_total": 16575433,
+  "kd_positions_v1": 19427181,
+  "note": "used only if the clean registry is built, verified and every re-pack cache is sealed when the config is written",
+  "registry_positions": 18481152,
+  "target_tokens": 2851748
+ },
+ "d2_never_waits": "D2 uses only the refill sources whose caches are sealed when the short data config is written; the remainder is the recorded shortfall (decisions refill_policy.timing)",
+ "decisions_sha256": "c8d47f22784d265a2e9239f9274c062298d25278497ba21d01102aa45274d90d",
+ "expected_shortfall": 2644439,
+ "expected_supervised_total": 451529,
+ "inputs": {
+  "d2_plan": {
+   "sha256": "7402d970db5d1073ff7e191107fc31844465c0b5805ad658be86fcf6c762790c",
+   "version": "1.4.1"
+  },
+  "exclude_rows": "5f88e0758edfe3e5feab05df936d05599196947923a9ed5b2c2d48dac53b5465",
+  "masks_v2_build_receipt": "713270650aeb173dd76561d0de3dcd110d2d355cdf773f0c41ee27acd48f3592",
+  "text_manifest": "3ba69171f0095848436719b890e43b2fe67d216a82c9cac529d84c899fe40204"
+ },
+ "rank2_next": {
+  "estimate": "about 1.18M response tokens at run 1's 864 tokens/row; about 8 h on GPU1+GPU2 at run 1's 41 tok/s; needs the parent Q4_K_M (its scratch copies are removed after use) and P40 time the d2clean caches and the D1 bank v1 review also want",
+  "how": "NEW selfgen_sampler sampling over prompts outside the 1,168 rescored rows (decisions rank 2 'how'): the 1,364 unsampled prompts of distill/corpus/selfgen/prompts.jsonl (indices 1168..2531), screened, then this tool's `selfgen --run <new run>` and its Q38 cache",
+  "why": "the sealed self-gen run (fe1f0784, cutoff 1,168) is wholly a D2 input: 0 rows are left for the refill"
+ },
+ "ranks": [
+  {
+   "basis": "projection: run 2 reaches its token target at run 1's supervised share (assistant positions only)",
+   "rank": 1,
+   "run1": {
+    "manifest_sha256": "e78a030f4baf22973c1147b38c776f235569720b0872272083b59f0afd834e45",
+    "supervised": 363784,
+    "tokens": 1500469
+   },
+   "run2_progress_utc": "2026-10-15T05:27:17Z",
+   "run2_token_target": 1499531,
+   "run2_tokens_so_far": 313893,
+   "source": "tool-call self-gen beyond A2 2(a) (C1 runs 2..)",
+   "state": "sampling (run 2)",
+   "supervised": 363557,
+   "supervised_beyond_a2_2a": 363557,
+   "supervised_share_run1": 0.242447
+  },
+  {
+   "cache_sealed": false,
+   "corpus_sha256": null,
+   "counts_only_when": "its Q38 cache is sealed when the short data config is written (d2_plan)",
+   "eligible": false,
+   "rank": 2,
+   "source": "refill-selfgen",
+   "supervised": 0,
+   "why": "corpus file does not exist yet"
+  },
+  {
+   "cache_sealed": false,
+   "corpus_sha256": "2dba23e59542c6e8793c5a5b18a1eb3d767feb4337fe8d648d975052769db7f2",
+   "counts_only_when": "its Q38 cache is sealed when the short data config is written (d2_plan)",
+   "eligible": true,
+   "rank": 3,
+   "source": "refill-codex-v7-train",
+   "supervised": 21528,
+   "why": "eligible"
+  },
+  {
+   "cache_sealed": false,
+   "corpus_sha256": "702c7f7585ff0e17ade105ef6529d7d3a775dd82a0e6df7bb503321743917d48",
+   "counts_only_when": "its Q38 cache is sealed when the short data config is written (d2_plan)",
+   "eligible": true,
+   "rank": 3,
+   "source": "refill-codex-v8-train",
+   "supervised": 66444,
+   "why": "eligible"
+  },
+  {
+   "basis": "4,745 registry rows after d2_masks_v2/exclude_rows x 4096 - the 20,000,000 draw",
+   "rank": 4,
+   "source": "undrawn registry positions (span-mask form)",
+   "supervised": 0
+  }
+ ],
+ "schema": "omni-d2x1-refill-totals-v1",
+ "target_basis": "3,095,968 x min(1, 20,000,000 / 19,689,472) = 1.0000 (d2_plan refill_plan, span-mask form; the decisions file's 'about 2.96M' assumed an 18.85M draw)",
+ "target_met": false,
+ "target_tokens": 3095968,
+ "tool": {
+  "name": "d2_refill_build",
+  "path": "/home/cereal/omni-campaign/distill/tools/d2_refill_build.py",
+  "sha256": "36f53c9a5817d455b413adc08061c594b914562bbca0cf238942cf77380a0bd9",
+  "version": "1.0.3"
+ },
+ "unit": "supervised (KD-carrying) tokens, the unit of D2_DECISIONS refill_policy.target",
+ "utc": "2026-10-15T05:27:58Z"
+}

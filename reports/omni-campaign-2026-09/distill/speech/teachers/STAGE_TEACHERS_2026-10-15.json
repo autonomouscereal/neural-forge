@@ -1,0 +1,451 @@
+{
+ "schema": "omni-campaign.speech-stage-teachers.v1",
+ "written_utc": "2026-10-15T01:57:53Z",
+ "by": "claude",
+ "plan": "distill/SPEECH_LANE_PLAN_v2_2026-10-14.md section 2.4 + section 3 (E1)",
+ "layout": "/mnt/lexar/models/<org>/<name>/ (stage-teachers order); plan v2 said models/speech/<org>__<name>@<rev8>/ -- superseded",
+ "models": [
+  {
+   "repo": "Qwen/Qwen3-ASR-0.6B",
+   "revision": "5eb144179a02acc5e5ba31e748d22b0cf3e303b0",
+   "dest": "/mnt/lexar/models/Qwen/Qwen3-ASR-0.6B",
+   "licence": "apache-2.0",
+   "licence_files": [],
+   "gated": false,
+   "files": 10,
+   "bytes": 1880619678,
+   "downloaded_bytes": 0,
+   "seeded_from": "/home/cereal/omni-campaign/distill/codex-preparation-01a1326f-20261013/speech-teachers-v1/Qwen3-ASR-0.6B",
+   "complete": true,
+   "receipt": "/home/cereal/omni-campaign/distill/speech/teachers/fetch/Qwen__Qwen3-ASR-0.6B.json",
+   "receipt_sha256": "e2dfa7ed075a64f69cfdf0b32808504f75e31fb21966c36e837fb956cce0d14f"
+  },
+  {
+   "repo": "Qwen/Qwen3-ASR-1.7B",
+   "revision": "7278e1e70fe206f11671096ffdd38061171dd6e5",
+   "dest": "/mnt/lexar/models/Qwen/Qwen3-ASR-1.7B",
+   "licence": "apache-2.0",
+   "licence_files": [],
+   "gated": false,
+   "files": 12,
+   "bytes": 4703114308,
+   "downloaded_bytes": 0,
+   "seeded_from": "/home/cereal/omni-campaign/distill/codex-speech-1p7-comparison-modality-v1/parents/Qwen3-ASR-1.7B",
+   "complete": true,
+   "receipt": "/home/cereal/omni-campaign/distill/speech/teachers/fetch/Qwen__Qwen3-ASR-1.7B.json",
+   "receipt_sha256": "eb45a86e66821c690fd873e0d5165a26c43819b2620ddd19d2b11d4e1769a39c"
+  },
+  {
+   "repo": "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice",
+   "revision": "85e237c12c027371202489a0ec509ded67b5e4b5",
+   "dest": "/mnt/lexar/models/Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice",
+   "licence": "apache-2.0",
+   "licence_files": [],
+   "gated": false,
+   "files": 13,
+   "bytes": 2498388392,
+   "downloaded_bytes": 0,
+   "seeded_from": "/home/cereal/omni-campaign/distill/codex-preparation-01a1326f-20261013/speech-teachers-v1/Qwen3-TTS-12Hz-0.6B-CustomVoice",
+   "complete": true,
+   "receipt": "/home/cereal/omni-campaign/distill/speech/teachers/fetch/Qwen__Qwen3-TTS-12Hz-0.6B-CustomVoice.json",
+   "receipt_sha256": "a4e1d7cf68ba5bafcc14b0494d552e8b637b978b6e27337461f601cd54f6088d"
+  },
+  {
+   "repo": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+   "revision": "fd4b254389122332181a7c3db7f27e918eec64e3",
+   "dest": "/mnt/lexar/models/Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+   "licence": "apache-2.0",
+   "licence_files": [],
+   "gated": false,
+   "files": 13,
+   "bytes": 4544229700,
+   "downloaded_bytes": 4544229700,
+   "seeded_from": null,
+   "complete": true,
+   "receipt": "/home/cereal/omni-campaign/distill/speech/teachers/fetch/Qwen__Qwen3-TTS-12Hz-1.7B-Base.json",
+   "receipt_sha256": "a5fb7a86fd4e7f3938e718919a07f9eb9959c04ece295f109e490686c81d3eff"
+  },
+  {
+   "repo": "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+   "revision": "0c0e3051f131929182e2c023b9537f8b1c68adfe",
+   "dest": "/mnt/lexar/models/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+   "licence": "apache-2.0",
+   "licence_files": [],
+   "gated": false,
+   "files": 13,
+   "bytes": 4520218951,
+   "downloaded_bytes": 0,
+   "seeded_from": "/home/cereal/omni-campaign/distill/codex-speech-1p7-comparison-modality-v1/parents/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+   "complete": true,
+   "receipt": "/home/cereal/omni-campaign/distill/speech/teachers/fetch/Qwen__Qwen3-TTS-12Hz-1.7B-CustomVoice.json",
+   "receipt_sha256": "57512597f28392774adfc4095ff37e4aa973c90270239ed93568688051426867"
+  },
+  {
+   "repo": "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+   "revision": "5ecdb67327fd37bb2e042aab12ff7391903235d3",
+   "dest": "/mnt/lexar/models/Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+   "licence": "apache-2.0",
+   "licence_files": [],
+   "gated": false,
+   "files": 13,
+   "bytes": 4520163832,
+   "downloaded_bytes": 4520163832,
+   "seeded_from": null,
+   "complete": true,
+   "receipt": "/home/cereal/omni-campaign/distill/speech/teachers/fetch/Qwen__Qwen3-TTS-12Hz-1.7B-VoiceDesign.json",
+   "receipt_sha256": "210723aae0150d4f7468ead3525d1823b5e57b20c8d9eec9ea4bd2960762631a"
+  },
+  {
+   "repo": "hexgrad/Kokoro-82M",
+   "revision": "f3ff3571791e39611d31c381e3a41a3af07b4987",
+   "dest": "/mnt/lexar/models/hexgrad/Kokoro-82M",
+   "licence": "apache-2.0",
+   "licence_files": [],
+   "gated": false,
+   "files": 72,
+   "bytes": 363323757,
+   "downloaded_bytes": 363323757,
+   "seeded_from": null,
+   "complete": true,
+   "receipt": "/home/cereal/omni-campaign/distill/speech/teachers/fetch/hexgrad__Kokoro-82M.json",
+   "receipt_sha256": "0db6d63032f0c9fcf10bc0341198e0a7ef6bbbb46ace69abac666dd0775df905"
+  },
+  {
+   "repo": "ibm-granite/granite-speech-3.3-2b",
+   "revision": "4ac2f02f413c6169ae8c0ccc217115a366e552d7",
+   "dest": "/mnt/lexar/models/ibm-granite/granite-speech-3.3-2b",
+   "licence": "apache-2.0",
+   "licence_files": [],
+   "gated": false,
+   "files": 24,
+   "bytes": 11780485677,
+   "downloaded_bytes": 11780485677,
+   "seeded_from": null,
+   "complete": true,
+   "receipt": "/home/cereal/omni-campaign/distill/speech/teachers/fetch/ibm-granite__granite-speech-3.3-2b.json",
+   "receipt_sha256": "3e618837c93108138fca1190007c63ded4e21b40d519c0db6859d6079f6cec19"
+  },
+  {
+   "repo": "openbmb/VoxCPM2",
+   "revision": "32279effe8c19989596f05d353d1447f51d9e915",
+   "dest": "/mnt/lexar/models/openbmb/VoxCPM2",
+   "licence": "apache-2.0",
+   "licence_files": [],
+   "gated": false,
+   "files": 9,
+   "bytes": 4960731866,
+   "downloaded_bytes": 4960731866,
+   "seeded_from": null,
+   "complete": true,
+   "receipt": "/home/cereal/omni-campaign/distill/speech/teachers/fetch/openbmb__VoxCPM2.json",
+   "receipt_sha256": "d42420c4f947ac77fe3a0ced0baa0adeaa6fe6bbdc56c5b7c688cc1a89e4bcf9"
+  }
+ ],
+ "librispeech_test_clean": {
+  "schema": "omni-campaign.corpus-fetch-receipt.v1",
+  "name": "librispeech/test-clean",
+  "url": "https://www.openslr.org/resources/12/test-clean.tar.gz",
+  "licence": "CC BY 4.0 (openslr 12)",
+  "consent": "third_party_licensed",
+  "bytes": 346663984,
+  "sha256": "39fde525e59672dc6d1551919b1478f724438a95aa55f874b576be21967e6c23",
+  "md5_openslr": "32fa31d27d2e1cad72775fee3f4849a9",
+  "md5_verified": true,
+  "flac_count": 2620,
+  "speakers": 40,
+  "extracted": "/mnt/lexar/omni-campaign/corpus/external/librispeech/LibriSpeech/test-clean",
+  "finished_utc": "2026-10-15T00:13:33Z"
+ },
+ "runtimes": {
+  "speech-asr": {
+   "path": "/mnt/lexar/omni-campaign/runtimes/speech-asr",
+   "freeze": "/home/cereal/omni-campaign/distill/speech/teachers/runtime/speech-asr.freeze.txt",
+   "freeze_sha256": "bddad5d6f3a02169baf9c844245d28175188088870c0619a2624b70c47aeac23",
+   "import": {
+    "python": "3.12.3",
+    "torch": "2.6.0+cu118",
+    "cuda_build": "11.8",
+    "arch_list": [],
+    "transformers": "4.57.6",
+    "cuda_visible": false,
+    "qwen_asr": "Qwen3ASRModel",
+    "granite": "GraniteSpeechForConditionalGeneration",
+    "peft": "0.21.2",
+    "import_passed": true
+   }
+  },
+  "speech-qwentts": {
+   "path": "/mnt/lexar/omni-campaign/runtimes/speech-qwentts",
+   "freeze": "/home/cereal/omni-campaign/distill/speech/teachers/runtime/speech-qwentts.freeze.txt",
+   "freeze_sha256": "f188fa2a68b8a2b4acff79377b2570feeaabf52bb30a6b5b0750a86308a94278",
+   "import": {
+    "python": "3.12.3",
+    "torch": "2.6.0+cu118",
+    "cuda_build": "11.8",
+    "arch_list": [],
+    "transformers": "4.57.3",
+    "cuda_visible": false,
+    "qwen_tts": "Qwen3TTSModel",
+    "onnxruntime": "1.31.0",
+    "import_passed": true
+   }
+  },
+  "speech-voxcpm": {
+   "path": "/mnt/lexar/omni-campaign/runtimes/speech-voxcpm",
+   "freeze": "/home/cereal/omni-campaign/distill/speech/teachers/runtime/speech-voxcpm.freeze.txt",
+   "freeze_sha256": "9fa3c253196f9c1efa16de3e988b00edd2ba0ba44fdc6f59699406d4ae3a6aa8",
+   "import": {
+    "python": "3.12.3",
+    "torch": "2.6.0+cu118",
+    "cuda_build": "11.8",
+    "arch_list": [],
+    "transformers": "4.57.3",
+    "cuda_visible": false,
+    "voxcpm": "VoxCPM",
+    "import_passed": true
+   }
+  }
+ },
+ "runtime_base": {
+  "path": "/mnt/lexar/omni-campaign/runtimes/speech-torch",
+  "freeze_sha256": "9db5ae0ff8929d8b03bfe4a8afa408ac9632b9cf07c7f04cdb81bb3b4f64137b",
+  "shared_by": "zz_speech_torch_base.pth in each overlay venv"
+ },
+ "smoke": {
+  "asr-granite.json": {
+   "model": "granite-3.3-2b",
+   "revision": "4ac2f02f413c6169ae8c0ccc217115a366e552d7",
+   "tool_version": "1.0.1",
+   "device": "cpu",
+   "threads": 16,
+   "load_seconds": 76.1,
+   "peak_rss_gib": 13.86,
+   "file": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/asr-granite.json",
+   "sha256": "ba4485ad9491cba84be65b9a494fa99f1064c732866ab688601b950d8d08da4c",
+   "pooled_wer": 0.0116,
+   "word_edits": 1,
+   "reference_words": 86,
+   "rtf": [
+    6.903,
+    6.396,
+    4.026,
+    4.534
+   ],
+   "lora_adapter_loaded": true
+  },
+  "asr-qwen3-0.6b.json": {
+   "model": "qwen3-asr-0.6b",
+   "revision": "5eb144179a02acc5e5ba31e748d22b0cf3e303b0",
+   "tool_version": "1.0.0",
+   "device": "cpu",
+   "threads": 16,
+   "load_seconds": 46.2,
+   "peak_rss_gib": 5.95,
+   "file": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/asr-qwen3-0.6b.json",
+   "sha256": "3e4e2b8abaf6d202632ce4297ff54c96cc55f485759e70745c4f75cbf0682043",
+   "pooled_wer": 0.0,
+   "word_edits": 0,
+   "reference_words": 86,
+   "rtf": [
+    2.026,
+    1.051,
+    1.174,
+    0.942
+   ],
+   "lora_adapter_loaded": null
+  },
+  "asr-qwen3-1.7b.json": {
+   "model": "qwen3-asr-1.7b",
+   "revision": "7278e1e70fe206f11671096ffdd38061171dd6e5",
+   "tool_version": "1.0.0",
+   "device": "cpu",
+   "threads": 16,
+   "load_seconds": 32.4,
+   "peak_rss_gib": 12.51,
+   "file": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/asr-qwen3-1.7b.json",
+   "sha256": "0e42c0dd1ee7070fbb946f6ea5fe24b85b9fa2f46fef0eae917aafebb0c9473f",
+   "pooled_wer": 0.0116,
+   "word_edits": 1,
+   "reference_words": 86,
+   "rtf": [
+    3.058,
+    2.986,
+    2.198,
+    2.144
+   ],
+   "lora_adapter_loaded": null
+  },
+  "roundtrip-asr-granite.json": {
+   "model": "granite-3.3-2b",
+   "revision": "4ac2f02f413c6169ae8c0ccc217115a366e552d7",
+   "tool_version": "1.0.1",
+   "device": "cpu",
+   "threads": 16,
+   "load_seconds": 24.4,
+   "peak_rss_gib": 13.87,
+   "file": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/roundtrip-asr-granite.json",
+   "sha256": "e24b9ea1c61f1d7d10a0bed54132be67e912e1af5aa608f3265737563183eeb1",
+   "pooled_wer": 0.0577,
+   "word_edits": 12,
+   "reference_words": 208,
+   "rtf": [
+    8.552,
+    7.686,
+    6.142,
+    5.698,
+    3.515,
+    4.664,
+    3.623,
+    3.136,
+    3.62,
+    5.648,
+    2.98,
+    3.865,
+    2.842,
+    3.035,
+    3.252,
+    3.232
+   ],
+   "lora_adapter_loaded": true
+  },
+  "roundtrip-asr-qwen3-1.7b.json": {
+   "model": "qwen3-asr-1.7b",
+   "revision": "7278e1e70fe206f11671096ffdd38061171dd6e5",
+   "tool_version": "1.0.0",
+   "device": "cpu",
+   "threads": 16,
+   "load_seconds": 28.4,
+   "peak_rss_gib": 12.5,
+   "file": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/roundtrip-asr-qwen3-1.7b.json",
+   "sha256": "0ba54d5fbd4a01d97c59da6a1f2bd2d49cc413df1576dc0fae5fc62a461c159a",
+   "pooled_wer": 0.0529,
+   "word_edits": 11,
+   "reference_words": 208,
+   "rtf": [
+    2.553,
+    3.471,
+    3.251,
+    2.665,
+    1.807,
+    3.017,
+    2.385,
+    1.765,
+    1.984,
+    3.974,
+    2.155,
+    2.692,
+    2.32,
+    2.814,
+    2.882,
+    2.675
+   ],
+   "lora_adapter_loaded": null
+  },
+  "qwen3-tts-base.result.json": {
+   "model": "qwen3-tts-base",
+   "revision": "fd4b254389122332181a7c3db7f27e918eec64e3",
+   "tool_version": "1.0.0",
+   "device": "cpu",
+   "threads": 16,
+   "load_seconds": 43.0,
+   "peak_rss_gib": 11.4,
+   "file": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/tts/qwen3-tts-base.result.json",
+   "sha256": "f21e245e9982defe487b7199f02b7627e9bbf0c5c4d8759cc1cdbe08e564be80",
+   "rtf": [
+    30.057,
+    34.705,
+    24.01,
+    28.058
+   ],
+   "audio_seconds": [
+    4.0,
+    3.36,
+    4.08,
+    3.2
+   ],
+   "sample_rate": 24000,
+   "all_finite": true
+  },
+  "qwen3-tts-customvoice.result.json": {
+   "model": "qwen3-tts-customvoice",
+   "revision": "0c0e3051f131929182e2c023b9537f8b1c68adfe",
+   "tool_version": "1.0.0",
+   "device": "cpu",
+   "threads": 16,
+   "load_seconds": 33.9,
+   "peak_rss_gib": 11.31,
+   "file": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/tts/qwen3-tts-customvoice.result.json",
+   "sha256": "3fe94d38bb183be3fdfdb5273438a95a56c8ced533694b6b4713f3d89a090a1a",
+   "rtf": [
+    23.369,
+    16.69,
+    18.136,
+    25.035
+   ],
+   "audio_seconds": [
+    5.76,
+    4.08,
+    5.12,
+    4.72
+   ],
+   "sample_rate": 24000,
+   "all_finite": true
+  },
+  "qwen3-tts-voicedesign.result.json": {
+   "model": "qwen3-tts-voicedesign",
+   "revision": "5ecdb67327fd37bb2e042aab12ff7391903235d3",
+   "tool_version": "1.0.0",
+   "device": "cpu",
+   "threads": 16,
+   "load_seconds": 30.4,
+   "peak_rss_gib": 11.32,
+   "file": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/tts/qwen3-tts-voicedesign.result.json",
+   "sha256": "ec02ae5523abfc37c89265574a03d7b3db4bcc3a063e3974aabe309479778343",
+   "rtf": [
+    27.848,
+    24.534,
+    21.32,
+    23.972
+   ],
+   "audio_seconds": [
+    5.36,
+    3.36,
+    5.76,
+    3.44
+   ],
+   "sample_rate": 24000,
+   "all_finite": true
+  },
+  "voxcpm2.result.json": {
+   "model": "voxcpm2",
+   "revision": "32279effe8c19989596f05d353d1447f51d9e915",
+   "tool_version": "1.0.0",
+   "device": "cpu",
+   "threads": 16,
+   "load_seconds": 85.0,
+   "peak_rss_gib": 10.91,
+   "file": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/tts/voxcpm2.result.json",
+   "sha256": "58ab9f51df10a96cd231a1041feb225664cb9a7359f6831860487d5ef62fdf58",
+   "rtf": [
+    28.923,
+    24.85,
+    22.919,
+    29.243
+   ],
+   "audio_seconds": [
+    4.8,
+    4.64,
+    4.32,
+    3.36
+   ],
+   "sample_rate": 48000,
+   "all_finite": true
+  }
+ },
+ "not_done": [
+  "Cohere Transcribe (gated; needs Cyril's HF gate acceptance + vault key hf_token)",
+  "GPU smoke: GPU3 held by k3accel then fold-research x3-08b at launch; CPU only, so no P40 rate or VRAM figure",
+  "Kokoro-82M runtime (weights only; fallback)",
+  "root parent deletion (needs Cyril's go-ahead)"
+ ]
+}

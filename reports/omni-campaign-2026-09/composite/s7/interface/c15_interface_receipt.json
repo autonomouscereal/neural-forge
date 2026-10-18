@@ -1,0 +1,995 @@
+{
+  "argv": [],
+  "companions": {
+    "c11": {
+      "entries": [
+        "ocr_qvl32"
+      ],
+      "path": "/home/cereal/omni-campaign/composite/s7/interface_c11/companions.json",
+      "sha256": "b475a6c7731245ab17ed83deaa804df9c448bc770bda0ad7189306a8fc19fb6d"
+    },
+    "c15": {
+      "entries": [
+        "music_ace",
+        "video_h3",
+        "audio_h3",
+        "image_qimg",
+        "volume_hy3d"
+      ],
+      "path": "/home/cereal/omni-campaign/composite/s7/interface/companions.json",
+      "sha256": "66c0ee1c1fd1daa2a7aa01092937ba65063b5d010b9473c1828c9896545220df"
+    }
+  },
+  "diagnostics": {
+    "audio_h3": {
+      "bridge": {
+        "columns": 32,
+        "condition": 1.4008406571079086,
+        "content_energy_fraction_at_scale_1_median": 0.24718205180035865,
+        "content_energy_fraction_median": 0.8409176333569769,
+        "numerical_rank": 32,
+        "parent_patch_embed_pinv_rel_l2_real": 1.555424427855644e-15,
+        "pinv_roundtrip_rel_l2_gaussian": 1.7099311134042085e-15,
+        "pinv_roundtrip_rel_l2_real": 1.4953200812516698e-15,
+        "real_probe_rows": 7680,
+        "singular_max": 71.06953298264874,
+        "singular_min": 50.73348822511664
+      },
+      "head": {
+        "head_singular_max": 6.23476405390438,
+        "meaning": "|P_out B_out B_in y - P_out y| / |P_out y|: the head emits the parent's own output projection of a parent state carried into the trunk by B_in",
+        "transport_rel_l2_gaussian": 3.079439704669251e-15
+      },
+      "scale": {
+        "content_ratio_target": 4.0,
+        "gaussian_content_norm_median": 81.60687957238585,
+        "meaning": "s makes median ||s B_in (P z + b)|| = ratio x median ||type_embed[t] + position + noise terms|| for z ~ N(0, I); a heuristic, not a fit",
+        "s": 4.026143135915209,
+        "s0_terms_norm_median": 82.1402445084551
+      },
+      "vae_psnr": {
+        "data_range": 2.0,
+        "holdout_rows": 1920,
+        "meaning": "psnr_parent_roundtrip_db = parent VAE D(E(x)) vs x on held items; psnr_through_interface_db = the decoder fed the interface's own reconstruction pinv(F) F z of the latent z -- equal to the round trip by construction when that reconstruction is exact (rel_l2 <= 1e-06), so the decoder is not re-run; None otherwise",
+        "pairs_sha256": "de3d02b2e4d8313e2716ff6efe700414a6c84c15239e3b8ee1ce908db92143c1",
+        "psnr_parent_roundtrip_db": 36.33946604286972,
+        "psnr_through_interface_db": 36.33946604286972,
+        "raw_rung_ladder": {
+          "meaning": "media-lane raw-rung absorption (linear/nonlinear E,D fitted raw<->latent per VAE frame at hidden 5120); NOT what is installed (raw bands do not fit F)",
+          "receipt": "/home/cereal/omni-campaign/media/out/c15_real_v3/c15_ladder_receipt.json",
+          "receipt_sha256": "135456e62c1384d243bc711c082aa9244e566529fba8b5bc8348314aaa91a2ab",
+          "rows": [
+            {
+              "ceiling_below_linear_bound": false,
+              "d_latent": 32,
+              "d_raw": 800,
+              "linear_rank_bound_psnr_db": 32.75678998373441,
+              "psnr_absorbed_db": 24.12869290624972,
+              "psnr_parent_roundtrip_db": 36.33946604286972,
+              "rung": "linear"
+            },
+            {
+              "ceiling_below_linear_bound": false,
+              "d_latent": 32,
+              "d_raw": 800,
+              "linear_rank_bound_psnr_db": 32.75678998373441,
+              "psnr_absorbed_db": 23.95528067885216,
+              "psnr_parent_roundtrip_db": 36.33946604286972,
+              "rung": "nonlinear"
+            }
+          ]
+        }
+      }
+    },
+    "image_qimg": {
+      "bridge": {
+        "columns": 64,
+        "condition": 3.115618832176879,
+        "content_energy_fraction_at_scale_1_median": 0.3733160696604996,
+        "content_energy_fraction_median": 0.9085613040013507,
+        "numerical_rank": 64,
+        "parent_patch_embed_pinv_rel_l2_real": 2.2482531799177423e-15,
+        "pinv_roundtrip_rel_l2_gaussian": 1.946349976228171e-15,
+        "pinv_roundtrip_rel_l2_real": 2.139607504566e-15,
+        "real_probe_rows": 4096,
+        "singular_max": 80.94818040039236,
+        "singular_min": 25.9814132474716
+      },
+      "head": {
+        "head_singular_max": 0.38751539819243985,
+        "meaning": "|P_out B_out B_in y - P_out y| / |P_out y|: the head emits the parent's own output projection of a parent state carried into the trunk by B_in",
+        "parent_state_rows": 4096,
+        "parent_states_meaning": "parent residual states (ACE block-12 input / QIMG img_in capture) as a proxy for the parent's final hidden",
+        "transport_rel_l2_gaussian": 2.845518257930919e-15,
+        "transport_rel_l2_parent_states": 1.8651015538621447e-15
+      },
+      "scale": {
+        "content_ratio_target": 4.0,
+        "gaussian_content_norm_median": 80.00170035255783,
+        "meaning": "s makes median ||s B_in (P z + b)|| = ratio x median ||type_embed[t] + position + noise terms|| for z ~ N(0, I); a heuristic, not a fit",
+        "s": 4.078273494762718,
+        "s0_terms_norm_median": 81.56720352094645
+      },
+      "vae_psnr": {
+        "data_range": 1.0,
+        "holdout_rows": 3072,
+        "latent_through_interface_rel_l2_held": 2.3898255090503535e-15,
+        "meaning": "psnr_parent_roundtrip_db = parent VAE D(E(x)) vs x on held items; psnr_through_interface_db = the decoder fed the interface's own reconstruction pinv(F) F z of the latent z -- equal to the round trip by construction when that reconstruction is exact (rel_l2 <= 1e-06), so the decoder is not re-run; None otherwise",
+        "pairs_sha256": "250bf5423761c95a5eb0b924a3ca739f520398baff7b01ca2243277b0f8f1445",
+        "psnr_parent_roundtrip_db": 34.15381935183386,
+        "psnr_through_interface_db": 34.15381935183386,
+        "raw_rung_ladder": {
+          "meaning": "media-lane raw-rung absorption fitted here (mediafold.c15_fit.fit_absorption, linear, ridge lambda ladder) on 16x16 RGB patch <-> 2x2x16 DiT-space latent token rows; held split by image; NOT installed",
+          "rows": [
+            {
+              "ceiling_below_linear_bound": false,
+              "d_latent": 64,
+              "d_raw": 768,
+              "encoder_cos": 0.8828415447970106,
+              "linear_rank_bound_psnr_db": 28.93296105362844,
+              "psnr_absorbed_db": 22.77203435312837,
+              "psnr_parent_roundtrip_db": 34.15381935183386,
+              "rung": "linear"
+            }
+          ]
+        }
+      }
+    },
+    "music_ace": {
+      "bridge": {
+        "columns": 384,
+        "condition": 31.39194802886032,
+        "content_energy_fraction_at_scale_1_median": 0.5303129755762698,
+        "content_energy_fraction_median": 0.96535031503297,
+        "numerical_rank": 384,
+        "parent_patch_embed_pinv_rel_l2_real": 5.004356499471246e-15,
+        "pinv_roundtrip_rel_l2_gaussian": 4.4040523753029224e-15,
+        "pinv_roundtrip_rel_l2_real": 4.562943869459339e-15,
+        "real_probe_rows": 4800,
+        "singular_max": 76.1680829524563,
+        "singular_min": 2.426357322025089
+      },
+      "head": {
+        "head_singular_max": 2.2503937278355863,
+        "meaning": "|P_out B_out B_in y - P_out y| / |P_out y|: the head emits the parent's own output projection of a parent state carried into the trunk by B_in",
+        "parent_state_rows": 4800,
+        "parent_states_meaning": "parent residual states (ACE block-12 input / QIMG img_in capture) as a proxy for the parent's final hidden",
+        "transport_rel_l2_gaussian": 3.3339269557840976e-15,
+        "transport_rel_l2_parent_states": 3.597952081433765e-15
+      },
+      "scale": {
+        "content_ratio_target": 4.0,
+        "gaussian_content_norm_median": 65.4275710760751,
+        "meaning": "s makes median ||s B_in (P z + b)|| = ratio x median ||type_embed[t] + position + noise terms|| for z ~ N(0, I); a heuristic, not a fit",
+        "s": 5.035375842393086,
+        "s0_terms_norm_median": 82.3631027057313
+      },
+      "vae_psnr": {
+        "data_range": 2.0,
+        "holdout_rows": 2400,
+        "meaning": "psnr_parent_roundtrip_db = parent VAE D(E(x)) vs x on held items; psnr_through_interface_db = the decoder fed the interface's own reconstruction pinv(F) F z of the latent z -- equal to the round trip by construction when that reconstruction is exact (rel_l2 <= 1e-06), so the decoder is not re-run; None otherwise",
+        "pairs_sha256": "43d37f7bf67f15eab87cae009cedcf81a8adcde1a89d4ba57e8073aeaf077d85",
+        "psnr_parent_roundtrip_db": 32.77672758497599,
+        "psnr_through_interface_db": 32.77672758497599,
+        "raw_rung_ladder": {
+          "meaning": "media-lane raw-rung absorption (linear/nonlinear E,D fitted raw<->latent per VAE frame at hidden 5120); NOT what is installed (raw bands do not fit F)",
+          "receipt": "/home/cereal/omni-campaign/media/out/c15_real_v3/c15_ladder_receipt.json",
+          "receipt_sha256": "135456e62c1384d243bc711c082aa9244e566529fba8b5bc8348314aaa91a2ab",
+          "rows": [
+            {
+              "ceiling_below_linear_bound": true,
+              "d_latent": 64,
+              "d_raw": 3840,
+              "linear_rank_bound_psnr_db": 36.42237516023925,
+              "psnr_absorbed_db": 23.08603515291354,
+              "psnr_parent_roundtrip_db": 32.77672758497599,
+              "rung": "linear"
+            },
+            {
+              "ceiling_below_linear_bound": true,
+              "d_latent": 64,
+              "d_raw": 3840,
+              "linear_rank_bound_psnr_db": 36.42237516023925,
+              "psnr_absorbed_db": 22.94265301419888,
+              "psnr_parent_roundtrip_db": 32.77672758497599,
+              "rung": "nonlinear"
+            }
+          ]
+        }
+      }
+    },
+    "ocr_qvl32": {
+      "bridge": {
+        "columns": 1536,
+        "condition": 1.4012279265827376e+16,
+        "content_energy_fraction_at_scale_1_median": 0.031240261909586054,
+        "content_energy_fraction_median": 0.9426495207286741,
+        "numerical_rank": 1152,
+        "parent_patch_embed_pinv_rel_l2_real": 0.004218087272268924,
+        "pinv_roundtrip_rel_l2_gaussian": 0.5002610267929843,
+        "pinv_roundtrip_rel_l2_real": 0.004218087272269659,
+        "real_probe_rows": 37632,
+        "singular_max": 25.167458676429266,
+        "singular_min": 1.7961002774050275e-15
+      },
+      "head": {
+        "note": "encoder-only band: one zero emission row"
+      },
+      "scale": {
+        "content_ratio_target": 4.0,
+        "gaussian_content_norm_median": 14.667605557948134,
+        "meaning": "s makes median ||s B_in (P z + b)|| = ratio x median ||type_embed[t] + position + noise terms|| for z ~ N(0, I); a heuristic, not a fit",
+        "s": 22.39921978031394,
+        "s0_terms_norm_median": 82.13573013585862
+      },
+      "vae_psnr": {
+        "data_range": 2.0,
+        "held_images": [
+          "/home/cereal/comfyui/output/omnicoder_qwen_image_edit_cc732ca9e4d4_00001_.png",
+          "/home/cereal/comfyui/output/omnicoder_qwen_image_edit_229d1fef5b6f_00001_.png",
+          "/home/cereal/comfyui/output/omnicoder_qwen_image_edit_aa076da20492_00002_.png",
+          "/home/cereal/comfyui/output/omnicoder_ltx_video_af24ada23495_00001_.webp",
+          "/home/cereal/comfyui/output/iceagent_right_v010_ab_s095_00001_.webp",
+          "/home/cereal/comfyui/output/move5_border_sniper_primary_up_a01_00001_.png",
+          "/home/cereal/comfyui/output/omnicoder_ltx_video_39f3f2a13920_00001_.webp",
+          "/home/cereal/comfyui/output/iceagent_right_ab_s080_00001_.webp",
+          "/home/cereal/comfyui/output/iceagent_district_judge_none_walk_right_ltxfull33_00003_.webp",
+          "/home/cereal/comfyui/output/bestiary_tower_husk_concept_00001_.png",
+          "/home/cereal/comfyui/output/omnicoder_qwen_image_edit_7c8f01e12500_00001_.png",
+          "/home/cereal/comfyui/output/omnicoder_qwen_image_generate_3a4842052fa5_00001_.png"
+        ],
+        "holdout_rows": 9408,
+        "meaning": "vision has no decoder: psnr_through_interface_db = PSNR of the minimum-norm pixel reconstruction pinv(F) F x on held images' tubelets (data range 2); the parent's own 1152-wide patch embed keeps the same rank, so this equals the parent's information bound",
+        "psnr_parent_patch_embed_pinv_db": 55.22979954358008,
+        "psnr_parent_roundtrip_db": null,
+        "psnr_through_interface_db": 55.229799543578565,
+        "raw_rung_ladder": {
+          "meaning": "the installed QVL32 rung IS raw pixels (the patch embed is linear); no separate ladder",
+          "rows": []
+        }
+      }
+    },
+    "video_h3": {
+      "bridge": {
+        "columns": 96,
+        "condition": 2.560992137726856,
+        "content_energy_fraction_at_scale_1_median": 0.8933072575941333,
+        "content_energy_fraction_median": 0.9726082795212843,
+        "numerical_rank": 96,
+        "parent_patch_embed_pinv_rel_l2_real": 2.4024098777420264e-15,
+        "pinv_roundtrip_rel_l2_gaussian": 2.253112355783408e-15,
+        "pinv_roundtrip_rel_l2_real": 2.27075943873379e-15,
+        "real_probe_rows": 2400,
+        "singular_max": 54.90055631763873,
+        "singular_min": 21.437221734842428
+      },
+      "head": {
+        "head_singular_max": 9.85648676270236,
+        "meaning": "|P_out B_out B_in y - P_out y| / |P_out y|: the head emits the parent's own output projection of a parent state carried into the trunk by B_in",
+        "transport_rel_l2_gaussian": 3.684292155291855e-15
+      },
+      "scale": {
+        "content_ratio_target": 4.0,
+        "gaussian_content_norm_median": 157.36430775264193,
+        "meaning": "s makes median ||s B_in (P z + b)|| = ratio x median ||type_embed[t] + position + noise terms|| for z ~ N(0, I); a heuristic, not a fit",
+        "s": 2.0643613659165094,
+        "s0_terms_norm_median": 81.21419932468747
+      },
+      "vae_psnr": {
+        "data_range": 1.0,
+        "holdout_rows": 2400,
+        "meaning": "psnr_parent_roundtrip_db = parent VAE D(E(x)) vs x on held items; psnr_through_interface_db = the decoder fed the interface's own reconstruction pinv(F) F z of the latent z -- equal to the round trip by construction when that reconstruction is exact (rel_l2 <= 1e-06), so the decoder is not re-run; None otherwise",
+        "pairs_sha256": "33bd57c0c9ae829ee3881430b8c2f43f19175aac9b2f175fc945f96438d3843f",
+        "psnr_parent_roundtrip_db": 9.909719341591522,
+        "psnr_through_interface_db": 9.909719341591522,
+        "raw_rung_ladder": {
+          "meaning": "media-lane raw-rung absorption (linear/nonlinear E,D fitted raw<->latent per VAE frame at hidden 5120); NOT what is installed (raw bands do not fit F)",
+          "receipt": "/home/cereal/omni-campaign/media/out/c15_video_v2/c15_ladder_receipt.json",
+          "receipt_sha256": "1c22187a331491de19250e5e3d4c65bc37030a3c04c809f95124e5497b9fde5f",
+          "rows": [
+            {
+              "ceiling_below_linear_bound": true,
+              "d_latent": 24,
+              "d_raw": 3072,
+              "linear_rank_bound_psnr_db": 23.671229429154966,
+              "psnr_absorbed_db": 14.949340474982014,
+              "psnr_parent_roundtrip_db": 9.909719341591522,
+              "rung": "linear"
+            },
+            {
+              "ceiling_below_linear_bound": true,
+              "d_latent": 24,
+              "d_raw": 3072,
+              "linear_rank_bound_psnr_db": 23.671229429154966,
+              "psnr_absorbed_db": 18.063559612218402,
+              "psnr_parent_roundtrip_db": 9.909719341591522,
+              "rung": "nonlinear"
+            }
+          ]
+        }
+      }
+    },
+    "volume_hy3d": {
+      "bridge": {
+        "columns": 64,
+        "condition": 1.8352350193349625,
+        "content_energy_fraction_at_scale_1_median": 0.16366505586080274,
+        "content_energy_fraction_median": 0.9185220438536246,
+        "numerical_rank": 64,
+        "parent_patch_embed_pinv_rel_l2_real": 1.8648800695684746e-15,
+        "pinv_roundtrip_rel_l2_gaussian": 1.9429473373886237e-15,
+        "pinv_roundtrip_rel_l2_real": 1.9935053316863598e-15,
+        "real_probe_rows": 65536,
+        "singular_max": 51.63684876192529,
+        "singular_min": 28.13636848573053
+      },
+      "head": {
+        "head_singular_max": 1.9410942518538525,
+        "meaning": "|P_out B_out B_in y - P_out y| / |P_out y|: the head emits the parent's own output projection of a parent state carried into the trunk by B_in",
+        "transport_rel_l2_gaussian": 2.9313757967862516e-15
+      },
+      "scale": {
+        "content_ratio_target": 4.0,
+        "gaussian_content_norm_median": 42.52997765625145,
+        "meaning": "s makes median ||s B_in (P z + b)|| = ratio x median ||type_embed[t] + position + noise terms|| for z ~ N(0, I); a heuristic, not a fit",
+        "s": 7.597938578101961,
+        "s0_terms_norm_median": 80.78503949006182
+      },
+      "vae_psnr": {
+        "convention": "logit>0 inside",
+        "data_range": 1.0,
+        "meaning": "psnr_parent_roundtrip_db = parent VAE D(E(x)) vs x on held items; psnr_through_interface_db = the decoder fed the interface's own reconstruction pinv(F) F z of the latent z -- equal to the round trip by construction when that reconstruction is exact (rel_l2 <= 1e-06), so the decoder is not re-run; None otherwise",
+        "note": "near-surface probes (+/- eps along the normal) are the hardest occupancy queries; psnr_parent_roundtrip_db is over sigmoid(logit) vs {0,1}, psnr_hard_occupancy is -10 log10(error rate)",
+        "occupancy_accuracy_all_meshes": 0.9167022705078125,
+        "probe_rule": "p +/- eps*n, eps 0.01, labels outside 0 / inside 1, 8192 surface samples per mesh",
+        "psnr_hard_occupancy_holdout_db": 11.430891634746406,
+        "psnr_parent_roundtrip_all_meshes_db": 8.860548180610103,
+        "psnr_parent_roundtrip_db": 8.883359228021668,
+        "psnr_through_interface_db": 8.883359228021668,
+        "raw_rung_ladder": {
+          "meaning": "not applicable: the ShapeVAE is a perceiver over surface point sets; no raw row pairs with one latent token",
+          "rows": []
+        },
+        "volume_file_sha256": "3aa98534325c0ba48c3f0472cde958009eae71347e932ec6392da89a6020e932"
+      }
+    }
+  },
+  "finished_utc": "2026-10-10T09:58:19Z",
+  "installer_check": {
+    "bands": {
+      "duplicate_type_ids": {},
+      "overlaps": []
+    },
+    "c16_tool_sha256": "5353a27b67330cc521adf080ae723ae33832801670ac92d8b7977ecb8b608832",
+    "entries": [
+      {
+        "emission_band": [
+          0,
+          128
+        ],
+        "feature_band": [
+          0,
+          384
+        ],
+        "name": "music_ace",
+        "set": "c15",
+        "tensor_sha256_check": {
+          "declared": 4,
+          "verified": true
+        },
+        "type_id": 4
+      },
+      {
+        "emission_band": [
+          128,
+          224
+        ],
+        "feature_band": [
+          384,
+          480
+        ],
+        "name": "video_h3",
+        "set": "c15",
+        "tensor_sha256_check": {
+          "declared": 4,
+          "verified": true
+        },
+        "type_id": 2
+      },
+      {
+        "emission_band": [
+          224,
+          256
+        ],
+        "feature_band": [
+          480,
+          512
+        ],
+        "name": "audio_h3",
+        "set": "c15",
+        "tensor_sha256_check": {
+          "declared": 4,
+          "verified": true
+        },
+        "type_id": 3
+      },
+      {
+        "emission_band": [
+          256,
+          320
+        ],
+        "feature_band": [
+          512,
+          576
+        ],
+        "name": "image_qimg",
+        "set": "c15",
+        "tensor_sha256_check": {
+          "declared": 4,
+          "verified": true
+        },
+        "type_id": 1
+      },
+      {
+        "emission_band": [
+          320,
+          384
+        ],
+        "feature_band": [
+          576,
+          640
+        ],
+        "name": "volume_hy3d",
+        "set": "c15",
+        "tensor_sha256_check": {
+          "declared": 4,
+          "verified": true
+        },
+        "type_id": 7
+      },
+      {
+        "emission_band": [
+          384,
+          385
+        ],
+        "feature_band": [
+          640,
+          2176
+        ],
+        "name": "ocr_qvl32",
+        "set": "c11",
+        "tensor_sha256_check": {
+          "declared": 4,
+          "verified": true
+        },
+        "type_id": 6
+      }
+    ],
+    "verdict": "accepted by c16 load_interface_set + check_bands (no --allow-band-overlap)"
+  },
+  "owner_policy": "finite numeric values are diagnostics, never gates (Cyril 2026-10-06)",
+  "plan": {
+    "entries": [
+      {
+        "emission_band": [
+          0,
+          128
+        ],
+        "emission_layout": "index c*2+k over the 64 latent channels x 2 frames that ConvTranspose1d(2048, 64, k=2, s=2) emits for one token (the parent's velocity/flow output space)",
+        "feature_band": [
+          0,
+          384
+        ],
+        "feature_layout": "index c*2+k over the DiT's own 192-channel input x = cat([src_latents(64) | chunk_masks(64) | x_t(64)]) at the 2 latent frames k of one patch (ComfyUI ace_step15 forward: cat([context_latents, hidden_states]); Conv1d(192, 2048, k=2, s=2))",
+        "in": {
+          "bias": "decoder.proj_in.1.bias",
+          "kind": "conv1d_patch",
+          "weight": "decoder.proj_in.1.weight"
+        },
+        "name": "music_ace",
+        "out": {
+          "bias": "decoder.proj_out.1.bias",
+          "kind": "conv_transpose1d_patch",
+          "weight": "decoder.proj_out.1.weight"
+        },
+        "set": "c15",
+        "source": "ace",
+        "type_id": 4
+      },
+      {
+        "emission_band": [
+          128,
+          224
+        ],
+        "emission_layout": "final_layer.video_out output (96) in the same order",
+        "feature_band": [
+          384,
+          480
+        ],
+        "feature_layout": "the 96-wide H3 video token (24 latent channels x 1x2x2) in H3's own patchify order (video_patch_proj input)",
+        "in": {
+          "bias": "video_patch_proj.bias",
+          "kind": "linear",
+          "weight": "video_patch_proj.weight"
+        },
+        "name": "video_h3",
+        "out": {
+          "bias": "final_layer.video_out.bias",
+          "kind": "linear",
+          "weight": "final_layer.video_out.weight"
+        },
+        "set": "c15",
+        "source": "h3",
+        "type_id": 2
+      },
+      {
+        "emission_band": [
+          224,
+          256
+        ],
+        "emission_layout": "final_layer.audio_out output (32)",
+        "feature_band": [
+          480,
+          512
+        ],
+        "feature_layout": "the 32-wide H3 audio token (audio_patch_proj input)",
+        "in": {
+          "bias": "audio_patch_proj.bias",
+          "kind": "linear",
+          "weight": "audio_patch_proj.weight"
+        },
+        "name": "audio_h3",
+        "out": {
+          "bias": "final_layer.audio_out.bias",
+          "kind": "linear",
+          "weight": "final_layer.audio_out.weight"
+        },
+        "set": "c15",
+        "source": "h3",
+        "type_id": 3
+      },
+      {
+        "emission_band": [
+          256,
+          320
+        ],
+        "emission_layout": "proj_out output (64) in the same (c, ph, pw) order",
+        "feature_band": [
+          512,
+          576
+        ],
+        "feature_layout": "index c*4+ph*2+pw over a 2x2 group of 16-channel DiT-space latents (ComfyUI qwen_image process_img order; Wan21 latent format)",
+        "in": {
+          "bias": "img_in.bias",
+          "kind": "linear",
+          "weight": "img_in.weight"
+        },
+        "name": "image_qimg",
+        "out": {
+          "bias": "proj_out.bias",
+          "kind": "linear",
+          "weight": "proj_out.weight"
+        },
+        "set": "c15",
+        "source": "qimg",
+        "type_id": 1
+      },
+      {
+        "emission_band": [
+          320,
+          384
+        ],
+        "emission_layout": "final_layer.linear output (64)",
+        "feature_band": [
+          576,
+          640
+        ],
+        "feature_layout": "one 64-channel ShapeVAE latent token in DiT space (x scale_factor 1.0039506158752403)",
+        "in": {
+          "bias": "model.x_embedder.bias",
+          "kind": "linear",
+          "weight": "model.x_embedder.weight"
+        },
+        "name": "volume_hy3d",
+        "out": {
+          "bias": "model.final_layer.linear.bias",
+          "kind": "linear",
+          "weight": "model.final_layer.linear.weight"
+        },
+        "set": "c15",
+        "source": "hy3d",
+        "type_id": 7
+      },
+      {
+        "emission_band": [
+          384,
+          385
+        ],
+        "emission_layout": "one zero row: an encoder-only band has no emission (c16 requires a non-empty band)",
+        "feature_band": [
+          640,
+          2176
+        ],
+        "feature_layout": "index c*512+t*256+y*16+x over one 2x16x16 RGB tubelet, pixels normalised (x/255-0.5)/0.5 (Conv3d(3, 1152, (2,16,16)) input)",
+        "in": {
+          "bias": "visual.patch_embed.proj.bias",
+          "kind": "conv3d_patch",
+          "weight": "visual.patch_embed.proj.weight"
+        },
+        "name": "ocr_qvl32",
+        "out": null,
+        "set": "c11",
+        "source": "qvl32",
+        "type_id": 6
+      }
+    ],
+    "hidden": 5120,
+    "native_feature_dim": 6144,
+    "native_type_count": 8,
+    "sources": {
+      "ace": {
+        "read_gram": [
+          "^decoder\\.layers\\.0\\.self_attn\\.[qkv]_proj\\.weight$"
+        ],
+        "weights": "diffusion_models/acestep_v1.5_turbo.safetensors",
+        "width": 2048
+      },
+      "h3": {
+        "read_gram": [
+          "^blocks\\.0\\.attn\\.qkv_proj\\.weight$"
+        ],
+        "weights": "diffusion_models/minimax_h3_fl2va_pruned_bf16.safetensors",
+        "width": 5376
+      },
+      "hy3d": {
+        "read_gram": [
+          "^model\\.blocks\\.0\\.attn1\\.to_[qkv]\\.weight$"
+        ],
+        "weights": "checkpoints/hunyuan_3d_v2.1.safetensors",
+        "width": 2048
+      },
+      "qimg": {
+        "read_gram": [
+          "^transformer_blocks\\.0\\.attn\\.to_[qkv]\\.weight$"
+        ],
+        "weights": "diffusion_models/qwen_image_fp8_e4m3fn.safetensors",
+        "width": 3072
+      },
+      "qvl32": {
+        "read_gram": [
+          "^visual\\.blocks\\.0\\.attn\\.qkv\\.weight$"
+        ],
+        "weights": "text_encoders/qwen3vl_32b_minimax_h3_bf16.safetensors",
+        "width": 1152
+      }
+    }
+  },
+  "rung": "latent (one native row = one parent token; companion VAE encoder/decoder kept, D5b)",
+  "schema": "chimera_omni.composite.c15_interface_rows.v1",
+  "simulated_install": {
+    "entries": {
+      "audio_h3": {
+        "forward": {
+          "bridge_row_norm_median": 71.55417099452741,
+          "cos_bridge_output_vs_media_content_median": 0.9134063705261286,
+          "emitted_rms": 5.563998350856747,
+          "finite_bridge": true,
+          "finite_head": true,
+          "meaning": "real chimera NativeContinuousMediaBridge.embed (RMSNorm, type_affine, positions, noise) after the c16 writes; cos against the transported parent token state s*B_in(P z + b) says how much of each bridge row is the media content",
+          "rows": 256,
+          "rows_kind": "real probe rows"
+        },
+        "head_shift_lstsq_relative_residual": 9.812424965785043e-16,
+        "preconditions_nonzero": {
+          "bridge_affine_scale_nonzero": 0,
+          "head_affine_scale_nonzero": 0,
+          "type_feature_scale_nonzero": 0
+        }
+      },
+      "image_qimg": {
+        "forward": {
+          "bridge_row_norm_median": 71.55417204099317,
+          "cos_bridge_output_vs_media_content_median": 0.9622108906890253,
+          "emitted_rms": 0.31809433291557926,
+          "finite_bridge": true,
+          "finite_head": true,
+          "meaning": "real chimera NativeContinuousMediaBridge.embed (RMSNorm, type_affine, positions, noise) after the c16 writes; cos against the transported parent token state s*B_in(P z + b) says how much of each bridge row is the media content",
+          "rows": 256,
+          "rows_kind": "real probe rows"
+        },
+        "head_shift_lstsq_relative_residual": 9.001782363540735e-16,
+        "preconditions_nonzero": {
+          "bridge_affine_scale_nonzero": 0,
+          "head_affine_scale_nonzero": 0,
+          "type_feature_scale_nonzero": 0
+        }
+      },
+      "music_ace": {
+        "forward": {
+          "bridge_row_norm_median": 71.55417559730625,
+          "cos_bridge_output_vs_media_content_median": 0.9840651040032729,
+          "emitted_rms": 3.331214626532879,
+          "finite_bridge": true,
+          "finite_head": true,
+          "meaning": "real chimera NativeContinuousMediaBridge.embed (RMSNorm, type_affine, positions, noise) after the c16 writes; cos against the transported parent token state s*B_in(P z + b) says how much of each bridge row is the media content",
+          "rows": 256,
+          "rows_kind": "real probe rows"
+        },
+        "head_shift_lstsq_relative_residual": 1.2821731624301236e-15,
+        "preconditions_nonzero": {
+          "bridge_affine_scale_nonzero": 0,
+          "head_affine_scale_nonzero": 0,
+          "type_feature_scale_nonzero": 0
+        }
+      },
+      "ocr_qvl32": {
+        "forward": {
+          "bridge_row_norm_median": 71.5541727270709,
+          "cos_bridge_output_vs_media_content_median": 0.9709187085820636,
+          "emitted_rms": 0.0,
+          "finite_bridge": true,
+          "finite_head": true,
+          "meaning": "real chimera NativeContinuousMediaBridge.embed (RMSNorm, type_affine, positions, noise) after the c16 writes; cos against the transported parent token state s*B_in(P z + b) says how much of each bridge row is the media content",
+          "rows": 256,
+          "rows_kind": "real probe rows"
+        },
+        "head_shift_lstsq_relative_residual": 0.0,
+        "preconditions_nonzero": {
+          "bridge_affine_scale_nonzero": 0,
+          "head_affine_scale_nonzero": 0,
+          "type_feature_scale_nonzero": 0
+        }
+      },
+      "video_h3": {
+        "forward": {
+          "bridge_row_norm_median": 71.55417577254852,
+          "cos_bridge_output_vs_media_content_median": 0.9865702511740612,
+          "emitted_rms": 7.486624233019053,
+          "finite_bridge": true,
+          "finite_head": true,
+          "meaning": "real chimera NativeContinuousMediaBridge.embed (RMSNorm, type_affine, positions, noise) after the c16 writes; cos against the transported parent token state s*B_in(P z + b) says how much of each bridge row is the media content",
+          "rows": 256,
+          "rows_kind": "real probe rows"
+        },
+        "head_shift_lstsq_relative_residual": 8.866552937560501e-16,
+        "preconditions_nonzero": {
+          "bridge_affine_scale_nonzero": 0,
+          "head_affine_scale_nonzero": 0,
+          "type_feature_scale_nonzero": 0
+        }
+      },
+      "volume_hy3d": {
+        "forward": {
+          "bridge_row_norm_median": 71.55416851500777,
+          "cos_bridge_output_vs_media_content_median": 0.9570767638206381,
+          "emitted_rms": 2.3017097578268157,
+          "finite_bridge": true,
+          "finite_head": true,
+          "meaning": "real chimera NativeContinuousMediaBridge.embed (RMSNorm, type_affine, positions, noise) after the c16 writes; cos against the transported parent token state s*B_in(P z + b) says how much of each bridge row is the media content",
+          "rows": 256,
+          "rows_kind": "real probe rows"
+        },
+        "head_shift_lstsq_relative_residual": 1.0576077751326172e-15,
+        "preconditions_nonzero": {
+          "bridge_affine_scale_nonzero": 0,
+          "head_affine_scale_nonzero": 0,
+          "type_feature_scale_nonzero": 0
+        }
+      }
+    },
+    "modules": "chimera_omni.modeling.chimera NativeContinuousMediaBridge / UnifiedNativeMediaEmissionHead (fp64)"
+  },
+  "sources": {
+    "ace": {
+      "basis": {
+        "complement_energy_top4": [
+          714.6690982945526,
+          500.91360815048046,
+          398.172885787203,
+          225.14973949871276
+        ],
+        "complement_order": "eigenvectors of N^T G N, G = sum of the parent block-0 attention read weights' W^T W, descending",
+        "orthonormality_max_abs_error": 4.196296088387896e-15,
+        "singular_min_kept": 0.006893697310060265,
+        "written_read_columns": 513,
+        "written_read_rank": 513
+      },
+      "chart_file": {
+        "path": "/home/cereal/omni-campaign/composite/s7/interface/charts/ace.safetensors",
+        "sha256": "904250f76bfb9ca553e6d2f8b2fc6d6151c82379f3dfc2a5134ce313b012e8c4"
+      },
+      "chart_kind": "B_in = U_r V_r^T (semi-orthogonal), B_out = V_r U_r^T = pinv(B_in); design choice, not a fit",
+      "chart_rank": 2048,
+      "dropped_parent_directions": 0,
+      "projection_tensors": [
+        "decoder.proj_in.1.weight",
+        "decoder.proj_in.1.bias",
+        "decoder.proj_out.1.weight",
+        "decoder.proj_out.1.bias"
+      ],
+      "read_gram_tensors": [
+        "decoder.layers.0.self_attn.k_proj.weight",
+        "decoder.layers.0.self_attn.q_proj.weight",
+        "decoder.layers.0.self_attn.v_proj.weight"
+      ],
+      "weights": "/home/cereal/comfyui/models/diffusion_models/acestep_v1.5_turbo.safetensors",
+      "weights_sha256": "not hashed (--hash-parents off)",
+      "width": 2048
+    },
+    "h3": {
+      "basis": {
+        "complement_energy_top4": [
+          1784.8427711031536,
+          1656.6804471189919,
+          1471.3815669015532,
+          1408.4643687977596
+        ],
+        "complement_order": "eigenvectors of N^T G N, G = sum of the parent block-0 attention read weights' W^T W, descending",
+        "orthonormality_max_abs_error": 7.93505885998691e-15,
+        "singular_min_kept": 0.05817765426699374,
+        "written_read_columns": 258,
+        "written_read_rank": 258
+      },
+      "chart_file": {
+        "path": "/home/cereal/omni-campaign/composite/s7/interface/charts/h3.safetensors",
+        "sha256": "e79d193eb90a18f181120fc7642fec776bbdbf64b85ff10d58bfceb91ac31b74"
+      },
+      "chart_kind": "B_in = U_r V_r^T (semi-orthogonal), B_out = V_r U_r^T = pinv(B_in); design choice, not a fit",
+      "chart_rank": 5120,
+      "dropped_parent_directions": 256,
+      "projection_tensors": [
+        "video_patch_proj.weight",
+        "video_patch_proj.bias",
+        "final_layer.video_out.weight",
+        "final_layer.video_out.bias",
+        "audio_patch_proj.weight",
+        "audio_patch_proj.bias",
+        "final_layer.audio_out.weight",
+        "final_layer.audio_out.bias"
+      ],
+      "read_gram_tensors": [
+        "blocks.0.attn.qkv_proj.weight"
+      ],
+      "weights": "/home/cereal/comfyui/models/diffusion_models/minimax_h3_fl2va_pruned_bf16.safetensors",
+      "weights_sha256": "not hashed (--hash-parents off)",
+      "width": 5376
+    },
+    "hy3d": {
+      "basis": {
+        "complement_energy_top4": [
+          97.40353406620301,
+          43.12438825296921,
+          32.32106956766998,
+          28.240273721846
+        ],
+        "complement_order": "eigenvectors of N^T G N, G = sum of the parent block-0 attention read weights' W^T W, descending",
+        "orthonormality_max_abs_error": 3.8957552461749145e-15,
+        "singular_min_kept": 0.08387934372723085,
+        "written_read_columns": 129,
+        "written_read_rank": 129
+      },
+      "chart_file": {
+        "path": "/home/cereal/omni-campaign/composite/s7/interface/charts/hy3d.safetensors",
+        "sha256": "5b5cdbb36cd3335c3f0b12eab819648bf336814b28af75419916a7a966abadae"
+      },
+      "chart_kind": "B_in = U_r V_r^T (semi-orthogonal), B_out = V_r U_r^T = pinv(B_in); design choice, not a fit",
+      "chart_rank": 2048,
+      "dropped_parent_directions": 0,
+      "projection_tensors": [
+        "model.x_embedder.weight",
+        "model.x_embedder.bias",
+        "model.final_layer.linear.weight",
+        "model.final_layer.linear.bias"
+      ],
+      "read_gram_tensors": [
+        "model.blocks.0.attn1.to_k.weight",
+        "model.blocks.0.attn1.to_q.weight",
+        "model.blocks.0.attn1.to_v.weight"
+      ],
+      "weights": "/home/cereal/comfyui/models/checkpoints/hunyuan_3d_v2.1.safetensors",
+      "weights_sha256": "not hashed (--hash-parents off)",
+      "width": 2048
+    },
+    "qimg": {
+      "basis": {
+        "complement_energy_top4": [
+          21633.812254605076,
+          2754.523646420198,
+          1369.213762110684,
+          1080.8043540137314
+        ],
+        "complement_order": "eigenvectors of N^T G N, G = sum of the parent block-0 attention read weights' W^T W, descending",
+        "orthonormality_max_abs_error": 5.303049666061099e-15,
+        "singular_min_kept": 0.07400742228711671,
+        "written_read_columns": 129,
+        "written_read_rank": 129
+      },
+      "chart_file": {
+        "path": "/home/cereal/omni-campaign/composite/s7/interface/charts/qimg.safetensors",
+        "sha256": "ec735b8817ee09a62df6d4af65698b35efa683623bfff6bd761ffb2f63466611"
+      },
+      "chart_kind": "B_in = U_r V_r^T (semi-orthogonal), B_out = V_r U_r^T = pinv(B_in); design choice, not a fit",
+      "chart_rank": 3072,
+      "dropped_parent_directions": 0,
+      "projection_tensors": [
+        "img_in.weight",
+        "img_in.bias",
+        "proj_out.weight",
+        "proj_out.bias"
+      ],
+      "read_gram_tensors": [
+        "transformer_blocks.0.attn.to_k.weight",
+        "transformer_blocks.0.attn.to_q.weight",
+        "transformer_blocks.0.attn.to_v.weight"
+      ],
+      "weights": "/home/cereal/comfyui/models/diffusion_models/qwen_image_fp8_e4m3fn.safetensors",
+      "weights_sha256": "not hashed (--hash-parents off)",
+      "width": 3072
+    },
+    "qvl32": {
+      "basis": {
+        "complement_order": "SVD null-space order (no read Gram available)",
+        "orthonormality_max_abs_error": 3.94996535479919e-15,
+        "singular_min_kept": 1.9883904992193177e-05,
+        "written_read_columns": 1537,
+        "written_read_rank": 1152
+      },
+      "chart_file": {
+        "path": "/home/cereal/omni-campaign/composite/s7/interface/charts/qvl32.safetensors",
+        "sha256": "4b36e46a3c5330bac6df34a25f081c66a1e16bbcd9d2564775036e98db579994"
+      },
+      "chart_kind": "B_in = U_r V_r^T (semi-orthogonal), B_out = V_r U_r^T = pinv(B_in); design choice, not a fit",
+      "chart_rank": 1152,
+      "dropped_parent_directions": 0,
+      "projection_tensors": [
+        "visual.patch_embed.proj.weight",
+        "visual.patch_embed.proj.bias"
+      ],
+      "read_gram_tensors": [
+        "visual.blocks.0.attn.qkv.weight"
+      ],
+      "weights": "/home/cereal/comfyui/models/text_encoders/qwen3vl_32b_minimax_h3_bf16.safetensors",
+      "weights_sha256": "not hashed (--hash-parents off)",
+      "width": 1152
+    }
+  },
+  "started_utc": "2026-10-10T09:49:36Z",
+  "tool": {
+    "name": "c15_interface_rows.py",
+    "sha256": "0614b7c059572c8e6c00a88e710f75a835b32b2cad40a77d854fd7cf81a7d8ec",
+    "version": "1.0.0"
+  },
+  "trunk_basis": {
+    "energy_top1_fraction": 0.6343358840878053,
+    "energy_top512_fraction": 0.9172239080931933,
+    "energy_top64_fraction": 0.7766760533071567,
+    "file_sha256": "6150fb13e175982d61339d2fdd1f375512dee71fbff674fcf65dfc87042c171a",
+    "key": "prenorm",
+    "mean_norm": 14.080497534487872,
+    "meaning": "U = eigenvectors of the trunk's layer-0 tap row statistic (see 'statistic'); the parent's written/read directions are mapped onto the trunk's top directions in order (design choice, not a fit)",
+    "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L00/ffn_input_rows.safetensors",
+    "row_norm_median": 14.520843505859375,
+    "rows": 24576,
+    "statistic": "centred covariance",
+    "uncentred_second_moment_top1_fraction": 0.9878697304816375
+  },
+  "trunk_bridge": {
+    "chimera_commit": "ef1ffb9c3c1abd9ea79f1d4d5707ac5486dab9ab",
+    "native_dir": "/mnt/lexar/omni-campaign/s3-native-v2-3a25a459-4347-416d-a58a-2cb3c8e738fd/actual/native-s3-text-stage/native",
+    "tensor_sha256_recorded": {
+      "native_media_bridge.feature_proj.weight": "d6922d780fa488bceebece77c710103ac34605b4e18228009be292ac885e60fa",
+      "native_media_bridge.noise_proj.0.bias": "663fff699ffbc25c36da1fd7476aafbf1a7da69a6850b96a5cb859e20f415cc9",
+      "native_media_bridge.noise_proj.0.weight": "fb41673eb8b29a73e10b3afb23d34f45918080bbbdeb47dbedd6dd2829fe128d",
+      "native_media_bridge.noise_proj.2.weight": "7db54546d3da89520e2a0748fd6e0c7121b24f46c6e8cdc89de561433f52dd26",
+      "native_media_bridge.norm.weight": "992350f66f8b41adef641b921206c30597b74e38c9b40ea0e25d31aa2cd2deb9",
+      "native_media_bridge.position_fourier_proj.weight": "06930280c48198927c5052addde4e45ffa7f4f5963aa69bdc4356ea9c99f8621",
+      "native_media_bridge.position_proj.weight": "98086b94148de9e736f0bf566c0f508f0e581c24c1306f17c28e45c1cb203477",
+      "native_media_bridge.type_affine.weight": "db55393b51701c3caeda061f740443aa3f8885e56c78cdb316654466df19d1dc",
+      "native_media_bridge.type_embed.weight": "dbb0b03813d7ba260a3e8795a7a6107cb246a897b4b5345298826c4ae8ddd97d",
+      "native_media_bridge.type_feature_scale.weight": "8abc7f6639e4084b5f415a830833c0a86c082695d6b88c60fec363166a142fe8",
+      "native_media_head.norm.weight": "992350f66f8b41adef641b921206c30597b74e38c9b40ea0e25d31aa2cd2deb9",
+      "native_media_head.out.weight": "76a4d607ee27b68fa5ada4f30ff5aff977c0680e0f6c42bb7e3a36311ef58013",
+      "native_media_head.type_affine.weight": "db55393b51701c3caeda061f740443aa3f8885e56c78cdb316654466df19d1dc"
+    }
+  }
+}

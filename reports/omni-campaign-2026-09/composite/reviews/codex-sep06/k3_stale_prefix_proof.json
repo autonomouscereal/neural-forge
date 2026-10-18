@@ -1,0 +1,50 @@
+{
+ "before_l2_folded_prefix": {
+  "equal": false,
+  "max_abs": 0.11372843384742737,
+  "rel_l2": 0.2761245740250336
+ },
+ "case": "same-rung upstream refit must invalidate downstream done marker",
+ "l2_actual_folded_ffn_input_held": {
+  "equal": false,
+  "max_abs": 1.2456065732985735,
+  "rel_l2": 0.2401413371242084
+ },
+ "l2_fit_skipped": true,
+ "l2_fold_metrics_source": "done_marker",
+ "l2_teacher_ffn_input_held": {
+  "equal": true,
+  "max_abs": 0.0,
+  "rel_l2": 0.0
+ },
+ "new_l1_ffn_sha256": "4bc964a07b14f5633921b0046c153380993ae02b7fb643e7bd535f39304ae667",
+ "old_l1_ffn_sha256": "3e494c659c2d0dafe49433ba2547f576a0f9780320ac277cb5f2f142118efba7",
+ "old_l2_ffn_sha256": "f97e51f1d182ce88a4b7cbe4206a6fcd068b53e08f1e2086084c01fa86d73c47",
+ "original_pool_factor": 1,
+ "production_code_sha256": "a98041dfb3fe4edc592e99489121f9d2dc6de137bc30035c0e6134f58e362372",
+ "source_stability_check": {
+  "production_sha256_before": "a98041dfb3fe4edc592e99489121f9d2dc6de137bc30035c0e6134f58e362372",
+  "production_sha256_after": "a98041dfb3fe4edc592e99489121f9d2dc6de137bc30035c0e6134f58e362372",
+  "tests_sha256_before": "2b96964448e8990a535ec4da36a2dcce754a2df9f020df7548e2ec1db7f7e826",
+  "tests_sha256_after": "2b96964448e8990a535ec4da36a2dcce754a2df9f020df7548e2ec1db7f7e826",
+  "production_unchanged": true,
+  "tests_unchanged": true,
+  "reproduction_exit_code": 0
+ },
+ "result": "CONFIRMED: old downstream fold reused on changed folded input",
+ "resume_installed_layers": [
+  1
+ ],
+ "resume_layer": 2,
+ "resumed_l2_ffn_sha256": "f97e51f1d182ce88a4b7cbe4206a6fcd068b53e08f1e2086084c01fa86d73c47",
+ "resumed_pool_factor": 1,
+ "rung": 64,
+ "runtime": {
+  "device": "cpu",
+  "python": "3.11.9",
+  "torch": "2.13.0+cpu"
+ },
+ "temporary_outputs_removed": true,
+ "tests_sha256": "2b96964448e8990a535ec4da36a2dcce754a2df9f020df7548e2ec1db7f7e826",
+ "upstream_refit_pool_factor": 2
+}

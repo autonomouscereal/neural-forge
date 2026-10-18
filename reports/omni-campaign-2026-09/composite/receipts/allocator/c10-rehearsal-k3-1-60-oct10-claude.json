@@ -1,0 +1,41 @@
+{
+ "schema": "omni-campaign.host-venv-gpu-claim.v1",
+ "name": "c10-rehearsal-k3-1-60-oct10-claude",
+ "owner": "claude",
+ "kind": "host-venv",
+ "gpu_index": 4,
+ "gpu_uuid": "GPU-2ce6a95c-7b1f-644a-3808-d781732a0582",
+ "gpu_used_mib_at_start": 15,
+ "pid": 3360943,
+ "started_utc": "2026-10-10T11:56:36Z",
+ "log": "/home/cereal/omni-campaign/composite/c10/rehearsal-k3-1-60/logs/c10_rehearsal.log",
+ "command": "STOP=63 /home/cereal/omni-campaign/composite/c10/rehearsal-k3-1-60/launch.sh --resume (c10 1.3.0 eb766ab3; layers 42-63 partial files symlinked to /mnt/lexar/omni-campaign/c10-rehearsal-k3-1-60-partial-overflow; watchdog.sh TERMs at root<62G or MemAvailable<16G)",
+ "release": "process exit",
+ "attempts": [
+  {
+   "attempt": 1,
+   "pid": 2739016,
+   "started_utc": "2026-10-10T08:17:56Z",
+   "tool": "c10 1.1.1 (c14 host pivot)",
+   "ended": "SIGTERM by Claude at 2026-10-10T09:07Z after ~49 min (layer 0 still in host pivoted-Cholesky selection; measured scaling says ~57 min/single, ~115 min/double layer)",
+   "log": "/home/cereal/omni-campaign/composite/c10/rehearsal-k3-1-60/logs/c10_rehearsal_attempt1_1.1.1_cpu_pivot.log"
+  },
+  {
+   "attempt": 2,
+   "pid": 2926356,
+   "started_utc": "2026-10-10T09:22:24Z",
+   "tool": "c10 1.2.0 (GPU pivot, host ridge, chunk 1024)",
+   "ended": "L00 persisted at 10:37Z (2869 s); SIGSTOP 10:39:27Z, SIGTERM ~10:42Z (host fp64 ridge 1185 s + host Gram 1112 s per layer; K3 slowed to ~2,900 s/layer in the same window)",
+   "evidence": "/home/cereal/omni-campaign/composite/c10/rehearsal-k3-1-60/attempt2_1.2.0/"
+  },
+  {
+   "attempt": 3,
+   "pid": 3151563,
+   "started_utc": "2026-10-10T10:44:49Z",
+   "tool": "c10 1.3.0",
+   "ended": "exit 3 after layer 2 (STOP=2), 52:27 wall, max RSS 123,305,236 kB",
+   "log": "/home/cereal/omni-campaign/composite/c10/rehearsal-k3-1-60/logs/c10_rehearsal_prefix_L00-02.log"
+  }
+ ],
+ "time_pid": 3360942
+}

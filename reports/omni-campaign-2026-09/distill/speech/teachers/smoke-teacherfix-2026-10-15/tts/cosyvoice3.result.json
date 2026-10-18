@@ -1,0 +1,84 @@
+{
+ "schema": "omni-campaign.speech-teacher-smoke.tts.v1",
+ "tool_version": "1.1.0",
+ "model": "cosyvoice3",
+ "model_dir": "/mnt/lexar/models/FunAudioLLM/Fun-CosyVoice3-0.5B-2512",
+ "revision": "29e01c4e8d000f4bcd70751be16fa94bf3d85a18",
+ "device": "cpu",
+ "dtype": "float32",
+ "threads": 16,
+ "load_seconds": 401.4,
+ "rows": [
+  {
+   "index": 0,
+   "text": "The river rose overnight, so the ferry left an hour later than usual.",
+   "wav": "/home/cereal/omni-campaign/distill/speech/teachers/smoke-teacherfix-2026-10-15/tts/cosyvoice3-0.wav",
+   "sample_rate": 24000,
+   "audio_seconds": 4.72,
+   "seconds": 43.15,
+   "rtf": 9.142,
+   "peak_abs": 0.6675,
+   "finite": true,
+   "condition": {
+    "clone_ref": "7850-286674-0009",
+    "clone_ref_source": "librispeech/dev-clean",
+    "llm_weights": "llm.rl.pt"
+   },
+   "sha256": "68352690c6e4cce3007fc932610b32d21a2399a08791313effacbb489d9709b4"
+  },
+  {
+   "index": 1,
+   "text": "Please set the oven to two hundred degrees and wait ten more minutes.",
+   "wav": "/home/cereal/omni-campaign/distill/speech/teachers/smoke-teacherfix-2026-10-15/tts/cosyvoice3-1.wav",
+   "sample_rate": 24000,
+   "audio_seconds": 4.56,
+   "seconds": 39.41,
+   "rtf": 8.643,
+   "peak_abs": 0.5543,
+   "finite": true,
+   "condition": {
+    "clone_ref": "7850-286674-0009",
+    "clone_ref_source": "librispeech/dev-clean",
+    "llm_weights": "llm.rl.pt"
+   },
+   "sha256": "ee6be9d37272cfee8fe745339a5998ffaffd120f285b2eebb0afbe77981111ed"
+  },
+  {
+   "index": 2,
+   "text": "She painted the old fence blue, then sat on the porch to watch it dry.",
+   "wav": "/home/cereal/omni-campaign/distill/speech/teachers/smoke-teacherfix-2026-10-15/tts/cosyvoice3-2.wav",
+   "sample_rate": 24000,
+   "audio_seconds": 4.76,
+   "seconds": 53.07,
+   "rtf": 11.149,
+   "peak_abs": 0.708,
+   "finite": true,
+   "condition": {
+    "clone_ref": "7850-286674-0009",
+    "clone_ref_source": "librispeech/dev-clean",
+    "llm_weights": "llm.rl.pt"
+   },
+   "sha256": "669b4874cce15ab528a6714432bc23aa3accdc3a8b766eafae5fa2d9d1840ed0"
+  },
+  {
+   "index": 3,
+   "text": "Our meeting moved to Thursday because the projector was broken again.",
+   "wav": "/home/cereal/omni-campaign/distill/speech/teachers/smoke-teacherfix-2026-10-15/tts/cosyvoice3-3.wav",
+   "sample_rate": 24000,
+   "audio_seconds": 4.08,
+   "seconds": 48.08,
+   "rtf": 11.784,
+   "peak_abs": 0.6326,
+   "finite": true,
+   "condition": {
+    "clone_ref": "7850-286674-0009",
+    "clone_ref_source": "librispeech/dev-clean",
+    "llm_weights": "llm.rl.pt"
+   },
+   "sha256": "b2a98616c80a67202d0aeb807c3737694ff2f6c3380aea3f452f0ef7cf0adc48"
+  }
+ ],
+ "peak_rss_gib": 7.63,
+ "torch": "2.6.0+cu118",
+ "finished_utc": "2026-10-15T03:31:31Z"
+}

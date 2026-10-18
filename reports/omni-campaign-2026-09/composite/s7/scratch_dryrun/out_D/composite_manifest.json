@@ -1,0 +1,2438 @@
+{
+  "accounting": {
+    "charted_dtype": "F32",
+    "charted_or_blend_added": 537060937,
+    "child_header_parameters": 566544,
+    "equality_asserted": true,
+    "oc_seal_header_parameters": 537627481,
+    "output_header_parameters": 537627481,
+    "quantization": "none",
+    "storage_dtype": "BF16"
+  },
+  "band": {
+    "note": "no band table given"
+  },
+  "blocks": {
+    "added_parameters": 537060937,
+    "arm": "insert",
+    "placements": [
+      {
+        "accounting": {
+          "child_block_parameters": 34621952,
+          "child_mlp_parameters": 9437184,
+          "parent_block_parameters": 62933504,
+          "parent_mlp_parameters": 37748736
+        },
+        "chart_fit": {
+          "chart_out_bias_dropped": true,
+          "forward_scores": {
+            "cos": 0.9999156910793495,
+            "cos_p05": 0.99990191211513,
+            "r2": 0.9998314998338141,
+            "rel_l2": 0.012912917528665276,
+            "rows": 102,
+            "width": 2048
+          },
+          "method": "ridge",
+          "roundtrip_scores": {
+            "cos": 0.9999999761279552,
+            "cos_p05": 0.9999999673615769,
+            "r2": 0.9999998716150027,
+            "rel_l2": 0.00035642666226665023,
+            "rows": 102,
+            "width": 128
+          },
+          "rows_path": "/home/cereal/omni-campaign/composite/s7/scratch_dryrun/tap/ace_dit_L12/paired_rows.safetensors",
+          "rows_sha256": "7e6952262c6cc64e91de50133fefa70f2087300ab8e7b3bbeff363675952512e",
+          "split": {
+            "fit_rows": 410,
+            "holdout_rows": 102,
+            "rows": 512,
+            "scored_on": "holdout",
+            "split_by": "row"
+          }
+        },
+        "chart_parameters": 526336,
+        "chart_source": "fit_charts(ridge) on --tap-rows",
+        "component": "ace.dit.block12.mlp",
+        "container": "ace_dit_L12",
+        "dropped_chart_keys": [
+          "chart_out.bias"
+        ],
+        "files": {
+          "charted_block.json": "b41ab438ce558d7586762838a8c79f9ba4fe3241a7092b0a7dd02e2a71bd69d2",
+          "charted_block.safetensors": "94c4f10f55fa3e09380376e6997cdffe3e3458e660cd422463d7eb90458ab7f5",
+          "charts.safetensors": null,
+          "time_reference.safetensors": "0d1ae9939364f80a2dc9a074273397b196137995d094c508acedcd64bca0a727"
+        },
+        "holdout": {
+          "cos": 0.8415188270864858,
+          "cos_p05": 0.7799929815120936,
+          "r2": 0.6532203718005033,
+          "rel_l2": 0.5442424558949278,
+          "rows": 950,
+          "split_by": "clip (96 clips, 19 held out)",
+          "width": 2048
+        },
+        "layer_index": 4,
+        "mlp_parameters": 9437184,
+        "mlp_tensor_prefix": "blocks.4.charted.mlp.",
+        "narrowing": {
+          "attn.k_norm.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.k_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.o_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.q_norm.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.q_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.v_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn_norm.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "chart_in.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "chart_in.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "chart_out.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "mlp.down_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "mlp.gate_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "mlp.up_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "mlp_norm.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "scale_shift_table": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "time_embed.linear_1.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "time_embed.linear_1.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "time_embed.linear_2.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "time_embed.linear_2.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "time_embed.time_proj.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "time_embed.time_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "time_embed_r.linear_1.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "time_embed_r.linear_1.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "time_embed_r.linear_2.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "time_embed_r.linear_2.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "time_embed_r.time_proj.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "time_embed_r.time_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          }
+        },
+        "pairing": {
+          "candidates": [
+            3,
+            7
+          ],
+          "insert_after": 3,
+          "rule": "depth-fraction -> nearest gated_gqa refinement layer",
+          "source_depth_fraction": 0.5217391304347826,
+          "trunk_depth_fraction": 0.42857142857142855
+        },
+        "parameters": 82364672,
+        "provenance": {
+          "ace_weights": "/home/cereal/comfyui/models/diffusion_models/acestep_v1.5_turbo.safetensors",
+          "capture_file": "capture_L12.safetensors",
+          "capture_receipt": "/home/cereal/omni-campaign/media/out/c16_L12_v4/c16_receipt.json",
+          "capture_receipt_sha256": "ebd8be41fbacf1a5b2f8f076c26ffd81a47089ad3d0f91a5f385bbe655563ce4",
+          "capture_sha256": "45bf9aa3cd5e0f85237451e5d973959fbea5abdd29f4bd19af5a9e334ad67d97",
+          "chart_file": "chart_ridge.safetensors",
+          "chart_sha256": "f883c6e8cbb799f61d03b461a07af41728479e00c424771e9fc1570a0d918e4f",
+          "charts_host128_reference": {
+            "file": "charts_host128.reference.safetensors",
+            "sha256": "84002ea37c2e9e424d21edef06170da5ebfb970cd0004670c38ded301370e6ad",
+            "shapes": {
+              "chart_in.bias": [
+                2048
+              ],
+              "chart_in.weight": [
+                2048,
+                128
+              ],
+              "chart_out.weight": [
+                128,
+                2048
+              ]
+            },
+            "why_not_installed": "chart_in.weight is [2048, 128]: fitted on the c16_transplant_run toy host (hidden 128), not the 5,120-wide S3 trunk; c16 would refuse it on shape at S7"
+          },
+          "dropped_tensors": [
+            "cross_attn.k_norm.weight",
+            "cross_attn.k_proj.weight",
+            "cross_attn.o_proj.weight",
+            "cross_attn.q_norm.weight",
+            "cross_attn.q_proj.weight",
+            "cross_attn.v_proj.weight",
+            "cross_attn_norm.weight"
+          ],
+          "folded_block_file": "folded_block_L12_keep1536.safetensors",
+          "folded_block_sha256": "38c357c82f85caafa45e4608dcbb0f264d8f61743e146212672da4641002aeec",
+          "prefix_depth_captured": 12,
+          "source_prefix": "decoder.layers.12.",
+          "source_tensor_sha256": {
+            "cross_attn.k_norm.weight": "e103849f375dcd73fa55b23a1fb646103bf06cb1685fb51f67e5949adea10736",
+            "cross_attn.k_proj.weight": "5c1c5ab13a7f7fb36bcd9a281c26539f94c465a4a23d3e78de5b350bac19f17a",
+            "cross_attn.o_proj.weight": "9ac42e45c585fff864a95a5306fc603ac6250c71551023022b064abcbd51e146",
+            "cross_attn.q_norm.weight": "4c8c9a089106344efb58da9fa7e34e828203675cfb7ff1fe3db64f649647b005",
+            "cross_attn.q_proj.weight": "b2a615dd4685241651de527c75398e61bcb80dd70badea798dda3dde657b33b1",
+            "cross_attn.v_proj.weight": "2cc6145a42d7b5de0a29107bff43d7deb8fdf92d06aef581ff98cb261a3183b0",
+            "cross_attn_norm.weight": "c239704ede849986957b126b93ac7c52e054ebb1830754d00aaa9a69507c2d1d",
+            "mlp.down_proj.weight": "0c3404ae76e6ed4ab0f9c32b128b6eb42a491c880379ca6c2091a120b0f06087",
+            "mlp.gate_proj.weight": "81c0d943d22bc14e011267be6e82b5d3453cfbdd3df7b15162b83b2e9ef64b9f",
+            "mlp.up_proj.weight": "4e4dc1c4c6287f7d2ae99a41fcd618adb43b8aa894e4243683cbd231cec0475b",
+            "mlp_norm.weight": "58bc0ea443b389de69ffec6783e85f77a480b66d946123ac4175906aa13e0b66",
+            "scale_shift_table": "87b5673ff23d44eac6838ebcbb089a0683dcbe809ca57bf96c5d1566d29e66d7",
+            "self_attn.k_norm.weight": "d788c1e35ea6dcb34850198eff55455307b41c35371fa96bf059024d82ca8fdd",
+            "self_attn.k_proj.weight": "2c3706169795392678e4fbd89064afb8bcb1a98dea9dab82545942c5a11da5ad",
+            "self_attn.o_proj.weight": "0052ad07dcf158d15f1f9b1a794ee053e67d8d820322a5cd10800284a346ec76",
+            "self_attn.q_norm.weight": "10b49f2ef03247fd931bb49cfb7635c479fdacb4c692e14239a49a2ebbca1d2b",
+            "self_attn.q_proj.weight": "0d0ed188ebe06c428a89bd273031fb2d40bb57be954752d3d1f504b5262c724f",
+            "self_attn.v_proj.weight": "1268ce55406263c1e32c84058c272c7d8d8ce740fd48e4f9def9e3e75cb2558c",
+            "self_attn_norm.weight": "af951079d091d9840c6473a588b9da4a7ee40f8c34b77baf6f707c00f2067dc9"
+          },
+          "source_weights": "/home/cereal/comfyui/models/diffusion_models/acestep_v1.5_turbo.safetensors"
+        },
+        "rung": "latents",
+        "source": "ace",
+        "spec": {
+          "attn_bias": false,
+          "chart_in_bias": true,
+          "component": "ace.dit.block12.mlp",
+          "delta_scale": 1.0,
+          "h3_curve_dim": 0,
+          "h3_curve_grid": 0,
+          "h3_rope_freqs": 0,
+          "head_dim": 128,
+          "heads": 16,
+          "kv_heads": 8,
+          "layer_index": 4,
+          "metadata": {
+            "converted_from": "/home/cereal/omni-campaign/media/out/c16_L12_v4",
+            "cross_attention": "dropped",
+            "layer_type": "sliding_attention",
+            "timestep_r": "0.0 as captured; time_embed_r is evaluated at the trunk noise level (t - 0)"
+          },
+          "mlp_kind": "swiglu",
+          "mlp_width": 1536,
+          "modulation": "adaln6",
+          "norm_affine": true,
+          "norm_eps": 1e-06,
+          "norm_kind": "rms",
+          "qk_norm": true,
+          "rope_theta": 1000000.0,
+          "rung": "latents",
+          "sliding_window": 128,
+          "source": "ace",
+          "source_depth_fraction": 0.5217391304347826,
+          "time_embed_r": true,
+          "time_factor": 1000.0,
+          "time_freq_dim": 256,
+          "time_hidden": 2048,
+          "type_ids": [
+            4
+          ],
+          "width": 2048
+        },
+        "tensor_prefix": "blocks.4.charted.",
+        "tensor_sha256_check": {
+          "charted_block.safetensors": {
+            "declared": 24,
+            "verified": true
+          },
+          "time_reference.safetensors": {
+            "declared": 2,
+            "verified": true
+          }
+        },
+        "time_reference": {
+          "declared": {
+            "chunk_norms": [
+              4.869841575622559,
+              375.8321838378906,
+              32.186885833740234,
+              5.852973461151123,
+              124.78207397460938,
+              33.848995208740234
+            ],
+            "conversion_rel_l2": 1.1816756995131072e-07,
+            "file": "time_reference.safetensors",
+            "sigma": [
+              0.5
+            ],
+            "source": "capture_L12.safetensors:temb (rows identical; row 0)",
+            "timestep_r": 0.0
+          },
+          "file": "/home/cereal/omni-campaign/composite/s7/units/ace/ace_dit_L12/time_reference.safetensors",
+          "max_abs": 3.814697265625e-06,
+          "reference_chunk_norms": [
+            4.869841575622559,
+            375.8321838378906,
+            32.186885833740234,
+            5.852973461151123,
+            124.78207397460938,
+            33.848995208740234
+          ],
+          "reference_norm": 398.82305908203125,
+          "rel_l2": 1.1816756995131072e-07,
+          "sha256": "0d1ae9939364f80a2dc9a074273397b196137995d094c508acedcd64bca0a727",
+          "sigma": [
+            0.5
+          ],
+          "time_embed_r": true,
+          "tolerance_rel_l2": 0.005,
+          "verified": true
+        },
+        "type_ids": [
+          4
+        ]
+      },
+      {
+        "accounting": {
+          "child_block_parameters": 34621952,
+          "child_mlp_parameters": 9437184,
+          "parent_block_parameters": 62933504,
+          "parent_mlp_parameters": 37748736
+        },
+        "chart_fit": null,
+        "chart_parameters": 526336,
+        "chart_source": "container",
+        "component": "ace.dit.block12.mlp",
+        "container": "ace_dit_L12_host128charts",
+        "dropped_chart_keys": [],
+        "files": {
+          "charted_block.json": "b41ab438ce558d7586762838a8c79f9ba4fe3241a7092b0a7dd02e2a71bd69d2",
+          "charted_block.safetensors": "94c4f10f55fa3e09380376e6997cdffe3e3458e660cd422463d7eb90458ab7f5",
+          "charts.safetensors": "84002ea37c2e9e424d21edef06170da5ebfb970cd0004670c38ded301370e6ad",
+          "time_reference.safetensors": "0d1ae9939364f80a2dc9a074273397b196137995d094c508acedcd64bca0a727"
+        },
+        "holdout": {
+          "cos": 0.8415188270864858,
+          "cos_p05": 0.7799929815120936,
+          "r2": 0.6532203718005033,
+          "rel_l2": 0.5442424558949278,
+          "rows": 950,
+          "split_by": "clip (96 clips, 19 held out)",
+          "width": 2048
+        },
+        "layer_index": 5,
+        "mlp_parameters": 9437184,
+        "mlp_tensor_prefix": "blocks.5.charted.mlp.",
+        "narrowing": {
+          "attn.k_norm.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.k_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.o_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.q_norm.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.q_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.v_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn_norm.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "chart_in.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "chart_in.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "chart_out.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "mlp.down_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "mlp.gate_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "mlp.up_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "mlp_norm.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "scale_shift_table": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "time_embed.linear_1.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "time_embed.linear_1.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "time_embed.linear_2.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "time_embed.linear_2.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "time_embed.time_proj.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "time_embed.time_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "time_embed_r.linear_1.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "time_embed_r.linear_1.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "time_embed_r.linear_2.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "time_embed_r.linear_2.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "time_embed_r.time_proj.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "time_embed_r.time_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          }
+        },
+        "pairing": {
+          "candidates": [
+            3,
+            7
+          ],
+          "insert_after": 3,
+          "rule": "depth-fraction -> nearest gated_gqa refinement layer",
+          "source_depth_fraction": 0.5217391304347826,
+          "trunk_depth_fraction": 0.42857142857142855
+        },
+        "parameters": 82364672,
+        "provenance": {
+          "ace_weights": "/home/cereal/comfyui/models/diffusion_models/acestep_v1.5_turbo.safetensors",
+          "capture_file": "capture_L12.safetensors",
+          "capture_receipt": "/home/cereal/omni-campaign/media/out/c16_L12_v4/c16_receipt.json",
+          "capture_receipt_sha256": "ebd8be41fbacf1a5b2f8f076c26ffd81a47089ad3d0f91a5f385bbe655563ce4",
+          "capture_sha256": "45bf9aa3cd5e0f85237451e5d973959fbea5abdd29f4bd19af5a9e334ad67d97",
+          "chart_file": "chart_ridge.safetensors",
+          "chart_sha256": "f883c6e8cbb799f61d03b461a07af41728479e00c424771e9fc1570a0d918e4f",
+          "charts_host128_reference": {
+            "file": "charts_host128.reference.safetensors",
+            "sha256": "84002ea37c2e9e424d21edef06170da5ebfb970cd0004670c38ded301370e6ad",
+            "shapes": {
+              "chart_in.bias": [
+                2048
+              ],
+              "chart_in.weight": [
+                2048,
+                128
+              ],
+              "chart_out.weight": [
+                128,
+                2048
+              ]
+            },
+            "why_not_installed": "chart_in.weight is [2048, 128]: fitted on the c16_transplant_run toy host (hidden 128), not the 5,120-wide S3 trunk; c16 would refuse it on shape at S7"
+          },
+          "dropped_tensors": [
+            "cross_attn.k_norm.weight",
+            "cross_attn.k_proj.weight",
+            "cross_attn.o_proj.weight",
+            "cross_attn.q_norm.weight",
+            "cross_attn.q_proj.weight",
+            "cross_attn.v_proj.weight",
+            "cross_attn_norm.weight"
+          ],
+          "folded_block_file": "folded_block_L12_keep1536.safetensors",
+          "folded_block_sha256": "38c357c82f85caafa45e4608dcbb0f264d8f61743e146212672da4641002aeec",
+          "prefix_depth_captured": 12,
+          "source_prefix": "decoder.layers.12.",
+          "source_tensor_sha256": {
+            "cross_attn.k_norm.weight": "e103849f375dcd73fa55b23a1fb646103bf06cb1685fb51f67e5949adea10736",
+            "cross_attn.k_proj.weight": "5c1c5ab13a7f7fb36bcd9a281c26539f94c465a4a23d3e78de5b350bac19f17a",
+            "cross_attn.o_proj.weight": "9ac42e45c585fff864a95a5306fc603ac6250c71551023022b064abcbd51e146",
+            "cross_attn.q_norm.weight": "4c8c9a089106344efb58da9fa7e34e828203675cfb7ff1fe3db64f649647b005",
+            "cross_attn.q_proj.weight": "b2a615dd4685241651de527c75398e61bcb80dd70badea798dda3dde657b33b1",
+            "cross_attn.v_proj.weight": "2cc6145a42d7b5de0a29107bff43d7deb8fdf92d06aef581ff98cb261a3183b0",
+            "cross_attn_norm.weight": "c239704ede849986957b126b93ac7c52e054ebb1830754d00aaa9a69507c2d1d",
+            "mlp.down_proj.weight": "0c3404ae76e6ed4ab0f9c32b128b6eb42a491c880379ca6c2091a120b0f06087",
+            "mlp.gate_proj.weight": "81c0d943d22bc14e011267be6e82b5d3453cfbdd3df7b15162b83b2e9ef64b9f",
+            "mlp.up_proj.weight": "4e4dc1c4c6287f7d2ae99a41fcd618adb43b8aa894e4243683cbd231cec0475b",
+            "mlp_norm.weight": "58bc0ea443b389de69ffec6783e85f77a480b66d946123ac4175906aa13e0b66",
+            "scale_shift_table": "87b5673ff23d44eac6838ebcbb089a0683dcbe809ca57bf96c5d1566d29e66d7",
+            "self_attn.k_norm.weight": "d788c1e35ea6dcb34850198eff55455307b41c35371fa96bf059024d82ca8fdd",
+            "self_attn.k_proj.weight": "2c3706169795392678e4fbd89064afb8bcb1a98dea9dab82545942c5a11da5ad",
+            "self_attn.o_proj.weight": "0052ad07dcf158d15f1f9b1a794ee053e67d8d820322a5cd10800284a346ec76",
+            "self_attn.q_norm.weight": "10b49f2ef03247fd931bb49cfb7635c479fdacb4c692e14239a49a2ebbca1d2b",
+            "self_attn.q_proj.weight": "0d0ed188ebe06c428a89bd273031fb2d40bb57be954752d3d1f504b5262c724f",
+            "self_attn.v_proj.weight": "1268ce55406263c1e32c84058c272c7d8d8ce740fd48e4f9def9e3e75cb2558c",
+            "self_attn_norm.weight": "af951079d091d9840c6473a588b9da4a7ee40f8c34b77baf6f707c00f2067dc9"
+          },
+          "source_weights": "/home/cereal/comfyui/models/diffusion_models/acestep_v1.5_turbo.safetensors"
+        },
+        "rung": "latents",
+        "source": "ace",
+        "spec": {
+          "attn_bias": false,
+          "chart_in_bias": true,
+          "component": "ace.dit.block12.mlp",
+          "delta_scale": 1.0,
+          "h3_curve_dim": 0,
+          "h3_curve_grid": 0,
+          "h3_rope_freqs": 0,
+          "head_dim": 128,
+          "heads": 16,
+          "kv_heads": 8,
+          "layer_index": 5,
+          "metadata": {
+            "converted_from": "/home/cereal/omni-campaign/media/out/c16_L12_v4",
+            "cross_attention": "dropped",
+            "layer_type": "sliding_attention",
+            "timestep_r": "0.0 as captured; time_embed_r is evaluated at the trunk noise level (t - 0)"
+          },
+          "mlp_kind": "swiglu",
+          "mlp_width": 1536,
+          "modulation": "adaln6",
+          "norm_affine": true,
+          "norm_eps": 1e-06,
+          "norm_kind": "rms",
+          "qk_norm": true,
+          "rope_theta": 1000000.0,
+          "rung": "latents",
+          "sliding_window": 128,
+          "source": "ace",
+          "source_depth_fraction": 0.5217391304347826,
+          "time_embed_r": true,
+          "time_factor": 1000.0,
+          "time_freq_dim": 256,
+          "time_hidden": 2048,
+          "type_ids": [
+            4
+          ],
+          "width": 2048
+        },
+        "tensor_prefix": "blocks.5.charted.",
+        "tensor_sha256_check": {
+          "charted_block.safetensors": {
+            "declared": 24,
+            "verified": true
+          },
+          "charts.safetensors": {
+            "declared": 0,
+            "note": "no tensor_sha256 declared",
+            "verified": null
+          },
+          "time_reference.safetensors": {
+            "declared": 2,
+            "verified": true
+          }
+        },
+        "time_reference": {
+          "declared": {
+            "chunk_norms": [
+              4.869841575622559,
+              375.8321838378906,
+              32.186885833740234,
+              5.852973461151123,
+              124.78207397460938,
+              33.848995208740234
+            ],
+            "conversion_rel_l2": 1.1816756995131072e-07,
+            "file": "time_reference.safetensors",
+            "sigma": [
+              0.5
+            ],
+            "source": "capture_L12.safetensors:temb (rows identical; row 0)",
+            "timestep_r": 0.0
+          },
+          "file": "/home/cereal/omni-campaign/composite/s7/scratch_dryrun/overlay/ace_dit_L12_host128charts/time_reference.safetensors",
+          "max_abs": 3.814697265625e-06,
+          "reference_chunk_norms": [
+            4.869841575622559,
+            375.8321838378906,
+            32.186885833740234,
+            5.852973461151123,
+            124.78207397460938,
+            33.848995208740234
+          ],
+          "reference_norm": 398.82305908203125,
+          "rel_l2": 1.1816756995131072e-07,
+          "sha256": "0d1ae9939364f80a2dc9a074273397b196137995d094c508acedcd64bca0a727",
+          "sigma": [
+            0.5
+          ],
+          "time_embed_r": true,
+          "tolerance_rel_l2": 0.005,
+          "verified": true
+        },
+        "type_ids": [
+          4
+        ]
+      },
+      {
+        "accounting": {
+          "child_block_parameters": 212825344,
+          "child_mlp_parameters": 57802752,
+          "parent_block_parameters": 386233600,
+          "parent_mlp_parameters": 231211008,
+          "retained_shared_coefficients": 8216
+        },
+        "chart_fit": {
+          "chart_out_bias_dropped": true,
+          "forward_scores": {
+            "cos": 0.9999171175016447,
+            "cos_p05": 0.9999036007443983,
+            "r2": 0.9998337539054345,
+            "rel_l2": 0.01281807644824138,
+            "rows": 102,
+            "width": 5376
+          },
+          "method": "ridge",
+          "roundtrip_scores": {
+            "cos": 0.9999999989880949,
+            "cos_p05": 0.9999999986384711,
+            "r2": 0.999999994679194,
+            "rel_l2": 7.252620517542388e-05,
+            "rows": 102,
+            "width": 128
+          },
+          "rows_path": "/home/cereal/omni-campaign/composite/s7/scratch_dryrun/tap/h3_dit_L25_curve6/paired_rows.safetensors",
+          "rows_sha256": "e3d6150bdd6728959297325e2edc747360797e8e90b30b4dea1f3d6f2f44bbdc",
+          "split": {
+            "fit_rows": 410,
+            "holdout_rows": 102,
+            "rows": 512,
+            "scored_on": "holdout",
+            "split_by": "row"
+          }
+        },
+        "chart_parameters": 1381632,
+        "chart_source": "fit_charts(ridge) on --tap-rows",
+        "component": "h3.dit.block.mlp",
+        "container": "h3_dit_L25_curve6",
+        "dropped_chart_keys": [
+          "chart_out.bias"
+        ],
+        "files": {
+          "charted_block.json": "a6b339a196823b7a2f467d5eb3503dcecca98d897a2b2e31197b5e9a00866281",
+          "charted_block.safetensors": "8f1adfe2768513c721c9c77e52f729264883930d6af72b50fdc0f58df9cbfabf",
+          "charts.safetensors": null,
+          "time_reference.safetensors": null
+        },
+        "holdout": {
+          "cos": 0.9480531622399451,
+          "cos_p05": 0.894386198450414,
+          "r2": 0.9012600230134824,
+          "rel_l2": 0.3033859136783856,
+          "rows": 5760,
+          "width": 5376
+        },
+        "layer_index": 6,
+        "mlp_parameters": 57802752,
+        "mlp_tensor_prefix": "blocks.6.charted.mlp.",
+        "narrowing": {
+          "attn.k_norm.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.k_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.o_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.q_norm.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.q_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.rope_inv_freq": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.v_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn_norm.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "chart_in.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "chart_in.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "chart_out.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "h3_time.curve_table": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "h3_time.proj.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "h3_time.proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "mlp.down_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "mlp.gate_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "mlp.up_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "mlp_norm.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          }
+        },
+        "pairing": {
+          "candidates": [
+            3,
+            7
+          ],
+          "insert_after": 3,
+          "rule": "depth-fraction -> nearest gated_gqa refinement layer",
+          "source_depth_fraction": 0.5102040816326531,
+          "trunk_depth_fraction": 0.42857142857142855
+        },
+        "parameters": 214215192,
+        "provenance": {
+          "block_state_sha256": "3a34bace2a3ba2911af20127870339b4a8dc274d52a221db0ef275e8942075cf",
+          "capture_references": [
+            {
+              "path": "/mnt/lexar/omni-campaign/media/h3_blocks_v2/step00/L25.safetensors",
+              "selected_tensor_sha256": {
+                "adaln": "ba71ad125c7bca7991294f29a2bcab352c11dfefb12eb703e3c1e73ca404c8b6",
+                "sigma_audio": "c37579c56bb9f0d1131cce7af08b50240e9685145298d40256f5e25505c25099",
+                "sigma_video": "a9a62c6a9239b52bc3f729ee08c43e6f73295ffd12af6a14bf649f9a69486263",
+                "temb": "688b7e97fa902bb9a8dcf4d69c7df62fcc68ab6ede72d7831473860837539b05"
+              }
+            },
+            {
+              "path": "/mnt/lexar/omni-campaign/media/h3_blocks_v2/step01/L25.safetensors",
+              "selected_tensor_sha256": {
+                "adaln": "d77e231de9d1ec21f17855e249f3d8a59fa5ec901d8ab735b09372babcc7c476",
+                "sigma_audio": "9817ae067443f8d3205f3c5de275c51b84db5b7edb784b02a0e2da87472c6bdc",
+                "sigma_video": "120b587dca96c65525a684639d5d6f411492bfa377b7eb9da6ae7c39b1727109",
+                "temb": "2e01444334636908507535061c40c0504d12220a44fa644681939b45a1bfdeeb"
+              }
+            },
+            {
+              "path": "/mnt/lexar/omni-campaign/media/h3_blocks_v2/step02/L25.safetensors",
+              "selected_tensor_sha256": {
+                "adaln": "18eb4e95115346d979baeb45e4418fcb21f4b88a325730b5a746d6c7cbc1a0cc",
+                "sigma_audio": "2f17aed80a95e0a861857bb64da6ee5cef8062ea5f35736bb1c137c4f3f480fb",
+                "sigma_video": "6123b0bab67cdc08704c3b4b9a232d48562d03e14f84057fb6145d94804f9f73",
+                "temb": "a6d08243f75443450cb447922399dfaf34aea1b492242d3352afb2d319681241"
+              }
+            },
+            {
+              "path": "/mnt/lexar/omni-campaign/media/h3_blocks_v2/step03/L25.safetensors",
+              "selected_tensor_sha256": {
+                "adaln": "b25fe5e25fdfe5eebd1a608d701770313f3e1a7efe66aae94557cf95f40a88b8",
+                "sigma_audio": "5187cb945f706cf03145d675f46061bfb72d374c084908536a0be7e837b6bb54",
+                "sigma_video": "d6c026343ad5a600cc4f9fab0b49e08d960016d56430ce3ef113a13019f66476",
+                "temb": "531dc2a44b6ea8bbd25841a57a104050062efe8d858295976167f10fbc65266d"
+              }
+            }
+          ],
+          "codex_container": {
+            "charted_block.json_sha256": "057c5581f58acf21d8f354c7f1cf0414796a0a97b57cb2bcc33b9ef4c66bce8f",
+            "charted_block.safetensors_sha256": "8f1adfe2768513c721c9c77e52f729264883930d6af72b50fdc0f58df9cbfabf",
+            "declared_tensor_sha256_check": {
+              "charted_block": {
+                "declared": 15,
+                "verified": true
+              },
+              "time_reference": {
+                "declared": 3,
+                "verified": true
+              }
+            },
+            "dir": "/home/cereal/omni-campaign/composite/media/h3-native-curve6-sep07",
+            "time_reference.safetensors_sha256": "d09fbd3501ff329a69a4be7824f5d4d3bd1e341f185e5037a818b7ed4d9bd3b0"
+          },
+          "converter": "c16_convert_h3.v1",
+          "converter_sha256": "ac6ecb7a876b79896eb91ad975fc9bac76b8b1292294bb2bcb1e8dcd806da539",
+          "coreset_receipt": "/mnt/lexar/omni-campaign/media/h3_block_coreset_v2/L25/coreset_receipt.json",
+          "coreset_receipt_sha256": "927c3c39f00f80a0453d65c2c5421087de45d2d00653dbde9d221b9fac1a38be",
+          "folded_mlp_sha256": "69a27caca9c93fa3036666fea9b966f690635e3485927c0e2829d73ddedd46aa",
+          "folded_tensor_sha256": {
+            "blocks.25.mlp.fc1.weight": "2f35075cd3a69dd7b8c8d76660257818a1534a07682440db67a9dae40f76931b",
+            "blocks.25.mlp.fc2.weight": "04ebb5962003a0a7c64501e9ca45ad8ea200d9d8e89f3fc77b449581e83480cc"
+          },
+          "frozen_tensor_sha256": {
+            "blocks.25.adaln_proj.linear.bias": "242921acefb395f53279a75640e5a4084ac3bd50c28bc23abebce96aa27bbf9e",
+            "blocks.25.adaln_proj.linear.weight": "bc3836c228312cd2527e10a2807ff4ed18026b0708a7f799f6046f5f27712c7c",
+            "blocks.25.attn.k_norm.weight": "c80348591f1e58295349b4db5614d1aa93234f85b2790d517f0996d8214e5747",
+            "blocks.25.attn.out_proj.weight": "f3f0fd67b02e426c2bb7a3aab18910794dc20e8aa7d6596a557d5459946ecdcc",
+            "blocks.25.attn.q_norm.weight": "4b00021b952df02a14e3160143f964e5f613a6daafc2cb071b418c439cdf4d79",
+            "blocks.25.attn.qkv_proj.weight": "19a117ac89293d0e8f31077342d8355c0449996e170d42b54244e6ab36bb5204",
+            "blocks.25.mlp.fc1.weight": "64f5153377b7331d3fc595af760d7e675cb5bdede4e54132a7635d00039814ba",
+            "blocks.25.mlp.fc2.weight": "e135408092dc74849cec3bad9a0f39f703c8d8f866a2bb9c35c314868c0dc6fe",
+            "blocks.25.norm1.weight": "3ab1afd0cf3056b6876ead3f5b24310e557bfd20b9abbcf0681c0c42dd92e40f",
+            "blocks.25.norm2.weight": "4d726c74ad7cdaa69acde55229781096cecf2852f6a5605213bd1fe888b281e1"
+          },
+          "h3_time_reference": {
+            "file": "h3_time_reference.safetensors (symlink)",
+            "tensor_sha256": {
+              "curve": "0f9e935f3940e18f02ccc54f3e9d4a687bf67eb1be1c44825ee0f0c13df4dc0b",
+              "modulation": "c15d0b04281a47995e52fcf555b83c8d438eb21eb469f6b9d780d14bf4905666",
+              "sigma": "c15537ae5f15a441ebe59c12cd6cd0fcec3a1e12ee2b34bf826c8deb6a2aef6f"
+            },
+            "why_renamed": "c16_install_media 1.1.0 load_container refuses time_reference.safetensors on a non-adaln6 block (lines 696-697) and only gates adaln6; the h3_curve6 gate is applied by this converter"
+          },
+          "source_globals_scope": "selected tensors only; full source-file identity is not reverified here",
+          "source_globals_tensor_sha256": {
+            "adaln_t_table": "42c1c8718a10faca042ce6af86d6ed18004a1fa970fb9dc5de1e3c2838425669",
+            "rope.inv_freq": "05121a78cff96871743d65cd19b8325a7aa9d04eaefded9633e52ca42c34ee34"
+          },
+          "source_weights": "/home/cereal/comfyui/models/diffusion_models/minimax_h3_fl2va_pruned_bf16.safetensors"
+        },
+        "rung": "measured-coreset",
+        "source": "h3",
+        "spec": {
+          "attn_bias": false,
+          "chart_in_bias": true,
+          "component": "h3.dit.block.mlp",
+          "delta_scale": 1.0,
+          "h3_curve_dim": 8,
+          "h3_curve_grid": 1025,
+          "h3_rope_freqs": 16,
+          "head_dim": 128,
+          "heads": 56,
+          "kv_heads": 56,
+          "layer_index": 6,
+          "metadata": {
+            "context": "text read-only plus AV; no context tower",
+            "sigma_contract": "actual per-type sigma; source shifts video12/audio3",
+            "source_code_sha256": "882c280b05aa60cd17f231e5e2389b921b52880fb3b4e23574c0aba5f2bd5024",
+            "source_position_schema": "h3_thw_v1"
+          },
+          "mlp_kind": "swiglu",
+          "mlp_width": 3584,
+          "modulation": "h3_curve6",
+          "norm_affine": true,
+          "norm_eps": 1e-05,
+          "norm_kind": "rms",
+          "qk_norm": true,
+          "rope_theta": 0.0,
+          "rung": "measured-coreset",
+          "sliding_window": 0,
+          "source": "h3",
+          "source_depth_fraction": 0.5102040816326531,
+          "time_embed_r": false,
+          "time_factor": 1000.0,
+          "time_freq_dim": 256,
+          "time_hidden": 0,
+          "type_ids": [
+            2,
+            3
+          ],
+          "width": 5376
+        },
+        "tensor_prefix": "blocks.6.charted.",
+        "tensor_sha256_check": {
+          "charted_block.safetensors": {
+            "declared": 15,
+            "verified": true
+          }
+        },
+        "time_reference": null,
+        "type_ids": [
+          2,
+          3
+        ]
+      },
+      {
+        "accounting": {
+          "child_block_parameters": 25182463,
+          "child_mlp_parameters": 8388607,
+          "parent_block_parameters": 50358528,
+          "parent_mlp_parameters": 33564672,
+          "scope": "self-attention + MLP; zero q/k/v bias rows (3 x width) are counted"
+        },
+        "chart_fit": {
+          "chart_out_bias_dropped": true,
+          "forward_scores": {
+            "cos": 0.9999176484431916,
+            "cos_p05": 0.9999029201169648,
+            "r2": 0.9998355329319571,
+            "rel_l2": 0.012763740801717821,
+            "rows": 102,
+            "width": 2048
+          },
+          "method": "ridge",
+          "roundtrip_scores": {
+            "cos": 0.9999999728947614,
+            "cos_p05": 0.9999999622405925,
+            "r2": 0.9999998631593353,
+            "rel_l2": 0.0003680357430447301,
+            "rows": 102,
+            "width": 128
+          },
+          "rows_path": "/home/cereal/omni-campaign/composite/s7/scratch_dryrun/tap/hy3d_dit_L10/paired_rows.safetensors",
+          "rows_sha256": "c12095eb17d97b58675d97d669e8b94279ffa37f7e6f1e8178f813cc19c7e5a8",
+          "split": {
+            "fit_rows": 410,
+            "holdout_rows": 102,
+            "rows": 512,
+            "scored_on": "holdout",
+            "split_by": "row"
+          }
+        },
+        "chart_parameters": 526336,
+        "chart_source": "fit_charts(ridge) on --tap-rows",
+        "component": "hy3d.dit.block10.mlp",
+        "container": "hy3d_dit_L10",
+        "dropped_chart_keys": [
+          "chart_out.bias"
+        ],
+        "files": {
+          "charted_block.json": "8aec6c6e6306989a9a06265524d129e3295b66534e1274188b9322740e740a4d",
+          "charted_block.safetensors": "58574fe6255d924a651d910ed941115da1d1aabaf5f1c4f8afba1e81e8b5d817",
+          "charts.safetensors": null,
+          "time_reference.safetensors": null
+        },
+        "holdout": {
+          "note": "Codex fold_receipt candidate_diagnostics (block_output relL2 etc.); not re-derived here"
+        },
+        "layer_index": 7,
+        "mlp_parameters": 8388607,
+        "mlp_tensor_prefix": "blocks.7.charted.mlp.",
+        "narrowing": {
+          "attn.k_norm.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.k_proj.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.k_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.o_proj.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.o_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.q_norm.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.q_proj.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.q_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.v_proj.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.v_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn_norm.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn_norm.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "chart_in.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "chart_in.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "chart_out.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "mlp.fc1.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "mlp.fc1.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "mlp.fc2.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "mlp.fc2.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "mlp_norm.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "mlp_norm.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          }
+        },
+        "pairing": {
+          "candidates": [
+            3,
+            7
+          ],
+          "insert_after": 3,
+          "rule": "depth-fraction -> nearest gated_gqa refinement layer",
+          "source_depth_fraction": 0.5,
+          "trunk_depth_fraction": 0.42857142857142855
+        },
+        "parameters": 25708799,
+        "provenance": {
+          "dense_child": "/mnt/lexar/omni-campaign/hy3d-native-4983c53b-7eee-4f49-980f-ab3788f5db69/dense-child-blocks/dense-child-block-10-1c1709d9-8afb-47f0-931f-35e01f90f125/dense-child-block10/dense_child.safetensors",
+          "dense_child_fold_receipt": "/mnt/lexar/omni-campaign/hy3d-native-4983c53b-7eee-4f49-980f-ab3788f5db69/dense-child-blocks/dense-child-block-10-1c1709d9-8afb-47f0-931f-35e01f90f125/dense-child-block10/fold_receipt.json",
+          "dense_child_fold_receipt_sha256": "9bde4056ebc280ed9f4176be67f8981739a3eb70d463af7c0fd17201d6f6cda9",
+          "dense_child_sha256": "984d6b87c64ad97a61baa09573bfc08435ea197d0568198da012734396b897f6",
+          "dropped_tensors": [
+            "attn2.k_norm.weight",
+            "attn2.out_proj.bias",
+            "attn2.out_proj.weight",
+            "attn2.q_norm.weight",
+            "attn2.to_k.weight",
+            "attn2.to_q.weight",
+            "attn2.to_v.weight",
+            "norm2.bias",
+            "norm2.weight"
+          ],
+          "source_math_reference": "chimera-omni codex/validated docs/HY3D_NATIVE_COMPONENT.md",
+          "source_prefix": "model.blocks.10.",
+          "source_weights": "/home/cereal/comfyui/models/checkpoints/hunyuan_3d_v2.1.safetensors"
+        },
+        "rung": "hy3d-native-dense-child",
+        "source": "hy3d",
+        "spec": {
+          "attn_bias": true,
+          "chart_in_bias": true,
+          "component": "hy3d.dit.block10.mlp",
+          "delta_scale": 1.0,
+          "h3_curve_dim": 0,
+          "h3_curve_grid": 0,
+          "h3_rope_freqs": 0,
+          "head_dim": 128,
+          "heads": 16,
+          "kv_heads": 16,
+          "layer_index": 7,
+          "metadata": {
+            "converted_from": "/mnt/lexar/omni-campaign/hy3d-native-4983c53b-7eee-4f49-980f-ab3788f5db69/dense-child-blocks/dense-child-block-10-1c1709d9-8afb-47f0-931f-35e01f90f125/dense-child-block10/dense_child.safetensors",
+            "cross_attention": "attn2 (DINO context) dropped",
+            "layer_type": "hunyuandit_plain_dense",
+            "mlp_gelu": "exact (non-approximate) per HY3D_NATIVE_COMPONENT.md",
+            "qkv": "re-packed from source per-head (q|k|v) split",
+            "qkv_bias": "zero rows written (source q/k/v have no bias; out_proj does)",
+            "time": "source time TOKEN not representable (modulation none)"
+          },
+          "mlp_kind": "gelu",
+          "mlp_width": 2047,
+          "modulation": "none",
+          "norm_affine": true,
+          "norm_eps": 1e-06,
+          "norm_kind": "layer",
+          "qk_norm": true,
+          "rope_theta": 0.0,
+          "rung": "hy3d-native-dense-child",
+          "sliding_window": 0,
+          "source": "hy3d",
+          "source_depth_fraction": 0.5,
+          "time_embed_r": false,
+          "time_factor": 1000.0,
+          "time_freq_dim": 256,
+          "time_hidden": 0,
+          "type_ids": [
+            7
+          ],
+          "width": 2048
+        },
+        "tensor_prefix": "blocks.7.charted.",
+        "tensor_sha256_check": {
+          "charted_block.safetensors": {
+            "declared": 18,
+            "verified": true
+          }
+        },
+        "time_reference": null,
+        "type_ids": [
+          7
+        ]
+      },
+      {
+        "accounting": {
+          "child_block_parameters": 123525375,
+          "child_mlp_parameters": 18874367,
+          "parent_block_parameters": 180163840,
+          "parent_mlp_parameters": 75512832,
+          "scope": "image stream only; Codex's dual-stream candidate counts 236,784,126 / 350,061,056 incl. the text stream"
+        },
+        "chart_fit": {
+          "chart_out_bias_dropped": true,
+          "forward_scores": {
+            "cos": 0.999915497802518,
+            "cos_p05": 0.9999020476453631,
+            "r2": 0.9998312046911227,
+            "rel_l2": 0.012935624840912487,
+            "rows": 102,
+            "width": 3072
+          },
+          "method": "ridge",
+          "roundtrip_scores": {
+            "cos": 0.9999999968635087,
+            "cos_p05": 0.99999999483376,
+            "r2": 0.9999999850508259,
+            "rel_l2": 0.00012173715020181288,
+            "rows": 102,
+            "width": 128
+          },
+          "rows_path": "/home/cereal/omni-campaign/composite/s7/scratch_dryrun/tap/qimg_mmdit_L30_img/paired_rows.safetensors",
+          "rows_sha256": "c0bc7bfd64b53229e7286a8783c68470924a1e8b141ebbc3d66df18c80558e02",
+          "split": {
+            "fit_rows": 410,
+            "holdout_rows": 102,
+            "rows": 512,
+            "scored_on": "holdout",
+            "split_by": "row"
+          }
+        },
+        "chart_parameters": 789504,
+        "chart_source": "fit_charts(ridge) on --tap-rows",
+        "component": "qimg.mmdit.block30.img_mlp",
+        "container": "qimg_mmdit_L30_img",
+        "dropped_chart_keys": [
+          "chart_out.bias"
+        ],
+        "files": {
+          "charted_block.json": "4b845a031f20101c87f06ad4251b7d0c4f4b011c17776f69bf72f7f707784f40",
+          "charted_block.safetensors": "e15a5b754e1d9456865ba64a13a0aa4a13491b2f28d9aca040529c666bcd9c0b",
+          "charts.safetensors": null,
+          "time_reference.safetensors": "9a5fefd45d14bd8ac2bb1f4eec4b769fb76d3b5c118cb92507f9b87d30e4b3b2"
+        },
+        "holdout": {
+          "note": "Codex's fold_receipt streams/diagnostics; not re-derived here"
+        },
+        "layer_index": 8,
+        "mlp_parameters": 18874367,
+        "mlp_tensor_prefix": "blocks.8.charted.mlp.",
+        "narrowing": {
+          "attn.k_norm.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.k_proj.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.k_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.o_proj.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.o_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.q_norm.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.q_proj.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.q_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.v_proj.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.v_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "chart_in.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "chart_in.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "chart_out.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "mlp.fc1.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "mlp.fc1.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "mlp.fc2.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "mlp.fc2.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "scale_shift_table": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "time_embed.linear_1.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "time_embed.linear_1.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "time_embed.linear_2.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "time_embed.linear_2.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "time_embed.time_proj.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "time_embed.time_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          }
+        },
+        "pairing": {
+          "candidates": [
+            3,
+            7
+          ],
+          "insert_after": 3,
+          "rule": "depth-fraction -> nearest gated_gqa refinement layer",
+          "source_depth_fraction": 0.5084745762711864,
+          "trunk_depth_fraction": 0.42857142857142855
+        },
+        "parameters": 124314879,
+        "provenance": {
+          "captures": [
+            {
+              "file": "/mnt/lexar/omni-campaign/qimg-broad-capture-sep07/run/capture_batch1/b1_fit_bicycle_sigma00.safetensors",
+              "sha256": "912cd80ec0c75231b7f4ce46be93cac21bf5d80139016cb52f2c01c7778ea56a"
+            },
+            {
+              "file": "/mnt/lexar/omni-campaign/qimg-broad-capture-sep07/run/capture_batch1/b1_fit_bicycle_sigma01.safetensors",
+              "sha256": "ddd243b60fe2d3fdc1e29dc03a098144d74aecacc6f5ab191966a32682c3e9c8"
+            },
+            {
+              "file": "/mnt/lexar/omni-campaign/qimg-broad-capture-sep07/run/capture_batch1/b1_fit_bicycle_sigma02.safetensors",
+              "sha256": "2202f3c6e320959729e9e0dc90c79d4e2e7a69e9db85b1db015128bcd31f5e73"
+            },
+            {
+              "file": "/mnt/lexar/omni-campaign/qimg-broad-capture-sep07/run/capture_batch1/b1_fit_bicycle_sigma03.safetensors",
+              "sha256": "228b3afda71112d9da5a38e506cf039d426e25806681b0f251a6340cec6ae6b7"
+            }
+          ],
+          "codex_receipt_accepted": false,
+          "codex_receipt_capability_claim": "none: measured MLP candidate is not installed, behaviorally accepted, or a media/all-source child proof",
+          "dropped_tensors": [
+            "transformer_blocks.30.attn.add_k_proj.bias",
+            "transformer_blocks.30.attn.add_k_proj.weight",
+            "transformer_blocks.30.attn.add_q_proj.bias",
+            "transformer_blocks.30.attn.add_q_proj.weight",
+            "transformer_blocks.30.attn.add_v_proj.bias",
+            "transformer_blocks.30.attn.add_v_proj.weight",
+            "transformer_blocks.30.attn.norm_added_k.weight",
+            "transformer_blocks.30.attn.norm_added_q.weight",
+            "transformer_blocks.30.attn.to_add_out.bias",
+            "transformer_blocks.30.attn.to_add_out.weight",
+            "transformer_blocks.30.txt_mlp.net.0.proj.bias",
+            "transformer_blocks.30.txt_mlp.net.0.proj.weight",
+            "transformer_blocks.30.txt_mlp.net.2.bias",
+            "transformer_blocks.30.txt_mlp.net.2.weight",
+            "transformer_blocks.30.txt_mod.1.bias",
+            "transformer_blocks.30.txt_mod.1.weight"
+          ],
+          "fold_receipt": "/mnt/lexar/omni-campaign/qimg-ownerpolicy-v4-ee1a6166-3e91-405d-8381-3e3ff4c91194/fold/fold_receipt.json",
+          "fold_receipt_sha256": "37ba4d69fbc99879c2a80057e0777cde90b0e2f23ab458367f9fb4ee0c0dfb59",
+          "selection": "/mnt/lexar/omni-campaign/qimg-ownerpolicy-v4-ee1a6166-3e91-405d-8381-3e3ff4c91194/fold/selection.safetensors",
+          "selection_sha256": "bb36ec919816cb87d49bcbf9c5b5f09cd279fdf61b3cc8d25b6536b87c76d008",
+          "source_candidate": "/mnt/lexar/omni-campaign/qimg-ownerpolicy-v4-ee1a6166-3e91-405d-8381-3e3ff4c91194/fold/folded_source_block_and_time.safetensors",
+          "source_candidate_sha256": "1103088bff61256ae24595c6bb948314c6564c819f65929df14cbdb68d4a4451",
+          "source_dtypes": {
+            "attn.k_norm.weight": "torch.float8_e4m3fn",
+            "attn.k_proj.bias": "torch.float8_e4m3fn",
+            "attn.k_proj.weight": "torch.float8_e4m3fn",
+            "attn.o_proj.bias": "torch.float8_e4m3fn",
+            "attn.o_proj.weight": "torch.float8_e4m3fn",
+            "attn.q_norm.weight": "torch.float8_e4m3fn",
+            "attn.q_proj.bias": "torch.float8_e4m3fn",
+            "attn.q_proj.weight": "torch.float8_e4m3fn",
+            "attn.v_proj.bias": "torch.float8_e4m3fn",
+            "attn.v_proj.weight": "torch.float8_e4m3fn",
+            "mlp.fc1.bias": "torch.float8_e4m3fn",
+            "mlp.fc1.weight": "torch.float8_e4m3fn",
+            "mlp.fc2.bias": "torch.bfloat16",
+            "mlp.fc2.weight": "torch.bfloat16",
+            "time_embed.linear_1.bias": "torch.float8_e4m3fn",
+            "time_embed.linear_1.weight": "torch.float8_e4m3fn",
+            "time_embed.linear_2.bias": "torch.float8_e4m3fn",
+            "time_embed.linear_2.weight": "torch.float8_e4m3fn",
+            "time_embed.time_proj.bias": "torch.float8_e4m3fn",
+            "time_embed.time_proj.weight": "torch.float8_e4m3fn"
+          }
+        },
+        "rung": "ownerpolicy-v4-candidate",
+        "source": "qimg",
+        "spec": {
+          "attn_bias": true,
+          "chart_in_bias": true,
+          "component": "qimg.mmdit.block30.img_mlp",
+          "delta_scale": 1.0,
+          "h3_curve_dim": 0,
+          "h3_curve_grid": 0,
+          "h3_rope_freqs": 0,
+          "head_dim": 128,
+          "heads": 24,
+          "kv_heads": 24,
+          "layer_index": 8,
+          "metadata": {
+            "converted_from": "/mnt/lexar/omni-campaign/qimg-ownerpolicy-v4-ee1a6166-3e91-405d-8381-3e3ff4c91194",
+            "layer_type": "mmdit_img_stream",
+            "rope": "3-D MM-RoPE dropped (rope_theta 0)",
+            "source_dtype": "F8_E4M3/BF16 widened exactly to BF16",
+            "text_stream": "dropped (trunk is the context)"
+          },
+          "mlp_kind": "gelu_tanh",
+          "mlp_width": 3071,
+          "modulation": "adaln6",
+          "norm_affine": false,
+          "norm_eps": 1e-06,
+          "norm_kind": "layer",
+          "qk_norm": true,
+          "rope_theta": 0.0,
+          "rung": "ownerpolicy-v4-candidate",
+          "sliding_window": 0,
+          "source": "qimg",
+          "source_depth_fraction": 0.5084745762711864,
+          "time_embed_r": false,
+          "time_factor": 1000.0,
+          "time_freq_dim": 256,
+          "time_hidden": 3072,
+          "type_ids": [
+            1
+          ],
+          "width": 3072
+        },
+        "tensor_prefix": "blocks.8.charted.",
+        "tensor_sha256_check": {
+          "charted_block.safetensors": {
+            "declared": 21,
+            "verified": true
+          },
+          "time_reference.safetensors": {
+            "declared": 2,
+            "verified": true
+          }
+        },
+        "time_reference": {
+          "declared": {
+            "conversion_rel_l2": 0.002038632519543171,
+            "file": "time_reference.safetensors",
+            "sigma": [
+              0.15000000596046448,
+              0.3499999940395355,
+              0.6499999761581421,
+              0.8999999761581421
+            ],
+            "source": "capture img_modulation (BF16) at capture sigma"
+          },
+          "file": "/home/cereal/omni-campaign/composite/s7/units/qimg/qimg_mmdit_L30_img/time_reference.safetensors",
+          "max_abs": 6.3121337890625,
+          "reference_chunk_norms": [
+            1533.1317138671875,
+            18227.748046875,
+            10677.423828125,
+            795.8560791015625,
+            5187.88720703125,
+            29909.30078125
+          ],
+          "reference_norm": 37023.265625,
+          "rel_l2": 0.002038632519543171,
+          "sha256": "9a5fefd45d14bd8ac2bb1f4eec4b769fb76d3b5c118cb92507f9b87d30e4b3b2",
+          "sigma": [
+            0.15000000596046448,
+            0.3499999940395355,
+            0.6499999761581421,
+            0.8999999761581421
+          ],
+          "time_embed_r": false,
+          "tolerance_rel_l2": 0.005,
+          "verified": true
+        },
+        "type_ids": [
+          1
+        ]
+      },
+      {
+        "accounting": {
+          "child_block_parameters": 7796659,
+          "child_mlp_parameters": 2479027,
+          "parent_block_parameters": 15239504,
+          "parent_intermediate_assumed": 4304,
+          "parent_mlp_parameters": 9921872
+        },
+        "chart_fit": {
+          "chart_out_bias_dropped": true,
+          "forward_scores": {
+            "cos": 0.9999166847938378,
+            "cos_p05": 0.9999002112521272,
+            "r2": 0.9998335659528056,
+            "rel_l2": 0.012849623107326708,
+            "rows": 102,
+            "width": 1152
+          },
+          "method": "ridge",
+          "roundtrip_scores": {
+            "cos": 0.9999999493917704,
+            "cos_p05": 0.9999999278081168,
+            "r2": 0.9999997500674186,
+            "rel_l2": 0.0004978366856411822,
+            "rows": 102,
+            "width": 128
+          },
+          "rows_path": "/home/cereal/omni-campaign/composite/s7/scratch_dryrun/tap/qvl32_vit_L13/paired_rows.safetensors",
+          "rows_sha256": "bad2c38e997b31bdb3750e7c900d87d88bba6164585c7a39eb47324cb9c84647",
+          "split": {
+            "fit_rows": 410,
+            "holdout_rows": 102,
+            "rows": 512,
+            "scored_on": "holdout",
+            "split_by": "row"
+          }
+        },
+        "chart_parameters": 296064,
+        "chart_source": "fit_charts(ridge) on --tap-rows",
+        "component": "qvl32.vit.block13.mlp",
+        "container": "qvl32_vit_L13",
+        "dropped_chart_keys": [
+          "chart_out.bias"
+        ],
+        "files": {
+          "charted_block.json": "4d1ad85f8d92ce99e26336ec32f626283190dd167f0bee03b3c22070cb511535",
+          "charted_block.safetensors": "42e07a077b2f0a43f6279fb311e35ed216b83c9ddf9179c89c638d27791876bb",
+          "charts.safetensors": null,
+          "time_reference.safetensors": null
+        },
+        "holdout": {
+          "note": "Codex receipt split 'diagnostic_fit' (24 observation rows per block); no held split"
+        },
+        "layer_index": 9,
+        "mlp_parameters": 2479027,
+        "mlp_tensor_prefix": "blocks.9.charted.mlp.",
+        "narrowing": {
+          "attn.k_proj.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.k_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.o_proj.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.o_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.q_proj.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.q_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.v_proj.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.v_proj.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn_norm.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "attn_norm.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "chart_in.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "chart_in.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "chart_out.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "mlp.fc1.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "mlp.fc1.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "mlp.fc2.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "mlp.fc2.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "mlp_norm.bias": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          },
+          "mlp_norm.weight": {
+            "dtype": "F32",
+            "max_abs_narrowing": 0.0
+          }
+        },
+        "pairing": {
+          "candidates": [
+            3,
+            7
+          ],
+          "insert_after": 3,
+          "rule": "depth-fraction -> nearest gated_gqa refinement layer",
+          "source_depth_fraction": 0.5,
+          "trunk_depth_fraction": 0.42857142857142855
+        },
+        "parameters": 8092723,
+        "provenance": {
+          "block_keys": [
+            "blocks.13.attn.proj.bias",
+            "blocks.13.attn.proj.weight",
+            "blocks.13.attn.qkv.bias",
+            "blocks.13.attn.qkv.weight",
+            "blocks.13.mlp.linear_fc1.bias",
+            "blocks.13.mlp.linear_fc1.weight",
+            "blocks.13.mlp.linear_fc2.bias",
+            "blocks.13.mlp.linear_fc2.weight",
+            "blocks.13.norm1.bias",
+            "blocks.13.norm1.weight",
+            "blocks.13.norm2.bias",
+            "blocks.13.norm2.weight"
+          ],
+          "fold_receipt": "/home/cereal/omni-campaign/runtime/qvl32-1075-cpu-01a10f94-2b148ef9-817e-464f-b28c-746319b5ac77/output/native-qvl32-1075-child/fold_receipt.json",
+          "fold_receipt_sha256": "d007e80d3a2a0577c3adf54d511a98c4c80a4a3954ac9d50f9202a809e144d20",
+          "native_config": {
+            "deepstack_visual_indexes": [
+              8,
+              16,
+              24
+            ],
+            "depth": 27,
+            "hidden_size": 1152,
+            "in_channels": 3,
+            "intermediate_size": 1075,
+            "num_heads": 16,
+            "num_position_embeddings": 2304,
+            "out_hidden_size": 5120,
+            "patch_size": 16,
+            "spatial_merge_size": 2,
+            "temporal_patch_size": 2
+          },
+          "source_component": "/home/cereal/omni-campaign/runtime/qvl32-1075-cpu-01a10f94-2b148ef9-817e-464f-b28c-746319b5ac77/output/native-qvl32-1075-child/native_component.safetensors",
+          "source_component_metadata": {
+            "config_sha256": "bc4291c5a004467c85423fc8f3ed6edb99bd2659a3bc8635c8981fff593f0be7",
+            "language_weights": "absent",
+            "parent_component_sha256": "a0535820dbbf1126f157835a54cb0d59453f6f3e16adf2997cc924810385ea50",
+            "schema": "chimera_omni.qvl32_native_diagnostic_FFN_child.v1",
+            "split": "diagnostic_fit",
+            "stage": "source_native_diagnostic_FFN_child"
+          },
+          "source_component_sha256": "eb10bd3060fc3483d14fdb7ae042f764b6145369d6738da30114c181d6fe641b"
+        },
+        "rung": "qvl32-1075-diagnostic-fit",
+        "source": "qvl32",
+        "spec": {
+          "attn_bias": true,
+          "chart_in_bias": true,
+          "component": "qvl32.vit.block13.mlp",
+          "delta_scale": 1.0,
+          "h3_curve_dim": 0,
+          "h3_curve_grid": 0,
+          "h3_rope_freqs": 0,
+          "head_dim": 72,
+          "heads": 16,
+          "kv_heads": 16,
+          "layer_index": 9,
+          "metadata": {
+            "act": "gelu_pytorch_tanh (Qwen3-VL vision hidden_act; not re-read from the parent config)",
+            "converted_from": "/home/cereal/omni-campaign/runtime/qvl32-1075-cpu-01a10f94-2b148ef9-817e-464f-b28c-746319b5ac77/output/native-qvl32-1075-child",
+            "layer_type": "qwen3vl_vision_block",
+            "rope": "2-D vision RoPE dropped (rope_theta 0)"
+          },
+          "mlp_kind": "gelu_tanh",
+          "mlp_width": 1075,
+          "modulation": "none",
+          "norm_affine": true,
+          "norm_eps": 1e-06,
+          "norm_kind": "layer",
+          "qk_norm": false,
+          "rope_theta": 0.0,
+          "rung": "qvl32-1075-diagnostic-fit",
+          "sliding_window": 0,
+          "source": "qvl32",
+          "source_depth_fraction": 0.5,
+          "time_embed_r": false,
+          "time_factor": 1000.0,
+          "time_freq_dim": 256,
+          "time_hidden": 0,
+          "type_ids": [
+            1,
+            6
+          ],
+          "width": 1152
+        },
+        "tensor_prefix": "blocks.9.charted.",
+        "tensor_sha256_check": {
+          "charted_block.safetensors": {
+            "declared": 16,
+            "verified": true
+          }
+        },
+        "time_reference": null,
+        "type_ids": [
+          1,
+          6
+        ]
+      }
+    ],
+    "trunk_layer_map": {
+      "0": 0,
+      "1": 1,
+      "2": 2,
+      "3": 3,
+      "4": 10,
+      "5": 11,
+      "6": 12,
+      "7": 13
+    }
+  },
+  "child": {
+    "chimera_commit": "ffffffffffffffffffffffffffffffffffffffff",
+    "config_sha256": "76781ff51a0f55646ceeb896603c0200d823aad3056413a2364441bf870b3c94",
+    "directory": "/home/cereal/omni-campaign/composite/s7/scratch_dryrun/tiny_child",
+    "header_bytes": 1133088,
+    "header_parameters": 566544,
+    "index_sha256": "191a6beb99483f9bb58e1e5701f80fa29197638fefd08c00e123f57e031459df",
+    "shards": [
+      "model-00001-of-00001.safetensors"
+    ],
+    "storage_dtype": "BF16",
+    "tensors": 143,
+    "tensors_sha256_verified": 143,
+    "tied_weights": {}
+  },
+  "components": [
+    {
+      "child_params": 9437184,
+      "component": "ace.dit.block12.mlp",
+      "counts_source": "child derived from the written headers under the prefix; parent from the container's source-block accounting",
+      "meets_4x": true,
+      "note": "the ledger's 4-field derived form needs the PREFIX in the parent's headers too; the parent block lives in the source model, so the register line uses the 3-field asserted form and this manifest carries the derivation",
+      "parent_params": 37748736,
+      "ratio": 0.25,
+      "register_form": "--component",
+      "register_spec": "ace.dit.block12.mlp:37748736:9437184",
+      "source": "ace",
+      "tensor_prefix": "blocks.4.charted.mlp.",
+      "whole_block": {
+        "child_params": 34621952,
+        "parent_params": 62933504,
+        "ratio": 0.550135457259777
+      }
+    },
+    {
+      "child_params": 9437184,
+      "component": "ace.dit.block12.mlp",
+      "counts_source": "child derived from the written headers under the prefix; parent from the container's source-block accounting",
+      "meets_4x": true,
+      "note": "the ledger's 4-field derived form needs the PREFIX in the parent's headers too; the parent block lives in the source model, so the register line uses the 3-field asserted form and this manifest carries the derivation",
+      "parent_params": 37748736,
+      "ratio": 0.25,
+      "register_form": "--component",
+      "register_spec": "ace.dit.block12.mlp:37748736:9437184",
+      "source": "ace",
+      "tensor_prefix": "blocks.5.charted.mlp.",
+      "whole_block": {
+        "child_params": 34621952,
+        "parent_params": 62933504,
+        "ratio": 0.550135457259777
+      }
+    },
+    {
+      "child_params": 57802752,
+      "component": "h3.dit.block.mlp",
+      "counts_source": "child derived from the written headers under the prefix; parent from the container's source-block accounting",
+      "meets_4x": true,
+      "note": "the ledger's 4-field derived form needs the PREFIX in the parent's headers too; the parent block lives in the source model, so the register line uses the 3-field asserted form and this manifest carries the derivation",
+      "parent_params": 231211008,
+      "ratio": 0.25,
+      "register_form": "--component",
+      "register_spec": "h3.dit.block.mlp:231211008:57802752",
+      "source": "h3",
+      "tensor_prefix": "blocks.6.charted.mlp.",
+      "whole_block": {
+        "child_params": 212825344,
+        "parent_params": 386233600,
+        "ratio": 0.5510275232398217
+      }
+    },
+    {
+      "child_params": 8388607,
+      "component": "hy3d.dit.block10.mlp",
+      "counts_source": "child derived from the written headers under the prefix; parent from the container's source-block accounting",
+      "meets_4x": true,
+      "note": "the ledger's 4-field derived form needs the PREFIX in the parent's headers too; the parent block lives in the source model, so the register line uses the 3-field asserted form and this manifest carries the derivation",
+      "parent_params": 33564672,
+      "ratio": 0.2499236995374184,
+      "register_form": "--component",
+      "register_spec": "hy3d.dit.block10.mlp:33564672:8388607",
+      "source": "hy3d",
+      "tensor_prefix": "blocks.7.charted.mlp.",
+      "whole_block": {
+        "child_params": 25182463,
+        "parent_params": 50358528,
+        "ratio": 0.5000635244938056
+      }
+    },
+    {
+      "child_params": 18874367,
+      "component": "qimg.mmdit.block30.img_mlp",
+      "counts_source": "child derived from the written headers under the prefix; parent from the container's source-block accounting",
+      "meets_4x": true,
+      "note": "the ledger's 4-field derived form needs the PREFIX in the parent's headers too; the parent block lives in the source model, so the register line uses the 3-field asserted form and this manifest carries the derivation",
+      "parent_params": 75512832,
+      "ratio": 0.24994913447293302,
+      "register_form": "--component",
+      "register_spec": "qimg.mmdit.block30.img_mlp:75512832:18874367",
+      "source": "qimg",
+      "tensor_prefix": "blocks.8.charted.mlp.",
+      "whole_block": {
+        "child_params": 123525375,
+        "parent_params": 180163840,
+        "ratio": 0.685628009482924
+      }
+    },
+    {
+      "child_params": 2479027,
+      "component": "qvl32.vit.block13.mlp",
+      "counts_source": "child derived from the written headers under the prefix; parent from the container's source-block accounting",
+      "meets_4x": true,
+      "note": "the ledger's 4-field derived form needs the PREFIX in the parent's headers too; the parent block lives in the source model, so the register line uses the 3-field asserted form and this manifest carries the derivation",
+      "parent_params": 9921872,
+      "ratio": 0.24985476531041723,
+      "register_form": "--component",
+      "register_spec": "qvl32.vit.block13.mlp:9921872:2479027",
+      "source": "qvl32",
+      "tensor_prefix": "blocks.9.charted.mlp.",
+      "whole_block": {
+        "child_params": 7796659,
+        "parent_params": 15239504,
+        "ratio": 0.5116084486739201
+      }
+    }
+  ],
+  "disk": {
+    "estimated_output_bytes": 2149376836,
+    "filesystem_probe": "/home/cereal/omni-campaign/composite/s7/scratch_dryrun",
+    "free_bytes_before": 247434702848,
+    "materialised_bytes": 2148243748,
+    "min_free_gib": 60.0,
+    "streamed_bytes": 1133088
+  },
+  "generated_utc": "2026-10-09T21:34:31Z",
+  "interface": {
+    "entries": [],
+    "note": "no interface row sets given"
+  },
+  "narrowing": {
+    "max_abs_per_modified_tensor": {},
+    "storage_dtype": "BF16"
+  },
+  "output": {
+    "checkpoint_id": "DRYRUN-S7-D",
+    "config": {
+      "activation_kind": "silu",
+      "architecture": "dense_decoder_native_omnimodal_encoder_free",
+      "attention_head_dim": 8,
+      "attnres_block_size": 4,
+      "attnres_init": "zero",
+      "aux_heads": [
+        "flow",
+        "grounding",
+        "sync"
+      ],
+      "block_pattern": [
+        "kda",
+        "kda",
+        "kda",
+        "gated_gqa",
+        "charted",
+        "charted",
+        "charted",
+        "charted",
+        "charted",
+        "charted",
+        "kda",
+        "kda",
+        "kda",
+        "gated_gqa"
+      ],
+      "charted_blocks": [
+        {
+          "attn_bias": false,
+          "chart_in_bias": true,
+          "component": "ace.dit.block12.mlp",
+          "delta_scale": 1.0,
+          "h3_curve_dim": 0,
+          "h3_curve_grid": 0,
+          "h3_rope_freqs": 0,
+          "head_dim": 128,
+          "heads": 16,
+          "kv_heads": 8,
+          "layer_index": 4,
+          "metadata": {
+            "converted_from": "/home/cereal/omni-campaign/media/out/c16_L12_v4",
+            "cross_attention": "dropped",
+            "layer_type": "sliding_attention",
+            "timestep_r": "0.0 as captured; time_embed_r is evaluated at the trunk noise level (t - 0)"
+          },
+          "mlp_kind": "swiglu",
+          "mlp_width": 1536,
+          "modulation": "adaln6",
+          "norm_affine": true,
+          "norm_eps": 1e-06,
+          "norm_kind": "rms",
+          "qk_norm": true,
+          "rope_theta": 1000000.0,
+          "rung": "latents",
+          "sliding_window": 128,
+          "source": "ace",
+          "source_depth_fraction": 0.5217391304347826,
+          "time_embed_r": true,
+          "time_factor": 1000.0,
+          "time_freq_dim": 256,
+          "time_hidden": 2048,
+          "type_ids": [
+            4
+          ],
+          "width": 2048
+        },
+        {
+          "attn_bias": false,
+          "chart_in_bias": true,
+          "component": "ace.dit.block12.mlp",
+          "delta_scale": 1.0,
+          "h3_curve_dim": 0,
+          "h3_curve_grid": 0,
+          "h3_rope_freqs": 0,
+          "head_dim": 128,
+          "heads": 16,
+          "kv_heads": 8,
+          "layer_index": 5,
+          "metadata": {
+            "converted_from": "/home/cereal/omni-campaign/media/out/c16_L12_v4",
+            "cross_attention": "dropped",
+            "layer_type": "sliding_attention",
+            "timestep_r": "0.0 as captured; time_embed_r is evaluated at the trunk noise level (t - 0)"
+          },
+          "mlp_kind": "swiglu",
+          "mlp_width": 1536,
+          "modulation": "adaln6",
+          "norm_affine": true,
+          "norm_eps": 1e-06,
+          "norm_kind": "rms",
+          "qk_norm": true,
+          "rope_theta": 1000000.0,
+          "rung": "latents",
+          "sliding_window": 128,
+          "source": "ace",
+          "source_depth_fraction": 0.5217391304347826,
+          "time_embed_r": true,
+          "time_factor": 1000.0,
+          "time_freq_dim": 256,
+          "time_hidden": 2048,
+          "type_ids": [
+            4
+          ],
+          "width": 2048
+        },
+        {
+          "attn_bias": false,
+          "chart_in_bias": true,
+          "component": "h3.dit.block.mlp",
+          "delta_scale": 1.0,
+          "h3_curve_dim": 8,
+          "h3_curve_grid": 1025,
+          "h3_rope_freqs": 16,
+          "head_dim": 128,
+          "heads": 56,
+          "kv_heads": 56,
+          "layer_index": 6,
+          "metadata": {
+            "context": "text read-only plus AV; no context tower",
+            "sigma_contract": "actual per-type sigma; source shifts video12/audio3",
+            "source_code_sha256": "882c280b05aa60cd17f231e5e2389b921b52880fb3b4e23574c0aba5f2bd5024",
+            "source_position_schema": "h3_thw_v1"
+          },
+          "mlp_kind": "swiglu",
+          "mlp_width": 3584,
+          "modulation": "h3_curve6",
+          "norm_affine": true,
+          "norm_eps": 1e-05,
+          "norm_kind": "rms",
+          "qk_norm": true,
+          "rope_theta": 0.0,
+          "rung": "measured-coreset",
+          "sliding_window": 0,
+          "source": "h3",
+          "source_depth_fraction": 0.5102040816326531,
+          "time_embed_r": false,
+          "time_factor": 1000.0,
+          "time_freq_dim": 256,
+          "time_hidden": 0,
+          "type_ids": [
+            2,
+            3
+          ],
+          "width": 5376
+        },
+        {
+          "attn_bias": true,
+          "chart_in_bias": true,
+          "component": "hy3d.dit.block10.mlp",
+          "delta_scale": 1.0,
+          "h3_curve_dim": 0,
+          "h3_curve_grid": 0,
+          "h3_rope_freqs": 0,
+          "head_dim": 128,
+          "heads": 16,
+          "kv_heads": 16,
+          "layer_index": 7,
+          "metadata": {
+            "converted_from": "/mnt/lexar/omni-campaign/hy3d-native-4983c53b-7eee-4f49-980f-ab3788f5db69/dense-child-blocks/dense-child-block-10-1c1709d9-8afb-47f0-931f-35e01f90f125/dense-child-block10/dense_child.safetensors",
+            "cross_attention": "attn2 (DINO context) dropped",
+            "layer_type": "hunyuandit_plain_dense",
+            "mlp_gelu": "exact (non-approximate) per HY3D_NATIVE_COMPONENT.md",
+            "qkv": "re-packed from source per-head (q|k|v) split",
+            "qkv_bias": "zero rows written (source q/k/v have no bias; out_proj does)",
+            "time": "source time TOKEN not representable (modulation none)"
+          },
+          "mlp_kind": "gelu",
+          "mlp_width": 2047,
+          "modulation": "none",
+          "norm_affine": true,
+          "norm_eps": 1e-06,
+          "norm_kind": "layer",
+          "qk_norm": true,
+          "rope_theta": 0.0,
+          "rung": "hy3d-native-dense-child",
+          "sliding_window": 0,
+          "source": "hy3d",
+          "source_depth_fraction": 0.5,
+          "time_embed_r": false,
+          "time_factor": 1000.0,
+          "time_freq_dim": 256,
+          "time_hidden": 0,
+          "type_ids": [
+            7
+          ],
+          "width": 2048
+        },
+        {
+          "attn_bias": true,
+          "chart_in_bias": true,
+          "component": "qimg.mmdit.block30.img_mlp",
+          "delta_scale": 1.0,
+          "h3_curve_dim": 0,
+          "h3_curve_grid": 0,
+          "h3_rope_freqs": 0,
+          "head_dim": 128,
+          "heads": 24,
+          "kv_heads": 24,
+          "layer_index": 8,
+          "metadata": {
+            "converted_from": "/mnt/lexar/omni-campaign/qimg-ownerpolicy-v4-ee1a6166-3e91-405d-8381-3e3ff4c91194",
+            "layer_type": "mmdit_img_stream",
+            "rope": "3-D MM-RoPE dropped (rope_theta 0)",
+            "source_dtype": "F8_E4M3/BF16 widened exactly to BF16",
+            "text_stream": "dropped (trunk is the context)"
+          },
+          "mlp_kind": "gelu_tanh",
+          "mlp_width": 3071,
+          "modulation": "adaln6",
+          "norm_affine": false,
+          "norm_eps": 1e-06,
+          "norm_kind": "layer",
+          "qk_norm": true,
+          "rope_theta": 0.0,
+          "rung": "ownerpolicy-v4-candidate",
+          "sliding_window": 0,
+          "source": "qimg",
+          "source_depth_fraction": 0.5084745762711864,
+          "time_embed_r": false,
+          "time_factor": 1000.0,
+          "time_freq_dim": 256,
+          "time_hidden": 3072,
+          "type_ids": [
+            1
+          ],
+          "width": 3072
+        },
+        {
+          "attn_bias": true,
+          "chart_in_bias": true,
+          "component": "qvl32.vit.block13.mlp",
+          "delta_scale": 1.0,
+          "h3_curve_dim": 0,
+          "h3_curve_grid": 0,
+          "h3_rope_freqs": 0,
+          "head_dim": 72,
+          "heads": 16,
+          "kv_heads": 16,
+          "layer_index": 9,
+          "metadata": {
+            "act": "gelu_pytorch_tanh (Qwen3-VL vision hidden_act; not re-read from the parent config)",
+            "converted_from": "/home/cereal/omni-campaign/runtime/qvl32-1075-cpu-01a10f94-2b148ef9-817e-464f-b28c-746319b5ac77/output/native-qvl32-1075-child",
+            "layer_type": "qwen3vl_vision_block",
+            "rope": "2-D vision RoPE dropped (rope_theta 0)"
+          },
+          "mlp_kind": "gelu_tanh",
+          "mlp_width": 1075,
+          "modulation": "none",
+          "norm_affine": true,
+          "norm_eps": 1e-06,
+          "norm_kind": "layer",
+          "qk_norm": false,
+          "rope_theta": 0.0,
+          "rung": "qvl32-1075-diagnostic-fit",
+          "sliding_window": 0,
+          "source": "qvl32",
+          "source_depth_fraction": 0.5,
+          "time_embed_r": false,
+          "time_factor": 1000.0,
+          "time_freq_dim": 256,
+          "time_hidden": 0,
+          "type_ids": [
+            1,
+            6
+          ],
+          "width": 1152
+        }
+      ],
+      "csa_compress_stride": 64,
+      "dropout": 0.0,
+      "feed_forward_kind": "dense",
+      "force_final_gated_mla": false,
+      "gqa_output_gate": true,
+      "gqa_qk_norm": true,
+      "gqa_rope_dim": 2,
+      "gqa_rope_theta": 10000000.0,
+      "hca_compress_stride": 1024,
+      "hidden_size": 128,
+      "intermediate_size": 96,
+      "intermediate_sizes": [],
+      "kda_conv_bias": false,
+      "kda_decay_kind": "gdn",
+      "kda_decay_rank": 0,
+      "kda_gate_lower_bound": -5.0,
+      "kda_head_dim": 8,
+      "kda_num_heads": 4,
+      "kda_num_key_heads": 2,
+      "kda_output_gate": "silu",
+      "kda_qk_norm_eps": 1e-06,
+      "kda_qk_norm_kind": "fla",
+      "kda_query_scale": "inv_sqrt_key_dim",
+      "kda_short_conv_kernel_size": 4,
+      "kda_value_head_dim": 8,
+      "ledger_bands": [
+        [
+          "control",
+          8
+        ],
+        [
+          "media",
+          16
+        ],
+        [
+          "grounding",
+          8
+        ],
+        [
+          "sync",
+          8
+        ],
+        [
+          "tool",
+          8
+        ],
+        [
+          "music_codes",
+          24
+        ]
+      ],
+      "ledger_base_vocab_size": 256,
+      "ledger_kind": "fixed_band",
+      "local_window": 256,
+      "max_sequence_length": 256,
+      "metadata": {
+        "composite_arm": "insert",
+        "composite_tool": "c16_install_media 1.1.0",
+        "fixture": "c16_media_fixtures",
+        "profile": "toy_27b_shaped"
+      },
+      "mla_extra_head_dim": 0,
+      "mla_key_head_dim": 0,
+      "mla_latent_norm_eps": 0.0,
+      "mla_latent_size": 0,
+      "mla_query_latent_size": 0,
+      "mla_value_head_dim": 0,
+      "mtp_heads": 0,
+      "native_bidirectional_block_kinds": [
+        "gated_mla"
+      ],
+      "native_bidirectional_refinement": false,
+      "native_coordinate_frequencies": 8,
+      "native_feature_dim": 48,
+      "native_loss_reduction": "type_balanced",
+      "native_position_dim": 4,
+      "native_type_count": 8,
+      "num_heads": 4,
+      "num_kv_heads": 2,
+      "num_layers": 14,
+      "residual_mode": "none",
+      "rms_norm_eps": 1e-06,
+      "scale_policy": "explicit_config_no_baked_target_size",
+      "schema": "chimera_omni.config.v1",
+      "situ_gate_beta": 4.0,
+      "situ_up_beta": 25.0,
+      "tie_word_embeddings": false,
+      "vocab_size": 328
+    },
+    "config_sha256": "51eb57be490076169e043052ab18b25d3114a40502de14a7bec7b5b417442fa1",
+    "directory": "/home/cereal/omni-campaign/composite/s7/scratch_dryrun/out_D",
+    "index_sha256": "af9e526c248017932675e9d444586fb8c4c49a9d78433b3b3b26f3e9d71b585f",
+    "shard_sha256": {
+      "model-00001-of-00001.safetensors": "269933f0a335a7b8643fdedd4edc56197cd4c4acd786700cedaba959532a1c40"
+    },
+    "shards": [
+      "model-00001-of-00001.safetensors"
+    ],
+    "tensors": 279
+  },
+  "register": {
+    "accounting_parent": {
+      "directory": null,
+      "parameter_count": null,
+      "source": null
+    },
+    "accounting_slack_required": null,
+    "claimed_parent": 425707856,
+    "claimed_saving": 319288735,
+    "command": "$L register --checkpoint-id DRYRUN-S7-D --stage fold --parent-checkpoint-id DRYRUN-TINY-CHILD --directory /home/cereal/omni-campaign/composite/s7/scratch_dryrun/out_D --component ace.dit.block12.mlp:37748736:9437184 --component ace.dit.block12.mlp:37748736:9437184 --component h3.dit.block.mlp:231211008:57802752 --component hy3d.dit.block10.mlp:33564672:8388607 --component qimg.mmdit.block30.img_mlp:75512832:18874367 --component qvl32.vit.block13.mlp:9921872:2479027 --recipe /home/cereal/omni-campaign/composite/s7/scratch_dryrun/out_D/composite_manifest.json --recipe-command 'c16_install_media.py --child /home/cereal/omni-campaign/composite/s7/scratch_dryrun/tiny_child --out /home/cereal/omni-campaign/composite/s7/scratch_dryrun/out_D --blocks /home/cereal/omni-campaign/composite/s7/units/ace/ace_dit_L12 /home/cereal/omni-campaign/composite/s7/units/h3/h3_dit_L25_curve6 /home/cereal/omni-campaign/composite/s7/units/hy3d/hy3d_dit_L10 /home/cereal/omni-campaign/composite/s7/units/qimg/qimg_mmdit_L30_img /home/cereal/omni-campaign/composite/s7/units/qvl32/qvl32_vit_L13 /home/cereal/omni-campaign/composite/s7/scratch_dryrun/overlay/ace_dit_L12_host128charts --tap-rows /home/cereal/omni-campaign/composite/s7/scratch_dryrun/tap --pair-by depth-fraction --arm insert --chimera-src /home/cereal/omni-campaign/import/rq27b/tree_ef1ffb9 --mediafold-root /home/cereal/omni-campaign/media --time-reference-rel-tol 0.005 --checkpoint-id DRYRUN-S7-D --parent-checkpoint-id DRYRUN-TINY-CHILD --min-free-gib 60 --overwrite --charted-dtype fp32' --confirm",
+    "directory": {
+      "known": true,
+      "matched_prefix": null,
+      "note": null,
+      "protected_prefixes": [
+        "/mnt",
+        "/home/cereal/models"
+      ],
+      "registerable": true
+    },
+    "lineage_parent_checkpoint_id": "DRYRUN-TINY-CHILD",
+    "measured_drop": null,
+    "notes": [
+      "--parent-checkpoint-id is the LINEAGE parent (the S5 child); the fold accounting is priced against the accounting parent (PARENT-Q38-27BU's directory, derived from its headers by the ledger) because an insert-arm child GROWS by the charted state relative to the S5 child and oc_checkpoint._fold_accounting refuses measured_drop <= 0. Every growth stage of the chain (S3, S5, S7) is priced the same way.",
+      "no accounting parent given (--accounting-parent-directory / --parent-parameter-count): the emitted line would be refused by the ledger (measured_drop <= 0 against the S5 child); reachable=False"
+    ],
+    "passed_through": [],
+    "reachable": false
+  },
+  "runtime": {
+    "peak_rss_bytes": 4890890240,
+    "python": "3.12.3"
+  },
+  "schema": "chimera_omni.composite_manifest.v1",
+  "sources": [
+    {
+      "mechanisms": [
+        {
+          "component": "ace.dit.block12.mlp",
+          "mechanism": "C16 4x block, insert arm",
+          "parameters": 82364672,
+          "rung": "latents",
+          "sha256": "94c4f10f55fa3e09380376e6997cdffe3e3458e660cd422463d7eb90458ab7f5"
+        },
+        {
+          "component": "ace.dit.block12.mlp",
+          "mechanism": "C16 4x block, insert arm",
+          "parameters": 82364672,
+          "rung": "latents",
+          "sha256": "94c4f10f55fa3e09380376e6997cdffe3e3458e660cd422463d7eb90458ab7f5"
+        }
+      ],
+      "source": "ace"
+    },
+    {
+      "mechanisms": [
+        {
+          "component": "h3.dit.block.mlp",
+          "mechanism": "C16 4x block, insert arm",
+          "parameters": 214215192,
+          "rung": "measured-coreset",
+          "sha256": "8f1adfe2768513c721c9c77e52f729264883930d6af72b50fdc0f58df9cbfabf"
+        }
+      ],
+      "source": "h3"
+    },
+    {
+      "mechanisms": [
+        {
+          "component": "hy3d.dit.block10.mlp",
+          "mechanism": "C16 4x block, insert arm",
+          "parameters": 25708799,
+          "rung": "hy3d-native-dense-child",
+          "sha256": "58574fe6255d924a651d910ed941115da1d1aabaf5f1c4f8afba1e81e8b5d817"
+        }
+      ],
+      "source": "hy3d"
+    },
+    {
+      "mechanisms": [
+        {
+          "component": "qimg.mmdit.block30.img_mlp",
+          "mechanism": "C16 4x block, insert arm",
+          "parameters": 124314879,
+          "rung": "ownerpolicy-v4-candidate",
+          "sha256": "e15a5b754e1d9456865ba64a13a0aa4a13491b2f28d9aca040529c666bcd9c0b"
+        }
+      ],
+      "source": "qimg"
+    },
+    {
+      "mechanisms": [
+        {
+          "component": "qvl32.vit.block13.mlp",
+          "mechanism": "C16 4x block, insert arm",
+          "parameters": 8092723,
+          "rung": "qvl32-1075-diagnostic-fit",
+          "sha256": "42e07a077b2f0a43f6279fb311e35ed216b83c9ddf9179c89c638d27791876bb"
+        }
+      ],
+      "source": "qvl32"
+    }
+  ],
+  "tool": {
+    "argv": [
+      "--child",
+      "/home/cereal/omni-campaign/composite/s7/scratch_dryrun/tiny_child",
+      "--out",
+      "/home/cereal/omni-campaign/composite/s7/scratch_dryrun/out_D",
+      "--blocks",
+      "/home/cereal/omni-campaign/composite/s7/units/ace/ace_dit_L12",
+      "/home/cereal/omni-campaign/composite/s7/units/h3/h3_dit_L25_curve6",
+      "/home/cereal/omni-campaign/composite/s7/units/hy3d/hy3d_dit_L10",
+      "/home/cereal/omni-campaign/composite/s7/units/qimg/qimg_mmdit_L30_img",
+      "/home/cereal/omni-campaign/composite/s7/units/qvl32/qvl32_vit_L13",
+      "/home/cereal/omni-campaign/composite/s7/scratch_dryrun/overlay/ace_dit_L12_host128charts",
+      "--tap-rows",
+      "/home/cereal/omni-campaign/composite/s7/scratch_dryrun/tap",
+      "--pair-by",
+      "depth-fraction",
+      "--arm",
+      "insert",
+      "--chimera-src",
+      "/home/cereal/omni-campaign/import/rq27b/tree_ef1ffb9",
+      "--mediafold-root",
+      "/home/cereal/omni-campaign/media",
+      "--time-reference-rel-tol",
+      "0.005",
+      "--checkpoint-id",
+      "DRYRUN-S7-D",
+      "--parent-checkpoint-id",
+      "DRYRUN-TINY-CHILD",
+      "--min-free-gib",
+      "60",
+      "--overwrite",
+      "--charted-dtype",
+      "fp32"
+    ],
+    "name": "c16_install_media",
+    "recipe_command": "c16_install_media.py --child /home/cereal/omni-campaign/composite/s7/scratch_dryrun/tiny_child --out /home/cereal/omni-campaign/composite/s7/scratch_dryrun/out_D --blocks /home/cereal/omni-campaign/composite/s7/units/ace/ace_dit_L12 /home/cereal/omni-campaign/composite/s7/units/h3/h3_dit_L25_curve6 /home/cereal/omni-campaign/composite/s7/units/hy3d/hy3d_dit_L10 /home/cereal/omni-campaign/composite/s7/units/qimg/qimg_mmdit_L30_img /home/cereal/omni-campaign/composite/s7/units/qvl32/qvl32_vit_L13 /home/cereal/omni-campaign/composite/s7/scratch_dryrun/overlay/ace_dit_L12_host128charts --tap-rows /home/cereal/omni-campaign/composite/s7/scratch_dryrun/tap --pair-by depth-fraction --arm insert --chimera-src /home/cereal/omni-campaign/import/rq27b/tree_ef1ffb9 --mediafold-root /home/cereal/omni-campaign/media --time-reference-rel-tol 0.005 --checkpoint-id DRYRUN-S7-D --parent-checkpoint-id DRYRUN-TINY-CHILD --min-free-gib 60 --overwrite --charted-dtype fp32",
+    "sha256": "3289f5a691a5dac7bd837283b985ed81c17d2a5c6d9590f747c89173ab52a6b4",
+    "version": "1.1.0"
+  },
+  "tree": {
+    "chimera_src": "/home/cereal/omni-campaign/import/rq27b/tree_ef1ffb9",
+    "commit": "ef1ffb9c3c1abd9ea79f1d4d5707ac5486dab9ab",
+    "commit_source": "COMMIT file (a declaration, not proof)",
+    "package_files": 65,
+    "package_sha256": "0929efb65f8f77f1d6cf6053446c397937369e691aed3602090a3acbed8f4e4a"
+  }
+}

@@ -1,0 +1,928 @@
+{
+  "schema": "chimera_omni.media_fold.receipt.v1",
+  "created_at_utc": "2026-09-02T14:52:15.707583+00:00",
+  "kind": "c16_transplant",
+  "block": {
+    "source": "/home/cereal/comfyui/models/diffusion_models/acestep_v1.5_turbo.safetensors",
+    "prefix": "decoder.layers.12.",
+    "layer_type": "sliding_attention",
+    "consumed_tensors": 19,
+    "tensor_sha256": {
+      "cross_attn.k_norm.weight": "e103849f375dcd73fa55b23a1fb646103bf06cb1685fb51f67e5949adea10736",
+      "cross_attn.k_proj.weight": "5c1c5ab13a7f7fb36bcd9a281c26539f94c465a4a23d3e78de5b350bac19f17a",
+      "cross_attn.o_proj.weight": "9ac42e45c585fff864a95a5306fc603ac6250c71551023022b064abcbd51e146",
+      "cross_attn.q_norm.weight": "4c8c9a089106344efb58da9fa7e34e828203675cfb7ff1fe3db64f649647b005",
+      "cross_attn.q_proj.weight": "b2a615dd4685241651de527c75398e61bcb80dd70badea798dda3dde657b33b1",
+      "cross_attn.v_proj.weight": "2cc6145a42d7b5de0a29107bff43d7deb8fdf92d06aef581ff98cb261a3183b0",
+      "cross_attn_norm.weight": "c239704ede849986957b126b93ac7c52e054ebb1830754d00aaa9a69507c2d1d",
+      "mlp.down_proj.weight": "0c3404ae76e6ed4ab0f9c32b128b6eb42a491c880379ca6c2091a120b0f06087",
+      "mlp.gate_proj.weight": "81c0d943d22bc14e011267be6e82b5d3453cfbdd3df7b15162b83b2e9ef64b9f",
+      "mlp.up_proj.weight": "4e4dc1c4c6287f7d2ae99a41fcd618adb43b8aa894e4243683cbd231cec0475b",
+      "mlp_norm.weight": "58bc0ea443b389de69ffec6783e85f77a480b66d946123ac4175906aa13e0b66",
+      "scale_shift_table": "87b5673ff23d44eac6838ebcbb089a0683dcbe809ca57bf96c5d1566d29e66d7",
+      "self_attn.k_norm.weight": "d788c1e35ea6dcb34850198eff55455307b41c35371fa96bf059024d82ca8fdd",
+      "self_attn.k_proj.weight": "2c3706169795392678e4fbd89064afb8bcb1a98dea9dab82545942c5a11da5ad",
+      "self_attn.o_proj.weight": "0052ad07dcf158d15f1f9b1a794ee053e67d8d820322a5cd10800284a346ec76",
+      "self_attn.q_norm.weight": "10b49f2ef03247fd931bb49cfb7635c479fdacb4c692e14239a49a2ebbca1d2b",
+      "self_attn.q_proj.weight": "0d0ed188ebe06c428a89bd273031fb2d40bb57be954752d3d1f504b5262c724f",
+      "self_attn.v_proj.weight": "1268ce55406263c1e32c84058c272c7d8d8ce740fd48e4f9def9e3e75cb2558c",
+      "self_attn_norm.weight": "af951079d091d9840c6473a588b9da4a7ee40f8c34b77baf6f707c00f2067dc9"
+    },
+    "block_parameters": 62933504,
+    "mlp_parameters": 37748736
+  },
+  "capture": {
+    "mode": "prefix_shell",
+    "prefix_depth": 12,
+    "prefix_note": "layers 0..11 were run before block 12; identical to a full-stack forward for this block's input",
+    "shell": {
+      "source": "/home/cereal/comfyui/models/diffusion_models/acestep_v1.5_turbo.safetensors",
+      "prefix": "decoder.",
+      "depth": 12,
+      "consumed_tensors": 248,
+      "state_sha256": "d132f7729c2374413cff4f19be03eeaccbc592796f418f8053de4a112c842606",
+      "parameters": 820256832,
+      "config": {
+        "hidden_size": 2048,
+        "num_attention_heads": 16,
+        "num_key_value_heads": 8,
+        "head_dim": 128,
+        "intermediate_size": 6144,
+        "patch_size": 2,
+        "layer_types": [
+          "sliding_attention",
+          "full_attention",
+          "sliding_attention",
+          "full_attention",
+          "sliding_attention",
+          "full_attention",
+          "sliding_attention",
+          "full_attention",
+          "sliding_attention",
+          "full_attention",
+          "sliding_attention",
+          "full_attention",
+          "sliding_attention",
+          "full_attention",
+          "sliding_attention",
+          "full_attention",
+          "sliding_attention",
+          "full_attention",
+          "sliding_attention",
+          "full_attention",
+          "sliding_attention",
+          "full_attention",
+          "sliding_attention",
+          "full_attention"
+        ]
+      }
+    },
+    "stimulus": {
+      "rung": "latents",
+      "pairs_dir": "/home/cereal/omni-campaign/media/pairs/ace_s_ctx0_merged",
+      "pairs_geometry": {
+        "name": "ace_1.5_vae.safetensors",
+        "modality": "audio",
+        "latent_channels": 64,
+        "sample_rate_hz": 48000,
+        "hop_samples": 1920,
+        "channels": 2,
+        "channel_in_latent": false,
+        "spatial_stride": 0,
+        "temporal_stride": 0,
+        "frame_rate_hz": 25.0,
+        "notes": {
+          "kind": "comfy",
+          "path": "/opt/ComfyUI/models/vae/ace_1.5_vae.safetensors",
+          "comfy_kitchen_stubbed": true,
+          "forced_cpu": true,
+          "expected_class": "AudioOobleckVAE(strides=[2,4,4,6,10])",
+          "sd_py_lines": "651-674",
+          "latent_dim": 1,
+          "first_stage_class": "AudioOobleckVAE",
+          "vae_dtype": "torch.float32",
+          "device": "cpu",
+          "posterior": "mean",
+          "path_mode": "direct",
+          "crop_input": true,
+          "downscale_ratio": 1920,
+          "upscale_ratio": 1920
+        },
+        "pairing": "stacked",
+        "ambiguous_pairing": false,
+        "ambiguity": null,
+        "context": 0,
+        "d_raw": 3840,
+        "d_latent": 64,
+        "d_centre": 3840,
+        "centre_offset": 0,
+        "rows": 9600,
+        "clips": 96,
+        "chimera_segment": 1920,
+        "chimera_stride": 1920,
+        "chimera_tokens_per_frame": 2,
+        "merged_from": 6,
+        "merged_clip_totals": [
+          16,
+          16,
+          16,
+          16,
+          16,
+          16
+        ],
+        "declared_clips_sum": 96,
+        "merged_alignments": [
+          {
+            "pairing": "stacked",
+            "ambiguous_pairing": false,
+            "ambiguity": null
+          },
+          {
+            "pairing": "stacked",
+            "ambiguous_pairing": false,
+            "ambiguity": null
+          },
+          {
+            "pairing": "stacked",
+            "ambiguous_pairing": false,
+            "ambiguity": null
+          },
+          {
+            "pairing": "stacked",
+            "ambiguous_pairing": false,
+            "ambiguity": null
+          },
+          {
+            "pairing": "stacked",
+            "ambiguous_pairing": false,
+            "ambiguity": null
+          },
+          {
+            "pairing": "stacked",
+            "ambiguous_pairing": false,
+            "ambiguity": null
+          }
+        ]
+      },
+      "seed": 0,
+      "sigma": 0.5,
+      "row_offset": 0,
+      "row_offset_source": "explicit",
+      "clips_covered": 96,
+      "clip_span": [
+        0,
+        95
+      ],
+      "rows_per_clip_in_window": 100,
+      "clips_per_batch_row_min": 1,
+      "clips_per_batch_row_max": 1,
+      "batch_rows_are_single_clips": true,
+      "attention_receptive_field": "one DiT batch row (the full_attention layers are unrestricted), so a token's activation is a function of every latent row of its batch row. Each batch row here is exactly one clip, so an activation carries no content from any other clip and a clip-grouped holdout is independent of the fit."
+    },
+    "tensors": {
+      "path": "out/c16_L12_v4/capture_L12.safetensors",
+      "bytes": 147849624,
+      "file_sha256": "45bf9aa3cd5e0f85237451e5d973959fbea5abdd29f4bd19af5a9e334ad67d97",
+      "state_sha256": "ab1852bac037720e3cd4248894717529473e39bcfa9e77e2bc3f816783beecf8",
+      "parameters": 36962304,
+      "tensors": {
+        "context": {
+          "dtype": "torch.float32",
+          "shape": [
+            96,
+            32,
+            2048
+          ],
+          "sha256": "8adfc938ff065d33828ebc8830f61eaa5b366551c0341a7b59d40b953b9c0afc"
+        },
+        "mlp_in": {
+          "dtype": "torch.float32",
+          "shape": [
+            96,
+            50,
+            2048
+          ],
+          "sha256": "9f11acfd523c4707d9c505ffbb9c49b6f34eeaf00c0c07dce95dfa2203e82067"
+        },
+        "temb": {
+          "dtype": "torch.float32",
+          "shape": [
+            96,
+            6,
+            2048
+          ],
+          "sha256": "a6c785d22d864a3f920853898465d7a3d37689c0c768e02de703260f13bca122"
+        },
+        "x_in": {
+          "dtype": "torch.float32",
+          "shape": [
+            96,
+            50,
+            2048
+          ],
+          "sha256": "803a27bd8ddce9d927cb8acde15a46679ad14cae4abeb7e492218b0dd2622c29"
+        },
+        "x_out": {
+          "dtype": "torch.float32",
+          "shape": [
+            96,
+            50,
+            2048
+          ],
+          "sha256": "41c906b4a4769c4acd8dfdea067de9feaa2f5b9b37b00b3a0d50e34dd73920b7"
+        }
+      }
+    }
+  },
+  "host": {
+    "source": "chimera_proof_trunk",
+    "package": "/home/cereal/chimera-proof-c5a5c18-v4/src",
+    "layer": 3,
+    "hidden": 128,
+    "rows": 4352,
+    "site": "blocks[3].norm1 input",
+    "paired_rows": 4352,
+    "pairing": "index_aligned_different_corpora"
+  },
+  "charts": {
+    "ridge": {
+      "method": "ridge",
+      "parameters": 526464,
+      "in": {
+        "ridge_rel": 1.0,
+        "fit_bias": true,
+        "fit_rows": 2786,
+        "holdout_rows": 696,
+        "seed": 0,
+        "lambda_ladder": [
+          {
+            "ridge_rel": 1e-06,
+            "rel_l2": 0.926292953401003
+          },
+          {
+            "ridge_rel": 1e-05,
+            "rel_l2": 0.9250623191930916
+          },
+          {
+            "ridge_rel": 0.0001,
+            "rel_l2": 0.919782502438721
+          },
+          {
+            "ridge_rel": 0.001,
+            "rel_l2": 0.9126933085160425
+          },
+          {
+            "ridge_rel": 0.01,
+            "rel_l2": 0.9078927023731912
+          },
+          {
+            "ridge_rel": 0.1,
+            "rel_l2": 0.9048547789099184
+          },
+          {
+            "ridge_rel": 1.0,
+            "rel_l2": 0.9040316521749333
+          },
+          {
+            "ridge_rel": 10.0,
+            "rel_l2": 0.907447909375291
+          },
+          {
+            "ridge_rel": 100.0,
+            "rel_l2": 0.9341006109037854
+          }
+        ]
+      },
+      "out": {
+        "ridge_rel": 0.1,
+        "fit_bias": true,
+        "fit_rows": 2786,
+        "holdout_rows": 696,
+        "seed": 0,
+        "lambda_ladder": [
+          {
+            "ridge_rel": 1e-06,
+            "rel_l2": 1.072030537766021
+          },
+          {
+            "ridge_rel": 1e-05,
+            "rel_l2": 1.052811038962878
+          },
+          {
+            "ridge_rel": 0.0001,
+            "rel_l2": 0.9393335199396753
+          },
+          {
+            "ridge_rel": 0.001,
+            "rel_l2": 0.7329967897087057
+          },
+          {
+            "ridge_rel": 0.01,
+            "rel_l2": 0.6291924078011417
+          },
+          {
+            "ridge_rel": 0.1,
+            "rel_l2": 0.6230067836749734
+          },
+          {
+            "ridge_rel": 1.0,
+            "rel_l2": 0.629640095991919
+          },
+          {
+            "ridge_rel": 10.0,
+            "rel_l2": 0.6385212601884834
+          },
+          {
+            "ridge_rel": 100.0,
+            "rel_l2": 0.6982978011963344
+          }
+        ]
+      },
+      "roundtrip_scores": {
+        "rel_l2": 0.5097769659625553,
+        "cos": 0.8383163204817342,
+        "cos_p05": 0.22952693397387391,
+        "r2": 0.3189317103419427,
+        "rows": 870,
+        "width": 128
+      },
+      "forward_scores": {
+        "rel_l2": 0.9061849146272507,
+        "cos": 0.46862162992670225,
+        "cos_p05": 0.22484398117813634,
+        "r2": -0.005717387936600593,
+        "rows": 870,
+        "width": 2048
+      },
+      "in_sample_roundtrip_scores": {
+        "rel_l2": 0.5061037480837908,
+        "cos": 0.8439842282156114,
+        "cos_p05": 0.23141647793412476,
+        "r2": 0.3163444830743729,
+        "rows": 3482,
+        "width": 128
+      },
+      "in_sample_forward_scores": {
+        "rel_l2": 0.9007706521824373,
+        "cos": 0.4786531514366318,
+        "cos_p05": 0.22702034776678143,
+        "r2": 0.0014577639202598691,
+        "rows": 3482,
+        "width": 2048
+      },
+      "split": {
+        "rows": 4352,
+        "fit_rows": 3482,
+        "holdout_rows": 870,
+        "scored_on": "holdout",
+        "split_by": "row"
+      }
+    },
+    "svd": {
+      "method": "svd",
+      "parameters": 526464,
+      "chart": {
+        "rank": 128,
+        "retained_energy": 0.942474747192964
+      },
+      "roundtrip_scores": {
+        "rel_l2": 1.852968179432297e-15,
+        "cos": 1.0,
+        "cos_p05": 0.9999999999999998,
+        "r2": 1.0,
+        "rows": 870,
+        "width": 128
+      },
+      "forward_scores": {
+        "rel_l2": 1.0000190686878663,
+        "cos": -0.005090505656132037,
+        "cos_p05": -0.13440812878034397,
+        "r2": -0.22478219744831418,
+        "rows": 870,
+        "width": 2048
+      },
+      "in_sample_roundtrip_scores": {
+        "rel_l2": 1.8523517115058794e-15,
+        "cos": 1.0,
+        "cos_p05": 0.9999999999999998,
+        "r2": 1.0,
+        "rows": 3482,
+        "width": 128
+      },
+      "in_sample_forward_scores": {
+        "rel_l2": 1.000025131089299,
+        "cos": -0.010910334284055762,
+        "cos_p05": -0.1355521555410556,
+        "r2": -0.2307215676733123,
+        "rows": 3482,
+        "width": 2048
+      },
+      "split": {
+        "rows": 4352,
+        "fit_rows": 3482,
+        "holdout_rows": 870,
+        "scored_on": "holdout",
+        "split_by": "row"
+      }
+    },
+    "random": {
+      "method": "random",
+      "parameters": 526464,
+      "random": true,
+      "seed": 0,
+      "roundtrip_scores": {
+        "rel_l2": 1.4530787697085046,
+        "cos": -0.010760200499458944,
+        "cos_p05": -0.12036895024962392,
+        "r2": -4.533610144422011,
+        "rows": 870,
+        "width": 128
+      },
+      "forward_scores": {
+        "rel_l2": 1.0001137761710364,
+        "cos": -0.011983237995298237,
+        "cos_p05": -0.04965354126037498,
+        "r2": -0.22501419608860096,
+        "rows": 870,
+        "width": 2048
+      },
+      "in_sample_roundtrip_scores": {
+        "rel_l2": 1.452362549947608,
+        "cos": -0.009821015081785804,
+        "cos_p05": -0.12058834354054804,
+        "r2": -4.629998760883396,
+        "rows": 3482,
+        "width": 128
+      },
+      "in_sample_forward_scores": {
+        "rel_l2": 1.000108232217658,
+        "cos": -0.011300411707734366,
+        "cos_p05": -0.04960283783429233,
+        "r2": -0.2309261197335537,
+        "rows": 3482,
+        "width": 2048
+      },
+      "split": {
+        "rows": 4352,
+        "fit_rows": 3482,
+        "holdout_rows": 870,
+        "scored_on": "holdout",
+        "split_by": "row"
+      }
+    }
+  },
+  "primary_chart": "ridge",
+  "arms_parent_block": [
+    {
+      "arm": "replace",
+      "scores": {
+        "rel_l2": 0.052542607280071006,
+        "cos": 0.9985722169873297,
+        "cos_p05": 0.9967322359446308,
+        "r2": 0.9926601797669696,
+        "rows": 4352,
+        "width": 128
+      },
+      "frozen_parameters": 63459968,
+      "delta_scale": 1.0,
+      "rope": true
+    },
+    {
+      "arm": "insert",
+      "scores": {
+        "rel_l2": 0.052542607280071006,
+        "cos": 0.9985722169873297,
+        "cos_p05": 0.9967322359446308,
+        "r2": 0.9926601797669696,
+        "rows": 4352,
+        "width": 128
+      },
+      "frozen_parameters": 63459968,
+      "delta_scale": 1.0,
+      "rope": true,
+      "identical_forward_to": "replace"
+    },
+    {
+      "arm": "control",
+      "scores": {
+        "rel_l2": 0.08231766593084708,
+        "cos": 0.9967575863586166,
+        "cos_p05": 0.994704010168349,
+        "r2": 0.9819844187122755,
+        "rows": 4352,
+        "width": 128
+      },
+      "frozen_parameters": 63459968,
+      "delta_scale": 17.29129981994629,
+      "rope": true
+    },
+    {
+      "arm": "identity",
+      "scores": {
+        "rel_l2": 0.506839668664869,
+        "cos": 0.842851167985325,
+        "cos_p05": 0.2313047769381208,
+        "r2": 0.3170272427146851,
+        "rows": 4352,
+        "width": 128
+      },
+      "frozen_parameters": 526464,
+      "delta_scale": 1.0,
+      "rope": false
+    },
+    {
+      "arm": "random_chart",
+      "scores": {
+        "rel_l2": 88.91092446796614,
+        "cos": -0.04439655847303337,
+        "cos_p05": -0.1335094961927185,
+        "r2": -21016.082832943634,
+        "rows": 4352,
+        "width": 128
+      },
+      "frozen_parameters": 63459968,
+      "delta_scale": 1.0,
+      "rope": true
+    }
+  ],
+  "arms_folded_block": [
+    {
+      "arm": "replace",
+      "scores": {
+        "rel_l2": 0.05277258626196295,
+        "cos": 0.9986187912594735,
+        "cos_p05": 0.9975157079460021,
+        "r2": 0.9925957863662814,
+        "rows": 4352,
+        "width": 128
+      },
+      "frozen_parameters": 35148416,
+      "delta_scale": 1.0,
+      "rope": true
+    },
+    {
+      "arm": "identity",
+      "scores": {
+        "rel_l2": 0.506839668664869,
+        "cos": 0.842851167985325,
+        "cos_p05": 0.2313047769381208,
+        "r2": 0.3170272427146851,
+        "rows": 4352,
+        "width": 128
+      },
+      "frozen_parameters": 526464,
+      "delta_scale": 1.0,
+      "rope": false
+    }
+  ],
+  "arm_metric_meaning": "each arm's rel_l2 is measured against the UNCHANGED host rows, so it is the relative size of the write the arm makes into the host residual stream (0 = the arm does nothing). It is not a fit error against a target. Every arm number is measured THROUGH the primary chart, so read it next to that chart's own forward_scores: when they are near zero the chart carries no correspondence and the arm table orders write strengths, nothing more.",
+  "arm_caveats": {
+    "insert_equals_replace": "at one transplanted block the insert and replace forward paths are the same expression; the rows are identical by construction, not two independent arms",
+    "control_is_norm_matched": "control keeps the parent RMSNorm gains (zeroing them makes a DEAD block) and its delta is rescaled to the parent's delta norm on the same rows"
+  },
+  "transplant_write_strength": {
+    "parent_delta_norm": 30730.524301706006,
+    "parent_in_norm": 206941.45558701616,
+    "parent_delta_over_input": 0.14849863800626562,
+    "transported_delta_norm": 24.571014712816414,
+    "host_row_norm": 376.2474941106674,
+    "relative_write": 0.06530545743804803,
+    "chart": "ridge",
+    "chart_forward_r2": -0.005717387936600593,
+    "chart_forward_cos": 0.46862162992670225
+  },
+  "coreset": {
+    "keep": 1536,
+    "intermediate": 6144,
+    "selection_sha256": "a1f1858e13de6645683c23a45a69d479b29135d03095b0b464dd4b311209c481",
+    "selected_channels": "1536 channels (list omitted)",
+    "solve": {
+      "ridge_lambda": 0.05363565334826384,
+      "update_scale": 0.9138751428266505,
+      "ridge_rel": 1e-06,
+      "scores": {
+        "rel_l2": 0.21179115264918885,
+        "cos": 0.9639772118400938,
+        "cos_p05": 0.9220709369284821,
+        "r2": 0.9458892671432768,
+        "rows": 3850,
+        "width": 2048
+      },
+      "ladder": [
+        {
+          "ridge_rel": 1e-06,
+          "rel_l2": 0.21179115264918885,
+          "update_scale": 0.9138751428266505,
+          "vetoed": false
+        },
+        {
+          "ridge_rel": 1e-05,
+          "rel_l2": 0.21179115778155033,
+          "update_scale": 0.9136427244282518,
+          "vetoed": false
+        },
+        {
+          "ridge_rel": 0.0001,
+          "rel_l2": 0.21179166662466897,
+          "update_scale": 0.9113315993872069,
+          "vetoed": false
+        },
+        {
+          "ridge_rel": 0.001,
+          "rel_l2": 0.21183850462681625,
+          "update_scale": 0.8894425407616399,
+          "vetoed": false
+        },
+        {
+          "ridge_rel": 0.01,
+          "rel_l2": 0.21434677679440373,
+          "update_scale": 0.7443754364313595,
+          "vetoed": false
+        },
+        {
+          "ridge_rel": 0.1,
+          "rel_l2": 0.242339295172745,
+          "update_scale": 0.41680710898836376,
+          "vetoed": false
+        },
+        {
+          "ridge_rel": 1.0,
+          "rel_l2": 0.314242913558623,
+          "update_scale": 0.16607873227341974,
+          "vetoed": false
+        },
+        {
+          "ridge_rel": 10.0,
+          "rel_l2": 0.40098664635941933,
+          "update_scale": 0.04778698713082123,
+          "vetoed": false
+        },
+        {
+          "ridge_rel": 100.0,
+          "rel_l2": 0.45446957318931425,
+          "update_scale": 0.010794009283375535,
+          "vetoed": false
+        }
+      ]
+    },
+    "component": {
+      "component": "ace_dit_block.mlp",
+      "parent_parameters": 37748736,
+      "child_parameters": 9437184,
+      "compression_x": 4.0,
+      "meets_4x_component_floor": true
+    },
+    "whole_block": {
+      "component": "ace_dit_block",
+      "parent_parameters": 62933504,
+      "child_parameters": 34621952,
+      "compression_x": 1.8177341358453736,
+      "meets_4x_component_floor": false
+    },
+    "fit_scores": {
+      "rel_l2": 0.21179115285923875,
+      "cos": 0.9639772117975147,
+      "cos_p05": 0.9220709378022286,
+      "r2": 0.9458892670360134,
+      "rows": 3850,
+      "width": 2048
+    },
+    "holdout_scores": {
+      "rel_l2": 0.5442424558949278,
+      "cos": 0.8415188270864858,
+      "cos_p05": 0.7799929815120936,
+      "r2": 0.6532203718005033,
+      "rows": 950,
+      "width": 2048
+    },
+    "rows": 4800,
+    "fit_rows": 3850,
+    "holdout_rows": 950,
+    "split_by": "clip (96 clips, 19 held out)",
+    "split_groups": {
+      "group_name": "clip",
+      "groups": 96,
+      "fit_groups": 77,
+      "holdout_groups": 19,
+      "membership_checked": true,
+      "membership_width": 2,
+      "fit_rows_drawing_on_a_held_out_group": 0
+    },
+    "split_guarantee": "row-level disjointness of the source material between fit and holdout (re-derived from row_membership, not from the group ids). This is NOT statistical independence of the two sets of activations: if the rows were produced by a model whose receptive field spans several groups, a held-out row's activation still encodes fit material. The caller's capture receipt is where the receptive field is recorded.",
+    "fit_rows_per_kept_channel": 2.5065104166666665,
+    "note": "per-COMPONENT compression is the >=4x claim; the whole-block ratio is coverage driven and reaches 4x only with the kv-head merge (rung 2)",
+    "clip_grouping": {
+      "grouped_by": "clip",
+      "groups": 96,
+      "boundary_tokens_dropped": 0,
+      "rows_before_drop": 4800,
+      "rows_used": 4800,
+      "note": "a token whose patch straddles a clip boundary carries rows from two clips and is dropped; filing it under either clip would put held-out content in the fit",
+      "guarantee": "row-level clip disjointness (no clip has rows on both sides), NOT independence of the fit and holdout activations -- read receptive_field",
+      "receptive_field": {
+        "clips_per_batch_row_min": 1,
+        "clips_per_batch_row_max": 1,
+        "batch_rows_are_single_clips": true,
+        "attention_receptive_field": "one DiT batch row (the full_attention layers are unrestricted), so a token's activation is a function of every latent row of its batch row. Each batch row here is exactly one clip, so an activation carries no content from any other clip and a clip-grouped holdout is independent of the fit."
+      }
+    },
+    "reading": "holdout_scores are measured on rows held out by clip (96 clips, 19 held out); fit_scores on the rest. A holdout score is NOT PAIRED with one from another grouping or another window: the splits hold out different rows, so two runs' numbers move for two reasons at once (the leak that was removed, and a different holdout composition). Do not read a difference between two runs as the fold getting better or worse. holdout_decomposition.json beside this receipt re-scores THIS child on THIS holdout with its weights read off disk and nothing refitted, split into the rows that leaked and the rows that did not; that decomposition, not a difference between runs, is what says how much the leak was worth. holdout_leak_probe.json measures the leak of each grouping on this run's own window, at row level AND through the attention receptive field. This window is clip-aligned (every DiT batch row is one whole clip), so no held-out row's activation encodes fit material through the attention receptive field: this holdout is an unseen-content error. The number itself: rel_l2 0.5442424558949278, cos 0.8415188270864858 on 950 rows, one window and one seed, error bar unswept."
+  },
+  "holdout_reading": "holdout_scores are measured on rows held out by clip (96 clips, 19 held out); fit_scores on the rest. A holdout score is NOT PAIRED with one from another grouping or another window: the splits hold out different rows, so two runs' numbers move for two reasons at once (the leak that was removed, and a different holdout composition). Do not read a difference between two runs as the fold getting better or worse. holdout_decomposition.json beside this receipt re-scores THIS child on THIS holdout with its weights read off disk and nothing refitted, split into the rows that leaked and the rows that did not; that decomposition, not a difference between runs, is what says how much the leak was worth. holdout_leak_probe.json measures the leak of each grouping on this run's own window, at row level AND through the attention receptive field. This window is clip-aligned (every DiT batch row is one whole clip), so no held-out row's activation encodes fit material through the attention receptive field: this holdout is an unseen-content error. The number itself: rel_l2 0.5442424558949278, cos 0.8415188270864858 on 950 rows, one window and one seed, error bar unswept.",
+  "folded_block_tensors": {
+    "path": "out/c16_L12_v4/folded_block_L12_keep1536.safetensors",
+    "bytes": 138489592,
+    "file_sha256": "38c357c82f85caafa45e4608dcbb0f264d8f61743e146212672da4641002aeec",
+    "state_sha256": "a0c6878e7abdf91db12dbf03d45e95322e6cda543b8a928466c76b6fe268ff4f",
+    "parameters": 34621952,
+    "tensors": {
+      "cross_attn.k_norm.weight": {
+        "dtype": "torch.float32",
+        "shape": [
+          128
+        ],
+        "sha256": "b73872e3e7fee397d3c151e517370fbe0d70f5d20175449a6ed7d70afd7fdc1b"
+      },
+      "cross_attn.k_proj.weight": {
+        "dtype": "torch.float32",
+        "shape": [
+          1024,
+          2048
+        ],
+        "sha256": "6afaecfaf0aea7efd92e9e359107e043e55e1d6a3b45e16b1e9f0b16d1293d7f"
+      },
+      "cross_attn.o_proj.weight": {
+        "dtype": "torch.float32",
+        "shape": [
+          2048,
+          2048
+        ],
+        "sha256": "5b301d3495d727eef9ad1dc1c9fbea688984b2f863c341e4c11067146357ca1e"
+      },
+      "cross_attn.q_norm.weight": {
+        "dtype": "torch.float32",
+        "shape": [
+          128
+        ],
+        "sha256": "68a5ab3cc534660c6eaacf749d8807c4908bb9c1de4821430bc2bb65de1121ac"
+      },
+      "cross_attn.q_proj.weight": {
+        "dtype": "torch.float32",
+        "shape": [
+          2048,
+          2048
+        ],
+        "sha256": "b3b841dca5259db821c8af408102c4d4e1bee7604bd2719dc07e75443b020f97"
+      },
+      "cross_attn.v_proj.weight": {
+        "dtype": "torch.float32",
+        "shape": [
+          1024,
+          2048
+        ],
+        "sha256": "7b2e1d158f585c093153b97c38ad2acc2a199b827c733c4efb850c982cfa71f4"
+      },
+      "cross_attn_norm.weight": {
+        "dtype": "torch.float32",
+        "shape": [
+          2048
+        ],
+        "sha256": "4eaf5676d41e9edc0fb88367a8961f36b610b068389a70398d8133610abb9dea"
+      },
+      "mlp.down_proj.weight": {
+        "dtype": "torch.float32",
+        "shape": [
+          2048,
+          1536
+        ],
+        "sha256": "73cedf9292e2db5ab5896d8ca636b797e15b891fb8e51d8b7429c9674328722c"
+      },
+      "mlp.gate_proj.weight": {
+        "dtype": "torch.float32",
+        "shape": [
+          1536,
+          2048
+        ],
+        "sha256": "b50ca3810af748c3c1742240a1822562f7cb838a33a4205ab7eb311a85335db9"
+      },
+      "mlp.up_proj.weight": {
+        "dtype": "torch.float32",
+        "shape": [
+          1536,
+          2048
+        ],
+        "sha256": "65bd0a06288ee2f1d9e75db24e5edee3c96428a240aed80db4a2dcbf633f7c1c"
+      },
+      "mlp_norm.weight": {
+        "dtype": "torch.float32",
+        "shape": [
+          2048
+        ],
+        "sha256": "05117be65539a97d7202cf688e9522e4e7a742e186c975a66621ac459997bc6b"
+      },
+      "scale_shift_table": {
+        "dtype": "torch.float32",
+        "shape": [
+          1,
+          6,
+          2048
+        ],
+        "sha256": "fe932be033f225064c6852d2cbf724a94fa0bcad0d925e93b600d06ed5d5be58"
+      },
+      "self_attn.k_norm.weight": {
+        "dtype": "torch.float32",
+        "shape": [
+          128
+        ],
+        "sha256": "23340709e171db187848b5da7f22d4a8e9df234b9e4b5330ab3f352d837d44e1"
+      },
+      "self_attn.k_proj.weight": {
+        "dtype": "torch.float32",
+        "shape": [
+          1024,
+          2048
+        ],
+        "sha256": "8a918b25343ec90988167f55570dd05d92d4dc914aa56219fa0121fb74596a42"
+      },
+      "self_attn.o_proj.weight": {
+        "dtype": "torch.float32",
+        "shape": [
+          2048,
+          2048
+        ],
+        "sha256": "e8f7a45f084b2301ae099c5a8ec397111b2084456fb9e49af33f0dfb319b302e"
+      },
+      "self_attn.q_norm.weight": {
+        "dtype": "torch.float32",
+        "shape": [
+          128
+        ],
+        "sha256": "d803d645b5d344e4fb495377d69d50ad0ce00dc9b140fc904878af5419fac660"
+      },
+      "self_attn.q_proj.weight": {
+        "dtype": "torch.float32",
+        "shape": [
+          2048,
+          2048
+        ],
+        "sha256": "2886b6d8d85e7fd185225d857ed5d3aabe3774db27cd28b66fb7cad14ae2fb92"
+      },
+      "self_attn.v_proj.weight": {
+        "dtype": "torch.float32",
+        "shape": [
+          1024,
+          2048
+        ],
+        "sha256": "927d489d87c48ae657c91f4fc10e10d95c40d74283b3f23f072a77557eb7826f"
+      },
+      "self_attn_norm.weight": {
+        "dtype": "torch.float32",
+        "shape": [
+          2048
+        ],
+        "sha256": "5a06513ab0254a4ebeffedc6914b7b59df13c603ffee43950cac158462adb368"
+      }
+    }
+  },
+  "diagnostic_only": "arm scores order attempts; the behavioural instrument is a blind score on decoded audio from a trunk carrying the transplant",
+  "runtime": {
+    "python": "3.12.3 (main, Jun 19 2026, 12:46:00) [GCC 13.3.0]",
+    "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39",
+    "cwd": "/home/cereal/omni-campaign/media",
+    "torch": "2.11.0+cu128",
+    "torch_cuda": "12.8",
+    "cuda_available": true,
+    "nvidia_smi": [
+      "0, NVIDIA GeForce RTX 3090, GPU-4ead7f3a-cc79-fa5b-de42-ef024e27f561, 26 MiB",
+      "1, Tesla P40, GPU-c95fb5b3-f97c-bfb2-9760-79fe107ffe6d, 7 MiB",
+      "2, Tesla P40, GPU-a92b0dfe-83f8-11ff-db0d-c65921f365b4, 7 MiB",
+      "3, Tesla P40, GPU-08b615f9-8dbe-3edd-d59f-f6ebe8212ca8, 7 MiB",
+      "4, NVIDIA GeForce RTX 3090, GPU-2ce6a95c-7b1f-644a-3808-d781732a0582, 18 MiB",
+      "5, Tesla P40, GPU-ce4a1da0-baa8-3d62-419c-a28f6565610f, 7 MiB",
+      "6, Quadro RTX 8000, GPU-f5a09535-fc85-a027-50f7-734b344747dd, 8 MiB"
+    ]
+  },
+  "argv": {
+    "out": "out/c16_L12_v4",
+    "weights": "/home/cereal/comfyui/models/diffusion_models/acestep_v1.5_turbo.safetensors",
+    "config": "/home/cereal/comfyui/models/ACE-Step/acestep-v15-turbo/config.json",
+    "block": 12,
+    "depth": 0,
+    "rung": "latents",
+    "pairs": "pairs/ace_s_ctx0_merged",
+    "batch": 96,
+    "length": 100,
+    "row_offset": 0,
+    "host": "chimera",
+    "chimera_src": "/home/cereal/chimera-proof-c5a5c18-v4",
+    "host_layer": 3,
+    "host_batch": 128,
+    "keep": 1536,
+    "chart_methods": "ridge,svd,random",
+    "seed": 0,
+    "device": "cpu",
+    "dtype": "float32",
+    "prefix_shell": true,
+    "assert_shared_corpus": false
+  }
+}

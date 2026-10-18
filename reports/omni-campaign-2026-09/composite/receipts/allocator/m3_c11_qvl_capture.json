@@ -1,0 +1,15 @@
+{
+  "name": "m3_c11_qvl_capture",
+  "lane": "M3 Claude",
+  "gpu_index": 1,
+  "gpu_name": "Tesla P40, GPU-c95fb5b3-f97c-bfb2-9760-79fe107ffe6d",
+  "memory_used_mib_before": 5,
+  "container_image": "comfyui:claude-qwen-image-2.1-comfy037-torch28cu126-20260920",
+  "started_utc": "2026-10-10T08:46:09Z",
+  "purpose": "parent vision-tower FP32 captures (Qwen3-VL-32B visual.*, Qwen3.8-27B-U model.visual.*) for C11 rows",
+  "gpu_uuid": "GPU-c95fb5b3-f97c-bfb2-9760-79fe107ffe6d",
+  "note": "image bakes CUDA_VISIBLE_DEVICES= and NVIDIA_VISIBLE_DEVICES=GPU6 uuid; both overridden to the GPU1 uuid",
+  "single_card": true,
+  "p2p": false,
+  "finished_utc": "2026-10-10T08:54:42Z"
+}

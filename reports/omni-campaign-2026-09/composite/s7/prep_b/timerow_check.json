@@ -1,0 +1,91 @@
+{
+ "argv": {
+  "latent_rows": 256,
+  "out": "/home/cereal/omni-campaign/composite/s7/prep_b/scratch_dryrun5120/out_PBT",
+  "paired_rows": "/home/cereal/omni-campaign/composite/s7/tap_rows_s3/hy3d_dit_L10/paired_rows.safetensors",
+  "parent_capture": "/mnt/lexar/omni-campaign/hy3d-native-4983c53b-7eee-4f49-980f-ab3788f5db69/dense-child-blocks/dense-child-block-10-1c1709d9-8afb-47f0-931f-35e01f90f125/capture-block10/block-10/capture.safetensors",
+  "prompt_tokens": 8,
+  "report": "/home/cereal/omni-campaign/composite/s7/prep_b/timerow_check.json",
+  "seed": 0,
+  "sigma": 0.5,
+  "unit": "/home/cereal/omni-campaign/composite/s7/units/hy3d/hy3d_dit_L10"
+ },
+ "chimera_omni_src": "/home/cereal/omni-campaign/import/rq27b/tree_ef1ffb9",
+ "created_at_utc": "2026-10-11T05:18:49Z",
+ "part_a_synthetic_5120": {
+  "child": {
+   "charted_layer": 4,
+   "hidden": 5120,
+   "layers": 9,
+   "loaded_tensors": 164,
+   "manifest_sha256": "78ef4ff9edf436edb3676ce885f8816fe466e26a745c2b522f097fa70aad3ad3",
+   "out": "/home/cereal/omni-campaign/composite/s7/prep_b/scratch_dryrun5120/out_PBT",
+   "spec_type_ids": [
+    7
+   ]
+  },
+  "diagnostics": {
+   "final_hidden_latent_rows_rel_change_with_vs_without_time_row_in_sequence": 0.04803921654820442,
+   "latent_write_rel_change_time_row_owned_vs_unowned": 0.0005579871940426528,
+   "latent_write_rel_change_time_row_state_sigma_0.2_vs_0.8": 8.478496602037922e-05,
+   "note": "synthetic trunk: magnitudes say nothing about the real child; the end-to-end number mixes the trunk's own causal attention to the extra row with the block's",
+   "time_row_trunk_state_rel_change_sigma_0.2_vs_0.8": 0.12599238753318787
+  },
+  "layout": {
+   "latent_rows": 256,
+   "prompt_tokens": 8,
+   "sigma": 0.5,
+   "target_kind": "velocity (per-row sigma -> bridge noise_proj)",
+   "time_row_position": [
+    -1.0,
+    -1.0,
+    -1.0,
+    -1.0
+   ],
+   "time_row_sequence_position": 8
+  },
+  "seconds": 4.039015293121338,
+  "structural_checks": {
+   "latent_write_norm": 14.264924049377441,
+   "rows_owned_by_block": 257,
+   "rows_owned_expected": 257,
+   "time_row_sigma_at_block": 0.5,
+   "time_row_type_at_its_position": 7,
+   "time_row_write_norm": 0.8787514567375183,
+   "verdict": "PASS: the time row is routed to, attended by and written by the hy3d block"
+  }
+ },
+ "part_b_real_rows": {
+  "chart_in_time_row_vs_parent_row0": {
+   "cos": 0.9999973773956299,
+   "mapped_norm": 318.3830261230469,
+   "parent_row0_norm": 318.6072082519531,
+   "rel_l2": 0.0024555244017392397
+  },
+  "charts_sha256": "5209e8343562193140684f719c860c23b28c67cb0785f87dfcdda357c5dd4b5b",
+  "held_forward": 2,
+  "latent_write_norm": 97.83941650390625,
+  "latent_write_rel_change_time_row_owned_vs_unowned": 8.522674033883959e-05,
+  "paired_rows": "/home/cereal/omni-campaign/composite/s7/tap_rows_s3/hy3d_dit_L10/paired_rows.safetensors",
+  "paired_rows_sha256": "cefe8634d19ba65e2994d83a2a4cd1f92decbd3d96d3f3f716ecbbe919326719",
+  "rows": 4097,
+  "seconds": 6.553361415863037,
+  "source_space_reference": {
+   "capture": "/mnt/lexar/omni-campaign/hy3d-native-4983c53b-7eee-4f49-980f-ab3788f5db69/dense-child-blocks/dense-child-block-10-1c1709d9-8afb-47f0-931f-35e01f90f125/capture-block10/block-10/capture.safetensors",
+   "checked": true,
+   "latent_delta_rel_change_with_vs_without_row0": 8.483977580908686e-05,
+   "note": "the unit's own source block (4x MLP, no cross-attention) on the parent's block-10 input rows: how much the parent's time token moves the latent rows' block delta in source space",
+   "sample": 2
+  },
+  "time_row_write_norm": 1.4507088661193848,
+  "unit": "/home/cereal/omni-campaign/composite/s7/units/hy3d/hy3d_dit_L10",
+  "unit_json_sha256": "6eff2077c759a87605ba058dbb7146967ef59deff16da407fd3696d1f2e33d79"
+ },
+ "policy": "structural checks refuse; every magnitude is a diagnostic (owner 2026-10-06)",
+ "schema": "omni-campaign.s7_hy3d_timerow_check.v1",
+ "tool": {
+  "name": "s7_hy3d_timerow_check",
+  "sha256": "6d90152275119f8bac23e6b25f005d897d957850c560b35e25f0f1ba970deb59",
+  "version": "1.0.0"
+ }
+}

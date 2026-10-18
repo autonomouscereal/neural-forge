@@ -1,0 +1,49 @@
+{
+  "entries": [
+    {
+      "chart": {
+        "path": "/home/cereal/omni-campaign/composite/s7/interface/charts/qvl32.safetensors",
+        "sha256": "4b36e46a3c5330bac6df34a25f081c66a1e16bbcd9d2564775036e98db579994"
+      },
+      "companion_decoder": null,
+      "emission_band": [
+        384,
+        385
+      ],
+      "emission_layout": "one zero row: an encoder-only band has no emission (c16 requires a non-empty band)",
+      "feature_band": [
+        640,
+        2176
+      ],
+      "feature_layout": "index c*512+t*256+y*16+x over one 2x16x16 RGB tubelet, pixels normalised (x/255-0.5)/0.5 (Conv3d(3, 1152, (2,16,16)) input)",
+      "name": "ocr_qvl32",
+      "psnr_absorbed_db": 55.229799543578565,
+      "psnr_meaning": "vision has no decoder: psnr_through_interface_db = PSNR of the minimum-norm pixel reconstruction pinv(F) F x on held images' tubelets (data range 2); the parent's own 1152-wide patch embed keeps the same rank, so this equals the parent's information bound",
+      "psnr_parent_roundtrip_db": null,
+      "raw_rung_ladder": {
+        "meaning": "the installed QVL32 rung IS raw pixels (the patch embed is linear); no separate ladder",
+        "rows": []
+      },
+      "rows": "ocr_qvl32/composed_interface.safetensors",
+      "rows_file_sha256": "a288735a77ba59ba384611261b447d1605ca3ad9e56fd3873c0d08dc630eaa03",
+      "rung": "latent",
+      "scale": 22.39921978031394,
+      "source": "qvl32",
+      "tensor_sha256": {
+        "bridge.feature_proj.weight": "f73f39d375b4f6802c9ab3a81329ce376c6917456a6f36762abcad13d74a5713",
+        "bridge.type_embed_delta": "c9f8d5df390d9fd6baa9c3122d93cb171e4926898331c7b276434ade1ba2a32c",
+        "head.out.weight": "96925977722fa67299bb8205082d2657a78d7d380a19c4d6ee305266dab22b34",
+        "head.type_affine_shift": "246132225d13cff01ebab02cf09d2e35721d40e9dfbb9a27a9e07897c1c90a99"
+      },
+      "type_id": 6
+    }
+  ],
+  "hidden": 5120,
+  "native_feature_dim": 6144,
+  "producer": {
+    "lane": "M2 2026-10-10",
+    "tool": "c15_interface_rows.py",
+    "version": "1.0.0"
+  },
+  "schema": "chimera_omni.composite.interface_set.v1"
+}

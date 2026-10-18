@@ -1,0 +1,4132 @@
+{
+ "schema": "omni-campaign.tool-pins.v1",
+ "generated_utc": "2026-10-15T06:09:13Z",
+ "root": "/home/cereal/omni-campaign/distill",
+ "generator": {
+  "name": "tool_pins",
+  "version": "1.1.0",
+  "path": "/home/cereal/omni-campaign/distill/tools/tool_pins.py",
+  "sha256": "afa2da81dee222c0455788a72af4a223971d3ff2bcd6110fd227408d6982da07"
+ },
+ "how_to_read": "pins['tools'][<file name>] (or pins['installed'][<path under root>]) -> path, sha256, version; regenerate with `tool_pins.py generate` after a deploy, check with `tool_pins.py verify`",
+ "pins_sha256": "286c4572f5e0a687b1c08342d598f2a4ca7e5e698fdcaa0f912230c3c2701ee8",
+ "counts": {
+  "tools": 170,
+  "installed": 32,
+  "superseded": 163,
+  "superseded_unmatched": 6,
+  "unversioned": 124
+ },
+ "tools": {
+  "bfcl62_holdout.py": {
+   "path": "tools/bfcl62_holdout.py",
+   "sha256": "bff337c8e40bbc684329020a5c10d55737912d7ed592031d867c2b9b5f651e5d",
+   "bytes": 26827,
+   "mtime_utc": "2026-10-14T20:19:19Z",
+   "version": "1.0.0",
+   "version_string": "1.0.0",
+   "version_source": "TOOL_VERSION",
+   "name": "bfcl62_holdout",
+   "kind": "tool",
+   "superseded": []
+  },
+  "chimera_gguf_export.py": {
+   "path": "tools/chimera_gguf_export.py",
+   "sha256": "f4dc06679f7311246b579a1636b2e7acfdb8b60b35de40bbdd38631bee4e66e9",
+   "bytes": 62508,
+   "mtime_utc": "2026-10-13T09:20:54Z",
+   "version": "1.0.1",
+   "version_string": "chimera_gguf_export 1.0.1",
+   "version_source": "TOOL_VERSION",
+   "name": "chimera_gguf_export",
+   "kind": "tool",
+   "superseded": [
+    {
+     "path": "tools/_superseded/chimera_gguf_export_1.0.0.py",
+     "sha256": "5d8bd244b28f6e3672e0c9ee61317c5529ba3e6795229b0d208aa3ce6f837a8b",
+     "bytes": 56294,
+     "mtime_utc": "2026-10-13T09:20:30Z",
+     "version": "1.0.0",
+     "version_string": "chimera_gguf_export 1.0.0",
+     "version_source": "TOOL_VERSION"
+    }
+   ]
+  },
+  "codex_inflight_adopt.py": {
+   "path": "tools/codex_inflight_adopt.py",
+   "sha256": "0605e54d38ad1482cfcfba5360bc07f297ce8e32b6b992615a1dd8c57ae43bee",
+   "bytes": 22774,
+   "mtime_utc": "2026-10-14T23:42:59Z",
+   "version": "1.2.0",
+   "version_string": "1.2.0",
+   "version_source": "TOOL_VERSION",
+   "name": "codex_inflight_adopt",
+   "kind": "tool",
+   "superseded": [
+    {
+     "path": "tools/_superseded/codex_inflight_adopt_1.0.0.py",
+     "sha256": "56620a2121e7e85c42d348a073d1dda967eab3ceb91b2627d9d7c15b93edfecd",
+     "bytes": 19461,
+     "mtime_utc": "2026-10-14T20:28:46Z",
+     "version": "1.0.0",
+     "version_string": "1.0.0",
+     "version_source": "TOOL_VERSION"
+    },
+    {
+     "path": "tools/_superseded/codex_inflight_adopt_1.1.0.py",
+     "sha256": "736d3e3bd836116c99b7de3214800dd96956e0424d47a3c2bb78a4e938086363",
+     "bytes": 21337,
+     "mtime_utc": "2026-10-14T23:26:39Z",
+     "version": "1.1.0",
+     "version_string": "1.1.0",
+     "version_source": "TOOL_VERSION"
+    }
+   ]
+  },
+  "conftest.py": {
+   "path": "tools/conftest.py",
+   "sha256": "f3091281c7959846b10ad458a2a89e329c8a2a57edd3611191f79cea4635e07e",
+   "bytes": 4775,
+   "mtime_utc": "2026-10-15T00:13:03Z",
+   "version": "1.0.1",
+   "version_string": "oc_cuda_guard 1.0.1",
+   "version_source": "CONFTEST_VERSION",
+   "name": "conftest",
+   "kind": "test",
+   "superseded": [
+    {
+     "path": "tools/.bak-selfgen-1.1.0/conftest.py",
+     "sha256": "f3091281c7959846b10ad458a2a89e329c8a2a57edd3611191f79cea4635e07e",
+     "bytes": 4775,
+     "mtime_utc": "2026-10-15T00:13:03Z",
+     "version": "1.0.1",
+     "version_string": "oc_cuda_guard 1.0.1",
+     "version_source": "CONFTEST_VERSION"
+    },
+    {
+     "path": "tools/_prev/media-a-1.0.1-20261013/conftest.py",
+     "sha256": "f3091281c7959846b10ad458a2a89e329c8a2a57edd3611191f79cea4635e07e",
+     "bytes": 4775,
+     "mtime_utc": "2026-10-15T00:13:03Z",
+     "version": "1.0.1",
+     "version_string": "oc_cuda_guard 1.0.1",
+     "version_source": "CONFTEST_VERSION"
+    },
+    {
+     "path": "tools/_superseded/conftest.py",
+     "sha256": "f3091281c7959846b10ad458a2a89e329c8a2a57edd3611191f79cea4635e07e",
+     "bytes": 4775,
+     "mtime_utc": "2026-10-15T00:13:03Z",
+     "version": "1.0.1",
+     "version_string": "oc_cuda_guard 1.0.1",
+     "version_source": "CONFTEST_VERSION"
+    },
+    {
+     "path": "tools/_superseded/toolcall_selfgen_1.0.4_2026-10-14/conftest.py",
+     "sha256": "f3091281c7959846b10ad458a2a89e329c8a2a57edd3611191f79cea4635e07e",
+     "bytes": 4775,
+     "mtime_utc": "2026-10-15T00:13:03Z",
+     "version": "1.0.1",
+     "version_string": "oc_cuda_guard 1.0.1",
+     "version_source": "CONFTEST_VERSION"
+    }
+   ]
+  },
+  "d1_canonical_rungs.py": {
+   "path": "tools/d1_canonical_rungs.py",
+   "sha256": "ace109a52aad0e9c297a4eca7de1e4bac35aa07a494c93186d3874fa62691fce",
+   "bytes": 14829,
+   "mtime_utc": "2026-10-15T00:21:46Z",
+   "version": "1.2.0",
+   "version_string": "1.2.0",
+   "version_source": "TOOL_VERSION",
+   "name": "d1_canonical_rungs",
+   "kind": "tool",
+   "superseded": [
+    {
+     "path": "tools/_superseded/d1_canonical_rungs_1.0.0.py",
+     "sha256": "ec73fcb453de5272e4f2ac7182b271b8fd34f5e922f35c2048459e3cfb56546a",
+     "bytes": 11713,
+     "mtime_utc": "2026-10-14T23:43:47Z",
+     "version": "1.0.0",
+     "version_string": "1.0.0",
+     "version_source": "TOOL_VERSION"
+    },
+    {
+     "path": "tools/_superseded/review-d1seal-20261014/d1_canonical_rungs_1.1.0.py",
+     "sha256": "823afaa2792c29906a53d88fd92bc085c478fdcb941969d19c94d1b43c308dba",
+     "bytes": 12978,
+     "mtime_utc": "2026-10-15T00:17:10Z",
+     "version": "1.1.0",
+     "version_string": "1.1.0",
+     "version_source": "TOOL_VERSION"
+    }
+   ]
+  },
+  "d1_compose_eval.py": {
+   "path": "tools/d1_compose_eval.py",
+   "sha256": "80c83b43fdf05faa39ceda93f906fc82b81b1ce7008c17ae003ab9be79b59fa3",
+   "bytes": 20171,
+   "mtime_utc": "2026-10-14T23:43:47Z",
+   "version": "1.0.0",
+   "version_string": "1.0.0",
+   "version_source": "TOOL_VERSION",
+   "name": "d1_compose_eval",
+   "kind": "tool",
+   "superseded": []
+  },
+  "d1_delta_recipe.py": {
+   "path": "tools/d1_delta_recipe.py",
+   "sha256": "318f55f2b4e54e3b47fa83af356cc865fe89fd821bf100485a746ad640c792dd",
+   "bytes": 10340,
+   "mtime_utc": "2026-10-13T08:16:20Z",
+   "version": "1.0.0",
+   "version_string": "1.0.0",
+   "version_source": "TOOL_VERSION",
+   "name": "d1_delta_recipe",
+   "kind": "tool",
+   "superseded": []
+  },
+  "d1_dp_bench.py": {
+   "path": "tools/d1_dp_bench.py",
+   "sha256": "751826666336534702b8827a8a77c6bc601815408eeb638f350b765fe22e1b5a",
+   "bytes": 9311,
+   "mtime_utc": "2026-10-13T05:15:38Z",
+   "version": "1.0.0",
+   "version_string": "1.0.0",
+   "version_source": "TOOL_VERSION",
+   "name": "d1_dp_bench",
+   "kind": "tool",
+   "superseded": []
+  },
+  "d1_hardened_entry.py": {
+   "path": "tools/d1_hardened_entry.py",
+   "sha256": "d139cfb77e9d5865d9eaacbfcaeca3065431e8d3bdc47e949f7fddffcfff4053",
+   "bytes": 19048,
+   "mtime_utc": "2026-10-14T17:02:23Z",
+   "version": "1.2.0",
+   "version_string": "1.2.0",
+   "version_source": "TOOL_VERSION",
+   "name": "d1_hardened_entry",
+   "kind": "tool",
+   "superseded": [
+    {
+     "path": "tools/_superseded/d1_hardened_entry_1.1.0.py",
+     "sha256": "1b2b58e3eb34bc64cdebb83d66242e5f08730f5340bdbdb2c05cabc43a96be2f",
+     "bytes": 12914,
+     "mtime_utc": "2026-10-14T17:02:04Z",
+     "version": "1.1.0",
+     "version_string": "1.1.0",
+     "version_source": "TOOL_VERSION"
+    }
+   ]
+  },
+  "d1_hardened_launch.sh": {
+   "path": "tools/d1_hardened_launch.sh",
+   "sha256": "8944a67ca4cfcca3d37ac39f4f9512b316a667abcecaf2f2d95e40a6f6aed9ef",
+   "bytes": 8167,
+   "mtime_utc": "2026-10-14T17:02:32Z",
+   "version": "1.2.0",
+   "version_string": "d1_hardened_launch-1.2.0",
+   "version_source": "LAUNCH_VERSION",
+   "name": "d1_hardened_launch",
+   "kind": "script",
+   "superseded": [
+    {
+     "path": "tools/_superseded/d1_hardened_launch_1.1.0.sh",
+     "sha256": "9b9e7bea93931087c5b6f3658315366eb349b3db8c32cd01aeeb033d1141c31b",
+     "bytes": 5586,
+     "mtime_utc": "2026-10-14T17:02:04Z",
+     "version": "1.1.0",
+     "version_string": "d1_hardened_launch-1.1.0",
+     "version_source": "LAUNCH_VERSION"
+    }
+   ]
+  },
+  "d1_seal_lib.py": {
+   "path": "tools/d1_seal_lib.py",
+   "sha256": "15453c584cc5f5bf81279030d57aa6366c6ec4ff98a711c2748933c3c4a935b6",
+   "bytes": 18196,
+   "mtime_utc": "2026-10-14T23:43:47Z",
+   "version": "1.1.0",
+   "version_string": "1.1.0",
+   "version_source": "TOOL_VERSION",
+   "name": "d1_seal_lib",
+   "kind": "tool",
+   "superseded": []
+  },
+  "d1_seal_verify.py": {
+   "path": "tools/d1_seal_verify.py",
+   "sha256": "fd34225f84eaec4fbd6966401a2f0479ed52a2ccd27029c7f99ce5debcca8872",
+   "bytes": 28653,
+   "mtime_utc": "2026-10-15T00:21:49Z",
+   "version": "1.1.0",
+   "version_string": "1.1.0",
+   "version_source": "TOOL_VERSION",
+   "name": "d1_seal_verify",
+   "kind": "tool",
+   "superseded": [
+    {
+     "path": "tools/_superseded/review-d1seal-20261014/d1_seal_verify_1.0.0.py",
+     "sha256": "db6a456b60d52bcf1b881d36c63548a761b01d1b608a1a8e8f1691978271168b",
+     "bytes": 27124,
+     "mtime_utc": "2026-10-15T00:17:10Z",
+     "version": "1.0.0",
+     "version_string": "1.0.0",
+     "version_source": "TOOL_VERSION"
+    }
+   ]
+  },
+  "d1_source_contract.py": {
+   "path": "tools/d1_source_contract.py",
+   "sha256": "0f2092d06f3232e62dd2657a7985b9b3c69da9c0cd07231fbf2924e98d479a86",
+   "bytes": 11185,
+   "mtime_utc": "2026-10-14T14:44:26Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "d1_source_contract",
+   "kind": "tool",
+   "superseded": []
+  },
+  "d1_trunk_recovery.py": {
+   "path": "tools/d1_trunk_recovery.py",
+   "sha256": "896f8a32398133f5334767acf245f65a613b1b77ecf467319a972d8f7eea30a3",
+   "bytes": 117804,
+   "mtime_utc": "2026-10-14T17:02:14Z",
+   "version": "1.3.1",
+   "version_string": "1.3.1",
+   "version_source": "TOOL_VERSION",
+   "name": "d1_trunk_recovery",
+   "kind": "tool",
+   "superseded": [
+    {
+     "path": "tools/_superseded/d1_trunk_recovery_1.2.4.py",
+     "sha256": "aeb90e2b2964f2fd0dd0d003bf54b70c760c4f34c5beb0b339e84c51aefec967",
+     "bytes": 79492,
+     "mtime_utc": "2026-10-14T14:41:09Z",
+     "version": "1.2.4",
+     "version_string": "1.2.4",
+     "version_source": "TOOL_VERSION"
+    },
+    {
+     "path": "tools/_superseded/d1_trunk_recovery_1.3.0.py",
+     "sha256": "cf32d00827b82398cdcc191c32396d45ed7c2ef3e80611e21483e230bab66e87",
+     "bytes": 116663,
+     "mtime_utc": "2026-10-14T17:02:04Z",
+     "version": "1.3.0",
+     "version_string": "1.3.0",
+     "version_source": "TOOL_VERSION"
+    }
+   ]
+  },
+  "d2_bfcl_native_copy.py": {
+   "path": "tools/d2_bfcl_native_copy.py",
+   "sha256": "ab66351d394a0b5b19de392452fb036f0168eb19bb2e0831197501f12b778a43",
+   "bytes": 20526,
+   "mtime_utc": "2026-10-14T23:50:43Z",
+   "version": "1.1.1",
+   "version_string": "1.1.1",
+   "version_source": "TOOL_VERSION",
+   "name": "d2_bfcl_native_copy",
+   "kind": "tool",
+   "superseded": [
+    {
+     "path": "tools/_superseded/d2_bfcl_native_copy_1.1.0.py",
+     "sha256": "9e399d1b63df77291e27a5022958d33e9abd5ea8020ff96e5abe3c6c08b3744c",
+     "bytes": 19978,
+     "mtime_utc": "2026-10-14T23:43:59Z",
+     "version": "1.1.0",
+     "version_string": "1.1.0",
+     "version_source": "TOOL_VERSION"
+    }
+   ]
+  },
+  "d2_clean_repack.py": {
+   "path": "tools/d2_clean_repack.py",
+   "sha256": "1d03d3e852e6d9d0dbcf501b79c0294124703692c87adb3ec8bca288bda26664",
+   "bytes": 51983,
+   "mtime_utc": "2026-10-15T03:33:22Z",
+   "version": "1.0.1",
+   "version_string": "1.0.1",
+   "version_source": "TOOL_VERSION",
+   "name": "d2_clean_repack",
+   "kind": "tool",
+   "superseded": [
+    {
+     "path": "tools/_superseded/d2_clean_repack_1.0.0.py",
+     "sha256": "5a50226ee4375b1c278921d3697fe680636aea2d17af50671f9b678d248f272f",
+     "bytes": 51730,
+     "mtime_utc": "2026-10-15T03:33:25Z",
+     "version": "1.0.0",
+     "version_string": "1.0.0",
+     "version_source": "TOOL_VERSION"
+    }
+   ]
+  },
+  "d2_mask_build.py": {
+   "path": "tools/d2_mask_build.py",
+   "sha256": "7473c7b06d5bb489762a2ea756f33027dcfdeb0886767f30cfc9f8eabbc4725e",
+   "bytes": 74834,
+   "mtime_utc": "2026-10-15T03:44:44Z",
+   "version": "1.2.0",
+   "version_string": "1.2.0",
+   "version_source": "TOOL_VERSION",
+   "name": "d2_mask_build",
+   "kind": "tool",
+   "superseded": [
+    {
+     "path": "tools/_superseded/d2_mask_build_1.1.0.py",
+     "sha256": "a16ca993a7162349bc914d104d8dbc8f102b209941b12154099c46fa0e43de1d",
+     "bytes": 39685,
+     "mtime_utc": "2026-10-14T23:43:59Z",
+     "version": "1.1.0",
+     "version_string": "1.1.0",
+     "version_source": "TOOL_VERSION"
+    }
+   ]
+  },
+  "d2_plan.py": {
+   "path": "tools/d2_plan.py",
+   "sha256": "7402d970db5d1073ff7e191107fc31844465c0b5805ad658be86fcf6c762790c",
+   "bytes": 114407,
+   "mtime_utc": "2026-10-15T05:15:44Z",
+   "version": "1.4.1",
+   "version_string": "1.4.1",
+   "version_source": "TOOL_VERSION",
+   "name": "d2_plan",
+   "kind": "tool",
+   "superseded": [
+    {
+     "path": "tools/_superseded/d2_plan_1.1.0.py",
+     "sha256": "771adcce8165620f83988366a1fa0fb93689f3376268946519e94e21661f7b50",
+     "bytes": 29707,
+     "mtime_utc": "2026-10-14T23:43:59Z",
+     "version": "1.1.0",
+     "version_string": "1.1.0",
+     "version_source": "TOOL_VERSION"
+    },
+    {
+     "path": "tools/_superseded/d2_plan_1.2.0.py",
+     "sha256": "87554f081ed100351a0c9abd984789c72ebbc45fb6842f088e869c611442077b",
+     "bytes": 45825,
+     "mtime_utc": "2026-10-15T01:16:15Z",
+     "version": "1.2.0",
+     "version_string": "1.2.0",
+     "version_source": "TOOL_VERSION"
+    },
+    {
+     "path": "tools/_superseded/d2_plan_1.3.0-pre-478f94ff.py",
+     "sha256": "478f94ffb7c1c1df254d12f909a102ad8891a05827824f9c156e62eb0dfbe4b8",
+     "bytes": 96453,
+     "mtime_utc": "2026-10-15T03:44:44Z",
+     "version": "1.3.0",
+     "version_string": "1.3.0",
+     "version_source": "TOOL_VERSION"
+    },
+    {
+     "path": "tools/_superseded/d2_plan_1.3.0.py",
+     "sha256": "eb7cc1541b2d099b54e9b93f2b5ce94aed3d71b845c461027ae7b45491e5179a",
+     "bytes": 96536,
+     "mtime_utc": "2026-10-15T03:59:07Z",
+     "version": "1.3.0",
+     "version_string": "1.3.0",
+     "version_source": "TOOL_VERSION"
+    },
+    {
+     "path": "tools/_superseded/d2_plan_1.4.0.py",
+     "sha256": "533315378730faad03aad69827f418bee2f01f9e31df1ecc5d96baf3df201d97",
+     "bytes": 110782,
+     "mtime_utc": "2026-10-15T04:51:39Z",
+     "version": "1.4.0",
+     "version_string": "1.4.0",
+     "version_source": "TOOL_VERSION"
+    }
+   ]
+  },
+  "d2_refill_build.py": {
+   "path": "tools/d2_refill_build.py",
+   "sha256": "36f53c9a5817d455b413adc08061c594b914562bbca0cf238942cf77380a0bd9",
+   "bytes": 59186,
+   "mtime_utc": "2026-10-15T05:27:22Z",
+   "version": "1.0.3",
+   "version_string": "1.0.3",
+   "version_source": "TOOL_VERSION",
+   "name": "d2_refill_build",
+   "kind": "tool",
+   "superseded": [
+    {
+     "path": "tools/_superseded/d2_refill_build_1.0.0.py",
+     "sha256": "577bdbe83748d45570fb07f692bce2f5d6c6f56e6e8449cb25a4849717be1b4f",
+     "bytes": 57612,
+     "mtime_utc": "2026-10-15T05:06:08Z",
+     "version": "1.0.0",
+     "version_string": "1.0.0",
+     "version_source": "TOOL_VERSION"
+    },
+    {
+     "path": "tools/_superseded/d2_refill_build_1.0.1.py",
+     "sha256": "8069339568e2a38bf2d9f39302e68e0dcb592067ecd07a7741417c513064c84e",
+     "bytes": 59630,
+     "mtime_utc": "2026-10-15T05:17:12Z",
+     "version": "1.0.1",
+     "version_string": "1.0.1",
+     "version_source": "TOOL_VERSION"
+    },
+    {
+     "path": "tools/_superseded/d2_refill_build_1.0.2.py",
+     "sha256": "2b40ad3437c01e917accfe92f43ad1fae9136eff267957bbc09849f5b7b2dbdf",
+     "bytes": 57935,
+     "mtime_utc": "2026-10-15T05:24:36Z",
+     "version": "1.0.2",
+     "version_string": "1.0.2",
+     "version_source": "TOOL_VERSION"
+    }
+   ]
+  },
+  "d2_register_check.py": {
+   "path": "tools/d2_register_check.py",
+   "sha256": "d63c7ee4eb1ef949f9994940b9af781f087560ee828020590fc9d78e82767ec1",
+   "bytes": 19065,
+   "mtime_utc": "2026-10-15T01:16:15Z",
+   "version": "1.0.0",
+   "version_string": "1.0.0",
+   "version_source": "TOOL_VERSION",
+   "name": "d2_register_check",
+   "kind": "tool",
+   "superseded": []
+  },
+  "d2clean_recache.py": {
+   "path": "tools/d2clean_recache.py",
+   "sha256": "9891f32a2583606ea6610f154625af0342e6eebd5498a3ec425e85368c4c9c37",
+   "bytes": 28406,
+   "mtime_utc": "2026-10-15T03:42:14Z",
+   "version": "1.0.1",
+   "version_string": "1.0.1",
+   "version_source": "TOOL_VERSION",
+   "name": "d2clean_recache",
+   "kind": "tool",
+   "superseded": [
+    {
+     "path": "tools/_superseded/d2clean_recache_1.0.0.py",
+     "sha256": "5c9fbdfffc13c0ec52acd5334aa5a6117534689d0366f27a3016e25a7ad0cc37",
+     "bytes": 27871,
+     "mtime_utc": "2026-10-15T03:42:45Z",
+     "version": "1.0.0",
+     "version_string": "1.0.0",
+     "version_source": "TOOL_VERSION"
+    }
+   ]
+  },
+  "d2refill_recache.py": {
+   "path": "tools/d2refill_recache.py",
+   "sha256": "43f644b481b8e6de81606d2c3fe3cd4641c40fed584e0a93ce1087eeb26f3215",
+   "bytes": 21687,
+   "mtime_utc": "2026-10-15T05:06:10Z",
+   "version": "1.0.0",
+   "version_string": "1.0.0",
+   "version_source": "TOOL_VERSION",
+   "name": "d2refill_recache",
+   "kind": "tool",
+   "superseded": []
+  },
+  "d3_hybrid_module.py": {
+   "path": "tools/d3_hybrid_module.py",
+   "sha256": "8bf3617c9f989586031575e7e401b8bd61bbaea0dbbc7508a1eb98e7b0e3ba9a",
+   "bytes": 234516,
+   "mtime_utc": "2026-10-14T23:56:25Z",
+   "version": "1.1.1",
+   "version_string": "1.1.1",
+   "version_source": "TOOL_VERSION",
+   "name": "d3_hybrid_module",
+   "kind": "tool",
+   "superseded": [
+    {
+     "path": "tools/_superseded/d3_hybrid_module_1.0.2.py",
+     "sha256": "540fca2d9d976da336c8d24ae5369c5a303ff37367cae54a9bcfc762a7e95197",
+     "bytes": 114439,
+     "mtime_utc": "2026-10-13T09:29:18Z",
+     "version": "1.0.2",
+     "version_string": "1.0.2",
+     "version_source": "TOOL_VERSION"
+    },
+    {
+     "path": "tools/_superseded/d3_hybrid_module_1.1.0.py",
+     "sha256": "016e2d5d527398f7143c8237408f0ffe72bdbd8186c5201ad467ef757cadcc2e",
+     "bytes": 222307,
+     "mtime_utc": "2026-10-14T23:19:14Z",
+     "version": "1.1.0",
+     "version_string": "1.1.0",
+     "version_source": "TOOL_VERSION"
+    }
+   ]
+  },
+  "distill_corpus_build.py": {
+   "path": "tools/distill_corpus_build.py",
+   "sha256": "696559136fb4698c6b92de47ed320c993aba5c3a065a13f18e78cd5c24a7ab94",
+   "bytes": 145881,
+   "mtime_utc": "2026-10-13T00:46:16Z",
+   "version": "1.0.1",
+   "version_string": "1.0.1",
+   "version_source": "VERSION",
+   "name": "distill_corpus_build",
+   "kind": "tool",
+   "superseded": []
+  },
+  "install_gpu6_queue_1.2.0_2026-10-14.sh": {
+   "path": "tools/install_gpu6_queue_1.2.0_2026-10-14.sh",
+   "sha256": "6e26a74191fda771dc84e24a01a64d6172aa0ac907da7bc730d9a568bde0f6e2",
+   "bytes": 2496,
+   "mtime_utc": "2026-10-14T15:20:55Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "install_gpu6_queue_1.2.0_2026-10-14",
+   "kind": "driver",
+   "superseded": []
+  },
+  "install_sealdecide_2026-10-15.sh": {
+   "path": "tools/install_sealdecide_2026-10-15.sh",
+   "sha256": "e6ca9e016d8033c69e48302ee17700923412dc87f6054d5739c53ac4888c1247",
+   "bytes": 5543,
+   "mtime_utc": "2026-10-15T02:46:42Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "install_sealdecide_2026-10-15",
+   "kind": "driver",
+   "superseded": []
+  },
+  "install_toolscreen_2026-10-15.sh": {
+   "path": "tools/install_toolscreen_2026-10-15.sh",
+   "sha256": "fef0b895512767f1b118ac08bd984c537c929274ebcd32a168fa8b0127103be7",
+   "bytes": 5990,
+   "mtime_utc": "2026-10-15T04:58:52Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "install_toolscreen_2026-10-15",
+   "kind": "driver",
+   "superseded": []
+  },
+  "intake.py": {
+   "path": "tools/intake.py",
+   "sha256": "cdda2517719ede97b1678ff5431415139738d623f520ac7cf3d5efc277f8ea2b",
+   "bytes": 250915,
+   "mtime_utc": "2026-10-15T05:37:15Z",
+   "version": "1.2.0",
+   "version_string": "1.2.0",
+   "version_source": "VERSION",
+   "name": "intake",
+   "kind": "tool",
+   "superseded": [
+    {
+     "path": "tools/_superseded/intake_1.0.0.py",
+     "sha256": "7105a2326095785defcd990596207551002c2f16b85b8e87ed6b2347d8bfdde4",
+     "bytes": 164765,
+     "mtime_utc": "2026-10-15T01:53:57Z",
+     "version": "1.0.0",
+     "version_string": "1.0.0",
+     "version_source": "VERSION"
+    },
+    {
+     "path": "tools/_superseded/intake_1.1.0.py",
+     "sha256": "3af1a49b6c37325490f38f9b5c26cca58dc28cf2bee2472bd8ed63e91228bae2",
+     "bytes": 212328,
+     "mtime_utc": "2026-10-15T03:42:45Z",
+     "version": "1.1.0",
+     "version_string": "1.1.0",
+     "version_source": "VERSION"
+    },
+    {
+     "path": "tools/_superseded/intake_1.1.1.py",
+     "sha256": "3bd695a01d336ce8259045176c4d03aaaf347dcbbb1e21912752700ff2ec2e18",
+     "bytes": 212969,
+     "mtime_utc": "2026-10-15T03:58:43Z",
+     "version": "1.1.1",
+     "version_string": "1.1.1",
+     "version_source": "VERSION"
+    }
+   ]
+  },
+  "intake_cron.sh": {
+   "path": "tools/intake_cron.sh",
+   "sha256": "7900401a7287ba70b3deedc39a667c2c4e34c11168bf916993c1427ff2ab8c65",
+   "bytes": 2176,
+   "mtime_utc": "2026-10-15T05:37:15Z",
+   "version": "1.0.2",
+   "version_string": "1.0.2",
+   "version_source": "INTAKE_CRON_VERSION",
+   "name": "intake_cron",
+   "kind": "script",
+   "superseded": [
+    {
+     "path": "tools/_superseded/intake_cron_1.0.0.sh",
+     "sha256": "eaedc064bdf2eec05016dda4c6ca4ea3e8ac5066add541d5afe8ba234241537f",
+     "bytes": 1658,
+     "mtime_utc": "2026-10-15T00:40:24Z",
+     "version": "1.0.0",
+     "version_string": "1.0.0",
+     "version_source": "INTAKE_CRON_VERSION"
+    },
+    {
+     "path": "tools/_superseded/intake_cron_1.0.1.sh",
+     "sha256": "6d6837a301201767066f955c6f34ed68f03a9ac4c92e9529ee1e8595bff546d0",
+     "bytes": 1926,
+     "mtime_utc": "2026-10-15T03:42:47Z",
+     "version": "1.0.1",
+     "version_string": "1.0.1",
+     "version_source": "INTAKE_CRON_VERSION"
+    }
+   ]
+  },
+  "intake_push.py": {
+   "path": "tools/intake_push.py",
+   "sha256": "6e3441eb3d1fdd3ee48a8d208186c3687f9c911534b964c5d6b4fecd5ea9bd01",
+   "bytes": 4956,
+   "mtime_utc": "2026-10-15T00:40:16Z",
+   "version": "1.0.0",
+   "version_string": "1.0.0",
+   "version_source": "VERSION",
+   "name": "intake_push",
+   "kind": "tool",
+   "superseded": []
+  },
+  "itest_stage_c_media_a.py": {
+   "path": "tools/itest_stage_c_media_a.py",
+   "sha256": "f69342ee3e18c9873c53968688849be6d44548ce3d7054550eb380d24967c5e2",
+   "bytes": 17920,
+   "mtime_utc": "2026-10-13T04:31:20Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "itest_stage_c_media_a",
+   "kind": "tool",
+   "superseded": [
+    {
+     "path": "tools/_prev/media-a-1.0.1-20261013/itest_stage_c_media_a.py",
+     "sha256": "8bb08a4ad5da9edf7c1eb67f34e9842ff069b06d9c398d0cea947f2923aaf38d",
+     "bytes": 15189,
+     "mtime_utc": "2026-10-13T03:29:47Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ]
+  },
+  "k3_accel_profile.py": {
+   "path": "tools/k3_accel_profile.py",
+   "sha256": "db0ba60179047c4a2201b643a9efd45cfe168e0c010980d8c671f07d9e5341cf",
+   "bytes": 41431,
+   "mtime_utc": "2026-10-14T18:15:31Z",
+   "version": "1.0.0",
+   "version_string": "1.0.0",
+   "version_source": "TOOL_VERSION",
+   "name": "k3_accel_profile",
+   "kind": "tool",
+   "superseded": []
+  },
+  "k3_b2_geometry_diag.py": {
+   "path": "tools/k3_b2_geometry_diag.py",
+   "sha256": "b5019abb3b67ab69a5f32e278d91ca24f962786508dc997c44483cdf7a26f121",
+   "bytes": 64061,
+   "mtime_utc": "2026-10-14T17:28:38Z",
+   "version": "1.1.0",
+   "version_string": "1.1.0",
+   "version_source": "TOOL_VERSION",
+   "name": "k3_b2_geometry_diag",
+   "kind": "tool",
+   "superseded": [
+    {
+     "path": "tools/_superseded/k3_b2_geometry_diag_1.0.0.py",
+     "sha256": "2fa976b5a80d8a7621a4f670d7d02435d43cd70a8ad96e7914b1d6f85723f62d",
+     "bytes": 30782,
+     "mtime_utc": "2026-10-14T15:28:12Z",
+     "version": "1.0.0",
+     "version_string": "1.0.0",
+     "version_source": "TOOL_VERSION"
+    },
+    {
+     "path": "tools/_superseded/k3_b2_geometry_diag_1.0.1.py",
+     "sha256": "753917294f27c33d637221f7f9f3a3c3049616dfc327cee926c6190f0907020c",
+     "bytes": 38999,
+     "mtime_utc": "2026-10-14T17:16:20Z",
+     "version": "1.0.1",
+     "version_string": "1.0.1",
+     "version_source": "TOOL_VERSION"
+    },
+    {
+     "path": "tools/_superseded/k3_b2_geometry_diag_1.0.2.py",
+     "sha256": "1b6af75bbe52a498b0ed090f9c00b954e1fdcad47336bc3be88fe91ec3f8868a",
+     "bytes": 43299,
+     "mtime_utc": "2026-10-14T17:16:22Z",
+     "version": "1.0.2",
+     "version_string": "1.0.2",
+     "version_source": "TOOL_VERSION"
+    }
+   ]
+  },
+  "k3_cache_parity.py": {
+   "path": "tools/k3_cache_parity.py",
+   "sha256": "ab588bdd78e964dc254023aced9cfb47c2aad28441459699264496a4961ccf51",
+   "bytes": 12806,
+   "mtime_utc": "2026-10-14T19:52:09Z",
+   "version": "1.0.0",
+   "version_string": "1.0.0",
+   "version_source": "TOOL_VERSION",
+   "name": "k3_cache_parity",
+   "kind": "tool",
+   "superseded": []
+  },
+  "k3_lib.sh": {
+   "path": "tools/k3_lib.sh",
+   "sha256": "e70ba063b34ccb64b8d85506c80155cbb10922d63c4c72c2bc6556199f07da3d",
+   "bytes": 24922,
+   "mtime_utc": "2026-10-15T02:00:26Z",
+   "version": "1.0.0",
+   "version_string": "k3_lib.sh 1.0.0",
+   "version_source": "K3LIB_VERSION",
+   "name": "k3_lib",
+   "kind": "script",
+   "superseded": []
+  },
+  "k3_multicard.sh": {
+   "path": "tools/k3_multicard.sh",
+   "sha256": "bd52dcfbb074eb42310fd50661e4eae8738c7a2bc0de480fe73aeac707e7b288",
+   "bytes": 19608,
+   "mtime_utc": "2026-10-15T02:00:28Z",
+   "version": "1.0.0",
+   "version_string": "k3_multicard.sh 1.0.0",
+   "version_source": "VERSION",
+   "name": "k3_multicard",
+   "kind": "script",
+   "superseded": []
+  },
+  "k3_schedule_projection.py": {
+   "path": "tools/k3_schedule_projection.py",
+   "sha256": "af785023dd720f790d07973700108d5d756f3dc9a4ddb0809eb153e94368e5f4",
+   "bytes": 7941,
+   "mtime_utc": "2026-10-15T02:00:30Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "k3_schedule_projection",
+   "kind": "tool",
+   "superseded": []
+  },
+  "k3_teacher_cache.py": {
+   "path": "tools/k3_teacher_cache.py",
+   "sha256": "2aae4dc3134dda725e3ee35572584fbf35532e0c4a7a5721a0b0c817fc2c4f9d",
+   "bytes": 119781,
+   "mtime_utc": "2026-10-14T14:28:44Z",
+   "version": "1.2.4",
+   "version_string": "1.2.4",
+   "version_source": "TOOL_VERSION",
+   "name": "k3_teacher_cache",
+   "kind": "tool",
+   "superseded": [
+    {
+     "path": "tools/_superseded/k3_teacher_cache.py.1.1.0-e56431d4",
+     "sha256": "e56431d4e755f1ca968c126fd035d96ab95b054cc4c7b1c14348426223d9222e",
+     "bytes": 88120,
+     "mtime_utc": "2026-10-13T03:12:36Z",
+     "version": "1.1.0",
+     "version_string": "1.1.0",
+     "version_source": "TOOL_VERSION"
+    },
+    {
+     "path": "tools/_superseded/k3_teacher_cache_1.2.0.py",
+     "sha256": "7e7aca260fdb923c70a75593a3f17c7ffe633d85faa39590f5b6a037ab2c5738",
+     "bytes": 93831,
+     "mtime_utc": "2026-10-13T04:59:50Z",
+     "version": "1.2.0",
+     "version_string": "1.2.0",
+     "version_source": "TOOL_VERSION"
+    },
+    {
+     "path": "tools/_superseded/k3_teacher_cache_1.2.2.py",
+     "sha256": "766965f31923677f5fa4b9737769662d133943fa01b889eae722afcd609f35f4",
+     "bytes": 111625,
+     "mtime_utc": "2026-10-13T08:20:02Z",
+     "version": "1.2.2",
+     "version_string": "1.2.2",
+     "version_source": "TOOL_VERSION"
+    },
+    {
+     "path": "tools/_superseded/k3_teacher_cache_1.2.3.py",
+     "sha256": "e68f38662af6f739c3e549c74df7eb4ba25dc5f05ef1a7574417137de9cfdbf3",
+     "bytes": 114658,
+     "mtime_utc": "2026-10-13T08:55:54Z",
+     "version": "1.2.3",
+     "version_string": "1.2.3",
+     "version_source": "TOOL_VERSION"
+    }
+   ]
+  },
+  "k3_teacher_cache_v130.py": {
+   "path": "tools/k3_teacher_cache_v130.py",
+   "sha256": "434ced6d7e8e22e4179bb2332d4695803dd89a38407805126261500c112fa3c7",
+   "bytes": 182617,
+   "mtime_utc": "2026-10-14T20:07:54Z",
+   "version": "1.3.0",
+   "version_string": "1.3.0",
+   "version_source": "TOOL_VERSION",
+   "name": "k3_teacher_cache_v130",
+   "kind": "tool",
+   "superseded": []
+  },
+  "lanes.py": {
+   "path": "tools/lanes.py",
+   "sha256": "77ed6b6aec26247825a4ed1beec06f67e3cbd7aac6f7df1d536c37bf37c85cd2",
+   "bytes": 36483,
+   "mtime_utc": "2026-10-15T00:22:19Z",
+   "version": "1.0.2",
+   "version_string": "1.0.2",
+   "version_source": "TOOL_VERSION",
+   "name": "lanes",
+   "kind": "tool",
+   "superseded": [
+    {
+     "path": "tools/_superseded/infra_review_2026-10-15_before/lanes_1.0.0.py",
+     "sha256": "c4d9aafa998ec93ce60f296b60c9bbbe308a9d4435d0b367ca2f42cd8cda2d54",
+     "bytes": 26853,
+     "mtime_utc": "2026-10-14T20:33:44Z",
+     "version": "1.0.0",
+     "version_string": "1.0.0",
+     "version_source": "TOOL_VERSION"
+    },
+    {
+     "path": "tools/_superseded/infra_review_2026-10-15_before/lanes_1.0.1.py",
+     "sha256": "c935d1e40f0c515df3ab7339a4d0142ec03f8cd94dd3d9b6c7907adde20364bd",
+     "bytes": 36281,
+     "mtime_utc": "2026-10-15T00:11:13Z",
+     "version": "1.0.1",
+     "version_string": "1.0.1",
+     "version_source": "TOOL_VERSION"
+    }
+   ]
+  },
+  "media_a_corpus_items.py": {
+   "path": "tools/media_a_corpus_items.py",
+   "sha256": "7cca03ba338e703a6cf2f710f4dd81a3d6ecbd95b8d77f2e3dc18dff74eda531",
+   "bytes": 8517,
+   "mtime_utc": "2026-10-13T08:02:13Z",
+   "version": "1.0.0",
+   "version_string": "1.0.0",
+   "version_source": "TOOL_VERSION",
+   "name": "media_a_corpus_items",
+   "kind": "tool",
+   "superseded": []
+  },
+  "media_b_teacher_cache.py": {
+   "path": "tools/media_b_teacher_cache.py",
+   "sha256": "d62d646c852fe24a26223c5097cfeef8f9cb9c3307b342f09fb7b1fedf48fc48",
+   "bytes": 170806,
+   "mtime_utc": "2026-10-13T09:47:56Z",
+   "version": "1.0.9",
+   "version_string": "1.0.9",
+   "version_source": "TOOL_VERSION",
+   "name": "media_b_teacher_cache",
+   "kind": "tool",
+   "superseded": [
+    {
+     "path": "tools/_superseded/media_b_teacher_cache_1.0.7.py",
+     "sha256": "1b17f5026c4013153f5be65b37d07940dbdcb9d3f6513c6bd4b7e68e2511a739",
+     "bytes": 145943,
+     "mtime_utc": "2026-10-13T07:29:02Z",
+     "version": "1.0.7",
+     "version_string": "1.0.7",
+     "version_source": "TOOL_VERSION"
+    },
+    {
+     "path": "tools/_superseded/media_b_teacher_cache_1.0.8.py",
+     "sha256": "c4f73350b7d516d3e7448221f12cdae621a72de3097046c7e40db3b8655aaa16",
+     "bytes": 163461,
+     "mtime_utc": "2026-10-13T09:47:56Z",
+     "version": "1.0.8",
+     "version_string": "1.0.8",
+     "version_source": "TOOL_VERSION"
+    }
+   ]
+  },
+  "p11_needle_engine.py": {
+   "path": "tools/p11_needle_engine.py",
+   "sha256": "a894b8658b696d395943f02f4240ae018256e9d6aa6294c5b124c206bbc92d36",
+   "bytes": 80754,
+   "mtime_utc": "2026-10-14T16:22:27Z",
+   "version": "1.1.1",
+   "version_string": "1.1.1",
+   "version_source": "TOOL_VERSION",
+   "name": "p11_needle_engine",
+   "kind": "tool",
+   "superseded": [
+    {
+     "path": "tools/_superseded/p11_needle_engine.py.1.0.0",
+     "sha256": "b47eeff31774ab082bdf8001c14181931b53f6b275a2481e173f0c963aa81934",
+     "bytes": 55921,
+     "mtime_utc": "2026-10-13T08:16:01Z",
+     "version": "1.0.0",
+     "version_string": "1.0.0",
+     "version_source": "TOOL_VERSION"
+    },
+    {
+     "path": "tools/_superseded/p11_needle_engine.py.1.1.0",
+     "sha256": "8654249be910f8d08af11cb18adc1a76c2774eeb2376b8cf80b4f28164faf241",
+     "bytes": 79763,
+     "mtime_utc": "2026-10-14T15:13:39Z",
+     "version": "1.1.0",
+     "version_string": "1.1.0",
+     "version_source": "TOOL_VERSION"
+    }
+   ]
+  },
+  "p1_qwen35_reader.py": {
+   "path": "tools/p1_qwen35_reader.py",
+   "sha256": "9a44f878f24669f34b97c44f3f3dad3eb50059734b7382f17bed41cccd7b4526",
+   "bytes": 68361,
+   "mtime_utc": "2026-10-13T08:00:01Z",
+   "version": "1.0.5",
+   "version_string": "p1_qwen35_reader 1.0.5",
+   "version_source": "TOOL_VERSION",
+   "name": "p1_qwen35_reader",
+   "kind": "tool",
+   "superseded": [
+    {
+     "path": "tools/backups/p1_qwen35_reader.py.1.0.3.bak",
+     "sha256": "ecb5449878097122c880945a9133d214f07f125cea2d301991c2245e7f5d57ec",
+     "bytes": 58070,
+     "mtime_utc": "2026-10-13T01:23:00Z",
+     "version": "1.0.3",
+     "version_string": "p1_qwen35_reader 1.0.3",
+     "version_source": "TOOL_VERSION"
+    },
+    {
+     "path": "tools/_superseded/p1_qwen35_reader_1.0.4.py",
+     "sha256": "086dd91b44f0be2f25de33e224d33c062e1ddb0d4448e7f549f9be4a3c797f14",
+     "bytes": 65711,
+     "mtime_utc": "2026-10-13T08:00:00Z",
+     "version": "1.0.4",
+     "version_string": "p1_qwen35_reader 1.0.4",
+     "version_source": "TOOL_VERSION"
+    }
+   ]
+  },
+  "p2_v133_summary.py": {
+   "path": "tools/p2_v133_summary.py",
+   "sha256": "9b1ef9672fe8089f737a10f17542bac027934f22a0f520fbea1f44725d97fb5a",
+   "bytes": 8362,
+   "mtime_utc": "2026-10-14T16:22:27Z",
+   "version": "1.0.0",
+   "version_string": "1.0.0",
+   "version_source": "TOOL_VERSION",
+   "name": "p2_v133_summary",
+   "kind": "tool",
+   "superseded": []
+  },
+  "p2p11_card_guard.sh": {
+   "path": "tools/p2p11_card_guard.sh",
+   "sha256": "822ebdd5ae0681e8f4c7d9059d751335de808f6bf08df7e09c2c54bad15ddb32",
+   "bytes": 5012,
+   "mtime_utc": "2026-10-14T16:24:19Z",
+   "version": "1.0.0",
+   "version_string": "1.0.0",
+   "version_source": "P2P11_GUARD_VERSION",
+   "name": "p2p11_card_guard",
+   "kind": "script",
+   "superseded": []
+  },
+  "qtext_teacher_cache.py": {
+   "path": "tools/qtext_teacher_cache.py",
+   "sha256": "4c7badc1669d4044de765b04ed52c86c8096f9bb0b8ba55bc2b88024960c0f2c",
+   "bytes": 139482,
+   "mtime_utc": "2026-10-14T14:23:04Z",
+   "version": "1.0.6",
+   "version_string": "1.0.6",
+   "version_source": "TOOL_VERSION",
+   "name": "qtext_teacher_cache",
+   "kind": "tool",
+   "superseded": [
+    {
+     "path": "tools/_superseded/qtext_teacher_cache_1.0.3.py",
+     "sha256": "9d6c06ed5bbda74597bdfe2df3704d2b456d4c1a72a86868281cfcc977cfb446",
+     "bytes": 87345,
+     "mtime_utc": "2026-10-13T08:08:40Z",
+     "version": "1.0.3",
+     "version_string": "1.0.3",
+     "version_source": "TOOL_VERSION"
+    },
+    {
+     "path": "tools/_superseded/qtext_teacher_cache_1.0.4.py",
+     "sha256": "b04c3aef328248dcff4ac2efad6412b3e14fd901066ce90a5fb5ffded9033f74",
+     "bytes": 120616,
+     "mtime_utc": "2026-10-13T09:18:57Z",
+     "version": "1.0.4",
+     "version_string": "1.0.4",
+     "version_source": "TOOL_VERSION"
+    },
+    {
+     "path": "tools/_superseded/qtext_teacher_cache_1.0.5.py",
+     "sha256": "f2465a11b7a2242f167191fca8583a11ff74a50d33d7bba84b45c2d123ce6cb9",
+     "bytes": 127237,
+     "mtime_utc": "2026-10-14T14:22:31Z",
+     "version": "1.0.5",
+     "version_string": "1.0.5",
+     "version_source": "TOOL_VERSION"
+    }
+   ]
+  },
+  "qtext_vl_box_corpus_check.py": {
+   "path": "tools/qtext_vl_box_corpus_check.py",
+   "sha256": "5cd873962224b303fbf9303b73254380d06e223eb30b2ee090be589e17bbf06b",
+   "bytes": 3824,
+   "mtime_utc": "2026-10-14T14:23:08Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "qtext_vl_box_corpus_check",
+   "kind": "tool",
+   "superseded": []
+  },
+  "qtext_vl_divergence_diag.py": {
+   "path": "tools/qtext_vl_divergence_diag.py",
+   "sha256": "bb4ae870c67cecb7132bb95ba7ccdbaba588c4ae859f47db09abdf307cb88fae",
+   "bytes": 6346,
+   "mtime_utc": "2026-10-13T00:40:02Z",
+   "version": "1.0.0",
+   "version_string": "1.0.0",
+   "version_source": "TOOL_VERSION",
+   "name": "qtext_vl_divergence_diag",
+   "kind": "tool",
+   "superseded": []
+  },
+  "queue_export_2026-10-13.sh": {
+   "path": "tools/queue_export_2026-10-13.sh",
+   "sha256": "95a8296a81ff87b3b298ca8a22adcd3daf208e3b825f995035dea390bb34d87e",
+   "bytes": 4769,
+   "mtime_utc": "2026-10-13T08:20:57Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "queue_export_2026-10-13",
+   "kind": "queue",
+   "superseded": []
+  },
+  "queue_gpu6.sh": {
+   "path": "tools/queue_gpu6.sh",
+   "sha256": "863f30895361e92e629e4c8d406442b3a05cdfe9ca408b6eb401f1759d8f8dd7",
+   "bytes": 67777,
+   "mtime_utc": "2026-10-15T02:00:24Z",
+   "version": "1.4.0",
+   "version_string": "queue_gpu6.sh 1.4.0",
+   "version_source": "VERSION",
+   "name": "queue_gpu6",
+   "kind": "queue",
+   "superseded": [
+    {
+     "path": "tools/_superseded/queue_gpu6_1.3.0.sh",
+     "sha256": "bf22ec8f31ecf521fb5998df3227ffd7650b5aaeca815b93adca2828c94ccf26",
+     "bytes": 57902,
+     "mtime_utc": "2026-10-14T17:12:53Z",
+     "version": "1.3.0",
+     "version_string": "queue_gpu6.sh 1.3.0",
+     "version_source": "VERSION"
+    },
+    {
+     "path": "tools/_superseded/queue_gpu6_1.2.0.sh",
+     "sha256": "787bae34986ae9b03b920b927e9b9a95abb94beeb2c9a35e3742fe0922af13f4",
+     "bytes": 44953,
+     "mtime_utc": "2026-10-14T17:16:25Z",
+     "version": "1.2.0",
+     "version_string": "queue_gpu6.sh 1.2.0",
+     "version_source": "VERSION"
+    },
+    {
+     "path": "tools/_superseded/infra_review_2026-10-15_before/queue_gpu6_1.3.1.sh",
+     "sha256": "1e97b784b9841fb84fd6fb010457bd4e211b276e25b842cc3ef4cbc0236d0082",
+     "bytes": 62265,
+     "mtime_utc": "2026-10-14T20:33:44Z",
+     "version": "1.3.1",
+     "version_string": "queue_gpu6.sh 1.3.1",
+     "version_source": "VERSION"
+    },
+    {
+     "path": "tools/_superseded/queue_gpu6_1.3.2.sh",
+     "sha256": "8bb5a5f0fcf8532491d5d72dd4085267b387f809eb9946492100a5e6a817d2dc",
+     "bytes": 65234,
+     "mtime_utc": "2026-10-15T00:11:18Z",
+     "version": "1.3.2",
+     "version_string": "queue_gpu6.sh 1.3.2",
+     "version_source": "VERSION"
+    }
+   ]
+  },
+  "queue_j6_vl.sh": {
+   "path": "tools/queue_j6_vl.sh",
+   "sha256": "424ed3165ae9054bf2fe26263ca2564b6d5d1c4d080f98e3ffabd47f79e37fba",
+   "bytes": 14052,
+   "mtime_utc": "2026-10-14T15:11:46Z",
+   "version": "1.1.0",
+   "version_string": "j6_vl.sh 1.1.0",
+   "version_source": "J6_VERSION",
+   "name": "queue_j6_vl",
+   "kind": "queue",
+   "superseded": []
+  },
+  "queue_p40_2026-10-13.sh": {
+   "path": "tools/queue_p40_2026-10-13.sh",
+   "sha256": "c7830f0972307db2cd8156efe91b389739ba648ef35de771a922dcaad6e2c61c",
+   "bytes": 10643,
+   "mtime_utc": "2026-10-13T08:04:16Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "queue_p40_2026-10-13",
+   "kind": "queue",
+   "superseded": []
+  },
+  "queue_p40_qvlref_2026-10-13.sh": {
+   "path": "tools/queue_p40_qvlref_2026-10-13.sh",
+   "sha256": "8d208e67c684eeabccb90c05d50d7b2132586ff61432d2e496fb3be530aeaf83",
+   "bytes": 5781,
+   "mtime_utc": "2026-10-13T09:47:56Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "queue_p40_qvlref_2026-10-13",
+   "kind": "queue",
+   "superseded": []
+  },
+  "run_b2_geometry_diag_gpu6_2026-10-14.sh": {
+   "path": "tools/run_b2_geometry_diag_gpu6_2026-10-14.sh",
+   "sha256": "7a96d5ec7a622a3e980e59e6cbd344be9f9c5f7708f1467e20bb46ca999927c2",
+   "bytes": 3483,
+   "mtime_utc": "2026-10-14T14:23:05Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_b2_geometry_diag_gpu6_2026-10-14",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_codex_inflight_rootcopy_2026-10-14.sh": {
+   "path": "tools/run_codex_inflight_rootcopy_2026-10-14.sh",
+   "sha256": "0a9a33828e66b3ebcf57b89ecb9aacab62bc3d085930a18160cea99deda335ec",
+   "bytes": 2767,
+   "mtime_utc": "2026-10-14T23:26:42Z",
+   "version": "1.0.0",
+   "version_string": "1.0.0",
+   "version_source": "VERSION",
+   "name": "run_codex_inflight_rootcopy_2026-10-14",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_e3_floor_fix_2026-10-13.sh": {
+   "path": "tools/run_e3_floor_fix_2026-10-13.sh",
+   "sha256": "408dc1240a8bc8a78133327ce86dff247deb719c7197b23154220f2e3f26e897",
+   "bytes": 2485,
+   "mtime_utc": "2026-10-13T09:22:30Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_e3_floor_fix_2026-10-13",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_k3accel_profile_gpu3_2026-10-14.sh": {
+   "path": "tools/run_k3accel_profile_gpu3_2026-10-14.sh",
+   "sha256": "6e0894092677cdf304ad837a30e060c4a0bbc5b9681a7e93d74bf0b21e99beb6",
+   "bytes": 6197,
+   "mtime_utc": "2026-10-14T18:22:36Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_k3accel_profile_gpu3_2026-10-14",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_k3cache_p3_parity_2026-10-12.sh": {
+   "path": "tools/run_k3cache_p3_parity_2026-10-12.sh",
+   "sha256": "3993a3e63940eb50eca9172f558b1b84700fa8f9fa1bc67b6c2026842d8aae02",
+   "bytes": 4387,
+   "mtime_utc": "2026-10-13T00:42:33Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_k3cache_p3_parity_2026-10-12",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_k3cache_parity_d2_2026-10-12.sh": {
+   "path": "tools/run_k3cache_parity_d2_2026-10-12.sh",
+   "sha256": "2c65e39146d00e09016f85236225281613708b1cd2aeb8fd0e5f9cf438c0a139",
+   "bytes": 4720,
+   "mtime_utc": "2026-10-13T03:14:00Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_k3cache_parity_d2_2026-10-12",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_k3cache_parity_d2b_2026-10-12.sh": {
+   "path": "tools/run_k3cache_parity_d2b_2026-10-12.sh",
+   "sha256": "ded0beb37f2fa8c0beb0ed71a3c4e66633a133939ca1a93cb1b3c53b2073e4fe",
+   "bytes": 3036,
+   "mtime_utc": "2026-10-13T03:58:10Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_k3cache_parity_d2b_2026-10-12",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_k3cache_rerun_v120_2026-10-13.sh": {
+   "path": "tools/run_k3cache_rerun_v120_2026-10-13.sh",
+   "sha256": "764143473691946ba4e8a729619d16a6a1f9e585411d146ac61df98e85cba0b9",
+   "bytes": 4188,
+   "mtime_utc": "2026-10-13T05:02:30Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_k3cache_rerun_v120_2026-10-13",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_k3cache_v130_parity_gpu3_2026-10-14.sh": {
+   "path": "tools/run_k3cache_v130_parity_gpu3_2026-10-14.sh",
+   "sha256": "8be5e617da542fefaae610b75b9ed30cb1ee0a72b81b2b105c610b0d1b36d2aa",
+   "bytes": 12262,
+   "mtime_utc": "2026-10-15T00:50:30Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_k3cache_v130_parity_gpu3_2026-10-14",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_k3cache_xtok_probe_2026-10-12.sh": {
+   "path": "tools/run_k3cache_xtok_probe_2026-10-12.sh",
+   "sha256": "299582505eddcbef762bd546361e303effb29bb59f9b11875ab2b7df21f633ec",
+   "bytes": 1180,
+   "mtime_utc": "2026-10-13T01:34:05Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_k3cache_xtok_probe_2026-10-12",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_media_a_itest.sh": {
+   "path": "tools/run_media_a_itest.sh",
+   "sha256": "51425803885401c57cdc937754de550d44503165250113e4a293c3ea2afb5273",
+   "bytes": 2657,
+   "mtime_utc": "2026-10-13T04:31:23Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_media_a_itest",
+   "kind": "driver",
+   "superseded": [
+    {
+     "path": "tools/_prev/media-a-1.0.1-20261013/run_media_a_itest.sh",
+     "sha256": "ccd327118417c84a9d87a489283beb244960a7b2f1b405e18b701c70b6fea138",
+     "bytes": 2657,
+     "mtime_utc": "2026-10-13T03:29:48Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ]
+  },
+  "run_media_a_wave2.sh": {
+   "path": "tools/run_media_a_wave2.sh",
+   "sha256": "78dbd75793d8c3787369631537c0555542030cd84d2d57e2be131691bfe46412",
+   "bytes": 10896,
+   "mtime_utc": "2026-10-13T08:02:16Z",
+   "version": "1.0.3",
+   "version_string": "run_media_a_wave2.sh 1.0.3",
+   "version_source": "VERSION",
+   "name": "run_media_a_wave2",
+   "kind": "driver",
+   "superseded": [
+    {
+     "path": "tools/_prev/media-a-1.0.1-20261013/run_media_a_wave2.sh",
+     "sha256": "23814856168fcc08d9666875422db6b984319bdf4948ef825c95485d46a4b2d3",
+     "bytes": 6594,
+     "mtime_utc": "2026-10-13T03:29:49Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    },
+    {
+     "path": "tools/_superseded/run_media_a_wave2.sh.1.0.2",
+     "sha256": "252be146c14656db57322212eaf115e90a4169a918eb5e027657866681b3f626",
+     "bytes": 10273,
+     "mtime_utc": "2026-10-13T04:31:22Z",
+     "version": "1.0.2",
+     "version_string": "run_media_a_wave2.sh 1.0.2",
+     "version_source": "VERSION"
+    }
+   ]
+  },
+  "run_media_b_probes_2026-10-12.sh": {
+   "path": "tools/run_media_b_probes_2026-10-12.sh",
+   "sha256": "fd63386c8d0aa91394bb7bc1a1751c6b681d82e7654fc549ce6a84033ccc0922",
+   "bytes": 6592,
+   "mtime_utc": "2026-10-13T02:47:30Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_media_b_probes_2026-10-12",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_media_b_v105_2026-10-13.sh": {
+   "path": "tools/run_media_b_v105_2026-10-13.sh",
+   "sha256": "97bd6b789ca89d48853fa2d2e5c8c8abee0dd3a1013118e4a456d237e01ccc62",
+   "bytes": 5482,
+   "mtime_utc": "2026-10-13T06:17:20Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_media_b_v105_2026-10-13",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_media_b_v106_2026-10-13.sh": {
+   "path": "tools/run_media_b_v106_2026-10-13.sh",
+   "sha256": "647f357de85773ed064c5105db052ca9d2e8f1d91e6ab03e01abbc17034107f3",
+   "bytes": 5441,
+   "mtime_utc": "2026-10-13T07:13:02Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_media_b_v106_2026-10-13",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_media_b_v107_2026-10-13.sh": {
+   "path": "tools/run_media_b_v107_2026-10-13.sh",
+   "sha256": "da80a7863891ad5af6b5980ced774c2e0d70a131510cddcd8a739af0ee28f3b9",
+   "bytes": 4964,
+   "mtime_utc": "2026-10-13T07:29:04Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_media_b_v107_2026-10-13",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_p11_omni1_v110.sh": {
+   "path": "tools/run_p11_omni1_v110.sh",
+   "sha256": "e50b1b3c78a5fd0812357ff43db18d4feaefd5dcd60456cb5bc4f794a8b3f9df",
+   "bytes": 7262,
+   "mtime_utc": "2026-10-14T16:24:23Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_p11_omni1_v110",
+   "kind": "driver",
+   "superseded": [
+    {
+     "path": "tools/_superseded/run_p11_omni1_v110.sh.83b53bc8",
+     "sha256": "83b53bc8ec3bd006444b8ed750bb5365aaba1f765f01f005b0b3ba411fc83ef8",
+     "bytes": 6518,
+     "mtime_utc": "2026-10-14T15:42:55Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ]
+  },
+  "run_p1_104_tests_and_s5_r4_2026-10-12.sh": {
+   "path": "tools/run_p1_104_tests_and_s5_r4_2026-10-12.sh",
+   "sha256": "b9b7e249918ccfe617c3ad9a84fd83c7b03dd85403612b1405364e7d23dd9d31",
+   "bytes": 2162,
+   "mtime_utc": "2026-10-13T02:21:41Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_p1_104_tests_and_s5_r4_2026-10-12",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_p1_omni1_2026-10-13.sh": {
+   "path": "tools/run_p1_omni1_2026-10-13.sh",
+   "sha256": "fd1a84910fd7fbd9f509b4dabee0be2ba619b5ddf06bb65f3f35226012d93322",
+   "bytes": 4255,
+   "mtime_utc": "2026-10-13T08:01:15Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_p1_omni1_2026-10-13",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_p1_s5_parity_2026-10-12.sh": {
+   "path": "tools/run_p1_s5_parity_2026-10-12.sh",
+   "sha256": "6cd4df05ba505944b9f00488f3977ba394ea542e13cf513a1038f7dfc358dd97",
+   "bytes": 580,
+   "mtime_utc": "2026-10-13T00:30:29Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_p1_s5_parity_2026-10-12",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_p1_s5_parity_2026-10-12_r2.sh": {
+   "path": "tools/run_p1_s5_parity_2026-10-12_r2.sh",
+   "sha256": "8dbdc2d46d68216adc87c6fc233251abd18912e8dc02e6bbe0bb4c554de34415",
+   "bytes": 583,
+   "mtime_utc": "2026-10-13T00:37:28Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_p1_s5_parity_2026-10-12_r2",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_p1_s5_r3_and_smoke_2026-10-12.sh": {
+   "path": "tools/run_p1_s5_r3_and_smoke_2026-10-12.sh",
+   "sha256": "15bccbad9aa9fe3de60551615f5f74d012cd890791b9f16853e9e1ed23d40daf",
+   "bytes": 1076,
+   "mtime_utc": "2026-10-13T01:24:26Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_p1_s5_r3_and_smoke_2026-10-12",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_p2_memory_proof_p40_2026-10-14.sh": {
+   "path": "tools/run_p2_memory_proof_p40_2026-10-14.sh",
+   "sha256": "d3a4ced382ad15d0d62c8254273c3816b9254125c9df3cf6cc1dc10007eb4e43",
+   "bytes": 6726,
+   "mtime_utc": "2026-10-14T15:42:27Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_p2_memory_proof_p40_2026-10-14",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_p2_v133.sh": {
+   "path": "tools/run_p2_v133.sh",
+   "sha256": "ed6513ba9b29f1311c4743f00cef06fdd514f77e070eaa574813db5e738396e2",
+   "bytes": 11885,
+   "mtime_utc": "2026-10-14T16:24:22Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_p2_v133",
+   "kind": "driver",
+   "superseded": [
+    {
+     "path": "tools/_superseded/run_p2_v133.sh.bd28b35f",
+     "sha256": "bd28b35f7b399048d1f92869bb9709adab43739d27f337b68149037f07300708",
+     "bytes": 12343,
+     "mtime_utc": "2026-10-14T15:42:53Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ]
+  },
+  "run_qtext_cpu_final_2026-10-12.sh": {
+   "path": "tools/run_qtext_cpu_final_2026-10-12.sh",
+   "sha256": "d519484a4df76804bfacfb0b978a3ba824c6b4e328d1dbf580646430568e2883",
+   "bytes": 1732,
+   "mtime_utc": "2026-10-13T02:55:22Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_qtext_cpu_final_2026-10-12",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_qtext_cpu_v103_2026-10-12.sh": {
+   "path": "tools/run_qtext_cpu_v103_2026-10-12.sh",
+   "sha256": "c552b792128dd0a7ad7de77896405c74c7dcef13eff732de1f6b69e00527002c",
+   "bytes": 5582,
+   "mtime_utc": "2026-10-13T03:22:15Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_qtext_cpu_v103_2026-10-12",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_qtext_cpu_v104_2026-10-13.sh": {
+   "path": "tools/run_qtext_cpu_v104_2026-10-13.sh",
+   "sha256": "9c07687b6d7fe874565698fa79d8a896729e57a0ec594d5c4341c1c6705efa4d",
+   "bytes": 3016,
+   "mtime_utc": "2026-10-13T08:16:32Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_qtext_cpu_v104_2026-10-13",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_qtext_cpu_v105_2026-10-13.sh": {
+   "path": "tools/run_qtext_cpu_v105_2026-10-13.sh",
+   "sha256": "a0ca0489a84489e385f2b7b9fd37d04581c694e2ece5e6768f9a9063df6cb2ce",
+   "bytes": 3082,
+   "mtime_utc": "2026-10-13T09:34:17Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_qtext_cpu_v105_2026-10-13",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_qtext_cpu_v106_2026-10-14.sh": {
+   "path": "tools/run_qtext_cpu_v106_2026-10-14.sh",
+   "sha256": "b1d8f8fca41c08955c8fcf307138df32939b6d43b7f2208ff3985a9e800d84d3",
+   "bytes": 2482,
+   "mtime_utc": "2026-10-14T14:23:09Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_qtext_cpu_v106_2026-10-14",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_qtext_p40_round2_2026-10-12.sh": {
+   "path": "tools/run_qtext_p40_round2_2026-10-12.sh",
+   "sha256": "60cc2dc06920fdf28bc6d12b675da77eb9c2b3dd232678af55c27015851ca19f",
+   "bytes": 3298,
+   "mtime_utc": "2026-10-13T00:55:50Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_qtext_p40_round2_2026-10-12",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_qtext_p40_round3_2026-10-12.sh": {
+   "path": "tools/run_qtext_p40_round3_2026-10-12.sh",
+   "sha256": "c154f7cecad60e8a74ac767a271da2d3c6a2075fae90f4574385461d5fa7f8be",
+   "bytes": 5121,
+   "mtime_utc": "2026-10-13T01:30:29Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_qtext_p40_round3_2026-10-12",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_qtext_p40_round3b_2026-10-12.sh": {
+   "path": "tools/run_qtext_p40_round3b_2026-10-12.sh",
+   "sha256": "a9637c2bdb910cdb826cdc8d06fd171b44a3b79f13a0d3981d5ba1183c7a3b4c",
+   "bytes": 5442,
+   "mtime_utc": "2026-10-13T01:53:00Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_qtext_p40_round3b_2026-10-12",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_qtext_p40_round3c_2026-10-12.sh": {
+   "path": "tools/run_qtext_p40_round3c_2026-10-12.sh",
+   "sha256": "18a4bea6bd6ec702acf422c8069fa0db9411752d3a4f208704635ecefc7d564f",
+   "bytes": 5746,
+   "mtime_utc": "2026-10-13T02:01:12Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_qtext_p40_round3c_2026-10-12",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_qtext_p40_round4_2026-10-12.sh": {
+   "path": "tools/run_qtext_p40_round4_2026-10-12.sh",
+   "sha256": "4f0dfef0bae46f64141073fc840efad24b455d195532d595aff953d23a54d3df",
+   "bytes": 5697,
+   "mtime_utc": "2026-10-13T02:37:16Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_qtext_p40_round4_2026-10-12",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_qtext_parity_p40_2026-10-12.sh": {
+   "path": "tools/run_qtext_parity_p40_2026-10-12.sh",
+   "sha256": "c90a00c9e15995d10f14a641a13d161cbfc56245976ef4163a4c3f3d4acceb64",
+   "bytes": 4893,
+   "mtime_utc": "2026-10-13T00:28:18Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_qtext_parity_p40_2026-10-12",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_qtext_seal_interrupt_check_2026-10-12.sh": {
+   "path": "tools/run_qtext_seal_interrupt_check_2026-10-12.sh",
+   "sha256": "b9e99b5a42e03ae37f0ab4829f206f8155eb61c1b1f2740a60a4205fd5e4c0cb",
+   "bytes": 4782,
+   "mtime_utc": "2026-10-13T03:32:26Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_qtext_seal_interrupt_check_2026-10-12",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_selfgen_export_2026-10-13.sh": {
+   "path": "tools/run_selfgen_export_2026-10-13.sh",
+   "sha256": "7ddb43373c364f9644f8004239e2cb98e023ca0dd64be8f5ff3e31ab6d5d4ab3",
+   "bytes": 2173,
+   "mtime_utc": "2026-10-13T02:02:54Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_selfgen_export_2026-10-13",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_selfgen_sampling_2026-10-13.sh": {
+   "path": "tools/run_selfgen_sampling_2026-10-13.sh",
+   "sha256": "7e6e71a876841dd626d3636d804e4e4f2866b46178676ad2227ef968f5739479",
+   "bytes": 2289,
+   "mtime_utc": "2026-10-13T02:44:09Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_selfgen_sampling_2026-10-13",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_toolcall_export_2026-10-14.sh": {
+   "path": "tools/run_toolcall_export_2026-10-14.sh",
+   "sha256": "cee03b44af4585ea6c1739a1200d9f8d84e9d7e6fcce21bd25accd23059ed23b",
+   "bytes": 3182,
+   "mtime_utc": "2026-10-14T14:24:55Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_toolcall_export_2026-10-14",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_toolcall_extend_2026-10-15.sh": {
+   "path": "tools/run_toolcall_extend_2026-10-15.sh",
+   "sha256": "35624ba70ceabe6a00aff2d3c462fc20ec78913aef330948b106d7409a5a38ca",
+   "bytes": 13058,
+   "mtime_utc": "2026-10-15T02:32:45Z",
+   "version": "1.0.0",
+   "version_string": "toolcall_extend-1.0.0",
+   "version_source": "VERSION",
+   "name": "run_toolcall_extend_2026-10-15",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_toolcall_screen_2026-10-15.sh": {
+   "path": "tools/run_toolcall_screen_2026-10-15.sh",
+   "sha256": "ea9930f90449c6a7dad046d8d1ae611dc676fe12259a60020a33d62630842c78",
+   "bytes": 5222,
+   "mtime_utc": "2026-10-15T04:58:49Z",
+   "version": "1.0.0",
+   "version_string": "toolcall_screen-1.0.0",
+   "version_source": "VERSION",
+   "name": "run_toolcall_screen_2026-10-15",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_toolcall_selfgen_2026-10-14.sh": {
+   "path": "tools/run_toolcall_selfgen_2026-10-14.sh",
+   "sha256": "c37a447a73d5f2a8fad3a4fcda81a0d8b5a58148b30275519aee6116a603ad62",
+   "bytes": 6704,
+   "mtime_utc": "2026-10-14T14:59:38Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_toolcall_selfgen_2026-10-14",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_trainer_p40_extra_2026-10-12.sh": {
+   "path": "tools/run_trainer_p40_extra_2026-10-12.sh",
+   "sha256": "e3abcacf1e53b5522a24a669d3de2277f480fa5234238229bffc586d9866ef28",
+   "bytes": 4458,
+   "mtime_utc": "2026-10-13T02:03:33Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_trainer_p40_extra_2026-10-12",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_trainer_p40_proofs_2026-10-12.sh": {
+   "path": "tools/run_trainer_p40_proofs_2026-10-12.sh",
+   "sha256": "457f5185ce59bc61635267edec5db5b163c6a1a48cc62b9509e09d00355c0334",
+   "bytes": 6264,
+   "mtime_utc": "2026-10-13T01:36:01Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_trainer_p40_proofs_2026-10-12",
+   "kind": "driver",
+   "superseded": []
+  },
+  "run_trainer_p40_v130_2026-10-12.sh": {
+   "path": "tools/run_trainer_p40_v130_2026-10-12.sh",
+   "sha256": "3b1805f7caf89191f110a260c4b6f84df71bac02d521afe5c070fcdb0bfada90",
+   "bytes": 10194,
+   "mtime_utc": "2026-10-13T04:00:23Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_trainer_p40_v130_2026-10-12",
+   "kind": "driver",
+   "superseded": []
+  },
+  "selfgen_sampler.py": {
+   "path": "tools/selfgen_sampler.py",
+   "sha256": "f77198b2808f56da62fd7108bb267e77fc9d52b3adb2b0930fd6621e242cbb7c",
+   "bytes": 102249,
+   "mtime_utc": "2026-10-13T03:11:00Z",
+   "version": "1.2.0",
+   "version_string": "1.2.0",
+   "version_source": "TOOL_VERSION",
+   "name": "selfgen_sampler",
+   "kind": "tool",
+   "superseded": [
+    {
+     "path": "tools/.bak-selfgen-1.1.0/selfgen_sampler.py",
+     "sha256": "60863a2229b04c8fa1ca50044e730d4f5376348cbf28a63dcdc6354a7dfbe82c",
+     "bytes": 90505,
+     "mtime_utc": "2026-10-13T02:44:03Z",
+     "version": "1.1.0",
+     "version_string": "1.1.0",
+     "version_source": "TOOL_VERSION"
+    }
+   ]
+  },
+  "speech/asr_two_judge.py": {
+   "path": "tools/speech/asr_two_judge.py",
+   "sha256": "5651d6d76bb03c47082ee33686be05749dd7073765d2f035a23ff36b4464b720",
+   "bytes": 31120,
+   "mtime_utc": "2026-10-15T05:37:15Z",
+   "version": "1.1.0",
+   "version_string": "1.1.0",
+   "version_source": "VERSION",
+   "name": "asr_two_judge",
+   "kind": "tool",
+   "superseded": [
+    {
+     "path": "tools/speech/_superseded/asr_two_judge_1.0.0.py",
+     "sha256": "182924f2ec7cc7234f50f237ea15213a1c9bc3c348ae189681689c8c07bd6fce",
+     "bytes": 24748,
+     "mtime_utc": "2026-10-15T03:18:34Z",
+     "version": "1.0.0",
+     "version_string": "1.0.0",
+     "version_source": "VERSION"
+    }
+   ]
+  },
+  "speech/build_speech_runtimes.sh": {
+   "path": "tools/speech/build_speech_runtimes.sh",
+   "sha256": "83956724da646ccc37320b736f8c362f136331cbf064e311eeee72e397884cc9",
+   "bytes": 11763,
+   "mtime_utc": "2026-10-15T03:18:32Z",
+   "version": "1.1.0",
+   "version_string": "1.1.0",
+   "version_source": "VERSION",
+   "name": "build_speech_runtimes",
+   "kind": "script",
+   "superseded": [
+    {
+     "path": "tools/speech/_superseded/build_speech_runtimes_1.0.0.sh",
+     "sha256": "346723b6ac29c27e874bb1d16693e19eac67c34f802d68d73c115f6ecdc72adc",
+     "bytes": 5192,
+     "mtime_utc": "2026-10-15T01:34:59Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ]
+  },
+  "speech/remove_voxcpm_runtime.sh": {
+   "path": "tools/speech/remove_voxcpm_runtime.sh",
+   "sha256": "49b4a63a518218a9b716a773b6a6242612d89f63d9655448a2d90a54fbfe0d6d",
+   "bytes": 4746,
+   "mtime_utc": "2026-10-15T03:10:31Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "remove_voxcpm_runtime",
+   "kind": "script",
+   "superseded": []
+  },
+  "speech/run_teacher_fix_smoke.sh": {
+   "path": "tools/speech/run_teacher_fix_smoke.sh",
+   "sha256": "9d20df3cdeedffb7f3d952a9702ef972752a8c359131b2b1bb2389d7204d0c2f",
+   "bytes": 3156,
+   "mtime_utc": "2026-10-15T03:18:35Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_teacher_fix_smoke",
+   "kind": "driver",
+   "superseded": []
+  },
+  "speech/run_teacher_smoke.sh": {
+   "path": "tools/speech/run_teacher_smoke.sh",
+   "sha256": "a1301d8b7b3a5e22dcbc2b0ba563166779ddd86cfd45a384a0a781cb2a223f8a",
+   "bytes": 2842,
+   "mtime_utc": "2026-10-15T01:34:59Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_teacher_smoke",
+   "kind": "driver",
+   "superseded": []
+  },
+  "speech/run_teacher_smoke_granite.sh": {
+   "path": "tools/speech/run_teacher_smoke_granite.sh",
+   "sha256": "6c2a9f103b03cd964af87252424102d313480960117e818d63b4107e67bdd926",
+   "bytes": 1520,
+   "mtime_utc": "2026-10-15T01:34:59Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "run_teacher_smoke_granite",
+   "kind": "driver",
+   "superseded": []
+  },
+  "speech/speech_fetch.py": {
+   "path": "tools/speech/speech_fetch.py",
+   "sha256": "b332b36f3808a05d29c1912553ca9b32e1f27c1aa366b0357f986eab82d96735",
+   "bytes": 13153,
+   "mtime_utc": "2026-10-15T01:34:59Z",
+   "version": "1.0.0",
+   "version_string": "1.0.0",
+   "version_source": "TOOL_VERSION",
+   "name": "speech_fetch",
+   "kind": "tool",
+   "superseded": []
+  },
+  "speech/speech_teacher_smoke.py": {
+   "path": "tools/speech/speech_teacher_smoke.py",
+   "sha256": "06688e27f51c45ca89048476a4f19d9af4f949ee97d888b601af44ea372984e3",
+   "bytes": 18871,
+   "mtime_utc": "2026-10-15T03:18:33Z",
+   "version": "1.1.0",
+   "version_string": "1.1.0",
+   "version_source": "TOOL_VERSION",
+   "name": "speech_teacher_smoke",
+   "kind": "tool",
+   "superseded": [
+    {
+     "path": "tools/speech/_superseded/speech_teacher_smoke_1.0.1.py",
+     "sha256": "68072d7dd184e98dd7378fe33eb97a3948725f1b8f94a11118a37a0c1de667a1",
+     "bytes": 16100,
+     "mtime_utc": "2026-10-15T01:34:59Z",
+     "version": "1.0.1",
+     "version_string": "1.0.1",
+     "version_source": "TOOL_VERSION"
+    }
+   ]
+  },
+  "speech/stage_judge_b_fetch.sh": {
+   "path": "tools/speech/stage_judge_b_fetch.sh",
+   "sha256": "950c3c50c87bbb55a0f3459e0ab7460a6d44411531e9a9840e92556c8f48da45",
+   "bytes": 2979,
+   "mtime_utc": "2026-10-15T03:09:38Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "stage_judge_b_fetch",
+   "kind": "script",
+   "superseded": []
+  },
+  "speech/stage_teachers_fetch.sh": {
+   "path": "tools/speech/stage_teachers_fetch.sh",
+   "sha256": "1af4b39db33dd45579be7fd37ac9cdb4055bcf846c0be091a1d6f976b3a43c18",
+   "bytes": 4055,
+   "mtime_utc": "2026-10-15T01:34:59Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "stage_teachers_fetch",
+   "kind": "script",
+   "superseded": []
+  },
+  "speech/tests/conftest.py": {
+   "path": "tools/speech/tests/conftest.py",
+   "sha256": "f3091281c7959846b10ad458a2a89e329c8a2a57edd3611191f79cea4635e07e",
+   "bytes": 4775,
+   "mtime_utc": "2026-10-15T03:18:46Z",
+   "version": "1.0.1",
+   "version_string": "oc_cuda_guard 1.0.1",
+   "version_source": "CONFTEST_VERSION",
+   "name": "conftest",
+   "kind": "test",
+   "superseded": [
+    {
+     "path": "tools/.bak-selfgen-1.1.0/conftest.py",
+     "sha256": "f3091281c7959846b10ad458a2a89e329c8a2a57edd3611191f79cea4635e07e",
+     "bytes": 4775,
+     "mtime_utc": "2026-10-15T00:13:03Z",
+     "version": "1.0.1",
+     "version_string": "oc_cuda_guard 1.0.1",
+     "version_source": "CONFTEST_VERSION"
+    },
+    {
+     "path": "tools/_prev/media-a-1.0.1-20261013/conftest.py",
+     "sha256": "f3091281c7959846b10ad458a2a89e329c8a2a57edd3611191f79cea4635e07e",
+     "bytes": 4775,
+     "mtime_utc": "2026-10-15T00:13:03Z",
+     "version": "1.0.1",
+     "version_string": "oc_cuda_guard 1.0.1",
+     "version_source": "CONFTEST_VERSION"
+    },
+    {
+     "path": "tools/_superseded/conftest.py",
+     "sha256": "f3091281c7959846b10ad458a2a89e329c8a2a57edd3611191f79cea4635e07e",
+     "bytes": 4775,
+     "mtime_utc": "2026-10-15T00:13:03Z",
+     "version": "1.0.1",
+     "version_string": "oc_cuda_guard 1.0.1",
+     "version_source": "CONFTEST_VERSION"
+    },
+    {
+     "path": "tools/_superseded/toolcall_selfgen_1.0.4_2026-10-14/conftest.py",
+     "sha256": "f3091281c7959846b10ad458a2a89e329c8a2a57edd3611191f79cea4635e07e",
+     "bytes": 4775,
+     "mtime_utc": "2026-10-15T00:13:03Z",
+     "version": "1.0.1",
+     "version_string": "oc_cuda_guard 1.0.1",
+     "version_source": "CONFTEST_VERSION"
+    },
+    {
+     "path": "tools/speech/_superseded/conftest.py",
+     "sha256": "f3091281c7959846b10ad458a2a89e329c8a2a57edd3611191f79cea4635e07e",
+     "bytes": 4775,
+     "mtime_utc": "2026-10-15T00:13:03Z",
+     "version": "1.0.1",
+     "version_string": "oc_cuda_guard 1.0.1",
+     "version_source": "CONFTEST_VERSION"
+    }
+   ]
+  },
+  "speech/tests/test_asr_two_judge.py": {
+   "path": "tools/speech/tests/test_asr_two_judge.py",
+   "sha256": "15adda920d9b9f32a7ab9de99d41202e7046c1c29ff673afa58a9d1ea6fce6b2",
+   "bytes": 17852,
+   "mtime_utc": "2026-10-15T05:37:15Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_asr_two_judge",
+   "kind": "test",
+   "superseded": [
+    {
+     "path": "tools/speech/_superseded/test_asr_two_judge_1.0.0.py",
+     "sha256": "1d4d583abf5fbbd4372747c614ad270ae89020c32eb9c39df6767dce394ebd0a",
+     "bytes": 10762,
+     "mtime_utc": "2026-10-15T03:18:47Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ]
+  },
+  "speech/write_teacher_status.py": {
+   "path": "tools/speech/write_teacher_status.py",
+   "sha256": "78a03a834072bcb1b2bfb9a53dd5f8e20ec77e6078ef86786bc8bf5288fe41b3",
+   "bytes": 4906,
+   "mtime_utc": "2026-10-15T03:26:36Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "write_teacher_status",
+   "kind": "tool",
+   "superseded": []
+  },
+  "stage2_training_receipt.py": {
+   "path": "tools/stage2_training_receipt.py",
+   "sha256": "23682c6c7c9c4114ad72db6f81ee33c0bdbe71fd600e1beeadde91df0ccebef9",
+   "bytes": 30036,
+   "mtime_utc": "2026-10-13T08:16:17Z",
+   "version": "1.0.0",
+   "version_string": "omni-1.0.0",
+   "version_source": "TOOL_VERSION",
+   "name": "stage2_training_receipt",
+   "kind": "tool",
+   "superseded": []
+  },
+  "stage_c_media_a.py": {
+   "path": "tools/stage_c_media_a.py",
+   "sha256": "fa936d72ebb0545acc3d2d2ac8e2bdc4477f370c73947352a0f20bcb23718fdf",
+   "bytes": 115200,
+   "mtime_utc": "2026-10-13T04:31:18Z",
+   "version": "1.0.2",
+   "version_string": "1.0.2",
+   "version_source": "TOOL_VERSION",
+   "name": "stage_c_media_a",
+   "kind": "tool",
+   "superseded": [
+    {
+     "path": "tools/_prev/media-a-1.0.1-20261013/stage_c_media_a.py",
+     "sha256": "59259fd924ea6d7501c2776efc9b12b6b377e0e50e542f8d05764a1a79be17f6",
+     "bytes": 105438,
+     "mtime_utc": "2026-10-13T03:29:45Z",
+     "version": "1.0.1",
+     "version_string": "1.0.1",
+     "version_source": "TOOL_VERSION"
+    }
+   ]
+  },
+  "streamed_kd_trainer.py": {
+   "path": "tools/streamed_kd_trainer.py",
+   "sha256": "ac45af12995c4997f2d448dd2220729a0ec6d241c129588a69adbdb710a31716",
+   "bytes": 246257,
+   "mtime_utc": "2026-10-14T23:43:59Z",
+   "version": "1.3.4",
+   "version_string": "1.3.4",
+   "version_source": "TOOL_VERSION",
+   "name": "streamed_kd_trainer",
+   "kind": "tool",
+   "superseded": [
+    {
+     "path": "tools/_superseded/streamed_kd_trainer.py.1.3.0",
+     "sha256": "66b0854ffe8a5f0cbd652bf12954ef506494f5b2ae922d3255376f8055613b52",
+     "bytes": 146584,
+     "mtime_utc": "2026-10-13T02:55:08Z",
+     "version": "1.3.0",
+     "version_string": "1.3.0",
+     "version_source": "TOOL_VERSION"
+    },
+    {
+     "path": "tools/_superseded/streamed_kd_trainer.py.1.3.1",
+     "sha256": "fca45e962874cee5bcb27c8aacfd2e3b3ef340ecb91a8b2325f09c4aa3b4ea1c",
+     "bytes": 152074,
+     "mtime_utc": "2026-10-13T08:16:16Z",
+     "version": "1.3.1",
+     "version_string": "1.3.1",
+     "version_source": "TOOL_VERSION"
+    },
+    {
+     "path": "tools/_superseded/streamed_kd_trainer.py.1.3.2",
+     "sha256": "77091f8ab1581c1edac3e3f1c1e5d727d60f8fb8465745c03a6eb6b12f0567da",
+     "bytes": 154350,
+     "mtime_utc": "2026-10-13T09:33:47Z",
+     "version": "1.3.2",
+     "version_string": "1.3.2",
+     "version_source": "TOOL_VERSION"
+    },
+    {
+     "path": "tools/_superseded/streamed_kd_trainer_1.3.3.py",
+     "sha256": "c329953d6afd3901def0e66b2c728ca0d792c6f47ead5617c40491c0b513566e",
+     "bytes": 201375,
+     "mtime_utc": "2026-10-14T15:36:07Z",
+     "version": "1.3.3",
+     "version_string": "1.3.3",
+     "version_source": "TOOL_VERSION"
+    }
+   ]
+  },
+  "test_bfcl62_holdout.py": {
+   "path": "tools/test_bfcl62_holdout.py",
+   "sha256": "eee3cf30f12ea3ed9ae872e950cf29794349ad6a553c02c2bf3a4cdfc3dca46b",
+   "bytes": 9360,
+   "mtime_utc": "2026-10-14T20:19:24Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_bfcl62_holdout",
+   "kind": "test",
+   "superseded": []
+  },
+  "test_chimera_gguf_export.py": {
+   "path": "tools/test_chimera_gguf_export.py",
+   "sha256": "042ce413232ad360367bcd5d6ae881b4a308d9f4e8206fecc81389cf5ba2053f",
+   "bytes": 23613,
+   "mtime_utc": "2026-10-13T09:20:56Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_chimera_gguf_export",
+   "kind": "test",
+   "superseded": [
+    {
+     "path": "tools/_superseded/test_chimera_gguf_export_1.0.0.py",
+     "sha256": "7192b19e2b0833cac0ca2b9809a3f55c2f048a642f1bc13d6424a050bc48c3ca",
+     "bytes": 17726,
+     "mtime_utc": "2026-10-13T09:20:31Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ]
+  },
+  "test_codex_inflight_adopt.py": {
+   "path": "tools/test_codex_inflight_adopt.py",
+   "sha256": "22ed9fb709fa08e606f365cec5414404d308e8ea30ad0a2e779bf1dc553ff291",
+   "bytes": 14412,
+   "mtime_utc": "2026-10-14T23:43:02Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_codex_inflight_adopt",
+   "kind": "test",
+   "superseded": [
+    {
+     "path": "tools/_superseded/test_codex_inflight_adopt_1.0.0.py",
+     "sha256": "555dd25e0cc5acc836e9ed3cd5791853e09e027c1c6ec7369d0a0a7ffa7ef445",
+     "bytes": 9609,
+     "mtime_utc": "2026-10-14T20:28:49Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    },
+    {
+     "path": "tools/_superseded/test_codex_inflight_adopt_1.1.0.py",
+     "sha256": "1830fa9c5f5f46e186ad6253e9872eae3e95c49b810d5776d5e1b3651903fa29",
+     "bytes": 12030,
+     "mtime_utc": "2026-10-14T23:26:40Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ]
+  },
+  "test_d1_canonical_rungs.py": {
+   "path": "tools/test_d1_canonical_rungs.py",
+   "sha256": "9e92f57e1f9e51ce0aacf8ec5fff455be4ea5185081d4c21b271d22267bfb4a5",
+   "bytes": 9343,
+   "mtime_utc": "2026-10-15T00:22:12Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_d1_canonical_rungs",
+   "kind": "test",
+   "superseded": [
+    {
+     "path": "tools/_superseded/test_d1_canonical_rungs_1.0.0.py",
+     "sha256": "4462a3446b1d3a3991dbb3e5d2ef30b8a79d5bbf4c09864329e12d6d6027c493",
+     "bytes": 5270,
+     "mtime_utc": "2026-10-14T23:43:47Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    },
+    {
+     "path": "tools/_superseded/review-d1seal-20261014/test_d1_canonical_rungs.py.pre-review",
+     "sha256": "1a83ced882098ce16ec26b5c6d0c3f9ffb23c3c456895dc5c4dffa5b74cb061c",
+     "bytes": 7497,
+     "mtime_utc": "2026-10-15T00:17:10Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ]
+  },
+  "test_d1_compose_eval.py": {
+   "path": "tools/test_d1_compose_eval.py",
+   "sha256": "df3fba4a273545b36e58951a7962c0046779d1df02e39665c3c3502e2fc32b86",
+   "bytes": 8443,
+   "mtime_utc": "2026-10-14T23:43:47Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_d1_compose_eval",
+   "kind": "test",
+   "superseded": []
+  },
+  "test_d1_delta_recipe.py": {
+   "path": "tools/test_d1_delta_recipe.py",
+   "sha256": "ac4b14fa816ba6f7cbb8e17a078039bf61b7f8bfccb78aba4c586ae386971827",
+   "bytes": 8585,
+   "mtime_utc": "2026-10-14T23:58:29Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_d1_delta_recipe",
+   "kind": "test",
+   "superseded": [
+    {
+     "path": "tools/_superseded/test_d1_delta_recipe.py.pre-d1seal-20261014",
+     "sha256": "87b7edb8ab166b70444bf98c3bba629e5272e315fb494e0d8a0866494f8531ae",
+     "bytes": 7931,
+     "mtime_utc": "2026-10-14T23:58:29Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ]
+  },
+  "test_d1_hardened_entry.py": {
+   "path": "tools/test_d1_hardened_entry.py",
+   "sha256": "5c7c8f68b66e2e2dc8eb4bbdad5cd5d12fa7cc487ef9035539189296c93577d7",
+   "bytes": 23681,
+   "mtime_utc": "2026-10-14T17:16:58Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_d1_hardened_entry",
+   "kind": "test",
+   "superseded": [
+    {
+     "path": "tools/_superseded/test_d1_hardened_entry_1.1.0.py",
+     "sha256": "ffc7ded0c5ea3e1b5e7c4a4a095772cfc008a1591ba58de34423c7129cc17f49",
+     "bytes": 15790,
+     "mtime_utc": "2026-10-14T17:02:04Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ]
+  },
+  "test_d1_seal_lib.py": {
+   "path": "tools/test_d1_seal_lib.py",
+   "sha256": "2eb89b9a5b3ffcfc94ff6ccf6e4016396acfbc261433f71424cdb2e3f36f53f8",
+   "bytes": 13723,
+   "mtime_utc": "2026-10-14T23:43:47Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_d1_seal_lib",
+   "kind": "test",
+   "superseded": []
+  },
+  "test_d1_seal_verify.py": {
+   "path": "tools/test_d1_seal_verify.py",
+   "sha256": "deb16c42406b10972044397596f7aaed3a5837ec140951f9fa5fb488766b2a82",
+   "bytes": 16082,
+   "mtime_utc": "2026-10-15T00:22:11Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_d1_seal_verify",
+   "kind": "test",
+   "superseded": [
+    {
+     "path": "tools/_superseded/review-d1seal-20261014/test_d1_seal_verify.py.pre-review",
+     "sha256": "95ebcc4ecb1d3bc9b3ae14fc2e77fe2fc9022ab7ad252c6acddd6b8da7aa7a34",
+     "bytes": 13065,
+     "mtime_utc": "2026-10-15T00:17:10Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ]
+  },
+  "test_d1_trunk_recovery.py": {
+   "path": "tools/test_d1_trunk_recovery.py",
+   "sha256": "74b92c7dcc263df90ea6e49bd94903e5b29336fca9f57f2bbec7ca464447eeed",
+   "bytes": 45701,
+   "mtime_utc": "2026-10-14T17:02:19Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_d1_trunk_recovery",
+   "kind": "test",
+   "superseded": [
+    {
+     "path": "tools/_superseded/test_d1_trunk_recovery_1.2.4.py",
+     "sha256": "e73ce95bbbf67f3d218e74b4f44ee9d0f82db6cf053ce3efbedfb6e3bdd6be3e",
+     "bytes": 33435,
+     "mtime_utc": "2026-10-14T14:41:10Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    },
+    {
+     "path": "tools/_superseded/test_d1_trunk_recovery_1.3.0.py",
+     "sha256": "26d301c5b955d72e80943beb242b10ebaae1dec2cb42e79a37830c35bce67195",
+     "bytes": 44496,
+     "mtime_utc": "2026-10-14T17:02:04Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ]
+  },
+  "test_d2_bfcl_native_copy.py": {
+   "path": "tools/test_d2_bfcl_native_copy.py",
+   "sha256": "c0c11092d65932d43211dbfd9f9ff4f53e3d2cc277a054d95f10c1a52332134f",
+   "bytes": 7755,
+   "mtime_utc": "2026-10-14T23:50:43Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_d2_bfcl_native_copy",
+   "kind": "test",
+   "superseded": [
+    {
+     "path": "tools/_superseded/test_d2_bfcl_native_copy_1.1.0.py",
+     "sha256": "05a53949b41268cdf294f0f0cfa11a2962c8e8ba1ac503d557cfa2334f1ca4ff",
+     "bytes": 7113,
+     "mtime_utc": "2026-10-14T23:43:59Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ]
+  },
+  "test_d2_clean_repack.py": {
+   "path": "tools/test_d2_clean_repack.py",
+   "sha256": "79d97756a6870145f4d8e027aa15add5331482c40b46e4a4581dad6e73141394",
+   "bytes": 13267,
+   "mtime_utc": "2026-10-15T03:33:23Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_d2_clean_repack",
+   "kind": "test",
+   "superseded": []
+  },
+  "test_d2_mask_build.py": {
+   "path": "tools/test_d2_mask_build.py",
+   "sha256": "69afea789e724486f828fa6eb36adb965ca53c9a25602a2466f2aac141dbbe8b",
+   "bytes": 24135,
+   "mtime_utc": "2026-10-15T03:44:44Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_d2_mask_build",
+   "kind": "test",
+   "superseded": [
+    {
+     "path": "tools/_superseded/test_d2_mask_build_1.1.0.py",
+     "sha256": "f2249ebe8a2c2983889ec04c69a64a5ddf28352a211de60c4286bf1b39325b90",
+     "bytes": 12500,
+     "mtime_utc": "2026-10-14T23:43:59Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ]
+  },
+  "test_d2_plan.py": {
+   "path": "tools/test_d2_plan.py",
+   "sha256": "09d201b4312543c8962700721e42c1d1004c33626eccb7dedf2f3e784e30f3b0",
+   "bytes": 54354,
+   "mtime_utc": "2026-10-15T05:15:44Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_d2_plan",
+   "kind": "test",
+   "superseded": [
+    {
+     "path": "tools/_superseded/test_d2_plan_1.1.0.py",
+     "sha256": "6e88241ef4f504f34cd7b9a652d701bde41d2fb7757a261ed2d7ba9aaef0a9f8",
+     "bytes": 9903,
+     "mtime_utc": "2026-10-14T23:43:59Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    },
+    {
+     "path": "tools/_superseded/test_d2_plan_1.2.0.py",
+     "sha256": "fc53f03ed3a7169e3b9baf46cde3307f7dc963a13c7d4a2b2344f270f947320f",
+     "bytes": 17431,
+     "mtime_utc": "2026-10-15T01:16:15Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    },
+    {
+     "path": "tools/_superseded/test_d2_plan_1.3.0.py",
+     "sha256": "23477b16fd39d89ba2e27bd7080619458e4e2183a70021c9634d41fd214c2b33",
+     "bytes": 42329,
+     "mtime_utc": "2026-10-15T03:59:07Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    },
+    {
+     "path": "tools/_superseded/test_d2_plan_1.4.0.py",
+     "sha256": "4c290929fd8d484e19aaf8c3ed5c94bde3f11bf9f0383b98a425781f2b6df283",
+     "bytes": 52016,
+     "mtime_utc": "2026-10-15T04:51:39Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ]
+  },
+  "test_d2_refill_build.py": {
+   "path": "tools/test_d2_refill_build.py",
+   "sha256": "f97be231d54d5651d6ba92e85d99918397e9ef9f9af91d36e521dc5b3a4075b5",
+   "bytes": 25594,
+   "mtime_utc": "2026-10-15T05:27:22Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_d2_refill_build",
+   "kind": "test",
+   "superseded": [
+    {
+     "path": "tools/_superseded/test_d2_refill_build_1.0.0.py",
+     "sha256": "2cb747b19a54e629632e96e310f734a7af4e350668dba028c28f67f2b90fde55",
+     "bytes": 24579,
+     "mtime_utc": "2026-10-15T05:03:03Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    },
+    {
+     "path": "tools/_superseded/test_d2_refill_build_1.0.1.py",
+     "sha256": "ac5c24c8bedf6acc7eb76ec39f5c2c5ccd0f369e1deb6fadf8a1aef5201185be",
+     "bytes": 25506,
+     "mtime_utc": "2026-10-15T05:17:12Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    },
+    {
+     "path": "tools/_superseded/test_d2_refill_build_1.0.2.py",
+     "sha256": "5aff3d526593d343bd33fa41b433fab27aa11989bed22ee6b0df23da2e0caa82",
+     "bytes": 24744,
+     "mtime_utc": "2026-10-15T05:24:36Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ]
+  },
+  "test_d2_register_check.py": {
+   "path": "tools/test_d2_register_check.py",
+   "sha256": "4290eacb5f44541ce33bb975946845588de3616620db97ea898bc587fb17e154",
+   "bytes": 16650,
+   "mtime_utc": "2026-10-15T01:16:15Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_d2_register_check",
+   "kind": "test",
+   "superseded": []
+  },
+  "test_d2clean_recache.py": {
+   "path": "tools/test_d2clean_recache.py",
+   "sha256": "bb5e7ccbbd0de44da5ff8ea8f1782aa92b7fd2d89365d4f6c5f6c3d560f95adf",
+   "bytes": 7945,
+   "mtime_utc": "2026-10-15T03:31:13Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_d2clean_recache",
+   "kind": "test",
+   "superseded": []
+  },
+  "test_d2refill_recache.py": {
+   "path": "tools/test_d2refill_recache.py",
+   "sha256": "7196c9510b4836a04b89863dc869936e64bbb1ffe1b943086c7535e6439e64b7",
+   "bytes": 10226,
+   "mtime_utc": "2026-10-15T05:07:10Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_d2refill_recache",
+   "kind": "test",
+   "superseded": []
+  },
+  "test_d3_hybrid_module.py": {
+   "path": "tools/test_d3_hybrid_module.py",
+   "sha256": "f0c2e45bf676eee2e0e0975bcef814fb900c0643e6388d08d0df92fd88da5d9a",
+   "bytes": 91329,
+   "mtime_utc": "2026-10-14T23:56:25Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_d3_hybrid_module",
+   "kind": "test",
+   "superseded": [
+    {
+     "path": "tools/_superseded/test_d3_hybrid_module_1.0.2.py",
+     "sha256": "6255645b2b25ead78090c72bd23ede1e244efbc57c1889436164314522f2c50c",
+     "bytes": 18296,
+     "mtime_utc": "2026-10-13T09:29:18Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    },
+    {
+     "path": "tools/_superseded/test_d3_hybrid_module_1.1.0.py",
+     "sha256": "5f4befd23196f5c29a72acb639523a465493e1134afbb2bbe2bc6e995a81df37",
+     "bytes": 81875,
+     "mtime_utc": "2026-10-14T23:19:34Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ]
+  },
+  "test_distill_corpus_build.py": {
+   "path": "tools/test_distill_corpus_build.py",
+   "sha256": "2de2b83ac01a77037bb21afaf42446604e76ee8bb1b44d5bd01250ca2bfd92e5",
+   "bytes": 16627,
+   "mtime_utc": "2026-10-13T00:44:52Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_distill_corpus_build",
+   "kind": "test",
+   "superseded": []
+  },
+  "test_intake.py": {
+   "path": "tools/test_intake.py",
+   "sha256": "ad8b9a1dce31023af1826b58fecc07683f1aea1da95f7eb97db3984715dc7729",
+   "bytes": 121037,
+   "mtime_utc": "2026-10-15T05:37:15Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_intake",
+   "kind": "test",
+   "superseded": [
+    {
+     "path": "tools/_superseded/test_intake_1.0.0.py",
+     "sha256": "c51ee8fed3752d06d8ad62785203887ecc757f4ffffc21f87ab2cb5286551270",
+     "bytes": 37616,
+     "mtime_utc": "2026-10-15T01:53:58Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    },
+    {
+     "path": "tools/_superseded/test_intake_1.1.0.py",
+     "sha256": "26356b82b7a9067fb70ba75fd79b51be87ae4e43e188a7a64b605490e3de6a01",
+     "bytes": 73795,
+     "mtime_utc": "2026-10-15T03:42:46Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    },
+    {
+     "path": "tools/_superseded/test_intake_1.1.1.py",
+     "sha256": "59a2f1871062abeee9f1699f458aec0753c970438044207a7ddf5ffa79eef6af",
+     "bytes": 76077,
+     "mtime_utc": "2026-10-15T03:58:44Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ]
+  },
+  "test_intake_push.py": {
+   "path": "tools/test_intake_push.py",
+   "sha256": "47dfc012ab1a2da58eb34f6ef9e78713c8246b8aea4fbf479ae37b0254df73ee",
+   "bytes": 2780,
+   "mtime_utc": "2026-10-15T00:40:17Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_intake_push",
+   "kind": "test",
+   "superseded": []
+  },
+  "test_k3_accel_profile.py": {
+   "path": "tools/test_k3_accel_profile.py",
+   "sha256": "be446a930be97e9aa78ffa91d279ad32ee657aa328be076da10e878719c62aad",
+   "bytes": 9480,
+   "mtime_utc": "2026-10-14T18:15:32Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_k3_accel_profile",
+   "kind": "test",
+   "superseded": []
+  },
+  "test_k3_b2_geometry_diag.py": {
+   "path": "tools/test_k3_b2_geometry_diag.py",
+   "sha256": "e033ccea6e7aa1daf09ee09f0412f5f744c4b3aa656a63c30923c3d959ea6baf",
+   "bytes": 17929,
+   "mtime_utc": "2026-10-14T17:28:39Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_k3_b2_geometry_diag",
+   "kind": "test",
+   "superseded": [
+    {
+     "path": "tools/_superseded/test_k3_b2_geometry_diag_1.0.2.py",
+     "sha256": "b65fa3f222abc45d19af79a52f66f60cca870da889a2d9c6d85a911d5bfb83cc",
+     "bytes": 9183,
+     "mtime_utc": "2026-10-14T17:16:23Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ]
+  },
+  "test_k3_cache_parity.py": {
+   "path": "tools/test_k3_cache_parity.py",
+   "sha256": "dc0d48136c561f15c3d0df7e76f2b7b448ed74db70ce7b8e38530f674cf9598e",
+   "bytes": 3839,
+   "mtime_utc": "2026-10-14T19:52:11Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_k3_cache_parity",
+   "kind": "test",
+   "superseded": []
+  },
+  "test_k3_lib.sh": {
+   "path": "tools/test_k3_lib.sh",
+   "sha256": "09b0c68b51304272a91609fabbb431eb990af07d6bcd85aee3c8fef7c0052231",
+   "bytes": 9683,
+   "mtime_utc": "2026-10-15T02:00:27Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_k3_lib",
+   "kind": "test",
+   "superseded": []
+  },
+  "test_k3_multicard.sh": {
+   "path": "tools/test_k3_multicard.sh",
+   "sha256": "bdc3089fcc00e7e2ced654eb58f1a0c4ba3af3e79235088ba10396ada20e7d6a",
+   "bytes": 2302,
+   "mtime_utc": "2026-10-15T02:00:29Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_k3_multicard",
+   "kind": "test",
+   "superseded": []
+  },
+  "test_k3_teacher_cache.py": {
+   "path": "tools/test_k3_teacher_cache.py",
+   "sha256": "decf6b17d1a779a99e51bad96a950de5ab5734d39bbd72bbe080495927823e92",
+   "bytes": 47435,
+   "mtime_utc": "2026-10-14T14:28:45Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_k3_teacher_cache",
+   "kind": "test",
+   "superseded": [
+    {
+     "path": "tools/_superseded/test_k3_teacher_cache.py.1.1.0-cb5ff298",
+     "sha256": "cb5ff2986933f2468f0262080473025ddb0d597f52c355b910d7d1bb69a663ab",
+     "bytes": 23412,
+     "mtime_utc": "2026-10-13T03:12:40Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    },
+    {
+     "path": "tools/_superseded/test_k3_teacher_cache_1.2.0.py",
+     "sha256": "5fc937550b6b1db85a109b0cfea2cd5b5558ffa27c8480cbfb85facb39715599",
+     "bytes": 30813,
+     "mtime_utc": "2026-10-13T04:59:52Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    },
+    {
+     "path": "tools/_superseded/test_k3_teacher_cache_1.2.2.py",
+     "sha256": "99461476b6852beefb8ea45c2e656bc67491edaa57bd57282badfbf2cdbaa1a1",
+     "bytes": 43555,
+     "mtime_utc": "2026-10-13T08:20:03Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    },
+    {
+     "path": "tools/_superseded/test_k3_teacher_cache_1.2.3.py",
+     "sha256": "99461476b6852beefb8ea45c2e656bc67491edaa57bd57282badfbf2cdbaa1a1",
+     "bytes": 43555,
+     "mtime_utc": "2026-10-13T08:55:56Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ]
+  },
+  "test_k3_teacher_cache_v130.py": {
+   "path": "tools/test_k3_teacher_cache_v130.py",
+   "sha256": "52e4ce7f7e635eaeab064e5848458a09853c777fc3e59c2875387bf8ba47b29c",
+   "bytes": 20178,
+   "mtime_utc": "2026-10-14T20:07:56Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_k3_teacher_cache_v130",
+   "kind": "test",
+   "superseded": []
+  },
+  "test_k3_xtok_trainer_roundtrip.py": {
+   "path": "tools/test_k3_xtok_trainer_roundtrip.py",
+   "sha256": "022462f790f25bd41ec2863c7b1adf7db0c0872f030622af2ca96dc78b52212a",
+   "bytes": 32141,
+   "mtime_utc": "2026-10-13T09:33:50Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_k3_xtok_trainer_roundtrip",
+   "kind": "test",
+   "superseded": [
+    {
+     "path": "tools/_superseded/test_k3_xtok_trainer_roundtrip.py.0ff5e0be",
+     "sha256": "0ff5e0be74d6f0eb7cb62d1bbff877f771816cb88b60eeae38724105cad2e7ff",
+     "bytes": 31828,
+     "mtime_utc": "2026-10-13T08:55:58Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ]
+  },
+  "test_lanes.py": {
+   "path": "tools/test_lanes.py",
+   "sha256": "7f4624bfbed16a1dead1a088aa0bd25f26391117ceacb4cd35b98f186031a057",
+   "bytes": 25631,
+   "mtime_utc": "2026-10-15T00:22:20Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_lanes",
+   "kind": "test",
+   "superseded": []
+  },
+  "test_media_a_corpus_items.py": {
+   "path": "tools/test_media_a_corpus_items.py",
+   "sha256": "88e62ed44ccdd02d7472b98888369d3d3f1fdaecbcf36222629a69b2778c0365",
+   "bytes": 6018,
+   "mtime_utc": "2026-10-13T08:02:15Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_media_a_corpus_items",
+   "kind": "test",
+   "superseded": []
+  },
+  "test_media_b_teacher_cache.py": {
+   "path": "tools/test_media_b_teacher_cache.py",
+   "sha256": "15695f5fc742076accb6b66c073d6f80709a6a92d18e732894002487bb35a846",
+   "bytes": 55125,
+   "mtime_utc": "2026-10-13T09:47:56Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_media_b_teacher_cache",
+   "kind": "test",
+   "superseded": [
+    {
+     "path": "tools/_superseded/test_media_b_teacher_cache_1.0.7.py",
+     "sha256": "89c419b05d35b52d31fcfc6038c530b79b4f1b068fca441d727879976b0049d8",
+     "bytes": 32482,
+     "mtime_utc": "2026-10-13T07:29:03Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    },
+    {
+     "path": "tools/_superseded/test_media_b_teacher_cache_1.0.8.py",
+     "sha256": "aeb7f462a11ec476891cc49b48314f059c68b945570bd679b7dfd1dbe279dfb2",
+     "bytes": 46864,
+     "mtime_utc": "2026-10-13T09:47:56Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ]
+  },
+  "test_oc_cuda_guard.py": {
+   "path": "tools/test_oc_cuda_guard.py",
+   "sha256": "d9294ffd7583665480cc4a5feb1e929886f8b8a52e80a711e79e5c65afe986e4",
+   "bytes": 5516,
+   "mtime_utc": "2026-10-15T00:11:17Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_oc_cuda_guard",
+   "kind": "test",
+   "superseded": []
+  },
+  "test_p11_needle_engine.py": {
+   "path": "tools/test_p11_needle_engine.py",
+   "sha256": "fad2efdd61705b28151af91937409957fbb7c409252b5a92dd49ac725f59cc78",
+   "bytes": 25106,
+   "mtime_utc": "2026-10-14T15:13:40Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_p11_needle_engine",
+   "kind": "test",
+   "superseded": [
+    {
+     "path": "tools/_superseded/test_p11_needle_engine.py.1.0.0",
+     "sha256": "459fdb06d58a06b8424f128369fe493479cf249e58c1f241b641c7cdeaa5faad",
+     "bytes": 16259,
+     "mtime_utc": "2026-10-13T08:17:12Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ]
+  },
+  "test_p1_qwen35_reader.py": {
+   "path": "tools/test_p1_qwen35_reader.py",
+   "sha256": "9bcaeeaa9b5f21aa66904623603afa91beabfb3db19a27ea95cc55bee001b777",
+   "bytes": 41573,
+   "mtime_utc": "2026-10-13T08:00:02Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_p1_qwen35_reader",
+   "kind": "test",
+   "superseded": [
+    {
+     "path": "tools/backups/test_p1_qwen35_reader.py.1.0.3.bak",
+     "sha256": "1560372132d51892c541cd8693b94c862ab190baae9ccb8df719c312e619ae40",
+     "bytes": 31021,
+     "mtime_utc": "2026-10-13T01:23:03Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    },
+    {
+     "path": "tools/_superseded/test_p1_qwen35_reader_1.0.4.py",
+     "sha256": "607cf2e1685fbac2a3bec0da972d33e894cb6aeea215eaae0b1008d59c8b3661",
+     "bytes": 37690,
+     "mtime_utc": "2026-10-13T08:00:00Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ]
+  },
+  "test_p2_v133_summary.py": {
+   "path": "tools/test_p2_v133_summary.py",
+   "sha256": "a70aac493cc1cc339a62c55394f8faf5e2c973534558c5f0abda32a4c10e68d0",
+   "bytes": 7969,
+   "mtime_utc": "2026-10-14T16:22:27Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_p2_v133_summary",
+   "kind": "test",
+   "superseded": []
+  },
+  "test_p2p11_card_guard.sh": {
+   "path": "tools/test_p2p11_card_guard.sh",
+   "sha256": "1c24ccced682a6ed46a11be7abeeb67772fbab1e66bfc681145a6422c891d11a",
+   "bytes": 10675,
+   "mtime_utc": "2026-10-14T16:24:20Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_p2p11_card_guard",
+   "kind": "test",
+   "superseded": []
+  },
+  "test_qtext_teacher_cache.py": {
+   "path": "tools/test_qtext_teacher_cache.py",
+   "sha256": "1f6468ba744b4fe52000f534e49d69b1b51b55a9c74da1e67593b3e48c0881e4",
+   "bytes": 59230,
+   "mtime_utc": "2026-10-14T14:29:38Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_qtext_teacher_cache",
+   "kind": "test",
+   "superseded": [
+    {
+     "path": "tools/_superseded/test_qtext_teacher_cache_1.0.3.py",
+     "sha256": "3cc2ccec62f614a2f06db9e851a6be5d60ccd7e5d65d8a4f3c4149edec5a9f78",
+     "bytes": 28501,
+     "mtime_utc": "2026-10-13T08:08:40Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    },
+    {
+     "path": "tools/_superseded/test_qtext_teacher_cache_1.0.4.py",
+     "sha256": "dbbf7ed2c3eb069208f1d9e8c000df404b038e1636552e68d5189922aa75d35a",
+     "bytes": 43636,
+     "mtime_utc": "2026-10-13T09:18:57Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    },
+    {
+     "path": "tools/_superseded/test_qtext_teacher_cache_1.0.5.py",
+     "sha256": "df5f413fd036412f168fb8eb4905a49d9ed398a3220bafa267b92c0598c0c7d7",
+     "bytes": 48238,
+     "mtime_utc": "2026-10-14T14:22:31Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ]
+  },
+  "test_queue_gpu6.sh": {
+   "path": "tools/test_queue_gpu6.sh",
+   "sha256": "ff3eab30eaa2e06ea82382f4c938fcfe0b457be7b3c827601f4b09a033984e54",
+   "bytes": 5053,
+   "mtime_utc": "2026-10-15T02:00:25Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_queue_gpu6",
+   "kind": "test",
+   "superseded": [
+    {
+     "path": "tools/_superseded/test_queue_gpu6_1.3.0.sh",
+     "sha256": "743599a6495b9631bd7f94834ba7c636f773cf02412cab9c56e7fbf7eaed7304",
+     "bytes": 2762,
+     "mtime_utc": "2026-10-14T17:12:54Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    },
+    {
+     "path": "tools/_superseded/test_queue_gpu6_1.2.0.sh",
+     "sha256": "f2a5d4046bfb5195af50f0f4ec5efa37815dac4ef776d986e15b274b82e45097",
+     "bytes": 1902,
+     "mtime_utc": "2026-10-14T17:16:30Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    },
+    {
+     "path": "tools/_superseded/test_queue_gpu6_1.3.2.sh",
+     "sha256": "005df700a67cb7e542b87c8f4b82ffa9af4d2925a51bf0adbd88c013cf91bf5c",
+     "bytes": 4036,
+     "mtime_utc": "2026-10-14T20:33:44Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ]
+  },
+  "test_run_media_a_wave2.py": {
+   "path": "tools/test_run_media_a_wave2.py",
+   "sha256": "337770e99ed562dc4f46a00b16576e690d103e5776c9f5ff48f23821dc45ae28",
+   "bytes": 9313,
+   "mtime_utc": "2026-10-13T08:02:18Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_run_media_a_wave2",
+   "kind": "test",
+   "superseded": [
+    {
+     "path": "tools/_superseded/test_run_media_a_wave2.py.1.0.2",
+     "sha256": "3ce870ed80be10b534946433f8def4b947e8c1c8c9f7de67328d1ffc5bb39eef",
+     "bytes": 8470,
+     "mtime_utc": "2026-10-13T04:31:24Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ]
+  },
+  "test_run_toolcall_extend.py": {
+   "path": "tools/test_run_toolcall_extend.py",
+   "sha256": "a2f8671cc106e30134be5272cd0fc666d5fcfc752d3a256c2204fa2e6f0fac8b",
+   "bytes": 9124,
+   "mtime_utc": "2026-10-15T02:32:01Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_run_toolcall_extend",
+   "kind": "test",
+   "superseded": []
+  },
+  "test_run_toolcall_screen.sh": {
+   "path": "tools/test_run_toolcall_screen.sh",
+   "sha256": "23ad5a60488116d6873fb0ab9de8da4bfd7487b1d7c49ea8fd2bb68b069dec25",
+   "bytes": 4397,
+   "mtime_utc": "2026-10-15T04:58:50Z",
+   "version": "1.0.0",
+   "version_string": "test_run_toolcall_screen 1.0.0",
+   "version_source": "VERSION",
+   "name": "test_run_toolcall_screen",
+   "kind": "test",
+   "superseded": []
+  },
+  "test_selfgen_sampler.py": {
+   "path": "tools/test_selfgen_sampler.py",
+   "sha256": "817813f4178020dbc8fb5649ee46e67c141fd7ce80cb90b14471992611b965c7",
+   "bytes": 32449,
+   "mtime_utc": "2026-10-13T03:11:01Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_selfgen_sampler",
+   "kind": "test",
+   "superseded": [
+    {
+     "path": "tools/.bak-selfgen-1.1.0/test_selfgen_sampler.py",
+     "sha256": "f228d6578c2cc2756ce9e4f8af129877a8300c6208e5a1692b74834d0d970556",
+     "bytes": 22998,
+     "mtime_utc": "2026-10-13T02:44:06Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ]
+  },
+  "test_stage2_training_receipt.py": {
+   "path": "tools/test_stage2_training_receipt.py",
+   "sha256": "18202d7d0ec6d9a574e54fb1fe4241ca4f1180be5acb743d4fe584dd2542d3c8",
+   "bytes": 6501,
+   "mtime_utc": "2026-10-13T08:16:19Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_stage2_training_receipt",
+   "kind": "test",
+   "superseded": []
+  },
+  "test_stage_c_media_a.py": {
+   "path": "tools/test_stage_c_media_a.py",
+   "sha256": "b99c1847e362029f97570cc6b5a3921c6f8ee78492fb25fab4528b1039aa0624",
+   "bytes": 29752,
+   "mtime_utc": "2026-10-13T04:31:19Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_stage_c_media_a",
+   "kind": "test",
+   "superseded": [
+    {
+     "path": "tools/_prev/media-a-1.0.1-20261013/test_stage_c_media_a.py",
+     "sha256": "4cbcad882d4d8788140a1b953d34a43508167d01b0e670782ecd99f10b6d8f21",
+     "bytes": 19760,
+     "mtime_utc": "2026-10-13T03:29:46Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ]
+  },
+  "test_streamed_kd_trainer.py": {
+   "path": "tools/test_streamed_kd_trainer.py",
+   "sha256": "4d93e00e27d875817b35a83b5738ed46db7ab0a2ad963b500ff2399bed977cf9",
+   "bytes": 91521,
+   "mtime_utc": "2026-10-14T23:43:59Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_streamed_kd_trainer",
+   "kind": "test",
+   "superseded": [
+    {
+     "path": "tools/_superseded/test_streamed_kd_trainer.py.1.3.1",
+     "sha256": "e703a8672e36a1808a131d466e0794977ac5deea74a044990fabe849f158267b",
+     "bytes": 44079,
+     "mtime_utc": "2026-10-13T02:55:10Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    },
+    {
+     "path": "tools/_superseded/test_streamed_kd_trainer.py.1.3.2",
+     "sha256": "af4964db41f5d4181188dd41954daf29087b4432b7a1bf55d939a0c27794af28",
+     "bytes": 46234,
+     "mtime_utc": "2026-10-13T09:33:48Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    },
+    {
+     "path": "tools/_superseded/test_streamed_kd_trainer_1.3.3.py",
+     "sha256": "8fdbe5ef9ad91f414c03b73aa4090acc6d92295d2c73210ab22574487c7c1cdf",
+     "bytes": 60739,
+     "mtime_utc": "2026-10-14T15:13:38Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ]
+  },
+  "test_tool_pins.py": {
+   "path": "tools/test_tool_pins.py",
+   "sha256": "252c4d1ef559c55a8427aaca8617677de6c1864142e5bf0e1ebdce88550711a7",
+   "bytes": 11725,
+   "mtime_utc": "2026-10-15T05:37:15Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_tool_pins",
+   "kind": "test",
+   "superseded": [
+    {
+     "path": "tools/_superseded/test_tool_pins_1.0.0.py",
+     "sha256": "183dc94503d5c9556c9841ddf35a97f05cc9970e3c50a6c34178b1465c1e8c19",
+     "bytes": 6730,
+     "mtime_utc": "2026-10-14T20:33:44Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ]
+  },
+  "test_toolcall_heldout_screen.py": {
+   "path": "tools/test_toolcall_heldout_screen.py",
+   "sha256": "0586e0aab8c4a287359782f3948ce5335ced06ee6c2b1ab7dfbca1dbd070ee8f",
+   "bytes": 32184,
+   "mtime_utc": "2026-10-15T05:18:53Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_toolcall_heldout_screen",
+   "kind": "test",
+   "superseded": [
+    {
+     "path": "tools/_superseded/test_toolcall_heldout_screen_1.0.0.py",
+     "sha256": "e797a5e27f7cf3d3784df12807bae87e4952e87f34edf72289eb88c79fea55cc",
+     "bytes": 27734,
+     "mtime_utc": "2026-10-15T04:58:45Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ]
+  },
+  "test_toolcall_selfgen.py": {
+   "path": "tools/test_toolcall_selfgen.py",
+   "sha256": "8b9f2d942da6ae04e427cf50a519eb72d57a4734eced8bbb39dcedaddfa04256",
+   "bytes": 46608,
+   "mtime_utc": "2026-10-15T02:37:48Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_toolcall_selfgen",
+   "kind": "test",
+   "superseded": [
+    {
+     "path": "tools/_superseded/toolcall_selfgen_1.0.4_2026-10-14/test_toolcall_selfgen.py",
+     "sha256": "7e375a853de6b4a48447fd5389cec56b187dc121cbbf6afab5e57e3e42daa063",
+     "bytes": 28051,
+     "mtime_utc": "2026-10-14T16:29:42Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ]
+  },
+  "tool_pins.py": {
+   "path": "tools/tool_pins.py",
+   "sha256": "afa2da81dee222c0455788a72af4a223971d3ff2bcd6110fd227408d6982da07",
+   "bytes": 17391,
+   "mtime_utc": "2026-10-15T05:37:15Z",
+   "version": "1.1.0",
+   "version_string": "1.1.0",
+   "version_source": "TOOL_VERSION",
+   "name": "tool_pins",
+   "kind": "tool",
+   "superseded": [
+    {
+     "path": "tools/_superseded/tool_pins_1.0.0.py",
+     "sha256": "d325ef96a67a40018f86ff1af641fb585cf71fb363ef45f3cc7a7beaeb26a20d",
+     "bytes": 13754,
+     "mtime_utc": "2026-10-14T20:33:44Z",
+     "version": "1.0.0",
+     "version_string": "1.0.0",
+     "version_source": "TOOL_VERSION"
+    }
+   ]
+  },
+  "toolcall_heldout_screen.py": {
+   "path": "tools/toolcall_heldout_screen.py",
+   "sha256": "a0ee129b2017c57fe18dff50c028fea3b29b9d324d2e975979cc0280d96351f2",
+   "bytes": 52101,
+   "mtime_utc": "2026-10-15T05:18:52Z",
+   "version": "1.1.0",
+   "version_string": "1.1.0",
+   "version_source": "TOOL_VERSION",
+   "name": "toolcall_heldout_screen",
+   "kind": "tool",
+   "superseded": [
+    {
+     "path": "tools/_superseded/toolcall_heldout_screen_1.0.0.py",
+     "sha256": "8916d981d68477157859edf80a31aaaf6f3d6e98dbef2797080ddae68b8b34b2",
+     "bytes": 47625,
+     "mtime_utc": "2026-10-15T04:58:44Z",
+     "version": "1.0.0",
+     "version_string": "1.0.0",
+     "version_source": "TOOL_VERSION"
+    }
+   ]
+  },
+  "toolcall_selfgen.py": {
+   "path": "tools/toolcall_selfgen.py",
+   "sha256": "f0443806ea6546eae00a5176713faa634882674560b704b680636a89a3682e97",
+   "bytes": 164495,
+   "mtime_utc": "2026-10-15T02:31:59Z",
+   "version": "1.2.0",
+   "version_string": "1.2.0",
+   "version_source": "TOOL_VERSION",
+   "name": "toolcall_selfgen",
+   "kind": "tool",
+   "superseded": [
+    {
+     "path": "tools/_superseded/toolcall_selfgen_1.0.4_2026-10-14/toolcall_selfgen.py",
+     "sha256": "a33bf9aac426033fb8350a98b9b1b9e78f383542fce2c729532e85291e8dfbb1",
+     "bytes": 131136,
+     "mtime_utc": "2026-10-14T16:29:40Z",
+     "version": "1.0.4",
+     "version_string": "1.0.4",
+     "version_source": "TOOL_VERSION"
+    }
+   ]
+  },
+  "wait_media_a_itest.sh": {
+   "path": "tools/wait_media_a_itest.sh",
+   "sha256": "0a110ef084d22df55dbf321e757aaa420a56c1f73672406d09e80e3e9d146aa8",
+   "bytes": 949,
+   "mtime_utc": "2026-10-13T03:29:51Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "wait_media_a_itest",
+   "kind": "driver",
+   "superseded": []
+  }
+ },
+ "installed": {
+  "queues/bisect_k3_gpu6.sh": {
+   "path": "queues/bisect_k3_gpu6.sh",
+   "sha256": "32c1d80aefda0b207d5c3a72c51398961dd854b2959a68b8e9d7efbbcfba6400",
+   "bytes": 3650,
+   "mtime_utc": "2026-10-13T08:26:52Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "bisect_k3_gpu6",
+   "kind": "script",
+   "superseded": [],
+   "same_as_tools": []
+  },
+  "queues/bisect_trigger_gpu6.sh": {
+   "path": "queues/bisect_trigger_gpu6.sh",
+   "sha256": "65250e88c2ebc4ee30fb247f7ab392f414e5beae60a3f7c95cdb00dc6415ff08",
+   "bytes": 720,
+   "mtime_utc": "2026-10-13T09:14:20Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "bisect_trigger_gpu6",
+   "kind": "script",
+   "superseded": [],
+   "same_as_tools": []
+  },
+  "queues/d1_launch.sh": {
+   "path": "queues/d1_launch.sh",
+   "sha256": "51464198d9ec9ae87a0694606e2f547ea923165040ed19de4e087890996d3bae",
+   "bytes": 17966,
+   "mtime_utc": "2026-10-14T14:21:25Z",
+   "version": "1.1.1-superseded",
+   "version_string": "d1_launch-1.1.1-superseded",
+   "version_source": "LAUNCHER_VERSION",
+   "name": "d1_launch",
+   "kind": "script",
+   "superseded": [
+    {
+     "path": "tools/_superseded/d1_launch.sh.c0aeb832",
+     "sha256": "c0aeb8322bbea223c8b9ab3ab408b9e60b7df52bffa44a96429be2caff8a7661",
+     "bytes": 13932,
+     "mtime_utc": "2026-10-13T08:16:23Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ],
+   "same_as_tools": []
+  },
+  "queues/d1_seal_queue.sh": {
+   "path": "queues/d1_seal_queue.sh",
+   "sha256": "efeb7627573800d7d0f44b77b074987c6c8f358838f852e5f899dcf1104132f3",
+   "bytes": 48861,
+   "mtime_utc": "2026-10-15T00:38:30Z",
+   "version": "1.2.0",
+   "version_string": "d1_seal_queue-1.2.0",
+   "version_source": "VERSION",
+   "name": "d1_seal_queue",
+   "kind": "script",
+   "superseded": [
+    {
+     "path": "tools/_superseded/d1_seal_queue_1.1.0.sh",
+     "sha256": "1e553e4703cde20b6bce3556a10727e4ce59fe93b2d1da69627ccfbdfc75f681",
+     "bytes": 42592,
+     "mtime_utc": "2026-10-14T23:58:29Z",
+     "version": "1.1.0",
+     "version_string": "d1_seal_queue-1.1.0",
+     "version_source": "VERSION"
+    }
+   ],
+   "same_as_tools": []
+  },
+  "queues/d1_takeover.sh": {
+   "path": "queues/d1_takeover.sh",
+   "sha256": "e0ca9371c60fa8169a05497dbb0412c564a4a44944d6752d20f41bc956edebd9",
+   "bytes": 18628,
+   "mtime_utc": "2026-10-14T17:02:34Z",
+   "version": "1.2.0",
+   "version_string": "d1_takeover-1.2.0",
+   "version_source": "VERSION",
+   "name": "d1_takeover",
+   "kind": "script",
+   "superseded": [
+    {
+     "path": "tools/_superseded/d1_takeover_1.1.0.sh",
+     "sha256": "4c0a8ac8cee028f8384d2ee6b1af03d1fcedcf97ad077e5a6209c6baf62ff260",
+     "bytes": 17585,
+     "mtime_utc": "2026-10-14T17:02:04Z",
+     "version": "1.1.0",
+     "version_string": "d1_takeover-1.1.0",
+     "version_source": "VERSION"
+    }
+   ],
+   "same_as_tools": []
+  },
+  "queues/d2_launch.sh": {
+   "path": "queues/d2_launch.sh",
+   "sha256": "c289970b22cc357b01807d434e34acb581723cc9e65a88118daa020be8f6bf8d",
+   "bytes": 41454,
+   "mtime_utc": "2026-10-15T05:15:44Z",
+   "version": "1.3.2",
+   "version_string": "d2_launch-1.3.2",
+   "version_source": "VERSION",
+   "name": "d2_launch",
+   "kind": "script",
+   "superseded": [
+    {
+     "path": "queues/d2_launch.sh.1.1.0",
+     "sha256": "ef3cb63550f83c0cd13729f040dc06ea4c7c07bf21ab7749f9ec5ee7e65cf012",
+     "bytes": 29373,
+     "mtime_utc": "2026-10-14T23:43:59Z",
+     "version": "1.1.0",
+     "version_string": "d2_launch-1.1.0",
+     "version_source": "VERSION"
+    },
+    {
+     "path": "queues/d2_launch.sh.1.1.1",
+     "sha256": "cc67bc41ea074da1c477e0545ec539dc06d240bb593c3cd60ea142a2347347b0",
+     "bytes": 29666,
+     "mtime_utc": "2026-10-15T00:00:54Z",
+     "version": "1.1.1",
+     "version_string": "d2_launch-1.1.1",
+     "version_source": "VERSION"
+    },
+    {
+     "path": "queues/d2_launch.sh.1.1.2",
+     "sha256": "4c8340a6578349af8bd5873a70ac6e410db2b620b3d5df2529b8e42ddf083bd2",
+     "bytes": 31149,
+     "mtime_utc": "2026-10-15T00:29:44Z",
+     "version": "1.1.2",
+     "version_string": "d2_launch-1.1.2",
+     "version_source": "VERSION"
+    },
+    {
+     "path": "queues/d2_launch.sh.1.2.0",
+     "sha256": "562701d9f0373b2ab4f44a86de93dbda5d0676f78ea6863214ad692e1082c5d8",
+     "bytes": 38336,
+     "mtime_utc": "2026-10-15T01:16:15Z",
+     "version": "1.2.0",
+     "version_string": "d2_launch-1.2.0",
+     "version_source": "VERSION"
+    },
+    {
+     "path": "tools/_superseded/d2_launch_1.2.0.sh",
+     "sha256": "562701d9f0373b2ab4f44a86de93dbda5d0676f78ea6863214ad692e1082c5d8",
+     "bytes": 38336,
+     "mtime_utc": "2026-10-15T01:16:15Z",
+     "version": "1.2.0",
+     "version_string": "d2_launch-1.2.0",
+     "version_source": "VERSION"
+    },
+    {
+     "path": "queues/d2_launch.sh.1.3.0",
+     "sha256": "1e7657e5d542709e8cdf0df6ed122f443b3f2eb44e8544bb4a775fbf0d261a4f",
+     "bytes": 40738,
+     "mtime_utc": "2026-10-15T03:59:07Z",
+     "version": "1.3.0",
+     "version_string": "d2_launch-1.3.0",
+     "version_source": "VERSION"
+    },
+    {
+     "path": "tools/_superseded/d2_launch_1.3.0.sh",
+     "sha256": "1e7657e5d542709e8cdf0df6ed122f443b3f2eb44e8544bb4a775fbf0d261a4f",
+     "bytes": 40738,
+     "mtime_utc": "2026-10-15T03:59:07Z",
+     "version": "1.3.0",
+     "version_string": "d2_launch-1.3.0",
+     "version_source": "VERSION"
+    },
+    {
+     "path": "queues/d2_launch.sh.1.3.1",
+     "sha256": "d385ab8bf8215d97f63ebbdc1dfdaaf9f48bb30dae04f9ceab36d785a918a210",
+     "bytes": 41218,
+     "mtime_utc": "2026-10-15T04:51:39Z",
+     "version": "1.3.1",
+     "version_string": "d2_launch-1.3.1",
+     "version_source": "VERSION"
+    },
+    {
+     "path": "tools/_superseded/d2_launch_1.3.1.sh",
+     "sha256": "d385ab8bf8215d97f63ebbdc1dfdaaf9f48bb30dae04f9ceab36d785a918a210",
+     "bytes": 41218,
+     "mtime_utc": "2026-10-15T04:51:39Z",
+     "version": "1.3.1",
+     "version_string": "d2_launch-1.3.1",
+     "version_source": "VERSION"
+    }
+   ],
+   "same_as_tools": []
+  },
+  "queues/d3.sh": {
+   "path": "queues/d3.sh",
+   "sha256": "688350a967ce85386524dc169cccb3164b1689adc1a42e85bd7b20ba3cd66276",
+   "bytes": 12728,
+   "mtime_utc": "2026-10-13T09:29:18Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "d3",
+   "kind": "script",
+   "superseded": [],
+   "same_as_tools": []
+  },
+  "queues/export.sh": {
+   "path": "queues/export.sh",
+   "sha256": "95a8296a81ff87b3b298ca8a22adcd3daf208e3b825f995035dea390bb34d87e",
+   "bytes": 4769,
+   "mtime_utc": "2026-10-13T08:20:58Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "export",
+   "kind": "script",
+   "superseded": [],
+   "same_as_tools": [
+    "queue_export_2026-10-13.sh"
+   ]
+  },
+  "queues/frozen/k3_b2_geometry_diag-gpu6.py": {
+   "path": "queues/frozen/k3_b2_geometry_diag-gpu6.py",
+   "sha256": "b5019abb3b67ab69a5f32e278d91ca24f962786508dc997c44483cdf7a26f121",
+   "bytes": 64061,
+   "mtime_utc": "2026-10-14T17:28:38Z",
+   "version": "1.1.0",
+   "version_string": "1.1.0",
+   "version_source": "TOOL_VERSION",
+   "name": "k3_b2_geometry_diag-gpu6",
+   "kind": "tool",
+   "superseded": [],
+   "same_as_tools": [
+    "k3_b2_geometry_diag.py"
+   ]
+  },
+  "queues/frozen/k3_teacher_cache-gpu6-probe.py": {
+   "path": "queues/frozen/k3_teacher_cache-gpu6-probe.py",
+   "sha256": "2aae4dc3134dda725e3ee35572584fbf35532e0c4a7a5721a0b0c817fc2c4f9d",
+   "bytes": 119781,
+   "mtime_utc": "2026-10-14T14:28:44Z",
+   "version": "1.2.4",
+   "version_string": "1.2.4",
+   "version_source": "TOOL_VERSION",
+   "name": "k3_teacher_cache-gpu6-probe",
+   "kind": "tool",
+   "superseded": [
+    {
+     "path": "queues/frozen/k3_teacher_cache-gpu6-probe.e68f38662af6f739.py",
+     "sha256": "e68f38662af6f739c3e549c74df7eb4ba25dc5f05ef1a7574417137de9cfdbf3",
+     "bytes": 114658,
+     "mtime_utc": "2026-10-13T08:55:54Z",
+     "version": "1.2.3",
+     "version_string": "1.2.3",
+     "version_source": "TOOL_VERSION"
+    }
+   ],
+   "same_as_tools": [
+    "k3_teacher_cache.py"
+   ]
+  },
+  "queues/frozen/k3_teacher_cache-gpu6-v130.py": {
+   "path": "queues/frozen/k3_teacher_cache-gpu6-v130.py",
+   "sha256": "434ced6d7e8e22e4179bb2332d4695803dd89a38407805126261500c112fa3c7",
+   "bytes": 182617,
+   "mtime_utc": "2026-10-14T20:07:54Z",
+   "version": "1.3.0",
+   "version_string": "1.3.0",
+   "version_source": "TOOL_VERSION",
+   "name": "k3_teacher_cache-gpu6-v130",
+   "kind": "tool",
+   "superseded": [],
+   "same_as_tools": [
+    "k3_teacher_cache_v130.py"
+   ]
+  },
+  "queues/frozen/k3_teacher_cache-gpu6.py": {
+   "path": "queues/frozen/k3_teacher_cache-gpu6.py",
+   "sha256": "2aae4dc3134dda725e3ee35572584fbf35532e0c4a7a5721a0b0c817fc2c4f9d",
+   "bytes": 119781,
+   "mtime_utc": "2026-10-14T14:28:44Z",
+   "version": "1.2.4",
+   "version_string": "1.2.4",
+   "version_source": "TOOL_VERSION",
+   "name": "k3_teacher_cache-gpu6",
+   "kind": "tool",
+   "superseded": [
+    {
+     "path": "queues/frozen/k3_teacher_cache-gpu6.7899023cb8eb411c.py",
+     "sha256": "7899023cb8eb411c4b0fef005bb135970aaef65bb42d4653c688800bf7e88826",
+     "bytes": 99837,
+     "mtime_utc": "2026-10-13T07:59:56Z",
+     "version": "1.2.1",
+     "version_string": "1.2.1",
+     "version_source": "TOOL_VERSION"
+    }
+   ],
+   "same_as_tools": [
+    "k3_teacher_cache.py"
+   ]
+  },
+  "queues/frozen/qtext_teacher_cache-1.0.5.py": {
+   "path": "queues/frozen/qtext_teacher_cache-1.0.5.py",
+   "sha256": "f2465a11b7a2242f167191fca8583a11ff74a50d33d7bba84b45c2d123ce6cb9",
+   "bytes": 127237,
+   "mtime_utc": "2026-10-14T14:22:31Z",
+   "version": "1.0.5",
+   "version_string": "1.0.5",
+   "version_source": "TOOL_VERSION",
+   "name": "qtext_teacher_cache-1.0.5",
+   "kind": "tool",
+   "superseded": [],
+   "same_as_tools": []
+  },
+  "queues/frozen/qtext_teacher_cache-j6.py": {
+   "path": "queues/frozen/qtext_teacher_cache-j6.py",
+   "sha256": "4c7badc1669d4044de765b04ed52c86c8096f9bb0b8ba55bc2b88024960c0f2c",
+   "bytes": 139482,
+   "mtime_utc": "2026-10-14T14:44:42Z",
+   "version": "1.0.6",
+   "version_string": "1.0.6",
+   "version_source": "TOOL_VERSION",
+   "name": "qtext_teacher_cache-j6",
+   "kind": "tool",
+   "superseded": [],
+   "same_as_tools": [
+    "qtext_teacher_cache.py"
+   ]
+  },
+  "queues/gpu0.sh": {
+   "path": "queues/gpu0.sh",
+   "sha256": "d9e20fdd8323e271d8a87a5bb1e94cf64ea8e8a6a1db3ab0bb305c9119a9b43f",
+   "bytes": 21805,
+   "mtime_utc": "2026-10-14T15:11:49Z",
+   "version": "gpu0-2026-10-14c",
+   "version_string": "gpu0-2026-10-14c",
+   "version_source": "QUEUE_VERSION",
+   "name": "gpu0",
+   "kind": "queue",
+   "superseded": [],
+   "same_as_tools": []
+  },
+  "queues/gpu0_selfgen_target_corpus.py": {
+   "path": "queues/gpu0_selfgen_target_corpus.py",
+   "sha256": "1fa8e0cf904ae6465c101ce51b0aadb432f6dff9dcf2ae449a7268efc3d4bfbf",
+   "bytes": 3579,
+   "mtime_utc": "2026-10-13T08:16:37Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "gpu0_selfgen_target_corpus",
+   "kind": "tool",
+   "superseded": [],
+   "same_as_tools": []
+  },
+  "queues/gpu4.sh": {
+   "path": "queues/gpu4.sh",
+   "sha256": "69c7004885e10ee50ee05ad77688adace51df5f6a272250f3708a1ed98a76def",
+   "bytes": 17063,
+   "mtime_utc": "2026-10-13T09:50:39Z",
+   "version": "1.0.3",
+   "version_string": "gpu4.sh 1.0.3",
+   "version_source": "QVERSION",
+   "name": "gpu4",
+   "kind": "queue",
+   "superseded": [],
+   "same_as_tools": []
+  },
+  "queues/gpu4_e2_cpu.sh": {
+   "path": "queues/gpu4_e2_cpu.sh",
+   "sha256": "58042978e1da0064a9f4090c9b2470389798f8f27a3575239eb083678fccf747",
+   "bytes": 1104,
+   "mtime_utc": "2026-10-13T08:18:10Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "gpu4_e2_cpu",
+   "kind": "queue",
+   "superseded": [],
+   "same_as_tools": []
+  },
+  "queues/gpu4_p11_job.sh": {
+   "path": "queues/gpu4_p11_job.sh",
+   "sha256": "c038fe829f62e940582b2de39227d0ebe1f5bd46c470ce4c14a68b473beb0742",
+   "bytes": 2142,
+   "mtime_utc": "2026-10-13T08:26:16Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "gpu4_p11_job",
+   "kind": "queue",
+   "superseded": [],
+   "same_as_tools": []
+  },
+  "queues/gpu6.sh": {
+   "path": "queues/gpu6.sh",
+   "sha256": "863f30895361e92e629e4c8d406442b3a05cdfe9ca408b6eb401f1759d8f8dd7",
+   "bytes": 67777,
+   "mtime_utc": "2026-10-15T02:27:38Z",
+   "version": "1.4.0",
+   "version_string": "queue_gpu6.sh 1.4.0",
+   "version_source": "VERSION",
+   "name": "gpu6",
+   "kind": "queue",
+   "superseded": [
+    {
+     "path": "queues/gpu6.sh.1.0.0-live-20261013",
+     "sha256": "22f84594caccb34f535334ff752e71344f9943a1607bce0d7b59fe6509341ead",
+     "bytes": 19730,
+     "mtime_utc": "2026-10-13T08:06:49Z",
+     "version": "1.0.0",
+     "version_string": "queue_gpu6.sh 1.0.0",
+     "version_source": "VERSION"
+    },
+    {
+     "path": "queues/gpu6.sh.new.1.1.0",
+     "sha256": "d893cbf43943594d6b13a8ec380bbd6ffaa834f2abc20be4efe4c0f07e8292a6",
+     "bytes": 33230,
+     "mtime_utc": "2026-10-13T10:08:54Z",
+     "version": "1.1.0",
+     "version_string": "queue_gpu6.sh 1.1.0",
+     "version_source": "VERSION"
+    },
+    {
+     "path": "queues/gpu6.sh.1.2.0-live-20261014",
+     "sha256": "787bae34986ae9b03b920b927e9b9a95abb94beeb2c9a35e3742fe0922af13f4",
+     "bytes": 44953,
+     "mtime_utc": "2026-10-14T14:37:24Z",
+     "version": "1.2.0",
+     "version_string": "queue_gpu6.sh 1.2.0",
+     "version_source": "VERSION"
+    },
+    {
+     "path": "queues/gpu6.sh.1.3.0-live-20261015T022736Z",
+     "sha256": "bf22ec8f31ecf521fb5998df3227ffd7650b5aaeca815b93adca2828c94ccf26",
+     "bytes": 57902,
+     "mtime_utc": "2026-10-14T17:12:53Z",
+     "version": "1.3.0",
+     "version_string": "queue_gpu6.sh 1.3.0",
+     "version_source": "VERSION"
+    },
+    {
+     "path": "queues/gpu6.sh.1.4.0-live-20261015T044343Z",
+     "sha256": "863f30895361e92e629e4c8d406442b3a05cdfe9ca408b6eb401f1759d8f8dd7",
+     "bytes": 67777,
+     "mtime_utc": "2026-10-15T02:27:38Z",
+     "version": "1.4.0",
+     "version_string": "queue_gpu6.sh 1.4.0",
+     "version_source": "VERSION"
+    }
+   ],
+   "same_as_tools": [
+    "queue_gpu6.sh"
+   ]
+  },
+  "queues/j6_vl.sh": {
+   "path": "queues/j6_vl.sh",
+   "sha256": "424ed3165ae9054bf2fe26263ca2564b6d5d1c4d080f98e3ffabd47f79e37fba",
+   "bytes": 14052,
+   "mtime_utc": "2026-10-14T15:11:46Z",
+   "version": "1.1.0",
+   "version_string": "j6_vl.sh 1.1.0",
+   "version_source": "J6_VERSION",
+   "name": "j6_vl",
+   "kind": "script",
+   "superseded": [
+    {
+     "path": "tools/_superseded/j6_vl_1.0.0.sh",
+     "sha256": "13fd0b74f68ee5b6b0e8b5768c24a91774d9e4219f76acb5595b7fb763052806",
+     "bytes": 10708,
+     "mtime_utc": "2026-10-14T14:26:10Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ],
+   "same_as_tools": [
+    "queue_j6_vl.sh"
+   ]
+  },
+  "queues/k3_multicard.sh": {
+   "path": "queues/k3_multicard.sh",
+   "sha256": "bd52dcfbb074eb42310fd50661e4eae8738c7a2bc0de480fe73aeac707e7b288",
+   "bytes": 19608,
+   "mtime_utc": "2026-10-15T02:00:31Z",
+   "version": "1.0.0",
+   "version_string": "k3_multicard.sh 1.0.0",
+   "version_source": "VERSION",
+   "name": "k3_multicard",
+   "kind": "script",
+   "superseded": [],
+   "same_as_tools": [
+    "k3_multicard.sh"
+   ]
+  },
+  "queues/k3_seal_decide.sh": {
+   "path": "queues/k3_seal_decide.sh",
+   "sha256": "617b92975d16fbea4d9c667b849cbe755fbb3d7ede88a4a963076a6185569808",
+   "bytes": 44108,
+   "mtime_utc": "2026-10-15T04:37:43Z",
+   "version": "1.0.1",
+   "version_string": "k3_seal_decide.sh 1.0.1",
+   "version_source": "VERSION",
+   "name": "k3_seal_decide",
+   "kind": "script",
+   "superseded": [
+    {
+     "path": "tools/_superseded/k3_seal_decide_1.0.0.sh",
+     "sha256": "99d37a1c411fa50a8b4b252a2402111bdeefcbd60bd6a3ae3efd500909ab6273",
+     "bytes": 42100,
+     "mtime_utc": "2026-10-15T02:43:32Z",
+     "version": "1.0.0",
+     "version_string": "k3_seal_decide.sh 1.0.0",
+     "version_source": "VERSION"
+    }
+   ],
+   "same_as_tools": []
+  },
+  "queues/p40-qvlref.sh": {
+   "path": "queues/p40-qvlref.sh",
+   "sha256": "8d208e67c684eeabccb90c05d50d7b2132586ff61432d2e496fb3be530aeaf83",
+   "bytes": 5781,
+   "mtime_utc": "2026-10-13T09:47:56Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "p40-qvlref",
+   "kind": "script",
+   "superseded": [],
+   "same_as_tools": [
+    "queue_p40_qvlref_2026-10-13.sh"
+   ]
+  },
+  "queues/p40.sh": {
+   "path": "queues/p40.sh",
+   "sha256": "c7830f0972307db2cd8156efe91b389739ba648ef35de771a922dcaad6e2c61c",
+   "bytes": 10643,
+   "mtime_utc": "2026-10-13T08:05:20Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "p40",
+   "kind": "script",
+   "superseded": [],
+   "same_as_tools": [
+    "queue_p40_2026-10-13.sh"
+   ]
+  },
+  "queues/post_d1_queue.sh": {
+   "path": "queues/post_d1_queue.sh",
+   "sha256": "136c6c862b945e3cee52dddcf30993d4840222268a0ce18aa69eaeec41b9ea47",
+   "bytes": 31441,
+   "mtime_utc": "2026-10-15T05:02:04Z",
+   "version": "1.5.0",
+   "version_string": "post_d1_queue-1.5.0",
+   "version_source": "VERSION",
+   "name": "post_d1_queue",
+   "kind": "script",
+   "superseded": [
+    {
+     "path": "tools/_superseded/review-d1seal-20261014/post_d1_queue_1.1.0.sh",
+     "sha256": "79730ff553d80efd68ed7a895417b743b2b5707e108e3027bc5f97cd727e1346",
+     "bytes": 20218,
+     "mtime_utc": "2026-10-15T00:17:10Z",
+     "version": "1.1.0",
+     "version_string": "post_d1_queue-1.1.0",
+     "version_source": "VERSION"
+    },
+    {
+     "path": "tools/_superseded/post_d1_queue_1.2.0.sh",
+     "sha256": "10776bc6fc43fda7ba3ff9acf29288f40dfe98cba77921b33c0629dc3650751b",
+     "bytes": 21611,
+     "mtime_utc": "2026-10-15T00:22:14Z",
+     "version": "1.2.0",
+     "version_string": "post_d1_queue-1.2.0",
+     "version_source": "VERSION"
+    },
+    {
+     "path": "tools/_superseded/post_d1_queue_1.3.0.sh",
+     "sha256": "9a7efeb9975eb41ed435d30d5174a6f8620fc24dfbbd59377a636e6900b10baf",
+     "bytes": 23624,
+     "mtime_utc": "2026-10-15T00:38:30Z",
+     "version": "1.3.0",
+     "version_string": "post_d1_queue-1.3.0",
+     "version_source": "VERSION"
+    },
+    {
+     "path": "tools/_superseded/post_d1_queue_1.4.0.sh",
+     "sha256": "d24649b77d815b39e3cb531c3a57add547420ae2f90dcdb347e3e63a29573410",
+     "bytes": 27092,
+     "mtime_utc": "2026-10-15T02:43:32Z",
+     "version": "1.4.0",
+     "version_string": "post_d1_queue-1.4.0",
+     "version_source": "VERSION"
+    }
+   ],
+   "same_as_tools": []
+  },
+  "queues/test_d1_launch_guard.sh": {
+   "path": "queues/test_d1_launch_guard.sh",
+   "sha256": "b4db2d1facf911b703f599e6a5f96195dc2d216ef46e2546e3cbd7dee7df6ec3",
+   "bytes": 1488,
+   "mtime_utc": "2026-10-14T14:21:25Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_d1_launch_guard",
+   "kind": "test",
+   "superseded": [],
+   "same_as_tools": []
+  },
+  "queues/test_d1_seal_queue.sh": {
+   "path": "queues/test_d1_seal_queue.sh",
+   "sha256": "b931bba81614025b85c89f7fef76b71ac52d4cf640c2220f75978a0f4e158cd5",
+   "bytes": 14663,
+   "mtime_utc": "2026-10-15T00:38:30Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_d1_seal_queue",
+   "kind": "test",
+   "superseded": [
+    {
+     "path": "tools/_superseded/test_d1_seal_queue_1.1.0.sh",
+     "sha256": "a5d5c9002dc198d01f74c2ac21b030cd60c433e61cfa18f36c154bbbde4368ee",
+     "bytes": 8732,
+     "mtime_utc": "2026-10-14T23:43:47Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ],
+   "same_as_tools": []
+  },
+  "queues/test_d2_launch.sh": {
+   "path": "queues/test_d2_launch.sh",
+   "sha256": "f5ba4fd88293af9ebc99ee9a3ba8e857f0c93229f81a8ce587aa1be6f703430a",
+   "bytes": 10006,
+   "mtime_utc": "2026-10-15T03:44:44Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_d2_launch",
+   "kind": "test",
+   "superseded": [
+    {
+     "path": "queues/test_d2_launch.sh.1.1.2",
+     "sha256": "1858ca5c94f3d7d20e2a46523ceb3d19ada47f9fb906311a91329e106e392d72",
+     "bytes": 3900,
+     "mtime_utc": "2026-10-15T00:29:44Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    },
+    {
+     "path": "queues/test_d2_launch.sh.1.2.0",
+     "sha256": "3ec5d3116afd3adeeec0b856d20b71d3bfea09f826a1c3bc4ef1ad23e7c08ef5",
+     "bytes": 7612,
+     "mtime_utc": "2026-10-15T01:16:15Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    },
+    {
+     "path": "tools/_superseded/test_d2_launch_1.2.0.sh",
+     "sha256": "3ec5d3116afd3adeeec0b856d20b71d3bfea09f826a1c3bc4ef1ad23e7c08ef5",
+     "bytes": 7612,
+     "mtime_utc": "2026-10-15T01:16:15Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ],
+   "same_as_tools": []
+  },
+  "queues/test_j6_vl.sh": {
+   "path": "queues/test_j6_vl.sh",
+   "sha256": "b9fa1ef1925f857f56c8319408dec631419177e7354ca637319040baf5b10fb7",
+   "bytes": 5842,
+   "mtime_utc": "2026-10-14T15:12:31Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_j6_vl",
+   "kind": "test",
+   "superseded": [],
+   "same_as_tools": []
+  },
+  "queues/test_k3_seal_decide.sh": {
+   "path": "queues/test_k3_seal_decide.sh",
+   "sha256": "326572959b8f5839937a60b26317367e3a5e91227f3c799a5a1d3509888c999d",
+   "bytes": 27374,
+   "mtime_utc": "2026-10-15T04:37:46Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_k3_seal_decide",
+   "kind": "test",
+   "superseded": [
+    {
+     "path": "tools/_superseded/test_k3_seal_decide_1.0.0.sh",
+     "sha256": "7065d729f71a9d8780c6707c5fe78676a065ca5f0c0e5b38ec1d144b6028debd",
+     "bytes": 23379,
+     "mtime_utc": "2026-10-15T02:43:32Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ],
+   "same_as_tools": []
+  },
+  "queues/test_post_d1_queue.sh": {
+   "path": "queues/test_post_d1_queue.sh",
+   "sha256": "37066ca2dae3019aee576e4d5c7bcb9e21b93ac351f4f2c49297fe9facb8bb43",
+   "bytes": 26167,
+   "mtime_utc": "2026-10-15T05:02:04Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none",
+   "name": "test_post_d1_queue",
+   "kind": "test",
+   "superseded": [
+    {
+     "path": "tools/_superseded/review-d1seal-20261014/test_post_d1_queue_1.1.0.sh",
+     "sha256": "9ccaef6d97869193c796140e8a7c10bbbbf80ce2adcdaae26959493252a6db3d",
+     "bytes": 11326,
+     "mtime_utc": "2026-10-15T00:17:10Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    },
+    {
+     "path": "tools/_superseded/test_post_d1_queue_1.2.0.sh",
+     "sha256": "d65101a6505ee14dbc17fe2a7d95e54e4b75696f514b96bf95685ef09c8f9a94",
+     "bytes": 13637,
+     "mtime_utc": "2026-10-15T00:22:16Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    },
+    {
+     "path": "tools/_superseded/test_post_d1_queue_1.3.0.sh",
+     "sha256": "c085dbaeb2feddea7c1968bb790baac9685505f96cff3135b3ddf22ee6445fd3",
+     "bytes": 15995,
+     "mtime_utc": "2026-10-15T00:38:30Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    },
+    {
+     "path": "tools/_superseded/test_post_d1_queue_1.4.0.sh",
+     "sha256": "f30604dd09add25530e02ad679415a6d56f187e899104f3192ac106eac02c784",
+     "bytes": 20686,
+     "mtime_utc": "2026-10-15T02:45:45Z",
+     "version": null,
+     "version_string": null,
+     "version_source": "none"
+    }
+   ],
+   "same_as_tools": []
+  }
+ },
+ "superseded_unmatched": [
+  {
+   "path": "tools/_prev/media-a-1.0.1-20261013/SHA256SUMS",
+   "sha256": "f86d9eb133b2ee3b2f54687ecdf5ccde967cb86c8a56c9e93969c17a6737623c",
+   "bytes": 440,
+   "mtime_utc": "2026-10-13T04:31:11Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none"
+  },
+  {
+   "path": "tools/_superseded/gpu0.vl_go.2026-10-14T1445Z",
+   "sha256": "816e8b301c4f33edefd35c1ee9c55bc2a7097b26d6385faab3bd81dd2c0f0995",
+   "bytes": 3607,
+   "mtime_utc": "2026-10-14T14:48:29Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none"
+  },
+  {
+   "path": "tools/_superseded/gpu0_gpu0-2026-10-13b.sh",
+   "sha256": "b5a389da5c8eecad721361c0ea56c4f993337cfdb48e7f87be6620441130fc2d",
+   "bytes": 22105,
+   "mtime_utc": "2026-10-13T09:34:15Z",
+   "version": "gpu0-2026-10-13b",
+   "version_string": "gpu0-2026-10-13b",
+   "version_source": "QUEUE_VERSION"
+  },
+  {
+   "path": "tools/_superseded/infra_review_2026-10-15_before/conftest_oc_cuda_guard_1.0.0.py",
+   "sha256": "43ef4b4b4c93e3a249248f2297f1bdd87a7f152014f6ee30914be6be30c154b5",
+   "bytes": 3615,
+   "mtime_utc": "2026-10-14T20:33:44Z",
+   "version": "1.0.0",
+   "version_string": "oc_cuda_guard 1.0.0",
+   "version_source": "CONFTEST_VERSION"
+  },
+  {
+   "path": "tools/_superseded/test_toolcall_selfgen-1.1.0-bc2c939e.py",
+   "sha256": "bc2c939e5b9143b3165156282a4678fed365d4676e274e4227952a9c4f849928",
+   "bytes": 38057,
+   "mtime_utc": "2026-10-14T17:01:06Z",
+   "version": null,
+   "version_string": null,
+   "version_source": "none"
+  },
+  {
+   "path": "tools/_superseded/toolcall_selfgen-1.1.0-02070a87.py",
+   "sha256": "02070a87517f33c0a893be0cd6c197e67a0c946c0bc8bf5b8d8ebef0cbfd1a9f",
+   "bytes": 153920,
+   "mtime_utc": "2026-10-14T17:01:01Z",
+   "version": "1.1.0",
+   "version_string": "1.1.0",
+   "version_source": "TOOL_VERSION"
+  }
+ ],
+ "mode": {
+  "only": [
+   "intake.py",
+   "intake_cron.sh",
+   "speech/asr_two_judge.py",
+   "speech/build_speech_runtimes.sh",
+   "speech/remove_voxcpm_runtime.sh",
+   "speech/run_teacher_fix_smoke.sh",
+   "speech/run_teacher_smoke.sh",
+   "speech/run_teacher_smoke_granite.sh",
+   "speech/speech_fetch.py",
+   "speech/speech_teacher_smoke.py",
+   "speech/stage_judge_b_fetch.sh",
+   "speech/stage_teachers_fetch.sh",
+   "speech/tests/conftest.py",
+   "speech/tests/test_asr_two_judge.py",
+   "speech/write_teacher_status.py",
+   "test_intake.py",
+   "test_tool_pins.py",
+   "tool_pins.py"
+  ],
+  "base_pins_sha256": "e37b78c43d4083475da1082177fc54dd818692f0d94b3959fab5423e62b38ef6",
+  "base_generated_utc": "2026-10-15T05:28:33Z"
+ }
+}

@@ -1,0 +1,625 @@
+{
+  "schema": "chimera_omni.media_fold.receipt.v1",
+  "created_at_utc": "2026-09-02T08:44:31.288318+00:00",
+  "kind": "c15_absorption_ladder",
+  "proposed_decision_line_D_d2": "absorbed <=> PSNR(D.E) >= PSNR(parent round-trip) - 3.0 dB on held-out clips. This is a PROPOSAL for Cyril, not a gate this harness enforces; below the line the trunk keeps a companion VAE decoder for that band (D5b).",
+  "ladder": [
+    {
+      "vae": "ace_1.5_vae_ctx0",
+      "rung": "linear",
+      "d_raw": 1920,
+      "d_latent": 64,
+      "holdout_rows": 1600,
+      "psnr_absorbed_db": 20.783619220830126,
+      "psnr_parent_roundtrip_db": 33.289560959645634,
+      "psnr_gap_db": -12.505941738815508,
+      "si_sdr_absorbed_db": -0.30533304788245164,
+      "si_sdr_parent_roundtrip_db": 13.452704134602072,
+      "encoder_cos": 0.5824157768801494,
+      "encoder_rel_l2": 0.847151142647281,
+      "linear_rank_bound_psnr_db": 35.029866360358106,
+      "absorbed_vs_linear_bound_db": -14.24624713952798,
+      "map_parameters": 247744,
+      "meets_proposed_absorption_line": false
+    },
+    {
+      "vae": "ace_1.5_vae_ctx0",
+      "rung": "nonlinear",
+      "d_raw": 1920,
+      "d_latent": 64,
+      "holdout_rows": 1600,
+      "psnr_absorbed_db": 20.845223463894477,
+      "psnr_parent_roundtrip_db": 33.289560959645634,
+      "psnr_gap_db": -12.444337495751157,
+      "si_sdr_absorbed_db": -1.6496127604902426,
+      "si_sdr_parent_roundtrip_db": 13.452704134602072,
+      "encoder_cos": 0.7303589715870967,
+      "encoder_rel_l2": 0.7216643917842931,
+      "linear_rank_bound_psnr_db": 35.029866360358106,
+      "absorbed_vs_linear_bound_db": -14.184642896463629,
+      "map_parameters": 2280384,
+      "meets_proposed_absorption_line": false
+    },
+    {
+      "vae": "h3_audio_ctx0",
+      "rung": "linear",
+      "d_raw": 800,
+      "d_latent": 32,
+      "holdout_rows": 1920,
+      "psnr_absorbed_db": 24.12869290624972,
+      "psnr_parent_roundtrip_db": 36.33946604286972,
+      "psnr_gap_db": -12.210773136619995,
+      "si_sdr_absorbed_db": -0.3135006504469528,
+      "si_sdr_parent_roundtrip_db": 16.441539880207642,
+      "encoder_cos": 0.6076431783350347,
+      "encoder_rel_l2": 0.7776914044307491,
+      "linear_rank_bound_psnr_db": 32.75678998373441,
+      "absorbed_vs_linear_bound_db": -8.628097077484686,
+      "map_parameters": 52032,
+      "meets_proposed_absorption_line": false
+    },
+    {
+      "vae": "h3_audio_ctx0",
+      "rung": "nonlinear",
+      "d_raw": 800,
+      "d_latent": 32,
+      "holdout_rows": 1920,
+      "psnr_absorbed_db": 23.95528067885216,
+      "psnr_parent_roundtrip_db": 36.33946604286972,
+      "psnr_gap_db": -12.384185364017558,
+      "si_sdr_absorbed_db": -0.3089299695420671,
+      "si_sdr_parent_roundtrip_db": 16.441539880207642,
+      "encoder_cos": 0.8306125901321917,
+      "encoder_rel_l2": 0.5605636791363982,
+      "linear_rank_bound_psnr_db": 32.75678998373441,
+      "absorbed_vs_linear_bound_db": -8.801509304882249,
+      "map_parameters": 905024,
+      "meets_proposed_absorption_line": false
+    },
+    {
+      "vae": "h3_audio_ctx2",
+      "rung": "linear",
+      "d_raw": 4000,
+      "d_latent": 32,
+      "holdout_rows": 1920,
+      "psnr_absorbed_db": 24.112218622771444,
+      "psnr_parent_roundtrip_db": 36.33946604286972,
+      "psnr_gap_db": -12.227247420098273,
+      "si_sdr_absorbed_db": 0.11292220203572542,
+      "si_sdr_parent_roundtrip_db": 16.441539880207642,
+      "encoder_cos": 0.6118754067389315,
+      "encoder_rel_l2": 0.7744840612747212,
+      "linear_rank_bound_psnr_db": 32.75678998373441,
+      "absorbed_vs_linear_bound_db": -8.644571360962964,
+      "map_parameters": 154432,
+      "meets_proposed_absorption_line": false
+    },
+    {
+      "vae": "h3_audio_ctx2",
+      "rung": "nonlinear",
+      "d_raw": 4000,
+      "d_latent": 32,
+      "holdout_rows": 1920,
+      "psnr_absorbed_db": 22.70433778896546,
+      "psnr_parent_roundtrip_db": 36.33946604286972,
+      "psnr_gap_db": -13.635128253904256,
+      "si_sdr_absorbed_db": -4.899044350176134,
+      "si_sdr_parent_roundtrip_db": 16.441539880207642,
+      "encoder_cos": 0.7610901097414386,
+      "encoder_rel_l2": 0.6398265643345777,
+      "linear_rank_bound_psnr_db": 32.75678998373441,
+      "absorbed_vs_linear_bound_db": -10.052452194768946,
+      "map_parameters": 2645824,
+      "meets_proposed_absorption_line": false
+    }
+  ],
+  "records": [
+    {
+      "name": "ace_1.5_vae_ctx0",
+      "pairs_dir": "/home/cereal/omni-campaign/media/pairs/ace_d_ctx0_merged",
+      "geometry": {
+        "name": "ace_1.5_vae.safetensors",
+        "modality": "audio",
+        "latent_channels": 64,
+        "sample_rate_hz": 48000,
+        "hop_samples": 1920,
+        "channels": 2,
+        "channel_in_latent": false,
+        "spatial_stride": 0,
+        "temporal_stride": 0,
+        "frame_rate_hz": 25.0,
+        "notes": {
+          "kind": "comfy",
+          "path": "/opt/ComfyUI/models/vae/ace_1.5_vae.safetensors",
+          "comfy_kitchen_stubbed": true,
+          "forced_cpu": true,
+          "expected_class": "AudioOobleckVAE(strides=[2,4,4,6,10])",
+          "sd_py_lines": "651-674",
+          "latent_dim": 1,
+          "first_stage_class": "AudioOobleckVAE",
+          "vae_dtype": "torch.float32",
+          "device": "cpu",
+          "posterior": "mean",
+          "path_mode": "direct",
+          "crop_input": true,
+          "downscale_ratio": 1920,
+          "upscale_ratio": 1920
+        },
+        "pairing": "per_channel",
+        "context": 0,
+        "d_raw": 1920,
+        "d_latent": 64,
+        "d_centre": 1920,
+        "centre_offset": 0,
+        "rows": 6400,
+        "clips": 64,
+        "chimera_segment": 1920,
+        "chimera_stride": 1920,
+        "chimera_tokens_per_frame": 2,
+        "merged_from": 4,
+        "merged_clip_totals": [
+          16,
+          16,
+          16,
+          16
+        ],
+        "declared_clips_sum": 64
+      },
+      "rows": 6400,
+      "fit_rows": 4800,
+      "holdout_rows": 1600,
+      "rungs": {
+        "linear": {
+          "map_parameters": 247744,
+          "fit_seconds": 9.346,
+          "holdout": {
+            "rows": 1600,
+            "psnr_absorbed_db": 20.783619220830126,
+            "psnr_parent_roundtrip_db": 33.289560959645634,
+            "psnr_gap_db": -12.505941738815508,
+            "si_sdr_absorbed_db": -0.30533304788245164,
+            "si_sdr_parent_roundtrip_db": 13.452704134602072,
+            "si_sdr_rows": {
+              "scored": 1162.0,
+              "silent_skipped": 438.0
+            },
+            "linear_rank_bound": {
+              "rank": 64,
+              "psnr_db": 35.029866360358106,
+              "retained_energy": 0.9712078180529617,
+              "absorbed_vs_bound_db": -14.24624713952798,
+              "bound_vs_parent_db": 1.7403054007124723,
+              "meaning": "PCA of the raw rows at the parent's latent width -- the best possible linear round-trip. A fitted map at this number is at the linear ceiling; a bound far below the parent's round-trip means the band needs a nonlinear decoder (companion VAE decoder, D5b) or a wider native feature width."
+            },
+            "meets_proposed_absorption_line": false
+          },
+          "encoder_holdout_scores": {
+            "rel_l2": 0.847151142647281,
+            "cos": 0.5824157768801494,
+            "cos_p05": 0.3460304788109831,
+            "r2": 0.010333699534344265,
+            "rows": 1600,
+            "width": 64
+          },
+          "decoder_holdout_scores": {
+            "rel_l2": 0.9387946419564973,
+            "cos": 0.2752267874667267,
+            "cos_p05": 0.0,
+            "r2": 0.11823963413271321,
+            "rows": 1600,
+            "width": 1920
+          },
+          "composed_holdout_scores": {
+            "rel_l2": 0.8670695942411875,
+            "cos": 0.4946002692459823,
+            "cos_p05": 0.0,
+            "r2": 0.24782779084151008,
+            "rows": 1600,
+            "width": 1920
+          },
+          "receipt": "out/c15_real_v2/ace_1.5_vae_ctx0/linear/absorption_receipt.json"
+        },
+        "nonlinear": {
+          "map_parameters": 2280384,
+          "fit_seconds": 12.496,
+          "holdout": {
+            "rows": 1600,
+            "psnr_absorbed_db": 20.845223463894477,
+            "psnr_parent_roundtrip_db": 33.289560959645634,
+            "psnr_gap_db": -12.444337495751157,
+            "si_sdr_absorbed_db": -1.6496127604902426,
+            "si_sdr_parent_roundtrip_db": 13.452704134602072,
+            "si_sdr_rows": {
+              "scored": 1162.0,
+              "silent_skipped": 438.0
+            },
+            "linear_rank_bound": {
+              "rank": 64,
+              "psnr_db": 35.029866360358106,
+              "retained_energy": 0.9712078180529617,
+              "absorbed_vs_bound_db": -14.184642896463629,
+              "bound_vs_parent_db": 1.7403054007124723,
+              "meaning": "PCA of the raw rows at the parent's latent width -- the best possible linear round-trip. A fitted map at this number is at the linear ceiling; a bound far below the parent's round-trip means the band needs a nonlinear decoder (companion VAE decoder, D5b) or a wider native feature width."
+            },
+            "meets_proposed_absorption_line": false
+          },
+          "encoder_holdout_scores": {
+            "rel_l2": 0.7216643917842931,
+            "cos": 0.7303589715870967,
+            "cos_p05": 0.3798778461997676,
+            "r2": 0.28181300903458384,
+            "rows": 1600,
+            "width": 64
+          },
+          "decoder_holdout_scores": {
+            "rel_l2": 0.9305801320934884,
+            "cos": 0.28898650427509726,
+            "cos_p05": 0.0,
+            "r2": 0.13360303642147875,
+            "rows": 1600,
+            "width": 1920
+          },
+          "composed_holdout_scores": {
+            "rel_l2": 0.8609417025603452,
+            "cos": 0.45796865288732574,
+            "cos_p05": 0.0,
+            "r2": 0.2584219630135557,
+            "rows": 1600,
+            "width": 1920
+          },
+          "receipt": "out/c15_real_v2/ace_1.5_vae_ctx0/nonlinear/absorption_receipt.json"
+        }
+      }
+    },
+    {
+      "name": "h3_audio_ctx0",
+      "pairs_dir": "/home/cereal/omni-campaign/media/pairs/h3a_d_ctx0_merged",
+      "geometry": {
+        "name": "minimax_h3_audio_vae_fp32.safetensors",
+        "modality": "audio",
+        "latent_channels": 32,
+        "sample_rate_hz": 32000,
+        "hop_samples": 800,
+        "channels": 2,
+        "channel_in_latent": true,
+        "spatial_stride": 0,
+        "temporal_stride": 0,
+        "frame_rate_hz": 40.0,
+        "notes": {
+          "kind": "comfy",
+          "path": "/opt/ComfyUI/models/vae/minimax_h3_audio_vae_fp32.safetensors",
+          "comfy_kitchen_stubbed": true,
+          "forced_cpu": true,
+          "expected_class": "comfy.ldm.minimax.audio_vae.MiniMaxH3AudioVAE",
+          "sd_py_lines": "965-985",
+          "latent_dim": 2,
+          "first_stage_class": "MiniMaxH3AudioVAE",
+          "vae_dtype": "torch.float32",
+          "device": "cpu",
+          "posterior": "mean",
+          "path_mode": "direct",
+          "crop_input": true,
+          "downscale_ratio": 800,
+          "upscale_ratio": 800
+        },
+        "pairing": "per_channel",
+        "context": 0,
+        "d_raw": 800,
+        "d_latent": 32,
+        "d_centre": 800,
+        "centre_offset": 0,
+        "rows": 7680,
+        "clips": 48,
+        "chimera_segment": 800,
+        "chimera_stride": 800,
+        "chimera_tokens_per_frame": 2,
+        "merged_from": 3,
+        "merged_clip_totals": [
+          16,
+          16,
+          16
+        ],
+        "declared_clips_sum": 48
+      },
+      "rows": 7680,
+      "fit_rows": 5760,
+      "holdout_rows": 1920,
+      "rungs": {
+        "linear": {
+          "map_parameters": 52032,
+          "fit_seconds": 3.053,
+          "holdout": {
+            "rows": 1920,
+            "psnr_absorbed_db": 24.12869290624972,
+            "psnr_parent_roundtrip_db": 36.33946604286972,
+            "psnr_gap_db": -12.210773136619995,
+            "si_sdr_absorbed_db": -0.3135006504469528,
+            "si_sdr_parent_roundtrip_db": 16.441539880207642,
+            "si_sdr_rows": {
+              "scored": 1424.0,
+              "silent_skipped": 496.0
+            },
+            "linear_rank_bound": {
+              "rank": 32,
+              "psnr_db": 32.75678998373441,
+              "retained_energy": 0.9627621971875423,
+              "absorbed_vs_bound_db": -8.628097077484686,
+              "bound_vs_parent_db": -3.5826760591353093,
+              "meaning": "PCA of the raw rows at the parent's latent width -- the best possible linear round-trip. A fitted map at this number is at the linear ceiling; a bound far below the parent's round-trip means the band needs a nonlinear decoder (companion VAE decoder, D5b) or a wider native feature width."
+            },
+            "meets_proposed_absorption_line": false
+          },
+          "encoder_holdout_scores": {
+            "rel_l2": 0.7776914044307491,
+            "cos": 0.6076431783350347,
+            "cos_p05": 0.35900859803253365,
+            "r2": 0.27560914046040363,
+            "rows": 1920,
+            "width": 32
+          },
+          "decoder_holdout_scores": {
+            "rel_l2": 0.7608509310106591,
+            "cos": 0.431631335533208,
+            "cos_p05": 0.0,
+            "r2": 0.42095496699680257,
+            "rows": 1920,
+            "width": 800
+          },
+          "composed_holdout_scores": {
+            "rel_l2": 0.6580171225230977,
+            "cos": 0.49370947699710327,
+            "cos_p05": 0.0,
+            "r2": 0.5669006047672305,
+            "rows": 1920,
+            "width": 800
+          },
+          "receipt": "out/c15_real_v2/h3_audio_ctx0/linear/absorption_receipt.json"
+        },
+        "nonlinear": {
+          "map_parameters": 905024,
+          "fit_seconds": 4.432,
+          "holdout": {
+            "rows": 1920,
+            "psnr_absorbed_db": 23.95528067885216,
+            "psnr_parent_roundtrip_db": 36.33946604286972,
+            "psnr_gap_db": -12.384185364017558,
+            "si_sdr_absorbed_db": -0.3089299695420671,
+            "si_sdr_parent_roundtrip_db": 16.441539880207642,
+            "si_sdr_rows": {
+              "scored": 1424.0,
+              "silent_skipped": 496.0
+            },
+            "linear_rank_bound": {
+              "rank": 32,
+              "psnr_db": 32.75678998373441,
+              "retained_energy": 0.9627621971875423,
+              "absorbed_vs_bound_db": -8.801509304882249,
+              "bound_vs_parent_db": -3.5826760591353093,
+              "meaning": "PCA of the raw rows at the parent's latent width -- the best possible linear round-trip. A fitted map at this number is at the linear ceiling; a bound far below the parent's round-trip means the band needs a nonlinear decoder (companion VAE decoder, D5b) or a wider native feature width."
+            },
+            "meets_proposed_absorption_line": false
+          },
+          "encoder_holdout_scores": {
+            "rel_l2": 0.5605636791363982,
+            "cos": 0.8306125901321917,
+            "cos_p05": 0.5090677773724088,
+            "r2": 0.6236358282641581,
+            "rows": 1920,
+            "width": 32
+          },
+          "decoder_holdout_scores": {
+            "rel_l2": 0.5529425321255871,
+            "cos": 0.5697390712258031,
+            "cos_p05": 0.0,
+            "r2": 0.6941748609620948,
+            "rows": 1920,
+            "width": 800
+          },
+          "composed_holdout_scores": {
+            "rel_l2": 0.6712863342171687,
+            "cos": 0.4995020046546658,
+            "cos_p05": 0.0,
+            "r2": 0.5492571980853642,
+            "rows": 1920,
+            "width": 800
+          },
+          "receipt": "out/c15_real_v2/h3_audio_ctx0/nonlinear/absorption_receipt.json"
+        }
+      }
+    },
+    {
+      "name": "h3_audio_ctx2",
+      "pairs_dir": "/home/cereal/omni-campaign/media/pairs/h3a_d_ctx2_merged",
+      "geometry": {
+        "name": "minimax_h3_audio_vae_fp32.safetensors",
+        "modality": "audio",
+        "latent_channels": 32,
+        "sample_rate_hz": 32000,
+        "hop_samples": 800,
+        "channels": 2,
+        "channel_in_latent": true,
+        "spatial_stride": 0,
+        "temporal_stride": 0,
+        "frame_rate_hz": 40.0,
+        "notes": {
+          "kind": "comfy",
+          "path": "/opt/ComfyUI/models/vae/minimax_h3_audio_vae_fp32.safetensors",
+          "comfy_kitchen_stubbed": true,
+          "forced_cpu": true,
+          "expected_class": "comfy.ldm.minimax.audio_vae.MiniMaxH3AudioVAE",
+          "sd_py_lines": "965-985",
+          "latent_dim": 2,
+          "first_stage_class": "MiniMaxH3AudioVAE",
+          "vae_dtype": "torch.float32",
+          "device": "cpu",
+          "posterior": "mean",
+          "path_mode": "direct",
+          "crop_input": true,
+          "downscale_ratio": 800,
+          "upscale_ratio": 800
+        },
+        "pairing": "per_channel",
+        "context": 2,
+        "d_raw": 4000,
+        "d_latent": 32,
+        "d_centre": 800,
+        "centre_offset": 1600,
+        "rows": 7680,
+        "clips": 48,
+        "chimera_segment": 800,
+        "chimera_stride": 800,
+        "chimera_tokens_per_frame": 2,
+        "merged_from": 3,
+        "merged_clip_totals": [
+          16,
+          16,
+          16
+        ],
+        "declared_clips_sum": 48
+      },
+      "rows": 7680,
+      "fit_rows": 5760,
+      "holdout_rows": 1920,
+      "rungs": {
+        "linear": {
+          "map_parameters": 154432,
+          "fit_seconds": 14.279,
+          "holdout": {
+            "rows": 1920,
+            "psnr_absorbed_db": 24.112218622771444,
+            "psnr_parent_roundtrip_db": 36.33946604286972,
+            "psnr_gap_db": -12.227247420098273,
+            "si_sdr_absorbed_db": 0.11292220203572542,
+            "si_sdr_parent_roundtrip_db": 16.441539880207642,
+            "si_sdr_rows": {
+              "scored": 1424.0,
+              "silent_skipped": 496.0
+            },
+            "linear_rank_bound": {
+              "rank": 32,
+              "psnr_db": 32.75678998373441,
+              "retained_energy": 0.9627621971875423,
+              "absorbed_vs_bound_db": -8.644571360962964,
+              "bound_vs_parent_db": -3.5826760591353093,
+              "meaning": "PCA of the raw rows at the parent's latent width -- the best possible linear round-trip. A fitted map at this number is at the linear ceiling; a bound far below the parent's round-trip means the band needs a nonlinear decoder (companion VAE decoder, D5b) or a wider native feature width."
+            },
+            "meets_proposed_absorption_line": false
+          },
+          "encoder_holdout_scores": {
+            "rel_l2": 0.7744840612747212,
+            "cos": 0.6118754067389315,
+            "cos_p05": 0.36437774612013263,
+            "r2": 0.28157186307387216,
+            "rows": 1920,
+            "width": 32
+          },
+          "decoder_holdout_scores": {
+            "rel_l2": 0.7608509310106591,
+            "cos": 0.431631335533208,
+            "cos_p05": 0.0,
+            "r2": 0.42095496699680257,
+            "rows": 1920,
+            "width": 800
+          },
+          "composed_holdout_scores": {
+            "rel_l2": 0.6592663494726455,
+            "cos": 0.5100193332400177,
+            "cos_p05": 0.0,
+            "r2": 0.5652545898175418,
+            "rows": 1920,
+            "width": 800
+          },
+          "receipt": "out/c15_real_v2/h3_audio_ctx2/linear/absorption_receipt.json"
+        },
+        "nonlinear": {
+          "map_parameters": 2645824,
+          "fit_seconds": 17.188,
+          "holdout": {
+            "rows": 1920,
+            "psnr_absorbed_db": 22.70433778896546,
+            "psnr_parent_roundtrip_db": 36.33946604286972,
+            "psnr_gap_db": -13.635128253904256,
+            "si_sdr_absorbed_db": -4.899044350176134,
+            "si_sdr_parent_roundtrip_db": 16.441539880207642,
+            "si_sdr_rows": {
+              "scored": 1424.0,
+              "silent_skipped": 496.0
+            },
+            "linear_rank_bound": {
+              "rank": 32,
+              "psnr_db": 32.75678998373441,
+              "retained_energy": 0.9627621971875423,
+              "absorbed_vs_bound_db": -10.052452194768946,
+              "bound_vs_parent_db": -3.5826760591353093,
+              "meaning": "PCA of the raw rows at the parent's latent width -- the best possible linear round-trip. A fitted map at this number is at the linear ceiling; a bound far below the parent's round-trip means the band needs a nonlinear decoder (companion VAE decoder, D5b) or a wider native feature width."
+            },
+            "meets_proposed_absorption_line": false
+          },
+          "encoder_holdout_scores": {
+            "rel_l2": 0.6398265643345777,
+            "cos": 0.7610901097414386,
+            "cos_p05": 0.33490794991187633,
+            "r2": 0.509676285613968,
+            "rows": 1920,
+            "width": 32
+          },
+          "decoder_holdout_scores": {
+            "rel_l2": 0.5529425321255871,
+            "cos": 0.5697390712258031,
+            "cos_p05": 0.0,
+            "r2": 0.6941748609620948,
+            "rows": 1920,
+            "width": 800
+          },
+          "composed_holdout_scores": {
+            "rel_l2": 0.7752735199588621,
+            "cos": 0.39600452039131534,
+            "cos_p05": 0.0,
+            "r2": 0.3987943006023582,
+            "rows": 1920,
+            "width": 800
+          },
+          "receipt": "out/c15_real_v2/h3_audio_ctx2/nonlinear/absorption_receipt.json"
+        }
+      }
+    }
+  ],
+  "source_sha256": {
+    "/home/cereal/omni-campaign/media/c15_absorb_run.py": "05b1ac025819464015d70dd2c667bd215e760d1873613e52eed1e3aedce7628a",
+    "/home/cereal/omni-campaign/media/mediafold/c15_fit.py": "a7a0daba2a7b6eb50c6d496ce3fd45ce028f6b060d2db2e2a0fbd92ade0a0935",
+    "/home/cereal/omni-campaign/media/mediafold/c15_pairs.py": "973ab4068c8f97daf13ede9dbb31218f9c0b862643369aafd147ae7c482eda9c",
+    "/home/cereal/omni-campaign/media/mediafold/c15_video_groups.py": "94c9bfbdd38ef9f0943e5fdb86727f4afada186c8d1c086b05e3402bdc3be57e",
+    "/home/cereal/omni-campaign/media/mediafold/linalg.py": "f956a60e7a9256de6a1b427d38a9f08b3b168a13dadbba45ee1d9c84e24e3f69"
+  },
+  "runtime": {
+    "python": "3.12.3 (main, Jun 19 2026, 12:46:00) [GCC 13.3.0]",
+    "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39",
+    "cwd": "/home/cereal/omni-campaign/media",
+    "torch": "2.11.0+cu128",
+    "torch_cuda": "12.8",
+    "cuda_available": true,
+    "nvidia_smi": [
+      "0, NVIDIA GeForce RTX 3090, GPU-4ead7f3a-cc79-fa5b-de42-ef024e27f561, 21554 MiB",
+      "1, Tesla P40, GPU-c95fb5b3-f97c-bfb2-9760-79fe107ffe6d, 21405 MiB",
+      "2, Tesla P40, GPU-a92b0dfe-83f8-11ff-db0d-c65921f365b4, 7 MiB",
+      "3, Tesla P40, GPU-08b615f9-8dbe-3edd-d59f-f6ebe8212ca8, 7 MiB",
+      "4, NVIDIA GeForce RTX 3090, GPU-2ce6a95c-7b1f-644a-3808-d781732a0582, 18 MiB",
+      "5, Tesla P40, GPU-ce4a1da0-baa8-3d62-419c-a28f6565610f, 7 MiB",
+      "6, Quadro RTX 8000, GPU-f5a09535-fc85-a027-50f7-734b344747dd, 8 MiB"
+    ]
+  },
+  "argv": {
+    "pairs": [
+      "ace_1.5_vae_ctx0=pairs/ace_d_ctx0_merged",
+      "h3_audio_ctx0=pairs/h3a_d_ctx0_merged",
+      "h3_audio_ctx2=pairs/h3a_d_ctx2_merged"
+    ],
+    "out": "out/c15_real_v2",
+    "rungs": "linear,nonlinear",
+    "hidden": 5120,
+    "lift_features": 512,
+    "lift_kind": "rff",
+    "seed": 0
+  },
+  "runs_h3_generation": false
+}

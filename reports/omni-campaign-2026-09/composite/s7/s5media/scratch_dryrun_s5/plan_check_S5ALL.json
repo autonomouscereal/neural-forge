@@ -1,0 +1,608 @@
+{
+ "tool": {
+  "name": "s5m_plan_check",
+  "version": "1.0.0"
+ },
+ "tool_sha256": "4d3a2386769635f1c851fc54e7194568d2926345fd29d2c2b90de4252306ef09",
+ "c16_sha256": "05796780b0c54789ebd483073fde126e75b29cfd0b88444527fb362d19d8325d",
+ "c16_version": "1.3.0",
+ "argv": {
+  "child": "/home/cereal/omni-campaign/composite/c10/S5-C2K4352K3U/child",
+  "tools": "/home/cereal/omni-campaign/composite/tools",
+  "c15": "/home/cereal/omni-campaign/composite/s7/interface_latent",
+  "c11": "/home/cereal/omni-campaign/composite/s7/interface_latent/c11",
+  "c18": "/home/cereal/omni-campaign/composite/s7/c18/music_codes_band.safetensors",
+  "units": [
+   "/home/cereal/omni-campaign/composite/s7/units_s5/ace/ace_dit_L12",
+   "/home/cereal/omni-campaign/composite/s7/units_s5/h3/h3_dit_L25_curve6",
+   "/home/cereal/omni-campaign/composite/s7/units_s5/qimg/qimg_mmdit_L30_img",
+   "/home/cereal/omni-campaign/composite/s7/units_s5/hy3d/hy3d_dit_L10",
+   "/home/cereal/omni-campaign/composite/s7/units_s5/qvl32/qvl32_vit_L13"
+  ],
+  "tap_rows": "/home/cereal/omni-campaign/composite/s7/tap_rows_s5",
+  "expected_insert_after": 31,
+  "parent_parameter_count": 27781427952,
+  "out": "/home/cereal/omni-campaign/composite/s7/s5media/scratch_dryrun_s5/plan_check_S5ALL.json"
+ },
+ "child": {
+  "directory": "/home/cereal/omni-campaign/composite/c10/S5-C2K4352K3U/child",
+  "config_sha256": "c93750673c397939e4b5bc07506dce48917212833f5f5c16505bb1c2bcf5a352",
+  "index_sha256": "d577d9b2254f6d6b7dcb94fb756a84ebc040ff0ed95e5e5044efff5e9577dad4",
+  "header_parameters": 26944218624,
+  "hidden": 5120,
+  "layers": 64,
+  "native_feature_dim": 6144,
+  "native_type_count": 8,
+  "vocab": 317952,
+  "tied": false
+ },
+ "bands": {
+  "overlaps": [],
+  "duplicate_type_ids": {}
+ },
+ "interface": {
+  "entries": [
+   {
+    "set": "c15",
+    "name": "music_ace",
+    "type_id": 4,
+    "feature_band": [
+     0,
+     384
+    ],
+    "emission_band": [
+     0,
+     128
+    ],
+    "rows_sha256": "e70b833f3124fe4b331cb6d20ab920f834cfa8cc431557eec6f47c504ee017ed",
+    "tensor_sha256_check": {
+     "declared": 4,
+     "verified": true
+    },
+    "row_shapes_ok": true,
+    "finite": true,
+    "preconditions_nonzero": {
+     "type_feature_scale[type, band]": 0,
+     "bridge.type_affine[type, scale half]": 0,
+     "head.type_affine[type, scale half]": 0
+    }
+   },
+   {
+    "set": "c15",
+    "name": "video_h3",
+    "type_id": 2,
+    "feature_band": [
+     384,
+     480
+    ],
+    "emission_band": [
+     128,
+     224
+    ],
+    "rows_sha256": "f6bdcfc241a00d24a0f19a6f07981d0884400017008de8979e74afb8f9c866fb",
+    "tensor_sha256_check": {
+     "declared": 4,
+     "verified": true
+    },
+    "row_shapes_ok": true,
+    "finite": true,
+    "preconditions_nonzero": {
+     "type_feature_scale[type, band]": 0,
+     "bridge.type_affine[type, scale half]": 0,
+     "head.type_affine[type, scale half]": 0
+    }
+   },
+   {
+    "set": "c15",
+    "name": "audio_h3",
+    "type_id": 3,
+    "feature_band": [
+     480,
+     512
+    ],
+    "emission_band": [
+     224,
+     256
+    ],
+    "rows_sha256": "ca883fa1f7e22a29d3899af6f2a4220716c26bd4357afb7c8c7f245ec056dc23",
+    "tensor_sha256_check": {
+     "declared": 4,
+     "verified": true
+    },
+    "row_shapes_ok": true,
+    "finite": true,
+    "preconditions_nonzero": {
+     "type_feature_scale[type, band]": 0,
+     "bridge.type_affine[type, scale half]": 0,
+     "head.type_affine[type, scale half]": 0
+    }
+   },
+   {
+    "set": "c15",
+    "name": "image_qimg",
+    "type_id": 1,
+    "feature_band": [
+     512,
+     576
+    ],
+    "emission_band": [
+     256,
+     320
+    ],
+    "rows_sha256": "6a8de68b300264aa49db13279ef0e9485ee61d03c35014e6c0edbfe21879a8df",
+    "tensor_sha256_check": {
+     "declared": 4,
+     "verified": true
+    },
+    "row_shapes_ok": true,
+    "finite": true,
+    "preconditions_nonzero": {
+     "type_feature_scale[type, band]": 0,
+     "bridge.type_affine[type, scale half]": 0,
+     "head.type_affine[type, scale half]": 0
+    }
+   },
+   {
+    "set": "c15",
+    "name": "volume_hy3d",
+    "type_id": 7,
+    "feature_band": [
+     576,
+     640
+    ],
+    "emission_band": [
+     320,
+     384
+    ],
+    "rows_sha256": "2a9026fb93afcc130f3d0cc53b942c476b76a95f23647961b82b1cc2b06cbe1b",
+    "tensor_sha256_check": {
+     "declared": 4,
+     "verified": true
+    },
+    "row_shapes_ok": true,
+    "finite": true,
+    "preconditions_nonzero": {
+     "type_feature_scale[type, band]": 0,
+     "bridge.type_affine[type, scale half]": 0,
+     "head.type_affine[type, scale half]": 0
+    }
+   },
+   {
+    "set": "c11",
+    "name": "ocr_qvl32",
+    "type_id": 6,
+    "feature_band": [
+     640,
+     2176
+    ],
+    "emission_band": [
+     384,
+     385
+    ],
+    "rows_sha256": "b4cfaf0308079d643c99d6193a59400c96bf8e542282bf599b537342b6c55312",
+    "tensor_sha256_check": {
+     "declared": 4,
+     "verified": true
+    },
+    "row_shapes_ok": true,
+    "finite": true,
+    "preconditions_nonzero": {
+     "type_feature_scale[type, band]": 0,
+     "bridge.type_affine[type, scale half]": 0,
+     "head.type_affine[type, scale half]": 0
+    }
+   }
+  ],
+  "bridge_feature_proj_shape": [
+   5120,
+   6144
+  ],
+  "head_out_shape": [
+   6144,
+   5120
+  ],
+  "parameters_added": 0,
+  "note": "rows written into the counted bridge/head tensors"
+ },
+ "band": {
+  "band": [
+   252416,
+   317952,
+   65536
+  ],
+  "table": "/home/cereal/omni-campaign/composite/s7/c18/music_codes_band.safetensors",
+  "table_sha256": "d9cd751b2bf702b4d713b9f60bc7bfbc51795852c9d51c106f9988da6e8dc299",
+  "table_shape": [
+   65536,
+   5120
+  ],
+  "lm_head_in_table": true,
+  "sha_check": {
+   "declared": 2,
+   "verified": true
+  },
+  "s5_embed_band_nonzero": 0,
+  "s5_lm_head_band_nonzero": 0,
+  "table_finite": true,
+  "parameters_added": 0
+ },
+ "units": [
+  {
+   "name": "ace_dit_L12",
+   "directory": "/home/cereal/omni-campaign/composite/s7/units_s5/ace/ace_dit_L12",
+   "files": {
+    "charted_block.json": "9e0054f03f4454aee13dd203fec557bb91e6e72f56f8d97aa61fc9f2fa975a30",
+    "charted_block.safetensors": "94c4f10f55fa3e09380376e6997cdffe3e3458e660cd422463d7eb90458ab7f5",
+    "charts.safetensors": "dab25b3191608a4b02ca7f73a32ba03b7973c8f048c0eafcdfc824c51d2b41d2",
+    "time_reference.safetensors": "0d1ae9939364f80a2dc9a074273397b196137995d094c508acedcd64bca0a727"
+   },
+   "insert_after": 31,
+   "pairing": {
+    "rule": "depth-fraction -> nearest gated_gqa refinement layer",
+    "source_depth_fraction": 0.5217391304347826,
+    "trunk_depth_fraction": 0.49206349206349204,
+    "insert_after": 31,
+    "candidates": [
+     3,
+     7,
+     11,
+     15,
+     19,
+     23,
+     27,
+     31,
+     35,
+     39,
+     43,
+     47,
+     51,
+     55,
+     59,
+     63
+    ]
+   },
+   "type_ids": [
+    4
+   ],
+   "width": 2048,
+   "block_parameters_at_hidden": 102811904,
+   "tensor_sha256_check": {
+    "charted_block.safetensors": {
+     "declared": 24,
+     "verified": true
+    },
+    "charts.safetensors": {
+     "declared": 3,
+     "verified": true
+    },
+    "time_reference.safetensors": {
+     "declared": 2,
+     "verified": true
+    }
+   },
+   "time_reference": {
+    "rel_l2": 1.1816756995131072e-07,
+    "verified": true,
+    "tolerance_rel_l2": 1e-05
+   },
+   "forward_on_s5_host_rows": {
+    "finite": true,
+    "output_shape": [
+     50,
+     5120
+    ],
+    "rows_written": 50,
+    "source_positions": null,
+    "noise_levels": "pair-set sigma",
+    "write_norm_over_x_norm_median": 0.15936610102653503,
+    "x_norm_median": 124.05765533447266,
+    "forward_index": 4,
+    "rows": 50,
+    "held_forward": true,
+    "host_rows_file": "/home/cereal/omni-campaign/composite/s7/tap_rows_s5/ace_dit_L12/paired_rows.safetensors",
+    "host_rows_sha256": "1e7027dbe8727ada11113e2f9d342decaf89198522de89f57c6fa25a5fe7b860"
+   }
+  },
+  {
+   "name": "h3_dit_L25_curve6",
+   "directory": "/home/cereal/omni-campaign/composite/s7/units_s5/h3/h3_dit_L25_curve6",
+   "files": {
+    "charted_block.json": "37731af8fb2a585b9d115da2b380f5892cfe63a2883746c41efc07dcd76bd718",
+    "charted_block.safetensors": "8f1adfe2768513c721c9c77e52f729264883930d6af72b50fdc0f58df9cbfabf",
+    "charts.safetensors": "f52687e313ac15641ef22c1bd78e913a732acf192325ae67f5371a5f39cf121b",
+    "time_reference.safetensors": "d09fbd3501ff329a69a4be7824f5d4d3bd1e341f185e5037a818b7ed4d9bd3b0"
+   },
+   "insert_after": 31,
+   "pairing": {
+    "rule": "depth-fraction -> nearest gated_gqa refinement layer",
+    "source_depth_fraction": 0.5102040816326531,
+    "trunk_depth_fraction": 0.49206349206349204,
+    "insert_after": 31,
+    "candidates": [
+     3,
+     7,
+     11,
+     15,
+     19,
+     23,
+     27,
+     31,
+     35,
+     39,
+     43,
+     47,
+     51,
+     55,
+     59,
+     63
+    ]
+   },
+   "type_ids": [
+    2,
+    3
+   ],
+   "width": 5376,
+   "block_parameters_at_hidden": 267889176,
+   "tensor_sha256_check": {
+    "charted_block.safetensors": {
+     "declared": 15,
+     "verified": true
+    },
+    "charts.safetensors": {
+     "declared": 3,
+     "verified": true
+    },
+    "time_reference.safetensors": {
+     "declared": 3,
+     "verified": true
+    }
+   },
+   "time_reference": {
+    "rel_l2": 1.3166969381472882e-07,
+    "verified": true,
+    "tolerance_rel_l2": 1e-05
+   },
+   "forward_on_s5_host_rows": {
+    "finite": true,
+    "output_shape": [
+     60,
+     5120
+    ],
+    "rows_written": 60,
+    "source_positions": "zeros (H3)",
+    "noise_levels": "pair-set sigma",
+    "write_norm_over_x_norm_median": 0.049855586141347885,
+    "x_norm_median": 109.0539321899414,
+    "forward_index": 12,
+    "rows": 60,
+    "held_forward": true,
+    "host_rows_file": "/home/cereal/omni-campaign/composite/s7/tap_rows_s5/h3_dit_L25_curve6/paired_rows.safetensors",
+    "host_rows_sha256": "06e3bbb038cd955fd2b1d56a576bdc56e26f50fd9630c87b5f4f01e887231bc9"
+   }
+  },
+  {
+   "name": "hy3d_dit_L10",
+   "directory": "/home/cereal/omni-campaign/composite/s7/units_s5/hy3d/hy3d_dit_L10",
+   "files": {
+    "charted_block.json": "4a091d426b98b61969d833584b7633664f8f5a059de0cc3b766eceb65935f563",
+    "charted_block.safetensors": "58574fe6255d924a651d910ed941115da1d1aabaf5f1c4f8afba1e81e8b5d817",
+    "charts.safetensors": "ef2ee05784eeca775ebb7bad5cd8745a86643bc18e28cdf495d5996b74475a47",
+    "time_reference.safetensors": null
+   },
+   "insert_after": 31,
+   "pairing": {
+    "rule": "depth-fraction -> nearest gated_gqa refinement layer",
+    "source_depth_fraction": 0.5,
+    "trunk_depth_fraction": 0.49206349206349204,
+    "insert_after": 31,
+    "candidates": [
+     3,
+     7,
+     11,
+     15,
+     19,
+     23,
+     27,
+     31,
+     35,
+     39,
+     43,
+     47,
+     51,
+     55,
+     59,
+     63
+    ]
+   },
+   "type_ids": [
+    7
+   ],
+   "width": 2048,
+   "block_parameters_at_hidden": 46156031,
+   "tensor_sha256_check": {
+    "charted_block.safetensors": {
+     "declared": 18,
+     "verified": true
+    },
+    "charts.safetensors": {
+     "declared": 3,
+     "verified": true
+    }
+   },
+   "time_reference": null,
+   "forward_on_s5_host_rows": {
+    "finite": true,
+    "output_shape": [
+     4097,
+     5120
+    ],
+    "rows_written": 4097,
+    "source_positions": null,
+    "noise_levels": "pair-set sigma",
+    "write_norm_over_x_norm_median": 0.013414124958217144,
+    "x_norm_median": 118.27172088623047,
+    "forward_index": 2,
+    "rows": 4097,
+    "held_forward": true,
+    "host_rows_file": "/home/cereal/omni-campaign/composite/s7/tap_rows_s5/hy3d_dit_L10/paired_rows.safetensors",
+    "host_rows_sha256": "838cedfa840aff27c99ece44a2628a4b921fa6f7e976c833eb191622f6bb7683"
+   }
+  },
+  {
+   "name": "qimg_mmdit_L30_img",
+   "directory": "/home/cereal/omni-campaign/composite/s7/units_s5/qimg/qimg_mmdit_L30_img",
+   "files": {
+    "charted_block.json": "2ae90a621d223401e370b1dfc8bdf171f842d27912eac741be446d249a52c397",
+    "charted_block.safetensors": "e15a5b754e1d9456865ba64a13a0aa4a13491b2f28d9aca040529c666bcd9c0b",
+    "charts.safetensors": "019a4097d4e14267a4025e66dcf3fdc8766e4226c0cc91bb420b9f4cb5b776e8",
+    "time_reference.safetensors": "d1ef99406661806b2ee9c70d5ac702b380458b8cbe3f9c2c478cfdfa7b2c816e"
+   },
+   "insert_after": 31,
+   "pairing": {
+    "rule": "depth-fraction -> nearest gated_gqa refinement layer",
+    "source_depth_fraction": 0.5084745762711864,
+    "trunk_depth_fraction": 0.49206349206349204,
+    "insert_after": 31,
+    "candidates": [
+     3,
+     7,
+     11,
+     15,
+     19,
+     23,
+     27,
+     31,
+     35,
+     39,
+     43,
+     47,
+     51,
+     55,
+     59,
+     63
+    ]
+   },
+   "type_ids": [
+    1
+   ],
+   "width": 3072,
+   "block_parameters_at_hidden": 154985727,
+   "tensor_sha256_check": {
+    "charted_block.safetensors": {
+     "declared": 21,
+     "verified": true
+    },
+    "charts.safetensors": {
+     "declared": 3,
+     "verified": true
+    },
+    "time_reference.safetensors": {
+     "declared": 2,
+     "verified": true
+    }
+   },
+   "time_reference": {
+    "rel_l2": 1.1680489109267e-07,
+    "verified": true,
+    "tolerance_rel_l2": 1e-05
+   },
+   "forward_on_s5_host_rows": {
+    "finite": true,
+    "output_shape": [
+     1024,
+     5120
+    ],
+    "rows_written": 1024,
+    "source_positions": null,
+    "noise_levels": "pair-set sigma",
+    "write_norm_over_x_norm_median": 0.13087905943393707,
+    "x_norm_median": 144.63739013671875,
+    "forward_index": 24,
+    "rows": 1024,
+    "held_forward": true,
+    "host_rows_file": "/home/cereal/omni-campaign/composite/s7/tap_rows_s5/qimg_mmdit_L30_img/paired_rows.safetensors",
+    "host_rows_sha256": "0202be177a75655450f83d0b4539dc69cb014218fcb97dcdf3ca1a60144666f5"
+   }
+  },
+  {
+   "name": "qvl32_vit_L13",
+   "directory": "/home/cereal/omni-campaign/composite/s7/units_s5/qvl32/qvl32_vit_L13",
+   "files": {
+    "charted_block.json": "a4c6e6a01c3736a1abdb14aebb56a54fad0a2c1528142b7ca897ef488e7ba912",
+    "charted_block.safetensors": "42e07a077b2f0a43f6279fb311e35ed216b83c9ddf9179c89c638d27791876bb",
+    "charts.safetensors": "891c9dc3550892a72e47700d99354ed80124fdf3947dc7b8a512d63149f4423e",
+    "time_reference.safetensors": null
+   },
+   "insert_after": 31,
+   "pairing": {
+    "rule": "depth-fraction -> nearest gated_gqa refinement layer",
+    "source_depth_fraction": 0.5,
+    "trunk_depth_fraction": 0.49206349206349204,
+    "insert_after": 31,
+    "candidates": [
+     3,
+     7,
+     11,
+     15,
+     19,
+     23,
+     27,
+     31,
+     35,
+     39,
+     43,
+     47,
+     51,
+     55,
+     59,
+     63
+    ]
+   },
+   "type_ids": [
+    6
+   ],
+   "width": 1152,
+   "block_parameters_at_hidden": 19594291,
+   "tensor_sha256_check": {
+    "charted_block.safetensors": {
+     "declared": 16,
+     "verified": true
+    },
+    "charts.safetensors": {
+     "declared": 3,
+     "verified": true
+    }
+   },
+   "time_reference": null,
+   "forward_on_s5_host_rows": {
+    "finite": true,
+    "output_shape": [
+     784,
+     5120
+    ],
+    "rows_written": 784,
+    "source_positions": null,
+    "noise_levels": null,
+    "write_norm_over_x_norm_median": 0.16747833788394928,
+    "x_norm_median": 94.84766387939453,
+    "forward_index": 8,
+    "rows": 784,
+    "held_forward": true,
+    "host_rows_file": "/home/cereal/omni-campaign/composite/s7/tap_rows_s5/qvl32_vit_L13/paired_rows.safetensors",
+    "host_rows_sha256": "03f7577f1ccd8a67831cd6300d51ae38578f4e815e05a6a421a9982051a5c8d5"
+   }
+  }
+ ],
+ "accounting": {
+  "s5_header_parameters": 26944218624,
+  "units_installed_parameters": 591437129,
+  "interface_and_band_parameters": 0,
+  "composite_header_parameters": 27535655753,
+  "accounting_parent_parameters": 27781427952,
+  "headroom": 245772199,
+  "below_parent": true
+ },
+ "refusals": [],
+ "verdict": "PLAN HOLDS on the S5 child: interface + C11 + C18 + 5 units load, pair, account and run finite",
+ "seconds": 268.2919158935547
+}

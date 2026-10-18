@@ -1,0 +1,32 @@
+{
+  "name": "m2-c15-hy3d-probes",
+  "owner": "claude",
+  "lane": "M2 C15 2026-10-10",
+  "gpu_index": 4,
+  "gpu_uuid": "GPU-2ce6a95c-7b1f-644a-3808-d781732a0582",
+  "route": "host docker (hermes.py status/run hung on the workstation: execv wrapper + lease); recorded here per the environment rules",
+  "image": "comfyui:codex-minimax-h3-runtime-env-r5-20260808",
+  "container_id": "eff8ebdccb352ab2809e26b4635a02eaa5cc6cf1f54074061322f52caf9b495c",
+  "started_utc": "2026-10-10T09:38:38.044043+00:00",
+  "gpu_used_mib_before": 15,
+  "released_utc": "2026-10-10T09:44:49.233376689Z",
+  "attempts": [
+    {
+      "container_id": "06fbda4193f309ef1e886031974fcb1c4f032de6872f1ad8ebbdda099ba891f2",
+      "started_utc": "2026-10-10T09:26:53.366185Z",
+      "result": "python exited at import: the r5 image bakes CUDA_VISIBLE_DEVICES empty; container removed (own)"
+    },
+    {
+      "container_id": "546ac963bf207116834a8a06893da7f955b88108c0f5478bb53dacaa0d727fcf",
+      "started_utc": "2026-10-10T09:32:22.468562+00:00",
+      "result": "exit 1: ComfyUI hunyuan3d fps() CPU/CUDA index bug; patched in-process; log composite/logs/m2_hy3d_probe_attempt1.log; container removed (own)"
+    },
+    {
+      "container_id": "196f95c564b2fd4ce8b5341df722693ba0e4e78598793df565f2712293b57848",
+      "started_utc": "2026-10-10T09:34:27.785400+00:00",
+      "result": "failed attempt; log under composite/logs/m2-c15-hy3d-probes.attempt-*.log; container removed (own)"
+    }
+  ],
+  "env": "NVIDIA_VISIBLE_DEVICES=GPU-2ce6a95c-7b1f-644a-3808-d781732a0582 CUDA_VISIBLE_DEVICES=0 (only GPU4 visible)",
+  "exit_code": 0
+}

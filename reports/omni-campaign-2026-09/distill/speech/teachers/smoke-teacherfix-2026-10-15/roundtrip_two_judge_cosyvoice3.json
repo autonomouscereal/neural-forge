@@ -1,0 +1,142 @@
+[
+ {
+  "audio": "/home/cereal/omni-campaign/distill/speech/teachers/smoke-teacherfix-2026-10-15/tts/cosyvoice3-0.wav",
+  "transcript": "The river rose overnight, so the ferry left an hour later than usual.",
+  "transcript_conf": 1.0,
+  "transcript_status": "auto",
+  "agreement_wer": 0.0,
+  "word_edits": 0,
+  "words_a": 13,
+  "words_b": 13,
+  "reasons": [],
+  "transcript_tool": "two-judge agreement: Qwen/Qwen3-ASR-0.6B@5eb14417 + ibm-granite/granite-speech-4.1-2b@de575db6 (asr_two_judge 1.0.0, WER <= 5%)",
+  "judge_a": {
+   "repo": "Qwen/Qwen3-ASR-0.6B",
+   "revision": "5eb144179a02acc5e5ba31e748d22b0cf3e303b0",
+   "text": "The river rose overnight, so the ferry left an hour later than usual.",
+   "error": null,
+   "seconds": 7.61
+  },
+  "judge_b": {
+   "repo": "ibm-granite/granite-speech-4.1-2b",
+   "revision": "de575db64086f84fdc79da4932d1076e965bc546",
+   "text": "the river rose overnight, so the ferry left an hour later than usual.",
+   "error": null,
+   "seconds": 12.49
+  },
+  "id": "cosyvoice3-0",
+  "admission": {
+   "admitted": true,
+   "verdict": "admitted",
+   "judge_a_exact": true,
+   "judge_b_exact": true,
+   "judge_a_wer": 0.0,
+   "judge_b_wer": 0.0
+  }
+ },
+ {
+  "audio": "/home/cereal/omni-campaign/distill/speech/teachers/smoke-teacherfix-2026-10-15/tts/cosyvoice3-1.wav",
+  "transcript": "Please set the oven to two hundred degrees and wait ten more minutes.",
+  "transcript_conf": 1.0,
+  "transcript_status": "auto",
+  "agreement_wer": 0.0,
+  "word_edits": 0,
+  "words_a": 13,
+  "words_b": 13,
+  "reasons": [],
+  "transcript_tool": "two-judge agreement: Qwen/Qwen3-ASR-0.6B@5eb14417 + ibm-granite/granite-speech-4.1-2b@de575db6 (asr_two_judge 1.0.0, WER <= 5%)",
+  "judge_a": {
+   "repo": "Qwen/Qwen3-ASR-0.6B",
+   "revision": "5eb144179a02acc5e5ba31e748d22b0cf3e303b0",
+   "text": "Please set the oven to two hundred degrees and wait ten more minutes.",
+   "error": null,
+   "seconds": 5.42
+  },
+  "judge_b": {
+   "repo": "ibm-granite/granite-speech-4.1-2b",
+   "revision": "de575db64086f84fdc79da4932d1076e965bc546",
+   "text": "please set the oven to two hundred degrees and wait ten more minutes.",
+   "error": null,
+   "seconds": 11.57
+  },
+  "id": "cosyvoice3-1",
+  "admission": {
+   "admitted": true,
+   "verdict": "admitted",
+   "judge_a_exact": true,
+   "judge_b_exact": true,
+   "judge_a_wer": 0.0,
+   "judge_b_wer": 0.0
+  }
+ },
+ {
+  "audio": "/home/cereal/omni-campaign/distill/speech/teachers/smoke-teacherfix-2026-10-15/tts/cosyvoice3-2.wav",
+  "transcript": "She painted the old fence blue, then sat on the porch to watch it dry.",
+  "transcript_conf": 1.0,
+  "transcript_status": "auto",
+  "agreement_wer": 0.0,
+  "word_edits": 0,
+  "words_a": 15,
+  "words_b": 15,
+  "reasons": [],
+  "transcript_tool": "two-judge agreement: Qwen/Qwen3-ASR-0.6B@5eb14417 + ibm-granite/granite-speech-4.1-2b@de575db6 (asr_two_judge 1.0.0, WER <= 5%)",
+  "judge_a": {
+   "repo": "Qwen/Qwen3-ASR-0.6B",
+   "revision": "5eb144179a02acc5e5ba31e748d22b0cf3e303b0",
+   "text": "She painted the old fence blue, then sat on the porch to watch it dry.",
+   "error": null,
+   "seconds": 5.85
+  },
+  "judge_b": {
+   "repo": "ibm-granite/granite-speech-4.1-2b",
+   "revision": "de575db64086f84fdc79da4932d1076e965bc546",
+   "text": "she painted the old fence blue, then sat on the porch to watch it dry.",
+   "error": null,
+   "seconds": 10.78
+  },
+  "id": "cosyvoice3-2",
+  "admission": {
+   "admitted": true,
+   "verdict": "admitted",
+   "judge_a_exact": true,
+   "judge_b_exact": true,
+   "judge_a_wer": 0.0,
+   "judge_b_wer": 0.0
+  }
+ },
+ {
+  "audio": "/home/cereal/omni-campaign/distill/speech/teachers/smoke-teacherfix-2026-10-15/tts/cosyvoice3-3.wav",
+  "transcript": "Our meeting moved to Thursday because the projector was broken again.",
+  "transcript_conf": 1.0,
+  "transcript_status": "auto",
+  "agreement_wer": 0.0,
+  "word_edits": 0,
+  "words_a": 11,
+  "words_b": 11,
+  "reasons": [],
+  "transcript_tool": "two-judge agreement: Qwen/Qwen3-ASR-0.6B@5eb14417 + ibm-granite/granite-speech-4.1-2b@de575db6 (asr_two_judge 1.0.0, WER <= 5%)",
+  "judge_a": {
+   "repo": "Qwen/Qwen3-ASR-0.6B",
+   "revision": "5eb144179a02acc5e5ba31e748d22b0cf3e303b0",
+   "text": "Our meeting moved to Thursday because the projector was broken again.",
+   "error": null,
+   "seconds": 4.68
+  },
+  "judge_b": {
+   "repo": "ibm-granite/granite-speech-4.1-2b",
+   "revision": "de575db64086f84fdc79da4932d1076e965bc546",
+   "text": "our meeting moved to thursday because the projector was broken again.",
+   "error": null,
+   "seconds": 8.57
+  },
+  "id": "cosyvoice3-3",
+  "admission": {
+   "admitted": true,
+   "verdict": "admitted",
+   "judge_a_exact": true,
+   "judge_b_exact": true,
+   "judge_a_wer": 0.0,
+   "judge_b_wer": 0.0
+  }
+ }
+]

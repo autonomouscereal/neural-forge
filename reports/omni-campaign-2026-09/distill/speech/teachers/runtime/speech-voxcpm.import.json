@@ -1,0 +1,1 @@
+{"python": "3.12.3", "torch": "2.6.0+cu118", "cuda_build": "11.8", "arch_list": [], "transformers": "4.57.3", "cuda_visible": false, "voxcpm": "VoxCPM", "import_passed": true}

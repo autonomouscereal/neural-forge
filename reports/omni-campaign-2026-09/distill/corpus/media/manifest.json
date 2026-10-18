@@ -1,0 +1,93 @@
+{
+ "schema": "neural-forge-omni-distill-corpus-v1/media",
+ "identity": {
+  "tool": "distill_corpus_build",
+  "version": "1.0.1",
+  "path": "/home/cereal/omni-campaign/distill/tools/distill_corpus_build.py",
+  "sha256": "696559136fb4698c6b92de47ed320c993aba5c3a065a13f18e78cd5c24a7ab94",
+  "host": "cereal-X10DRG",
+  "python": "3.12.3",
+  "built_at_utc": "2026-10-13T01:35:53Z"
+ },
+ "set": "(e) media prompt / conditioning sets for the D3 teacher caches",
+ "design": "DISTILL_DESIGN §3 (H3 512 clips 2 s @24 fps 320x512; QIMG 2,048 prompts + negatives; HY3D 256 object images; ACE 1,024 clips/captions; QVL32 ViT feature images); LTX-rollout v9_base rows excluded",
+ "summary": {
+  "qimg": {
+   "items": 2048,
+   "target": 2048,
+   "shortfall": 0,
+   "by_tier": {
+    "description": 857,
+    "grounding": 1080,
+    "ocr": 111
+   }
+  },
+  "hy3d": {
+   "items": 256,
+   "target": 256,
+   "shortfall": 0,
+   "by_tier": {
+    "icon": 61,
+    "edit_source_central_object": 195
+   }
+  },
+  "vit": {
+   "items": 7492
+  },
+  "h3": {
+   "items": 512,
+   "target": 512,
+   "shortfall": 0,
+   "with_audio": 512
+  },
+  "ace": {
+   "items": 1024,
+   "target": 1024,
+   "shortfall": 0,
+   "by_tier": {
+    "jamendo_tags": 132,
+    "descriptor_caption": 1,
+    "ace_prompt_v9_base": 891
+   }
+  }
+ },
+ "files": {
+  "qimg": {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/qimg/items.jsonl",
+   "sha256": "11614d6612751f8eefffb7861390d61a4a341886c98334daf3ad55a98a982577",
+   "items": 2048
+  },
+  "hy3d": {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/hy3d/items.jsonl",
+   "sha256": "ad4954113941343875979cff6d65e17ba1e27ccfecacb290778f1212d805b372",
+   "items": 256
+  },
+  "vit": {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/vit/items.jsonl",
+   "sha256": "02ef27ca11fbecce8fcbfc623e686690f25617781bd558e15b5172e3ece13be8",
+   "items": 7492
+  },
+  "h3": {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/h3/items.jsonl",
+   "sha256": "bdc4819308a570fd9dc41612b132c1cbe34a4e9510a20561a5dae34c814677a5",
+   "items": 512
+  },
+  "ace": {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/items.jsonl",
+   "sha256": "bcd97f6714d2ccd6fcdcd68d64b8a72a87e4e74b7ddc3ec9d99893a215b57c8d",
+   "items": 1024
+  }
+ },
+ "media_store": "/home/cereal/omni-campaign/distill/corpus/media_store",
+ "excluded_ltx_suspect_rows": [
+  "000:4:1413",
+  "000:4:1414",
+  "000:4:1415",
+  "000:4:1416",
+  "000:4:1417",
+  "000:4:1418",
+  "000:4:1419"
+ ],
+ "wall_seconds": 1907.02,
+ "manifest_sha256": "a51badc41d6e161c75f947f3e908d760770306e857677b760a4214554a64723d"
+}

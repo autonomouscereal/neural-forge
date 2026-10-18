@@ -1,0 +1,306 @@
+# Speech lane plan v2: teachers, data v1, intake adjustments, downloads, schedule
+
+**Written:** 2026-10-14, about 23:55Z, by Claude. **Supersedes** `distill/SPEECH_LANE_PROPOSAL_2026-10-14.md` (rev 2) for every decision below; the proposal's §2 (what Codex built), §3 (options), §4.2 sizing basis, §4.3 gates and §4.4 prerequisites stay in force unless this file changes them. Inputs: `SPEECH_MODEL_SURVEY_2026-10-14.md`, `STAGE_D_RECONCILED_PLAN_2026-10-14.md` §3, §5, §7, §8, `STAGE_D_RULINGS_2026-10-12.md` (ruling `cyril-claude-leads-all-lanes-2026-10-14`), the growing-corpus intake design (returned to the parent workflow as text, not yet a file), and two read-only SSH snapshots at 23:45Z and 23:52Z.
+**Marks:** (m) measured, with the source; (d) derived, arithmetic shown; (a) assumption; (k) static dataset fact from the dataset's own documentation, to be re-verified by count/sha at download; UNVERIFIED = not seen.
+**Authority:** Cyril 2026-10-14: "[Cyril quote withheld]" Standing GO. LibriSpeech and older open speech corpora approved (rulings file). Own recordings: first-class, local only, `consent=owner`. Claude leads all lanes; Codex works from `$OC/distill/queues/CODEX_TASKS.md`.
+**Nothing was downloaded, launched, stopped or changed on the server by this document.**
+
+---
+
+## 0. Revision 2026-10-15 (teacher fix) -- read this first
+
+**Written:** 2026-10-15, about 03:30Z, by Claude (workflow task "speech lane: fix teachers"). Backup of the text before this note: `backups/SPEECH_LANE_PLAN_v2_2026-10-14.md.pre-teacherfix-96c33f45`. Rows below **supersede** the matching rows of §2.1, §2.3.3, §2.4, §3 (runtime) and §5 steps 2-3, 6, 8-9; everything else in this file stands. The original text below is left as written so the change is auditable.
+
+**Why.** (1) Cyril's global rule: no ORM, no Pydantic, no SQLAlchemy in any code **or environment** we build. The E1 runtime `speech-voxcpm` (build_speech_runtimes 1.0.0) installed `pydantic==2.14.1` + `pydantic_core==2.50.1`, because `voxcpm` 2.0.3's own model code imports pydantic for its config classes. That is a violation in an environment we built, and VoxCPM2 cannot be loaded without it. (2) Admission judge B should be the current Granite generation, not 3.3 (2025). (3) `intake.py` 1.0.0 `transcribe` runs **one** model twice and calls it agreement; §2.3.3 needs two independent judges.
+
+| Item | Was (this file, 10-14) | Now (10-15) | Evidence / reason |
+|---|---|---|---|
+| Admission judge B | ibm-granite/granite-speech-3.3-2b `4ac2f02f` | **ibm-granite/granite-speech-4.1-2b `de575db64086f84fdc79da4932d1076e965bc546`** (= `main` on 2026-10-15) at `/mnt/lexar/models/ibm-granite/granite-speech-4.1-2b/` | HF API: Apache-2.0, not gated, created 2026-04-16 (m). 29 files / 4.871 GB, every file proven against the API listing of that revision by `speech_fetch.py` (receipt `$OC/distill/speech/teachers/fetch/ibm-granite__granite-speech-4.1-2b.json`, sha `091639c1...`). Card: LS clean/other 1.03/2.19 vs 3.3-2b 1.21/2.85 (survey §2.1, m). No LoRA (config `has_lora_adapter: false`), no peft path. Runs in the existing `speech-asr` runtime (transformers 4.57.6 = the config's `transformers_version`), which has no pydantic. CPU smoke: §0.2 |
+| Granite 3.3 2B | judge B | **superseded**, kept on disk with `_STATUS_SUPERSEDED.txt`; `speech_teacher_smoke` can still load it for comparison | — |
+| Transcript admission (intake, own recordings) | `transcribe` = ASR-0.6B twice, review at WER > 10 % or conf < 0.85 (intake.py 1.0.0, m) | **two judges**: A = Qwen3-ASR-0.6B `5eb14417`, B = granite-speech-4.1-2b `de575db6`; `tools/speech/asr_two_judge.py` 1.0.0 | §2.3.3 rule exactly: `transcript_conf = 1 - WER(A, B)`, `auto` when WER <= 5 %, else `review` (exported to `_review/` for Cyril). WER is taken over the **shorter** transcript, so the verdict does not depend on which judge is "reference" and is never more lenient than WER(A, B). Empty transcript or a judge error = review. No number normalisation ("20" vs "twenty" = review). Kept transcript = judge A's text (same conventions as the held judge ASR-1.7B); B's text is recorded beside it. The intake lane owns `intake.py`: it calls `asr_two_judge.transcribe_two_judges(paths, gpu=N)` inside its own `gpu_claim`; the call is documented in the module docstring ("INTAKE CALL"). intake.py itself was **not** edited |
+| Synthetic admission (C-s3) | "0.6B AND Granite exact" | same rule, now with Granite **4.1**: `asr_two_judge.admission(ref, a, b)` = admitted only if both judges equal the text exactly after normalisation, else quarantine | — |
+| Speech-out family 2 (40 %) | openbmb/VoxCPM2 `32279eff` | **FunAudioLLM/Fun-CosyVoice3-0.5B-2512 `29e01c4e8d000f4bcd70751be16fa94bf3d85a18`, RL LLM weights (`llm.rl.pt`)**, zero-shot cloning from LibriSpeech train-clean / owner train-session references, at `/mnt/lexar/models/FunAudioLLM/Fun-CosyVoice3-0.5B-2512/` | Apache-2.0 (HF tag + card front matter; code repo Apache-2.0, Matcha-TTS MIT), not gated, released 2025-12-11 (m). 20 files / 9.748 GB proven (receipt sha `2bd129c3...`). Survey §3.1: en WER 1.68 (no clone), 1.96 / SIM 58.3 (clone) (m). Not the vendor diversity VoxCPM2 gave: FunAudioLLM is Alibaba Tongyi and its GitHub repo now redirects to `QwenAudio/CosyVoice` (m), so families 1 and 2 share a parent company; the models, speech tokenizers, flow-matching decoders and training data differ (CosyVoice3: Qwen2.5-0.5B text-speech LM + DiT flow + HiFT vocoder at 24 kHz; Qwen3-TTS: 12.5 Hz 16-codebook codec LM) (a, from the cards). **Dependency tree checked BEFORE choosing**: dry-run resolve of the full lean tree in a scratch venv = 96 distributions on top of the torch base, forbidden = none; after install `pip freeze` (120 packages) forbidden = none and the import probe reports no forbidden module importable. Upstream `requirements.txt` lists pydantic/fastapi/gradio for its web server and UI only; `cosyvoice/` and `matcha/` library code never imports them (grep, 0 hits), and they are not installed. CPU smoke: §0.2 |
+| VoxCPM2 | family 2 and second owner cloner | **unusable under the rule**. Weights kept on disk (verified) with `_STATUS_UNUSABLE_NO_PYDANTIC_RULE.txt`; runtime `/mnt/lexar/omni-campaign/runtimes/speech-voxcpm` **removed** 2026-10-15T03:10:40Z (14,163 files / 660 MB; evidence `$OC/distill/speech/teachers/runtime/speech-voxcpm.REMOVED-2026-10-15.json` + `speech-voxcpm.freeze.at-removal.txt`); the shared pip cache that held the pydantic wheels purged (3.10 GB); `speech_teacher_smoke` 1.1.0 refuses `--model voxcpm2` | Cyril's rule |
+| Owner-voice cloner | Qwen3-TTS-1.7B-Base + VoxCPM2 | Qwen3-TTS-1.7B-Base `fd4b2543` + Fun-CosyVoice3 zero-shot | — |
+| Fallback #1 (Kokoro-82M) | Kokoro if VoxCPM2 fails on Pascal | **not usable as packaged** -- see §0.3 | — |
+| Runtimes (E1) | speech-asr, speech-qwentts, speech-voxcpm | **speech-asr** (judges A+B, ASR-1.7B), **speech-qwentts** (family 1), **speech-cosyvoice3** (family 2: CosyVoice source `074ca6dc` + Matcha-TTS `dd9105b3`, tarball sha256 pinned, transformers 4.51.3, openai-whisper 20250625 because 20231117's setup.py needs the removed `pkg_resources`) | `build_speech_runtimes.sh` 1.1.0 gates every runtime twice: a dry-run resolve of the full tree in a scratch venv BEFORE install, then `pip freeze` + an in-interpreter `find_spec` probe AFTER (pydantic*, sqlalchemy*, sqlmodel, alembic, peewee, pony, tortoise-orm, django, mongoengine, odmantic, beanie, ormar, piccolo, fastapi, gradio) |
+| §2.4 download #3, #4 | VoxCPM2, Granite 3.3 2B | #3 -> Fun-CosyVoice3-0.5B-2512 (9.75 GB), #4 -> granite-speech-4.1-2b (4.87 GB); both fetched 2026-10-15 (55.7 and 91.4 MB/s, m). Plus LibriSpeech dev-clean (337.9 MB, md5 OK, 2,703 flacs / 40 speakers, m) for smokes only | — |
+| Layout | `models/speech/<org>__<name>@<rev8>/` | `/mnt/lexar/models/<org>/<name>/`, revision in `.speech_fetch_receipt.json` (already the case since the 10-15 staging, `STAGE_TEACHERS_2026-10-15.json`) | — |
+
+### 0.1 Pydantic / ORM sweep of every runtime (2026-10-15, m)
+
+`pip freeze` of the speech runtimes after the fix: speech-torch 24 packages / 0 forbidden, speech-asr 66 / 0, speech-qwentts 64 / 0, speech-cosyvoice3 120 / 0. Site-packages scan of every venv on the AI server (32 `pyvenv.cfg` within depth 4 of `/home/cereal`, `/mnt/lexar`/`omni-campaign`, 2026-10-15T03:0xZ, m), before the voxcpm removal:
+- clean: speech-torch, speech-asr, speech-qwentts, `/home/cereal/.venvs/chimera-intake` (the intake runtime), `/mnt/lexar/omnicoder_0.1.0/.venv`, `omnicoder_2026_work` (2), `embeddinggemma2-preprod-20261006-task3/runtime`, `oracle/venv`, `SOC_TESTING` (3);
+- **pydantic in an omni-campaign path:** `/home/cereal/model-surgery-lab/venv` (pydantic 2.13.5) -- and `venv-pascal-cu118-torch260` chains it by a `.pth` line, so pydantic is importable there too. These are the campaign's main and Pascal venvs; live v1 jobs (D1, K3, tool-call self-gen) run from them, so **nothing was changed**. Its only hard requirer there is `compressed_tensors` 0.18.0 (`Requires-Dist: pydantic>=2.0`; transformers 5.12.1 lists it only under the `serving` extra) (m), i.e. the quantised-checkpoint loader, which the K3 path may use (UNVERIFIED). Removing it is a separate, scheduled task (find what requires it, `pip uninstall` between jobs, re-run the suites). Not done here;
+- pydantic / SQLAlchemy elsewhere (not built for this campaign): `ai-benchmark-lab/envs/*` (11 benchmark harness envs: appworld also SQLAlchemy 1.4.54 + sqlmodel), `.hermes/hermes-agent` (2), `oracle/new_venv` (+ sqlalchemy 2.0.49), `scraping_agents`, `scraping_suite`, `sentinel_system/normalizer`;
+- removed: speech-voxcpm (pydantic 2.14.1).
+
+### 0.2 CPU smokes (2026-10-15, `$OC/distill/speech/teachers/smoke-teacherfix-2026-10-15/`)
+
+All CPU (`CUDA_VISIBLE_DEVICES=""`, 16 threads, server under load: GPU1/2/3 claimed by other lanes), `run_teacher_fix_smoke.sh`, failed steps 0 (m):
+
+| Smoke | Result |
+|---|---|
+| Two judges on 4 LibriSpeech **dev-clean** utterances (62 words), through the real `transcribe_two_judges` path (`two_judge_devclean4.json`, sha `33785c05...`) | pooled WER vs reference: **A (Qwen3-ASR-0.6B) 0.0323, B (granite-speech-4.1-2b) 0.0323** (2/62 each). Per utterance A/B: 1/24 + 1/24 ("lowered lips"), 0/13 + 0/13, 0/17 + 0/17, 1/8 + 1/8 ("Ted" for "Tad"). A/B agreement: 4/4 `auto` (WER 0.000). Admission vs the reference: 2 admitted, 2 quarantined. Wall 133 s for both models (B 4.8-25.1 s/utt, A 2.7-8.2 s/utt on CPU). Granite 4.1 loaded with **no missing weights** (the judge refuses otherwise) |
+| Family 2: Fun-CosyVoice3-0.5B-2512, RL LLM, zero-shot from dev-clean clip 7850-286674-0009, the 4 fixed sentences (`tts/cosyvoice3.result.json`, sha `5fde0e2f...`) | 4/4 finite, 24 kHz, 4.08-4.76 s each, peak 0.55-0.71; CPU RTF 8.6-11.8; load 401 s of which about 5 min was matplotlib's one-off font-cache build (import chain `matcha.utils` -> matplotlib) under root IO pressure; peak RSS 7.6 GiB |
+| Round trip: those 4 wavs through both judges with the text as reference (`roundtrip_two_judge_cosyvoice3.json`, sha `84a28df6...`) | **4/4 admitted** (judge A WER 0.0, judge B WER 0.0 on every row); A/B agreement 4/4 `auto` |
+
+What the smoke says and does not say: both judges and family 2 load and run inside pydantic-free runtimes, and family 2 is intelligible to both judges. CPU RTFs say nothing about P40 rates (C-s0 measures those). **Correlated errors:** on dev-clean both judges made the *same* two mistakes, so agreement passed them as `auto` -- agreement cuts independent errors, not shared acoustic ambiguity; the human `_review/` pass and the held judge (ASR-1.7B) remain the backstop. 4 utterances are a smoke, not a WER estimate.
+
+### 0.3 If family 2 had failed
+
+Kokoro-82M (Apache-2.0, on disk) was the named fallback, but `pip install kokoro` resolves `misaki[en]` -> `spacy` 3.8.16 / `thinc` 8.3.13 / `weasel` 1.0.0 / `confection` -> `pydantic` 2.14.1 + `pydantic_core` 2.50.1 (dry-run resolve in a scratch venv, 80 distributions, 2026-10-15, m; report `$OC/distill/speech/teachers/runtime/kokoro.resolve.json`); it is not usable under the rule without replacing its G2P, so it is no longer a fallback. If Fun-CosyVoice3 fails on the P40 in C-s0, **family 2 becomes Qwen3-TTS VoiceDesign + Base cloning only** (one vendor, 100 % of synthetic), and the survey's next permissive candidates (tencent/AuK, MIT; ResembleAI/chatterbox, MIT -- note Chatterbox watermarks its output with Perth) must pass the same two-stage gate before any download.
+
+
+### 0.4 Intake 1.2.0, judge card selection, decision 10 (2026-10-15, about 06:45Z)
+
+Second adversarial review of the intake / teacher fixes; backup of this file before this note:
+`backups/SPEECH_LANE_PLAN_v2_2026-10-14.md.pre-intake120-64078e6c`. Deployed (local = server bytes):
+`intake.py` **1.2.0** `cdda2517...`, `speech/asr_two_judge.py` **1.1.0** `5651d6d7...`, `intake_cron.sh` **1.0.2**
+`7900401a...`, `tool_pins.py` **1.1.0** `afa2da81...`; previous versions in `tools/_superseded/` and
+`tools/speech/_superseded/`; database dump before the deploy
+`/mnt/lexar/omni-campaign/corpus/backups/chimera_corpus-pre-intake-1.2.0-20261015T053718Z.dump`.
+
+- **2.3.3 transcription now runs as written**: `intake.py transcribe --gpu {1,2,3}` reads the pending clips (CPU, no
+  model), takes the claim (gpu<N>.lock, no other lane's open p40.claims line via d1_seal_lib.claim_state, card < 1 GiB
+  used, MemAvailable >= 40 GiB, CLAIM / RELEASE lines) and only inside it calls `asr_two_judge.transcribe_two_judges`.
+  Never from cron (`--cpu-only` and `INTAKE_CRON=1` refuse it). Not yet run on a card: GPUs 1-3 were held by
+  d2clean / toolcall all session.
+- **Judges select the P40 by UUID** (`CUDA_VISIBLE_DEVICES=GPU-...`, `CUDA_DEVICE_ORDER=PCI_BUS_ID`), resolved from the
+  nvidia-smi index; a non-P40 index is refused before any process starts and the judge process refuses (exit 5) unless
+  exactly one Tesla P40 with that UUID is visible.
+- **Held text across passes**: identity keys carry the split of unsealed items, so an owner clip from a train session
+  with the words of an earlier held clip goes to review, a third-party copy is held; speech transcripts get the held
+  near-copy check (planner, transcribe, accepted review edits; an accept never overrides a held-out rule).
+- **Decision 10 (lead): the LibriSpeech clips Codex holds as validation/test are HELD, never train.** Holdout registry
+  **v3** `6983eab117458a8544152355253897974f884d3e26182399a9e5bf3f50d48839` gives `codex_recovery_heldout`
+  `on_media_match=held`: a clip that IS one of its media is held with Codex's split. Dry run
+  `/mnt/lexar/omni-campaign/corpus/dryrun/vnext-20261015T060932Z/` (report `ed165a7b...`): the 352 clips are held
+  (170 val, 182 test), contaminated 418 -> 66, held 1,530 -> 1,882, admitted unchanged at 14,464, no other status moved.
+- **v1 overlap is wider than 352**: registry v3 bank `v1_codex_heldout_overlap` lists **2,600 v1 staging rows** (all
+  routes: image 770, ocr 434, tts 310, video 268, audio 250, speech 234, music 232, ...) whose media are Codex
+  validation/test media (3,319 clips). For the 352 LibriSpeech clips alone it is 364 v1 rows (183 tts, 181 speech).
+  v1 is sealed; every reader of v1 must exclude these ids (`registry_v3/ids.jsonl`, bank v1_codex_heldout_overlap).
+
+---
+
+## 1. Problem
+
+D3e (speech in/out through the existing H3 audio channel) has a design but no data beyond Codex's 48-sentence smoke set, no teacher set beyond the Qwen3 pair, and no place for Cyril's own recordings to land. This file fixes the teacher set, the v1 speech corpus (sizes, hours, held-out rule), the intake adjustments speech needs, the exact downloads, and a schedule that fits the cards that are actually free, so that D3e can be pinned in prereg amendment A3 before D3 starts (about 2026-10-22).
+
+---
+
+## 2. Decisions
+
+### 2.1 Teachers (decision 1)
+
+| Role | Model (repo, rev) | Card | Why this one | Rejected |
+|---|---|---|---|---|
+| **Speech-in held judge** | Qwen/Qwen3-ASR-1.7B rev `7278e1e7` (on disk, root; `qwen_asr` package) | P40 fp32 (9.4 GB) | 52 languages, Apache-2.0, 5.75 avg WER (#1 open model with > 8 languages on the 2026-10-09 board, m). Its encoder is the option-D fold candidate, so the judge and the later unit share lineage | `-hf` rev `bcd2b5b7`: same weights repackaged for stock transformers; kept only as the fallback if `qwen_asr` does not import in the Pascal venv. C-s0 must show both give identical transcripts on 16 utterances or the fallback is not used |
+| **Admission judge A (train rows)** | Qwen/Qwen3-ASR-0.6B rev `5eb14417` (on disk) | P40 fp32 (3.8 GB) | Codex-proven at 0.82 s/utt on a 3090 (m); never used on the held set (judge independence, proposal §4.1) | — |
+| **Admission judge B (independent)** | ibm-granite/granite-speech-3.3-2b rev `4ac2f02f` | P40 fp32 (12.0 GB) | Not a Qwen relative; 5.36 avg WER (#3 open, m); ungated; runs on transformers >= 4.52 (a), which Codex's 4.57.3 venv satisfies. Breaks the Qwen-judges-Qwen loop at admission and labels own recordings by agreement | Cohere Transcribe 03-2026: better LibriSpeech numbers (0.97/2.05) but gated behind an HF contact-share acceptance Cyril must do once, and its runtime is UNVERIFIED. **Optional third judge** if he accepts the gate; not on the critical path. Fluid Speech Mini (S-R5): dropped; English-only ONNX adds a runtime for no gain over Granite |
+| **Answer teacher, speech-in rows** | Chimera's own text teacher (the D1-D3 Q38 path via `qtext_teacher_cache`) on the gold or admitted transcript | existing | VoiceBench shows ASR + strong LLM cascades beat most end-to-end audio LLMs (survey §2.3); Chimera's trunk is far stronger than those cascades' LLMs | Qwen3-Omni-Thinking / Nemotron Nano Omni as audio-LLM teachers: 66-79 GB bf16, int4 only after a 3090 frees, and they would only help paralinguistic questions, which v1 does not train |
+| **ASR soft targets (C-s5)** | Qwen3-ASR-1.7B teacher-forced, top-32, vocab 151,936 to Chimera rows by identical byte string | P40 | Unchanged from the proposal | — |
+| **Speech-out family 1 (60 % of synthetic)** | Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice rev `0c0e3051` (on disk) + **VoiceDesign** rev `5ecdb673` (new) | P40 fp32 (8.4 GB) | On disk, Apache-2.0, en 1.71 WER (board, m); VoiceDesign makes many voices from text so speech-out does not overfit 9 voices | 0.6B: lower quality for the same wall cost |
+| **Speech-out family 2 (40 % of synthetic)** | openbmb/VoxCPM2 rev `32279eff` | P40 fp32 (9.2 GB), speed UNVERIFIED | Best permissive speaker similarity (SIM 75.2 multilingual, m), 30 languages, 48 kHz, different vendor prosody. Also the second owner-voice cloner | MOSS-TTS v1.5 (8.5B): needs a 3090, none free before 10-15 22:00Z and then only in contested gaps; deferred to stage T data. Fun-CosyVoice3-0.5B: 9.75 GB repo for a smaller model than Qwen's; fallback #2. Kokoro-82M: fallback #1 if VoxCPM2 fails on Pascal (Apache-2.0, en WER 1.46, runs anywhere, but flat prosody, so capped at 25 %) |
+| **Owner-voice cloner** | Qwen/Qwen3-TTS-12Hz-1.7B-Base rev `fd4b2543` (new) and VoxCPM2 | P40 | Both Apache-2.0; self-consented voice, so no impersonation clause applies | — |
+| **Speech-to-speech / omni teacher** | **None in stage D.** Candidate for stage T only: openbmb/MiniCPM-o-4_5 rev `503e7542` (19 GB bf16, fits a 3090) for duplex/turn-taking; Qwen3-Omni-30B-A3B-Instruct int4 as the alternative | 3090, after D4 | Stage T conversation speech = Chimera's text answer read by family 1/2 in a fixed assistant voice (cascade). That needs no S2S model. Duplex behaviour is a separate capability Cyril has not asked for; decide at the stage-T boundary. Nothing downloaded now | VoiceChat 11B / PersonaPlex: weak content (VoiceBench 58.1), timing-only use |
+| **Folded speech unit** | **No fold now.** Option D (whole Qwen3-ASR-1.7B audio encoder, about 302M params (d), new C15 type `audio_asr`, after D4) stays the S-R3 trigger: D3e-out still noise at 25 %, or held speech-in WER > about 30 % after D3e | — | A speech-out fold would add a second audio codec beside H3 (survey §6.4); an S2S talker is conditioned on the wrong backbone | — |
+| Reference only | Fish Drama 3, Fish S2 Pro, Higgs TTS 3, Breeze TTS 2 | — | Licences forbid training on outputs (survey §9, licence texts saved). Cyril said "[Cyril quote withheld]"; recorded, not relied on, because the permissive set is within 0.1-0.3 WER (m) | — |
+
+**Licence register for v1 teachers:** Qwen3-ASR/TTS, VoxCPM2, Granite Speech 3.3 = Apache-2.0 (HF tags, m). LibriSpeech CC BY 4.0 (k). LJSpeech public domain (k). laion_orpheus_tts rows already in the registry: licence UNVERIFIED, excluded from v1 until Codex task T5 reads it.
+
+### 2.2 Speech data v1 (decision 2)
+
+**Length mix** (proposal rev 2, unchanged): 90 % body 5-40 words (mean 20 words, 8.60 s), 10 % tail 15-30 s; mean 9.99 s / 23.2 words per synthetic utterance (d). Positions per row from the measured basis (proposal §2.3): CE = 29.0 + 1.233 x words + 78.98 x seconds; flow = 23.5 + 1.233 x words + 78.98 x seconds.
+
+**Objective change (recorded for A3):** speech-out uses **2 σ draws per utterance** (one seeded draw from {0.05, 0.3}, one from {0.7, 1.0}) instead of Codex's 4 fixed draws. Same grid, same x0 velocity-form loss, half the positions; the saved budget buys more distinct utterances and voices. Rejected: 4 draws (repetition over diversity) and 1 draw (loses one end of the schedule per utterance).
+
+| Set | Source | Train rows | Audio (d) | Speech-in | Speech-out | Condition text | Licence / consent |
+|---|---|---:|---:|---|---|---|---|
+| S1 synthetic, family 1 | Qwen3-TTS-1.7B CustomVoice 9 voices + VoiceDesign 40 designed voices, round-robin | up to 2,400 | 6.7 h | yes | yes | "Generate speech in the synthetic {voice} voice, saying exactly:\n{text}" | Apache-2.0 |
+| S2 synthetic, family 2 | VoxCPM2, 40 designed/cloned voices | up to 1,600 | 4.4 h | yes | yes | same | Apache-2.0 |
+| S3 owner-voice clone (inside the S1/S2 cap, <= 25 % of it) | Qwen3-TTS-Base + VoxCPM2 cloned from 3 reference clips of a **train** session | <= 1,000 | 2.8 h | yes | yes | "... in the owner's voice ..." | owner; labelled `voice=owner-clone` |
+| N1 LibriSpeech ASR route | 701 Codex leak-repaired rows (`blocked_repaired_asr.jsonl` `33af6fd3…`) + 1,299 new utterances from train-clean-100 (speakers disjoint from test-clean by construction, k) | 2,000 | 7.1 h (12.7 s mean, k: 100.6 h / 28,539) | yes | no | gold transcript | CC BY 4.0 |
+| N2 LibriSpeech generation route | Codex's 879-row route, train 693 | 693 | 2.4 h | no | yes | "Generate speech in natural voice LS-{speaker_id}, saying exactly:" | CC BY 4.0 |
+| N3 LJSpeech | 1,000 clips drawn by clip-id hash from 13,100 (k: 23.9 h, one speaker, 6.57 s mean) | 1,000 | 1.8 h | no | yes | "... in natural voice LJ ..." | public domain |
+| O1 own recordings, real | Cyril's sessions after intake + segmentation (<= 20 s utterances), train sessions only | **unknown**; planned at 300 (a) | <= 1 h (a) | yes | yes | "... in the owner's voice ..." | owner, `voice=owner-real` |
+| Non-speech | Codex's 8 procedural fixtures | 8 | — | yes | no | — | operator |
+
+Rows marked "no" for speech-in are never scored as speech-in (they carry no answer). N1 rows are not used for speech-out (the 884/879 route split keeps every waveform on one route, m).
+
+**Held set (goes into holdout registry v2; never in any optimiser batch):**
+- synthetic: 5 % of texts by text group (about 200 texts, one voice each);
+- N1/N2: Codex's 89 ASR-test and 104 generation-test rows; plus **LibriSpeech test-clean, 500 utterances** (k: 2,620 utts / 5.4 h / 40 speakers) as the public WER number; plus 100 test-clean texts under the natural-voice condition for speech-out;
+- N3: 100 LJSpeech clips by id hash;
+- O1: **split by recording session**: `sha256("chimera-speech-own-v1:" + session_id)` first 8 hex mod 100 < 80 -> train, else held; at least one session on each side (if there is only one session, it is held and O1 train is empty until the next session arrives); clone-reference clips are taken only from train sessions;
+- Codex's 31 held rows.
+
+**D3e budget (d; rates as the proposal: upside 348/1.3 = 267.7 tok/s, planning 151.24/1.3 = 116.3 tok/s):**
+
+| Lane | Rows x positions | Positions |
+|---|---|---:|
+| in: synthetic | 4,000 x 846.7 | 3.387M |
+| in: N1 | 2,000 x 1,068.4 | 2.137M |
+| in: O1 | 300 x 846.7 | 0.254M |
+| out: synthetic | 4,000 x 2 x 841.2 | 6.730M |
+| out: N2 | 693 x 2 x 1,062.9 | 1.473M |
+| out: N3 | 1,000 x 2 x 563.4 | 1.127M |
+| out: O1 | 300 x 2 x 841.2 | 0.505M |
+| 20 % H3 AV replay | out / 0.8 - out | 2.459M |
+| **Total** | | **18.07M** |
+
+**18.8 h upside / 43.2 h planning**, plus two reviews of about 2.5 h each (25 % of D3e-out and end). This is below the proposal's synthetic-only case B (21.0 / 48.3 h) with about 2x the audio hours and about 90 voices instead of 9. Scaling: 5.05M positions per 1,000 synthetic utterances at 4 σ becomes 2.73M at 2 σ (2.8 h upside / 6.5 h planning). If the TTS cap yields fewer than 4,000 admitted synthetic rows, the synthetic in/out rows shrink proportionally; N1-N3 are unaffected (they cost no TTS time). Total train audio about 23.4 h; x0 latents at 10,240 B/s = 0.86 GB; synthetic WAV 1.92 GB; natural flac copies about 2 GB; soft targets about 60 MB (d).
+
+**Data freeze for A3:** whatever is sealed as `speech_v1` by **2026-10-21 00:00Z** is pinned. Own recordings that arrive later go to the next corpus version and to stage T; they do not reopen D3e.
+
+### 2.3 Intake adjustments for speech (decision 3)
+
+The growing-corpus intake design stands. Speech needs these additions:
+
+1. **Session identity.** `source_batch.session_id` is the batch folder name under `speech/own/<session>/` (or `yyyy-mm-dd_<device>` from container tags for loose files). `item_identity` gets a `session:<id>` key so union-find puts a whole session in one group; the owner split above is applied by `split` when `consent='owner'` and modality `speech` (salt `chimera-speech-own-v1`, 80/20, not the generic 90/5/5).
+2. **Segmentation.** A `segment` step after `normalise`: ffmpeg `silencedetect` (-35 dB, 0.6 s) cuts recordings into 3-20 s utterances; each segment is a derived asset (`derived_from`, `probe.segment={start_s,end_s}`), so the parent recording stays immutable and the segment inherits its session. No ML in this step.
+3. **Transcription by agreement.** `transcribe` runs ASR-0.6B and Granite 3.3 2B (both P40 fp32) on the 16 kHz derivative; `transcript_conf` = 1 - WER(0.6B, Granite) after normalisation; `auto` when WER <= 5 %, `review` otherwise, exported to `_review/<batch>/transcripts.jsonl` for Cyril. ASR-1.7B never runs on intake rows. `transcript_tool` records both model revs.
+4. **Clone references.** New table `clone_reference` (DDL below); `intake.py clone-ref --speaker cyril --n 3` picks the three train-session segments with the highest agreement and loudness within -23 +/- 3 LUFS, 8-15 s long, and records them; `speech_teacher_cache tts-gen --voice owner-clone` reads only this table.
+5. **Two audio derivatives** per segment: `16k-mono.flac` (ASR) and `32k-stereo.flac` (H3 VAE). Both content-addressed.
+6. **Holdout registry v2** adds: synthetic held texts, LibriSpeech test-clean ids (500 + 100), Codex's 89/104/31, LJSpeech held ids, owner held sessions. `resolve --modality speech --split train` is what `speech_corpus_build` consumes.
+7. **External corpora** are not drop-zone data: `corpus_fetch.py` (Codex task T2) puts LibriSpeech/LJSpeech under `/mnt/lexar/omni-campaign/corpus/external/<name>/` with the upstream archive sha and per-file sha256, then `intake.py ingest --batch external/<name>` registers them with `licence` and `consent='third_party_licensed'` and `source_batch.meta.upstream_sha256`.
+
+Schema deltas (raw DDL, database `chimera_corpus`):
+
+```sql
+ALTER TABLE source_batch ADD COLUMN session_id TEXT;
+ALTER TABLE item         ADD COLUMN speaker    TEXT;
+ALTER TABLE item         ADD COLUMN voice      TEXT;   -- 'owner-real' | 'owner-clone' | 'synthetic:<family>:<voice>' | 'LS-<spk>' | 'LJ'
+
+CREATE TABLE clone_reference (
+  speaker        TEXT NOT NULL,
+  asset_sha256   CHAR(64) NOT NULL REFERENCES asset(sha256),
+  session_id     TEXT NOT NULL,
+  split          TEXT NOT NULL CHECK (split = 'train'),   -- a held session can never be a reference
+  chosen_utc     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  chosen_by      TEXT NOT NULL,
+  agreement_wer  REAL NOT NULL,
+  loudness_lufs  REAL,
+  PRIMARY KEY (speaker, asset_sha256)
+);
+```
+
+Connection rules unchanged: psycopg2, `os.environ.get("CHIMERA_CORPUS_PG_PASSWORD", "")`, `connect_timeout=5`, statement/lock timeouts, explicit commit, close in `finally`.
+
+**Fallback if the intake tool is not deployed by the data freeze:** `speech_teacher_cache ingest-own --manifest own_sessions.json` applies rules 1-4 directly from a hand-written session manifest (paths + session ids + sha256), writing the same receipts; the rows are back-filled into PG by `intake.py rebuild-index` later. This keeps D3e independent of the intake schedule.
+
+### 2.4 Downloads (decision 4)
+
+Destination `/mnt/lexar/models/speech/<org>__<name>@<rev8>/` (the `/mnt/lexar/models/` tree exists, m), written by `speech_fetch.py` (`huggingface_hub.snapshot_download(revision=...)`, then per-file sha256 into `fetch_receipt.json`; token only from `os.environ.get("HF_TOKEN", "")`, vault key `hf_token`, needed only for the optional gated repo). Sizes are HF API repo sizes (survey §8, m).
+
+| # | Repo @ rev | Size | When | Need |
+|---|---|---:|---|---|
+| 1 | Qwen/Qwen3-TTS-12Hz-1.7B-Base @ `fd4b2543` | 4.54 GB | now | owner-voice clone |
+| 2 | Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign @ `5ecdb673` | 4.52 GB | now | voice diversity |
+| 3 | openbmb/VoxCPM2 @ `32279eff` | 4.96 GB | now | family 2 |
+| 4 | ibm-granite/granite-speech-3.3-2b @ `4ac2f02f` | 11.78 GB | now | admission judge B, own-recording labels |
+| 5 | hexgrad/Kokoro-82M (latest, pin at fetch) | about 0.3 GB (a) | now | fallback family if 3 fails on Pascal |
+| 6 | CohereLabs/cohere-transcribe-03-2026 @ `d552dadc` | 4.13 GB | only after Cyril accepts the HF gate | optional third judge |
+| 7 | Copy of root speech parents to `/mnt/lexar/models/speech/` with sha check: Qwen3-ASR-1.7B (4.70 GB), Qwen3-TTS-1.7B-CustomVoice (4.52 GB), Qwen3-ASR-0.6B (1.88 GB), TTS-0.6B (2.5 GB) | 13.6 GB | now | root relief; root copies deleted only on Cyril's go-ahead |
+| 8 | LibriSpeech train-clean-100 / dev-clean / test-clean (openslr.org/resources/12) | 6.3 / 0.34 / 0.35 GB (k) | now, Codex T2 | N1, N2, held |
+| 9 | LJSpeech-1.1 (keithito.com/LJ-Speech-Dataset) | 2.6 GB (k) | now, Codex T2 | N3 |
+| — | MOSS-TTS v1.5 (17.0 GB), MiniCPM-o 4.5 (20.05 GB) | 37 GB | **not now**; stage-T decision | — |
+| — | Fish Drama 3 (41.5 GB) | — | **never** for training; not downloaded (cannot run on our cards; int4 on the RTX 8000 UNVERIFIED) | — |
+
+Now: about 36 GB models + 13.6 GB copies + 9.6 GB corpora = **59 GB on Lexar** (487 GB free, m). Root untouched.
+
+---
+
+## 3. Design (components and data flow)
+
+```
+/mnt/lexar/models/speech/*            teachers (fetch receipts, pinned revs)
+/mnt/lexar/omni-campaign/corpus/external/{librispeech,ljspeech}/   raw corpora + sha
+/mnt/ai_data/chimera-intake/speech/own/<session>/                   Cyril's recordings (drop zone)
+        |  intake.py run / segment / transcribe (GPU3 queue) / clone-ref / seal -> corpus vN
+        v
+speech_corpus_build.py  (E2, CPU)  : texts (planned mix, contamination screen), natural rows, own rows,
+                                     held split by text group / session -> speech/corpus/<sha>/{texts,rows}.jsonl
+        v
+speech_teacher_cache.py (E3, P40s) : tts-gen (family 1 | family 2 | owner-clone) -> 24/48 kHz WAV
+                                     asr-admit (0.6B AND Granite exact)          -> admission.jsonl
+                                     h3-encode (32 kHz stereo, x0 [2T,32] fp32)  -> latents/
+                                     asr-topk  (1.7B, top-32, byte-string map)   -> soft_targets/
+                                     seal -> speech_v1/manifest.json (every sha, counts, teacher revs, corpus_version)
+        v
+d3_hybrid_module 1.1.0 (E4, 3090s) : lanes speech_in_ce, speech_out_flow (2 sigma), 20 % H3 replay; chart rule unchanged
+        v
+speech_held_eval.py (P40/3090)     : held decode -> H3 VAE decode -> ASR-1.7B WER (+ Granite reading), audio_rms, baseline clone
+```
+
+Runtime: `/mnt/lexar/omni-campaign/runtimes/speech-pascal/` (E1): torch 2.6.0+cu118 (the sm_61 build the existing `venv-pascal-cu118-torch260` proves works, m), transformers 4.57.3, `qwen_tts` 0.1.1, `qwen_asr`, `voxcpm`, `soundfile`, `numpy`; no flash-attn; every process sets `CUDA_VISIBLE_DEVICES` to one card, takes `gpu<N>.lock` + a `p40.claims` line, and gates on MemAvailable >= 40 GiB (71 GB now with D1 + K3 live, m).
+
+---
+
+## 4. Trade-offs
+
+| Chose | Rejected | Why |
+|---|---|---|
+| Two permissive TTS families (Qwen3-TTS, VoxCPM2) | One family; or the top-rated restricted models | One family teaches one vendor's prosody; the restricted four forbid training use, and the permissive set is within 0.1-0.3 WER (m) |
+| Granite 3.3 2B as the independent admission judge | Cohere Transcribe (better LibriSpeech numbers) | Granite is ungated and runs on the venv we have; Cohere needs a one-time gate acceptance and an unverified runtime. Cohere stays optional |
+| 2 sigma draws per utterance | Codex's 4 fixed draws | Halves speech-out cost; the budget goes to more utterances and voices. Recorded in A3 as a change to Codex's objective |
+| Natural corpora at 2,000 / 693 / 1,000 rows | All 28,539 LibriSpeech utterances | D3e must stay about 20 h upside; natural rows cost no TTS time but do cost trainer positions (1,068 each). More natural data belongs to stage T |
+| Cascade (text teacher + TTS) for stage-T conversation speech; no S2S teacher now | MiniCPM-o 4.5 / Qwen3-Omni as S2S teachers in stage D | No free 3090 before 10-15 22:00Z and the gaps are allocated; cascades already beat most S2S models on VoiceBench; duplex is a separate capability nobody asked for |
+| Own recordings split by session, 80/20, >= 1 session held | Utterance-level split | Same-session utterances share mic, room and day; an utterance split would leak |
+| Clone references only from train sessions | Best clips regardless of split | The held set must measure a voice the model did not hear through the cloner |
+| Data freeze 10-21 for A3 | Open-ended intake into D3e | A3 pins shas; a moving corpus cannot be pinned. Later arrivals feed stage T |
+| Pin the on-disk ASR rev `7278e1e7` + `qwen_asr` | `-hf` rev | It is what is on disk and what Codex ran; the `-hf` repackaging is a fallback only after a 16-utterance identity check |
+| Fallback `ingest-own` path in `speech_teacher_cache` | Hard dependency on the intake tool | The intake tool has its own approval gates (vault key, new PG database); D3e must not wait on them |
+
+---
+
+## 5. Plan (ordered; `$OC=/home/cereal/omni-campaign`; local mirror `C:/Users/cereal/Documents/ai training/neural-forge/reports/omni-campaign-2026-09/distill/tools/speech/`)
+
+| # | Step | Owner | Card / host | Hours | When (UTC) |
+|---|---|---|---|---|---|
+| 1 | `CODEX_TASKS.md` entries T1-T5 (below) | Claude | CPU | 0.3 | 10-15 00:00 |
+| 2 | E1 venv `/mnt/lexar/omni-campaign/runtimes/speech-pascal/` (`python3 -m venv --copies`; pins in §3); import test for `qwen_asr`, `qwen_tts`, `voxcpm`, `GraniteSpeechForConditionalGeneration` | Claude | CPU | 2 | 10-15 00:00-03:00 |
+| 3 | `speech_fetch.py` + downloads #1-5, #7 (sha receipts); `hf_token` vault key only if Cyril accepts the Cohere gate | Claude | CPU/network (speed UNVERIFIED) | 1-3 | 10-15 00:00-04:00 |
+| 4 | T2 `corpus_fetch.py`: LibriSpeech train-clean-100/dev-clean/test-clean, LJSpeech; archive sha, per-file sha, counts (28,539 / 2,703 / 2,620 / 13,100 expected, k) | Codex (Claude if Codex has no usage) | CPU/network | 1-2 | 10-15 |
+| 5 | E2 `speech_corpus_build.py` + tests: planned-mix texts through `ReviewIndex`, N1-N3 row selection by hash, O1 from intake `resolve` or `own_sessions.json`, held split rules, condition strings, `corpus_version`/registry shas in the manifest | Codex drafts (T1), Claude reviews and deploys | CPU | 3 | 10-15 |
+| 6 | **C-s0 rate probe** (16 utterances from the mix, >= 2 tail texts): TTS-1.7B CustomVoice, VoiceDesign, Base-clone (a LibriSpeech clip as a stand-in reference if no own clip exists), VoxCPM2, Kokoro, ASR-0.6B/1.7B (both revs), Granite, H3 VAE encode; RTF, s/utt, peak VRAM, RSS -> `p40_speech_rates.json` | Claude | **GPU1** after self-gen finalize (about 03:30Z); GPU3 only when `p40.claims` shows the k3accel job released | 1 | 10-15 04:00-05:00 |
+| 7 | E3 `speech_teacher_cache.py` + tests (`tts-gen`, `asr-admit`, `h3-encode`, `asr-topk`, `ingest-own`, `seal`; resumable; one card per process; claims + MemAvailable gate) | Claude | CPU | 5 | 10-15 00:00-06:00 (parallel with 2-6) |
+| 8 | **C-s2 TTS**: family 1 on GPU1+GPU2, family 2 on GPU3 (or Kokoro / family 1 only if VoxCPM2 fails C-s0); **12 h wall cap**; N set by measured RTF (at the 3090 0.6B RTF 4.0 that is 3,243 on three cards (d); P40 1.7B is expected slower) | Claude | GPU1-3 | <= 12 | 10-15 05:00-17:00 |
+| 9 | C-s3 admission (0.6B AND Granite exact after normalisation; quarantine otherwise), C-s4 H3 encode synthetic, C-s6 natural + own encode (about 16 h of audio; P40 RTF UNVERIFIED, CPU basis 2.4), C-s5 top-k; `seal` -> `speech_v1` | Claude | GPU1-3 | about 6-8 | 10-15 17:00 -> 10-16 06:00 |
+| 10 | Own recordings: when they land in `speech/own/<session>/`, intake `run` -> `segment` -> `transcribe` (GPU3 queue) -> review export -> `clone-ref` -> owner-clone `tts-gen` (<= 1,000) -> encode -> re-seal `speech_v1` (allowed until the 10-21 freeze; after that, next version) | Claude; Cyril reviews `_review/` | GPU3 | 2 per session (a) | as they arrive |
+| 11 | E4 `d3_hybrid_module` 1.1.0: lanes `speech_in_ce`, `speech_out_flow` (2 sigma), H3 replay mix, chart rule (proposal §4.4.1), parity test vs Codex's `speech_flow.py` loss on 3 replay tensors at rel <= 1e-6, tests | Claude | CPU | 5 | by 10-17 |
+| 12 | `speech_held_eval.py`: 32-step Euler on held texts, H3 decode, ASR-1.7B WER, Granite second reading, `audio_rms`, baseline = D3-entry clone; test-clean 500 WER for speech-in | Claude | CPU + P40 | 2 | by 10-20 |
+| 13 | A3 amendment text (teachers + revs, `speech_v1` manifest sha, holdout registry v2 sha, 2-sigma rule, chart, budgets, gates), `check-prereg` prints body sha `c24d21e0…1370` unchanged | Claude; Codex T4 reviews | CPU | 0.5 | 10-21 |
+| 14 | D3e inside D3 after D3d: in -> out -> replay; reviews at 25 % and end | Claude (L-TRAIN) | GPU0+GPU4 | 18.8 upside / 43.2 planning + 5 reviews | upside about 10-25; planning about 10-29 -> 10-31 |
+| 15 | D4 speech replay 300 + 300 rows (about 0.5 h); stage-T speech data prep (conversation pairs via cascade, owner voice) on P40s during D3/D4; S2S decision at the T boundary | Claude | P40s, then 3090s | — | after D3 |
+
+**Codex tasks (`$OC/distill/queues/CODEX_TASKS.md`):** T1 E2 draft + tests; T2 corpora fetch + manifests; T3 intake speech tests (`test_segment.py`, `test_session_split.py`, `test_clone_ref.py`, `test_transcribe_agreement.py`); T4 A3 review; T5 licence read of laion_orpheus_tts (361 rows) and whether those rows may enter v2. Codex never launches GPU work; it reports through files of record and Relay with the five-line hand-off.
+
+**Tests to write** (`$OC/distill/tools/speech/tests/`, CPU, byte-equal `conftest.py`): text-mix means printed and within tolerance; held texts never in train; session split determinism and the >= 1-held rule; clone-ref refuses held sessions; admission needs both judges; `h3-encode` bitwise repeat on 1 in 20; top-k byte-string vocab map round trip; seal lists every sha and `verify` fails on one flipped byte; `ingest-own` and intake `resolve` produce identical rows for the same session; no network import outside `speech_fetch.py`/`corpus_fetch.py`.
+
+---
+
+## 6. Risks and gates
+
+- **Touches a running GPU card:** C-s0/C-s2 on GPU1/2 only after the self-gen finalize is done and its claims are released; GPU3 only after the k3accel claim is released (held by pid 619185 at 23:45Z, m). GPU0/4/6 never before D3. Any launch goes through `p40.claims` + `gpu<N>.lock` + MemAvailable >= 40 GiB.
+- **Approval gates:** `hf_token` vault key (only for Cohere); deleting the root speech copies (13.6 GB) after the Lexar copy; the intake tool's own gates (vault key `chimera_corpus_pg`, `CREATE DATABASE` on agent-memory-postgres) are not on D3e's path because of the `ingest-own` fallback.
+- **Personal data:** own recordings stay on NAS/Lexar; owner-clone outputs are owner data too; nothing leaves the LAN; `consent=owner`, `voice=owner-real|owner-clone` recorded on every row.
+- **Pascal fit:** VoxCPM2 and Granite on sm_61 fp32 are unmeasured; C-s0 decides, fallbacks named (Kokoro; family 1 only). The cu128 torch 2.11 Codex venv is not used.
+- **TTS cap binds:** N probably < 4,000; the budget table scales linearly; N1-N3 do not depend on it.
+- **H3 latents for speech-in:** the main capability risk (latents are tuned for reconstruction, SNR 10.85 dB on one clip, m). The 25 % stop line and S-R3 (option D) are the answer; the natural rows (N1, O1) make the held WER meaningful.
+- **Disk:** Lexar 487 GB free (m) minus about 65 GB here; root 70 GB stays untouched.
+- **Own recordings count unknown:** O1 = 300 rows is an assumption; if zero sessions exist at the freeze, O1 and S3 are empty and the budget drops by 0.76M positions plus the S3 share. The schedule does not wait for them.
+
+---
+
+## 7. What I could not verify
+
+- Cyril's own recordings: the NAS scan (`/tmp/tc_scan.py /mnt/ai_data`, 50-min timeout, started about 23:31Z) had not finished; `training_data/rvc` is empty and no voice-memo tree was found in the bounded listings. Counts, hours and sessions are unknown.
+- The full LibriSpeech is not on the NAS: only the content-addressed subset referenced by Codex's 1,763 rows (8 flacs per `omnicoder_2026/media_artifacts/*/librispeech_asr_train_clean_100/` dir, m). Download sizes and counts are (k) until the fetch receipts print them.
+- Any P40 rate (TTS-1.7B, VoxCPM2, Granite, H3 VAE encode); whether VoxCPM2's package runs on torch 2.6.0+cu118.
+- That `qwen_asr` imports under transformers 4.57.3 for the 1.7B (Codex ran the 0.6B); that `-hf` and the original give identical transcripts.
+- Granite Speech 3.3 2B's transformers version requirement and fp32 P40 memory in practice.
+- laion_orpheus_tts licence; Kokoro-82M current revision; internet download speed from the server.
+- Every licence text except those saved in `distill/speech-survey-2026-10-14/licences/`.
+- Whether Cyril wants duplex behaviour at all (stage-T question, not asked).

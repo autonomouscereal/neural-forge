@@ -1,0 +1,34 @@
+[
+ {
+  "id": "3570-5695-0015",
+  "audio": "/mnt/lexar/omni-campaign/corpus/external/librispeech/LibriSpeech/test-clean/3570/5695/3570-5695-0015.flac",
+  "reference": "THE RESULT IS A GREAT MOBILITY OF THE LABOR EMPLOYED IN PRINTING PERHAPS GREATER THAN IN ANY OTHER EQUALLY WELL DEFINED AND CONSIDERABLE BODY OF WORKMEN",
+  "source": "librispeech/test-clean",
+  "licence": "CC BY 4.0",
+  "pick_key": "0006f306457d2440d0e34f669b773d9e03f570d5e77e505c59e2bcab3f528ff8"
+ },
+ {
+  "id": "2830-3980-0064",
+  "audio": "/mnt/lexar/omni-campaign/corpus/external/librispeech/LibriSpeech/test-clean/2830/3980/2830-3980-0064.flac",
+  "reference": "HOW MAY WE OBTAIN REMISSION OF OUR SINS",
+  "source": "librispeech/test-clean",
+  "licence": "CC BY 4.0",
+  "pick_key": "003848a3a9d7557efec7e867b0abe2eb46e480323d34f6d87fe96e40684c4320"
+ },
+ {
+  "id": "7021-79740-0000",
+  "audio": "/mnt/lexar/omni-campaign/corpus/external/librispeech/LibriSpeech/test-clean/7021/79740/7021-79740-0000.flac",
+  "reference": "TO SUCH PERSONS THESE INDIRECT MODES OF TRAINING CHILDREN IN HABITS OF SUBORDINATION TO THEIR WILL OR RATHER OF YIELDING TO THEIR INFLUENCE ARE SPECIALLY USEFUL",
+  "source": "librispeech/test-clean",
+  "licence": "CC BY 4.0",
+  "pick_key": "00465dbe126af10fbee16438b7797de72067bde54c8bd2d193f255c317dbd652"
+ },
+ {
+  "id": "260-123288-0007",
+  "audio": "/mnt/lexar/omni-campaign/corpus/external/librispeech/LibriSpeech/test-clean/260/123288/260-123288-0007.flac",
+  "reference": "THE WIND NEVER LULLS BUT TO ACQUIRE INCREASED STRENGTH THE VAST BANK OF HEAVY CLOUDS IS A HUGE RESERVOIR OF FEARFUL WINDY GUSTS AND RUSHING STORMS",
+  "source": "librispeech/test-clean",
+  "licence": "CC BY 4.0",
+  "pick_key": "0062cf8413b77fa54cd41a8bfb5fcd261f4387301941218a89102d55d2c50f94"
+ }
+]

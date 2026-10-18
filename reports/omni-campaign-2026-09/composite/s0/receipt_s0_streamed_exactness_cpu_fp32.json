@@ -1,0 +1,682 @@
+{
+  "assertions": {
+    "gpu_reserved": {
+      "applies": false,
+      "limit_gib": 16.7638,
+      "passed": true,
+      "peak_reserved_bytes": null,
+      "peak_reserved_gib": null,
+      "source": "torch.cuda.max_memory_reserved(device)"
+    },
+    "host_rss": {
+      "limit_gib": 65.1926,
+      "passed": true,
+      "peak_rss_bytes": 68109258752,
+      "peak_rss_gib": 63.4317,
+      "source": "max(resource.getrusage ru_maxrss, sampled VmRSS)"
+    },
+    "passed": true
+  },
+  "chimera": {
+    "commit_declared": "c5e6052d31350ce9267e68c49f924abc2b608c89",
+    "rq_script_sha256": "3776719772812dc43c43421dcc15eae81daad819fe3e1ffbc9af6f58414b12eb",
+    "src": "/home/cereal/omni-campaign/import/rq27b/tree_c5e6052/src",
+    "tps_probe_sha256": "449eecc4acf985556a2454f4af25ead6379d2d515a7d77879f27d9c9d80f9a1a",
+    "tree": "/home/cereal/omni-campaign/import/rq27b/tree_c5e6052"
+  },
+  "columns": [
+    {
+      "attn_implementation": "eager",
+      "device": "cpu",
+      "dtype": "float32",
+      "engine_order": "hf-streamed pass first, freed, then chimera-streamed pass",
+      "engines": {
+        "chimera": {
+          "band_begin": 248320,
+          "block_buffers": [
+            "gated_gqa:17408",
+            "kda:17408"
+          ],
+          "blocks_streamed": 64,
+          "build_seconds": 62.651,
+          "bytes_read": 389655764992,
+          "engine": "ChimeraOmniModel (meta) + embed/norm/lm_head resident + blocks streamed one at a time",
+          "forward_seconds": 2572.717,
+          "layer_load_seconds": 2376.867,
+          "layer_loads": 512,
+          "lm_head_tied_to_embedding": false,
+          "load_dtype": "torch.float32",
+          "resident_table_bytes_gib": 6.0645,
+          "streaming": true,
+          "tensor_sha256_verified_on_read": true,
+          "tensors_sha256_verified": 7936,
+          "vocab_size": 317952
+        },
+        "hf": {
+          "attention_implementation": "eager",
+          "build_seconds": 36.353,
+          "bytes_read": 394736748544,
+          "checkpoint_total_size_gib": 51.7469,
+          "engine": "tps_probe.build_streamed_text_model (generalised prefix + single-file reader)",
+          "forward_seconds": 330.378,
+          "layer_buffer_types": [
+            "full_attention",
+            "linear_attention"
+          ],
+          "layer_load_seconds": 237.367,
+          "layer_loads": 512,
+          "layers_streamed": 64,
+          "lm_head_tied_to_embedding": false,
+          "resident_parameter_bytes_gib": 12.2872,
+          "streaming": true,
+          "tensor_prefix": "model.language_model"
+        }
+      },
+      "fast_path_available": false,
+      "fast_paths_disabled": {
+        "FusedRMSNormGated": false,
+        "causal_conv1d_fn": false,
+        "causal_conv1d_update": false,
+        "chunk_gated_delta_rule": false,
+        "fused_recurrent_gated_delta_rule": false,
+        "multi_token_path": "torch_recurrent_gated_delta_rule"
+      },
+      "mode": "streamed-teacher-forced",
+      "peak_rss_bytes": 68080529408,
+      "prompts": [
+        {
+          "argmax_agreement": 1.0,
+          "argmax_disagreements": 0,
+          "argmax_positions": 13,
+          "band_logits_finite": 0,
+          "index": 0,
+          "max_abs_logit_diff": 0.04592132568359375,
+          "per_layer_hidden_max_abs_diff": [
+            {
+              "kind": "kda",
+              "layer": 0,
+              "max_abs_diff": 0.00632476806640625,
+              "reference_rms": 0.19942837953567505
+            },
+            {
+              "kind": "kda",
+              "layer": 1,
+              "max_abs_diff": 0.01580047607421875,
+              "reference_rms": 0.25104764103889465
+            },
+            {
+              "kind": "kda",
+              "layer": 2,
+              "max_abs_diff": 0.006638526916503906,
+              "reference_rms": 0.28262001276016235
+            },
+            {
+              "kind": "gated_gqa",
+              "layer": 3,
+              "max_abs_diff": 0.0051593780517578125,
+              "reference_rms": 0.39427676796913147
+            }
+          ],
+          "reference_logit_absmax": 19.49057388305664,
+          "token_ids_sha256": "e8114f8796fd2d550c7947fd3ecd4eef05e1b36e1d669f98f0fe95b8fb5ce3ae",
+          "tokens": 13
+        },
+        {
+          "argmax_agreement": 1.0,
+          "argmax_disagreements": 0,
+          "argmax_positions": 24,
+          "band_logits_finite": 0,
+          "index": 1,
+          "max_abs_logit_diff": 0.04659557342529297,
+          "per_layer_hidden_max_abs_diff": [
+            {
+              "kind": "kda",
+              "layer": 0,
+              "max_abs_diff": 0.0066680908203125,
+              "reference_rms": 0.2212003469467163
+            },
+            {
+              "kind": "kda",
+              "layer": 1,
+              "max_abs_diff": 0.007503509521484375,
+              "reference_rms": 0.28137096762657166
+            },
+            {
+              "kind": "kda",
+              "layer": 2,
+              "max_abs_diff": 0.011043548583984375,
+              "reference_rms": 0.27723345160484314
+            },
+            {
+              "kind": "gated_gqa",
+              "layer": 3,
+              "max_abs_diff": 0.014881134033203125,
+              "reference_rms": 0.4112962782382965
+            }
+          ],
+          "reference_logit_absmax": 21.928146362304688,
+          "token_ids_sha256": "563c4148c57c6e24826232ea1e4e6e5ee9d4c0aade87226e77d3bd79bf94e23c",
+          "tokens": 24
+        },
+        {
+          "argmax_agreement": 1.0,
+          "argmax_disagreements": 0,
+          "argmax_positions": 26,
+          "band_logits_finite": 0,
+          "index": 2,
+          "max_abs_logit_diff": 0.07682812213897705,
+          "per_layer_hidden_max_abs_diff": [
+            {
+              "kind": "kda",
+              "layer": 0,
+              "max_abs_diff": 0.0032281875610351562,
+              "reference_rms": 0.20053264498710632
+            },
+            {
+              "kind": "kda",
+              "layer": 1,
+              "max_abs_diff": 0.0042438507080078125,
+              "reference_rms": 0.24753350019454956
+            },
+            {
+              "kind": "kda",
+              "layer": 2,
+              "max_abs_diff": 0.0066776275634765625,
+              "reference_rms": 0.24617740511894226
+            },
+            {
+              "kind": "gated_gqa",
+              "layer": 3,
+              "max_abs_diff": 0.023101806640625,
+              "reference_rms": 0.3751677870750427
+            }
+          ],
+          "reference_logit_absmax": 22.299549102783203,
+          "token_ids_sha256": "70fbc82b40c233447c2e50ef56d328a3be785f350823a60a113bd77e9d22dc7b",
+          "tokens": 26
+        },
+        {
+          "argmax_agreement": 1.0,
+          "argmax_disagreements": 0,
+          "argmax_positions": 9,
+          "band_logits_finite": 0,
+          "index": 3,
+          "max_abs_logit_diff": 0.05108833312988281,
+          "per_layer_hidden_max_abs_diff": [
+            {
+              "kind": "kda",
+              "layer": 0,
+              "max_abs_diff": 0.0043163299560546875,
+              "reference_rms": 0.2875366508960724
+            },
+            {
+              "kind": "kda",
+              "layer": 1,
+              "max_abs_diff": 0.0072803497314453125,
+              "reference_rms": 0.3509557247161865
+            },
+            {
+              "kind": "kda",
+              "layer": 2,
+              "max_abs_diff": 0.010370254516601562,
+              "reference_rms": 0.3424648940563202
+            },
+            {
+              "kind": "gated_gqa",
+              "layer": 3,
+              "max_abs_diff": 0.009199142456054688,
+              "reference_rms": 0.458894282579422
+            }
+          ],
+          "reference_logit_absmax": 16.40139389038086,
+          "token_ids_sha256": "5b2dd17644f4f840d1f801586bcd5bd4700cede65e149d73e9979f958c6a37d4",
+          "tokens": 9
+        },
+        {
+          "argmax_agreement": 1.0,
+          "argmax_disagreements": 0,
+          "argmax_positions": 66,
+          "band_logits_finite": 0,
+          "index": 4,
+          "max_abs_logit_diff": 0.3676624298095703,
+          "per_layer_hidden_max_abs_diff": [
+            {
+              "kind": "kda",
+              "layer": 0,
+              "max_abs_diff": 0.008068084716796875,
+              "reference_rms": 0.20283034443855286
+            },
+            {
+              "kind": "kda",
+              "layer": 1,
+              "max_abs_diff": 0.008073806762695312,
+              "reference_rms": 0.27059870958328247
+            },
+            {
+              "kind": "kda",
+              "layer": 2,
+              "max_abs_diff": 0.0190887451171875,
+              "reference_rms": 0.2620302736759186
+            },
+            {
+              "kind": "gated_gqa",
+              "layer": 3,
+              "max_abs_diff": 0.020322799682617188,
+              "reference_rms": 0.4012698233127594
+            }
+          ],
+          "reference_logit_absmax": 23.465917587280273,
+          "token_ids_sha256": "15381280938889fb92a5a6e3d47f0463e0080ababa7bd31c73991ff9483174d2",
+          "tokens": 66
+        },
+        {
+          "argmax_agreement": 1.0,
+          "argmax_disagreements": 0,
+          "argmax_positions": 23,
+          "band_logits_finite": 0,
+          "index": 5,
+          "max_abs_logit_diff": 0.0900411605834961,
+          "per_layer_hidden_max_abs_diff": [
+            {
+              "kind": "kda",
+              "layer": 0,
+              "max_abs_diff": 0.009960174560546875,
+              "reference_rms": 0.2228192687034607
+            },
+            {
+              "kind": "kda",
+              "layer": 1,
+              "max_abs_diff": 0.0058746337890625,
+              "reference_rms": 0.27439433336257935
+            },
+            {
+              "kind": "kda",
+              "layer": 2,
+              "max_abs_diff": 0.008526802062988281,
+              "reference_rms": 0.2736232280731201
+            },
+            {
+              "kind": "gated_gqa",
+              "layer": 3,
+              "max_abs_diff": 0.007160186767578125,
+              "reference_rms": 0.39838963747024536
+            }
+          ],
+          "reference_logit_absmax": 24.29701042175293,
+          "token_ids_sha256": "1be40934970eb452e15bd501bb5db6d590e9180bb1bf16a3e88bb1cec8167b51",
+          "tokens": 23
+        },
+        {
+          "argmax_agreement": 1.0,
+          "argmax_disagreements": 0,
+          "argmax_positions": 14,
+          "band_logits_finite": 0,
+          "index": 6,
+          "max_abs_logit_diff": 0.046526432037353516,
+          "per_layer_hidden_max_abs_diff": [
+            {
+              "kind": "kda",
+              "layer": 0,
+              "max_abs_diff": 0.0036220550537109375,
+              "reference_rms": 0.2021847814321518
+            },
+            {
+              "kind": "kda",
+              "layer": 1,
+              "max_abs_diff": 0.00391387939453125,
+              "reference_rms": 0.2558218240737915
+            },
+            {
+              "kind": "kda",
+              "layer": 2,
+              "max_abs_diff": 0.016588211059570312,
+              "reference_rms": 0.25460028648376465
+            },
+            {
+              "kind": "gated_gqa",
+              "layer": 3,
+              "max_abs_diff": 0.021642684936523438,
+              "reference_rms": 0.37450331449508667
+            }
+          ],
+          "reference_logit_absmax": 23.081584930419922,
+          "token_ids_sha256": "3f8d6ad2810918e97c849bd1f92d8ee9ae79eea11b64bfe773fe3981b148ca36",
+          "tokens": 14
+        },
+        {
+          "argmax_agreement": 1.0,
+          "argmax_disagreements": 0,
+          "argmax_positions": 35,
+          "band_logits_finite": 0,
+          "index": 7,
+          "max_abs_logit_diff": 0.12099409103393555,
+          "per_layer_hidden_max_abs_diff": [
+            {
+              "kind": "kda",
+              "layer": 0,
+              "max_abs_diff": 0.0038366317749023438,
+              "reference_rms": 0.18969182670116425
+            },
+            {
+              "kind": "kda",
+              "layer": 1,
+              "max_abs_diff": 0.0037899017333984375,
+              "reference_rms": 0.23290130496025085
+            },
+            {
+              "kind": "kda",
+              "layer": 2,
+              "max_abs_diff": 0.015666961669921875,
+              "reference_rms": 0.22895218431949615
+            },
+            {
+              "kind": "gated_gqa",
+              "layer": 3,
+              "max_abs_diff": 0.014797210693359375,
+              "reference_rms": 0.33944639563560486
+            }
+          ],
+          "reference_logit_absmax": 23.919109344482422,
+          "token_ids_sha256": "0e4ce0b7906b39adeb1f4e68c4d63dc50e2a822271449c612264701abb5faf85",
+          "tokens": 35
+        }
+      ],
+      "reference_multi_token_path": "torch_recurrent_gated_delta_rule",
+      "resources": {
+        "device_wide_min_free_gib": null,
+        "peak_rss_bytes": 68080529408,
+        "peak_rss_gib": 63.4049,
+        "peak_rss_source": "resource.getrusage(RUSAGE_SELF).ru_maxrss * 1024",
+        "rss_note": "the HF engine's safetensors handles mmap the shards, so touched shard pages count in RSS until the engine is freed",
+        "sampled": {
+          "device_minimum_free_gb": {},
+          "interval_seconds": 0.5,
+          "peak_host_rss_gb_sampled": 63.4317,
+          "samples": 5748
+        },
+        "torch_peak_allocated_gib": null,
+        "torch_peak_reserved_gib": null
+      },
+      "summary": {
+        "argmax_agreement": 1.0,
+        "argmax_matching_positions": 210,
+        "argmax_positions": 210,
+        "band_logits_finite_total": 0,
+        "max_abs_hidden_diff_first_layers": 0.023101806640625,
+        "max_abs_logit_diff": 0.3676624298095703
+      },
+      "torch_version": "2.11.0+cu128",
+      "transformers_version": "5.12.1"
+    }
+  ],
+  "device": {
+    "cuda": false,
+    "device": "cpu"
+  },
+  "devices_visible": [],
+  "generated_utc": "2026-09-07T04:07:14Z",
+  "inputs": {
+    "chimera_dir": "/home/cereal/omni-campaign/composite/s0/q38-27bu-chimera-bf16-sep04",
+    "geometry": {
+      "base_vocab": 248320,
+      "block_kinds": [
+        "kda",
+        "kda",
+        "kda",
+        "gated_gqa",
+        "kda",
+        "kda",
+        "kda",
+        "gated_gqa",
+        "kda",
+        "kda",
+        "kda",
+        "gated_gqa",
+        "kda",
+        "kda",
+        "kda",
+        "gated_gqa",
+        "kda",
+        "kda",
+        "kda",
+        "gated_gqa",
+        "kda",
+        "kda",
+        "kda",
+        "gated_gqa",
+        "kda",
+        "kda",
+        "kda",
+        "gated_gqa",
+        "kda",
+        "kda",
+        "kda",
+        "gated_gqa",
+        "kda",
+        "kda",
+        "kda",
+        "gated_gqa",
+        "kda",
+        "kda",
+        "kda",
+        "gated_gqa",
+        "kda",
+        "kda",
+        "kda",
+        "gated_gqa",
+        "kda",
+        "kda",
+        "kda",
+        "gated_gqa",
+        "kda",
+        "kda",
+        "kda",
+        "gated_gqa",
+        "kda",
+        "kda",
+        "kda",
+        "gated_gqa",
+        "kda",
+        "kda",
+        "kda",
+        "gated_gqa",
+        "kda",
+        "kda",
+        "kda",
+        "gated_gqa"
+      ],
+      "hidden_size": 5120,
+      "num_layers": 64,
+      "tie_word_embeddings": false,
+      "vocab_size": 317952
+    },
+    "hf_dir": "/home/cereal/models/Qwen3.8-27B-Uncensored",
+    "identity": {
+      "chimera": {
+        "config_sha256": "2152fc5c3a768ef77fe3f8c48805f804d80d59e1a7bc1f1b91f5b98a628f36b7",
+        "directory": "/home/cereal/omni-campaign/composite/s0/q38-27bu-chimera-bf16-sep04",
+        "index_sha256": "ffb8cf6f33289c49cb203703c74469b497d46060977a9abba0bfa3edb032c351",
+        "shards": {
+          "model-00001-of-00014.safetensors": 3989010488,
+          "model-00002-of-00014.safetensors": 4251663256,
+          "model-00003-of-00014.safetensors": 4136401920,
+          "model-00004-of-00014.safetensors": 4292558224,
+          "model-00005-of-00014.safetensors": 4051409752,
+          "model-00006-of-00014.safetensors": 4251663256,
+          "model-00007-of-00014.safetensors": 4136401920,
+          "model-00008-of-00014.safetensors": 4292558224,
+          "model-00009-of-00014.safetensors": 4073458352,
+          "model-00010-of-00014.safetensors": 4251663256,
+          "model-00011-of-00014.safetensors": 4136401920,
+          "model-00012-of-00014.safetensors": 2843885624,
+          "model-00013-of-00014.safetensors": 3255910752,
+          "model-00014-of-00014.safetensors": 3435507488
+        },
+        "tensor_sha256_recorded": 1011,
+        "tensors": 1011,
+        "tied_weights": {},
+        "total_size": 55398386688
+      },
+      "hf": {
+        "directory": "/home/cereal/models/Qwen3.8-27B-Uncensored",
+        "files": {
+          "config.json": {
+            "bytes": 3688,
+            "sha256": "4c95af1d45132ead5b63e540f08f32a351e20512e62438a3a78faf9881d1e7dc"
+          },
+          "model-00001-of-00012.safetensors": {
+            "bytes": 2542796928,
+            "sha256": null
+          },
+          "model-00002-of-00012.safetensors": {
+            "bytes": 4842451920,
+            "sha256": null
+          },
+          "model-00003-of-00012.safetensors": {
+            "bytes": 4965227944,
+            "sha256": null
+          },
+          "model-00004-of-00012.safetensors": {
+            "bytes": 4912819264,
+            "sha256": null
+          },
+          "model-00005-of-00012.safetensors": {
+            "bytes": 4986198544,
+            "sha256": null
+          },
+          "model-00006-of-00012.safetensors": {
+            "bytes": 4912819320,
+            "sha256": null
+          },
+          "model-00007-of-00012.safetensors": {
+            "bytes": 4932703272,
+            "sha256": null
+          },
+          "model-00008-of-00012.safetensors": {
+            "bytes": 4966314576,
+            "sha256": null
+          },
+          "model-00009-of-00012.safetensors": {
+            "bytes": 4964162248,
+            "sha256": null
+          },
+          "model-00010-of-00012.safetensors": {
+            "bytes": 4933789824,
+            "sha256": null
+          },
+          "model-00011-of-00012.safetensors": {
+            "bytes": 4965228032,
+            "sha256": null
+          },
+          "model-00012-of-00012.safetensors": {
+            "bytes": 2789094896,
+            "sha256": null
+          },
+          "model-mtp.safetensors": {
+            "bytes": 849400424,
+            "sha256": null
+          },
+          "model.safetensors.index.json": {
+            "bytes": 112085,
+            "sha256": "67dbe83b6c2c36225793a8b56b4ae79a318c882136142f58636ca388e26e623a"
+          },
+          "tokenizer.json": {
+            "bytes": 19989325,
+            "sha256": "06b9509352d2af50381ab2247e083b80d32d5c0aba91c272ca9ff729b6a0e523"
+          }
+        },
+        "note": "HF shard bytes are hashed only with --hash-hf-shards; sizes and the config/index/tokenizer hashes are always recorded",
+        "shards_hashed": false
+      }
+    },
+    "layers_reported": 4,
+    "max_tokens": 128,
+    "prompt_pack": [
+      {
+        "index": 0,
+        "text": "The receipt is the artifact; a prediction is not a measurement.",
+        "tokens": 13
+      },
+      {
+        "index": 1,
+        "text": "def delta_rule(state, key, value, retention, beta):\n    return retention * state + beta * key\n",
+        "tokens": 24
+      },
+      {
+        "index": 2,
+        "text": "Kimi K3 uses 93 layers, 96 heads, and a 7168-wide residual stream.",
+        "tokens": 26
+      },
+      {
+        "index": 3,
+        "text": "今天的天气很好，我们去公园散步吧。",
+        "tokens": 9
+      },
+      {
+        "index": 4,
+        "text": "1 1 2 3 5 8 13 21 34 55 89 144 233 377 610 987 1597 2584 4181 6765",
+        "tokens": 66
+      },
+      {
+        "index": 5,
+        "text": "SELECT id, name FROM markets WHERE correlation_score > 0.8 ORDER BY volume DESC LIMIT 25;",
+        "tokens": 23
+      },
+      {
+        "index": 6,
+        "text": "Замерь разницу, не угадывай её.",
+        "tokens": 14
+      },
+      {
+        "index": 7,
+        "text": "An exact import means the same function, not a similar one: every rewrite has to be an identity in exact arithmetic, and every place it is not has to be named.",
+        "tokens": 35
+      }
+    ],
+    "prompt_pack_sha256": "7028db47e85ebfc3b65625695279411ede88ba5f82f87fdb1e1ac93c36cad951",
+    "prompt_source": "scripts/import_receipt_qwen35.PROMPT_PACK (8 bank-v1 prompts)"
+  },
+  "mode": "streamed-teacher-forced",
+  "notes": [
+    "streamed-teacher-forced: neither the HF reference nor the Chimera model is ever resident; the HF trunk streams one decoder layer at a time (tps_probe engine) and the Chimera trunk one block at a time",
+    "the two passes run one after the other on the same device, so the device peak is one engine, not two",
+    "cpu columns force the transformers torch fallbacks with the exact per-position recurrence (R-Q exactness column); cuda columns run the fla chunked kernel against Chimera's per-position recurrence (R-Q bf16 tolerance column)",
+    "norm weights are imported as 1 + w; exact in an fp32 checkpoint, rounded once at import in a bf16 one",
+    "band logits are masked to -inf by ledger_band_logit_mask=True and excluded from the comparison; band_logits_finite counts any that were not",
+    "nothing here is a gate; the [proposed] 27B bf16 line is argmax >= 99%, reported not gated"
+  ],
+  "nvidia_smi": null,
+  "output_gate_waiver": {
+    "config_metadata_attention_output_gate": "sigmoid_assumed_declared_swish",
+    "declared_output_gate_type": "swish",
+    "flag": "--allow-unverified-output-gate",
+    "imported_and_measured_as": "sigmoid",
+    "q1_observation": "Q1 resolved 2026-09-02: transformers main and v5.15.0 both apply attn_output * torch.sigmoid(gate) and never read output_gate_type (modeling_qwen3_5.py line 774 / 698), so the Qwen3.8-27B output_gate_type: \"swish\" flag is inert under every HF version",
+    "what_this_receipt_does_not_show": "the HF reference applies sigmoid(gate) whatever config.json declares, so agreement below is agreement with the runtime, not evidence about the gate the weights were trained under"
+  },
+  "round_trip_column": null,
+  "schema": "chimera_omni.receipt.import.qwen35.v1",
+  "source_prefix": "model.language_model.",
+  "timing": {
+    "wall_seconds": 3015.31
+  },
+  "tool": {
+    "argv": [
+      "--chimera-dir",
+      "/home/cereal/omni-campaign/composite/s0/q38-27bu-chimera-bf16-sep04",
+      "--hf-dir",
+      "/home/cereal/models/Qwen3.8-27B-Uncensored",
+      "--device",
+      "cpu",
+      "--dtype",
+      "float32",
+      "--allow-unverified-output-gate",
+      "--out",
+      "/home/cereal/omni-campaign/composite/s0/receipt_s0_streamed_exactness_cpu_fp32.json"
+    ],
+    "command": "CUDA_VISIBLE_DEVICES='' /home/cereal/model-surgery-lab/venv/bin/python /home/cereal/omni-campaign/composite/tools/receipt_q27_streamed.py --chimera-dir /home/cereal/omni-campaign/composite/s0/q38-27bu-chimera-bf16-sep04 --hf-dir /home/cereal/models/Qwen3.8-27B-Uncensored --device cpu --dtype float32 --allow-unverified-output-gate --out /home/cereal/omni-campaign/composite/s0/receipt_s0_streamed_exactness_cpu_fp32.json",
+    "name": "receipt_q27_streamed",
+    "sha256": "9fdf2db07651dd424e90d089fa528e59ea9c52844338d02bb9d2e988c089274e",
+    "version": "1.0.0"
+  }
+}

@@ -1,0 +1,342 @@
+{
+ "cache": "/home/cereal/omni-campaign/k3/testwork5/cache/T256/L01/tensors.safetensors",
+ "device": "cpu",
+ "devices": [
+  {
+   "capability": "sm86",
+   "index": 0,
+   "name": "NVIDIA GeForce RTX 3090",
+   "total_GB": 25.3
+  },
+  {
+   "capability": "sm86",
+   "index": 1,
+   "name": "NVIDIA GeForce RTX 3090",
+   "total_GB": 25.3
+  },
+  {
+   "capability": "sm75",
+   "index": 2,
+   "name": "Quadro RTX 8000",
+   "total_GB": 47.6
+  },
+  {
+   "capability": "sm61",
+   "index": 3,
+   "name": "Tesla P40",
+   "total_GB": 25.6
+  },
+  {
+   "capability": "sm61",
+   "index": 4,
+   "name": "Tesla P40",
+   "total_GB": 25.6
+  },
+  {
+   "capability": "sm61",
+   "index": 5,
+   "name": "Tesla P40",
+   "total_GB": 25.6
+  },
+  {
+   "capability": "sm61",
+   "index": 6,
+   "name": "Tesla P40",
+   "total_GB": 25.6
+  }
+ ],
+ "experts_device": "cpu",
+ "features": {
+  "refit_design": "psi = dense SiTU channel output on every fit token",
+  "selection": "phi = router-mass-weighted SiTU channel output",
+  "target": "y_lat, the PRE-norm fp32 routed accumulator"
+ },
+ "layer": 1,
+ "layer_bytes_on_device": {
+  "attention": 37488,
+  "body": 58464,
+  "experts_packed": 26112,
+  "residual": 768,
+  "total": 122832
+ },
+ "memory_budget": {
+  "max_device_gb": 0.0,
+  "max_device_gb_source": "measured 0.9 x total",
+  "max_gram_gb": 160.0,
+  "per_rung_device_estimate": {
+   "64": {
+    "chunk": 8,
+    "note": "device-side only.  The fp64 [K,K] Gram and [K,out] cross accumulate on the HOST (`.cpu().double()` before the outer product), so no fp64 tensor of rung width is ever allocated on --device; the device TRANSIENTS are bounded by --chunk and by moe_intermediate_size, and the RESIDENT terms (the layer itself, the calibration cache, the ExpertBank, score's buffers, the form-M lift) are supplied by the caller and added on top.  An empty `resident` means the caller priced the transients only.",
+    "peak_bytes": 311248,
+    "peak_gigabytes": 0.0,
+    "refit_design_chunk_bytes": 7168,
+    "resident_bytes": {
+     "calibration_cache_on_device": 55296,
+     "expert_bank": 12288,
+     "layer_weights_on_device": 122832,
+     "score_heldout_buffers": 81920
+    },
+    "resident_total_bytes": 272336,
+    "resident_total_gigabytes": 0.0,
+    "stage1_expert_gram_bytes": 32768,
+    "stage1_feature_chunk_bytes": 6144,
+    "stage2_phi_chunk_bytes": 6144,
+    "transient_peak_bytes": 38912,
+    "width": 64
+   }
+  },
+  "per_rung_estimate": {
+   "64": {
+    "note": "fp64; resident = inner + check Gram/cross, transient = the regularised clone + its Cholesky factor + the [out,K] solution.  No identity is ever materialised and no ladder rung's solution is stored.",
+    "one_gram_bytes": 32768,
+    "one_gram_gigabytes": 0.0,
+    "out_dim": 32,
+    "peak_bytes": 196608,
+    "peak_gigabytes": 0.0,
+    "resident_gigabytes": 0.0,
+    "solve_transient_gigabytes": 0.0,
+    "width": 64
+   }
+  }
+ },
+ "model_dir": "/home/cereal/omni-campaign/k3/testwork5/synthetic-k3",
+ "peak_rss_gigabytes": 0.57,
+ "read": {
+  "MB_per_s": 96.6,
+  "bytes": 122832,
+  "gigabytes": 0.0,
+  "seconds": 0.0,
+  "shards": [
+   {
+    "MB_per_s": 104.8,
+    "gigabytes": 0.0,
+    "seconds": 0.0,
+    "shard": "model-00003-of-00003.safetensors",
+    "tensors": 70
+   }
+  ],
+  "tensors": 70
+ },
+ "rungs": {
+  "64": {
+   "check_tokens": 55,
+   "fit_tokens": 176,
+   "fold_file_key": "named by the requested rung K; width_installed may be lower if an expert was rank-starved",
+   "form_E_path": "/home/cereal/omni-campaign/k3/testwork5/folds-stage1/L01_K64_formE.safetensors",
+   "form_E_sha256": "5efc72f0c4d98951c19602752dd2e65fd9999feae19200fe1f52597011c9b3e6",
+   "held_tokens": 80,
+   "heldout": {
+    "routed_write_heldout": {
+     "cos": 0.40726715326309204,
+     "cos_p05": -0.06398255378007889,
+     "relL2": 0.9263240694999695
+    },
+    "y_lat_heldout": {
+     "cos": 0.43021902441978455,
+     "cos_p05": 0.03135359659790993,
+     "relL2": 0.8932012319564819
+    }
+   },
+   "installed_tensor_sha256": {
+    "w1_s": "a3281b419a9886d95d773c9cfe2689503e3f5b578647ece55c02abe6995ae928",
+    "w2p": "e0665615cdabd0a8b560437c9cd506d833bd3287bd46e3a1c0c71b1db16fd6e4",
+    "w3_s": "d34161d2c49209909d9c13b3c4e02a16535224b918cd90024f432e261aab6ff4"
+   },
+   "k_pool": 64,
+   "layer": 1,
+   "parameters": {
+    "child_moe_total": 34848,
+    "child_routed_dense_parameters": 6144,
+    "moe_net_ratio": 2.249,
+    "parent_moe_total": 78376,
+    "parent_routed_expert_parameters": 49152,
+    "quantization": "none -- forbidden in a fold; the packed parent is only a storage format",
+    "routed_component_ratio": 8.0,
+    "router_parameters_deleted": 520,
+    "verbatim_common_parameters": 28704
+   },
+   "peak_rss_gigabytes": 0.57,
+   "ridge": {
+    "channel_token_count_mean": 47.6875,
+    "check_sse_monotone_decreasing_in_lambda": true,
+    "chosen_is_largest_lambda": true,
+    "chosen_is_weakest_admitted": false,
+    "device_memory": {
+     "chunk": 8,
+     "note": "device-side only.  The fp64 [K,K] Gram and [K,out] cross accumulate on the HOST (`.cpu().double()` before the outer product), so no fp64 tensor of rung width is ever allocated on --device; the device TRANSIENTS are bounded by --chunk and by moe_intermediate_size, and the RESIDENT terms (the layer itself, the calibration cache, the ExpertBank, score's buffers, the form-M lift) are supplied by the caller and added on top.  An empty `resident` means the caller priced the transients only.",
+     "peak_bytes": 311248,
+     "peak_gigabytes": 0.0,
+     "refit_design_chunk_bytes": 7168,
+     "resident_bytes": {
+      "calibration_cache_on_device": 55296,
+      "expert_bank": 12288,
+      "layer_weights_on_device": 122832,
+      "score_heldout_buffers": 81920
+     },
+     "resident_total_bytes": 272336,
+     "resident_total_gigabytes": 0.0,
+     "stage1_expert_gram_bytes": 32768,
+     "stage1_feature_chunk_bytes": 6144,
+     "stage2_phi_chunk_bytes": 6144,
+     "transient_peak_bytes": 38912,
+     "width": 64
+    },
+    "free_solve_update_scale": 2.709695053956334,
+    "holdout_mode": "blocks",
+    "interpretation": "veto_binding + chosen_is_largest_lambda + monotone check_sse together mean the check split carried no signal and the installed map is the prior, shrunk -- read that as a NO-SIGNAL fold, not a healthy one",
+    "ladder": [
+     {
+      "check_sse": 0.010801229370291184,
+      "lambda_relative": 1e-06,
+      "update_scale": 2.709695053956334
+     },
+     {
+      "check_sse": 0.010799181431084662,
+      "lambda_relative": 1e-05,
+      "update_scale": 2.7092710345760964
+     },
+     {
+      "check_sse": 0.01077881650201084,
+      "lambda_relative": 0.0001,
+      "update_scale": 2.7050431398897232
+     },
+     {
+      "check_sse": 0.010585936264528594,
+      "lambda_relative": 0.001,
+      "update_scale": 2.663952967659739
+     },
+     {
+      "check_sse": 0.009326849691692772,
+      "lambda_relative": 0.01,
+      "update_scale": 2.3419341228163377
+     },
+     {
+      "check_sse": 0.006949163183549475,
+      "lambda_relative": 0.1,
+      "update_scale": 1.3321057629671254
+     },
+     {
+      "check_sse": 0.005604698228904232,
+      "lambda_relative": 1.0,
+      "update_scale": 0.4639215705255236
+     },
+     {
+      "check_sse": 0.005183030093429362,
+      "lambda_relative": 10.0,
+      "update_scale": 0.09592232656802803
+     },
+     {
+      "check_sse": 0.005152642819033124,
+      "lambda_relative": 100.0,
+      "update_scale": 0.011630172685465063
+     }
+    ],
+    "lambda_law_would_have_picked": 1.0,
+    "lambda_relative": 100.0,
+    "lambda_selected_on": "internal fit split",
+    "lambdas_vetoed": 6,
+    "memory": {
+     "note": "fp64; resident = inner + check Gram/cross, transient = the regularised clone + its Cholesky factor + the [out,K] solution.  No identity is ever materialised and no ladder rung's solution is stored.",
+     "one_gram_bytes": 32768,
+     "one_gram_gigabytes": 0.0,
+     "out_dim": 32,
+     "peak_bytes": 196608,
+     "peak_gigabytes": 0.0,
+     "process_peak_rss_note": "VmHWM for the WHOLE process; rungs run largest-first in one process, so later rungs inherit the first rung's peak.  This is not a per-rung measurement.",
+     "process_peak_rss_so_far_gigabytes": 0.568,
+     "resident_gigabytes": 0.0,
+     "solve_transient_gigabytes": 0.0,
+     "width": 64
+    },
+    "prior_mass_mean": 0.134864633733576,
+    "update_scale": 0.011630172685465063,
+    "veto_binding": true
+   },
+   "rung_requested": 64,
+   "seconds": 0.2,
+   "stage1": {
+    "allocation": {
+     "allocated": 64,
+     "capped_experts": 0,
+     "exact": true,
+     "live_experts": 8,
+     "mode": "largest-remainder apportionment",
+     "rebalance_passes": 1,
+     "requested": 64
+    },
+    "expert_mass_total": 175.99609375,
+    "experts_with_channels": 8,
+    "k_pool_allocated": 64,
+    "k_pool_requested": 64,
+    "k_pool_selected": 64,
+    "per_expert_head": [
+     {
+      "allocated": 4,
+      "expert": 0,
+      "rows": 24,
+      "selected": 4
+     },
+     {
+      "allocated": 6,
+      "expert": 1,
+      "rows": 31,
+      "selected": 6
+     },
+     {
+      "allocated": 7,
+      "expert": 2,
+      "rows": 35,
+      "selected": 7
+     },
+     {
+      "allocated": 9,
+      "expert": 3,
+      "rows": 46,
+      "selected": 9
+     },
+     {
+      "allocated": 8,
+      "expert": 4,
+      "rows": 43,
+      "selected": 8
+     },
+     {
+      "allocated": 12,
+      "expert": 5,
+      "rows": 70,
+      "selected": 12
+     },
+     {
+      "allocated": 9,
+      "expert": 6,
+      "rows": 52,
+      "selected": 9
+     },
+     {
+      "allocated": 9,
+      "expert": 7,
+      "rows": 51,
+      "selected": 9
+     }
+    ],
+    "rank_starved_experts": 0
+   },
+   "stage1_only": true,
+   "stage2": {
+    "skipped": "pool already at or below the rung (stage-1-only policy)"
+   },
+   "stored_vs_scored_dtype": "w1_s/w3_s are stored in the parent's dtype; w2p is SOLVED and STORED at fp32 but the runtime dense path casts it to the activation dtype (bf16 on a real layer), so the scored child and the stored child are the same map only up to that cast",
+   "tokens": 256,
+   "width_installed": 64
+  }
+ },
+ "splits": {
+  "check_tokens": 55,
+  "held_tokens": 80,
+  "holdout_blocks": 24,
+  "holdout_mode": "blocks",
+  "inner_tokens": 121,
+  "note": "'blocks' holds out contiguous token ranges: on a real corpus an interleaved holdout sits between its own neighbours and reads optimistic"
+ },
+ "torch": "2.11.0+cu128"
+}

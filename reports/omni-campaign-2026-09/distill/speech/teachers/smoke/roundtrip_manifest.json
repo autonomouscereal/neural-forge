@@ -1,0 +1,98 @@
+[
+ {
+  "id": "qwen3-tts-base-0",
+  "audio": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/tts/qwen3-tts-base-0.wav",
+  "reference": "The river rose overnight, so the ferry left an hour later than usual.",
+  "source": "smoke-tts:qwen3-tts-base"
+ },
+ {
+  "id": "qwen3-tts-base-1",
+  "audio": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/tts/qwen3-tts-base-1.wav",
+  "reference": "Please set the oven to two hundred degrees and wait ten more minutes.",
+  "source": "smoke-tts:qwen3-tts-base"
+ },
+ {
+  "id": "qwen3-tts-base-2",
+  "audio": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/tts/qwen3-tts-base-2.wav",
+  "reference": "She painted the old fence blue, then sat on the porch to watch it dry.",
+  "source": "smoke-tts:qwen3-tts-base"
+ },
+ {
+  "id": "qwen3-tts-base-3",
+  "audio": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/tts/qwen3-tts-base-3.wav",
+  "reference": "Our meeting moved to Thursday because the projector was broken again.",
+  "source": "smoke-tts:qwen3-tts-base"
+ },
+ {
+  "id": "qwen3-tts-customvoice-0",
+  "audio": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/tts/qwen3-tts-customvoice-0.wav",
+  "reference": "The river rose overnight, so the ferry left an hour later than usual.",
+  "source": "smoke-tts:qwen3-tts-customvoice"
+ },
+ {
+  "id": "qwen3-tts-customvoice-1",
+  "audio": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/tts/qwen3-tts-customvoice-1.wav",
+  "reference": "Please set the oven to two hundred degrees and wait ten more minutes.",
+  "source": "smoke-tts:qwen3-tts-customvoice"
+ },
+ {
+  "id": "qwen3-tts-customvoice-2",
+  "audio": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/tts/qwen3-tts-customvoice-2.wav",
+  "reference": "She painted the old fence blue, then sat on the porch to watch it dry.",
+  "source": "smoke-tts:qwen3-tts-customvoice"
+ },
+ {
+  "id": "qwen3-tts-customvoice-3",
+  "audio": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/tts/qwen3-tts-customvoice-3.wav",
+  "reference": "Our meeting moved to Thursday because the projector was broken again.",
+  "source": "smoke-tts:qwen3-tts-customvoice"
+ },
+ {
+  "id": "qwen3-tts-voicedesign-0",
+  "audio": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/tts/qwen3-tts-voicedesign-0.wav",
+  "reference": "The river rose overnight, so the ferry left an hour later than usual.",
+  "source": "smoke-tts:qwen3-tts-voicedesign"
+ },
+ {
+  "id": "qwen3-tts-voicedesign-1",
+  "audio": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/tts/qwen3-tts-voicedesign-1.wav",
+  "reference": "Please set the oven to two hundred degrees and wait ten more minutes.",
+  "source": "smoke-tts:qwen3-tts-voicedesign"
+ },
+ {
+  "id": "qwen3-tts-voicedesign-2",
+  "audio": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/tts/qwen3-tts-voicedesign-2.wav",
+  "reference": "She painted the old fence blue, then sat on the porch to watch it dry.",
+  "source": "smoke-tts:qwen3-tts-voicedesign"
+ },
+ {
+  "id": "qwen3-tts-voicedesign-3",
+  "audio": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/tts/qwen3-tts-voicedesign-3.wav",
+  "reference": "Our meeting moved to Thursday because the projector was broken again.",
+  "source": "smoke-tts:qwen3-tts-voicedesign"
+ },
+ {
+  "id": "voxcpm2-0",
+  "audio": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/tts/voxcpm2-0.wav",
+  "reference": "The river rose overnight, so the ferry left an hour later than usual.",
+  "source": "smoke-tts:voxcpm2"
+ },
+ {
+  "id": "voxcpm2-1",
+  "audio": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/tts/voxcpm2-1.wav",
+  "reference": "Please set the oven to two hundred degrees and wait ten more minutes.",
+  "source": "smoke-tts:voxcpm2"
+ },
+ {
+  "id": "voxcpm2-2",
+  "audio": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/tts/voxcpm2-2.wav",
+  "reference": "She painted the old fence blue, then sat on the porch to watch it dry.",
+  "source": "smoke-tts:voxcpm2"
+ },
+ {
+  "id": "voxcpm2-3",
+  "audio": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/tts/voxcpm2-3.wav",
+  "reference": "Our meeting moved to Thursday because the projector was broken again.",
+  "source": "smoke-tts:voxcpm2"
+ }
+]

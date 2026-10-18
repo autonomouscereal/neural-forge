@@ -1,0 +1,180 @@
+{
+ "attn_implementation": "eager",
+ "block_residual_shape": [
+  64,
+  1,
+  64
+ ],
+ "device": "cpu",
+ "devices": [
+  {
+   "capability": "sm86",
+   "index": 0,
+   "name": "NVIDIA GeForce RTX 3090",
+   "total_GB": 25.3
+  },
+  {
+   "capability": "sm86",
+   "index": 1,
+   "name": "NVIDIA GeForce RTX 3090",
+   "total_GB": 25.3
+  },
+  {
+   "capability": "sm75",
+   "index": 2,
+   "name": "Quadro RTX 8000",
+   "total_GB": 47.6
+  },
+  {
+   "capability": "sm61",
+   "index": 3,
+   "name": "Tesla P40",
+   "total_GB": 25.6
+  },
+  {
+   "capability": "sm61",
+   "index": 4,
+   "name": "Tesla P40",
+   "total_GB": 25.6
+  },
+  {
+   "capability": "sm61",
+   "index": 5,
+   "name": "Tesla P40",
+   "total_GB": 25.6
+  },
+  {
+   "capability": "sm61",
+   "index": 6,
+   "name": "Tesla P40",
+   "total_GB": 25.6
+  }
+ ],
+ "halves": {
+  "attention": {
+   "cos": 0.9999947547912598,
+   "cos_p05": 0.9999905228614807,
+   "harness_sha256": "47bef1802d86d0d283b6c27d915983d847447a7396053b32e62fdd0611397ed3",
+   "max_abs": 6.103515625e-05,
+   "missing_keys": [],
+   "reference_sha256": "5f89738d462b63ab194ab74eefc4f87d1a016e27497ccc98fb8f9798e42f36c2",
+   "relL2": 0.002896461635828018,
+   "unexpected_keys": []
+  },
+  "moe": {
+   "cos": 1.0,
+   "cos_p05": 0.9999998807907104,
+   "harness_seconds": 0.08,
+   "max_abs": 0.0,
+   "missing_keys": [],
+   "reference_seconds": 0.11,
+   "relL2": 0.0,
+   "topk_set_agreement": 1.0,
+   "topk_weight_relL2": 0.0,
+   "unexpected_keys": []
+  }
+ },
+ "input_sha256": "120ff773eb82000f6332238cc7eed883be8ff5a6b5a9a1414e8ac8ade413231e",
+ "is_kda_layer": false,
+ "is_moe_layer": true,
+ "kda_backend": "torch",
+ "kda_backends": {
+  "skipped": "not a KDA layer"
+ },
+ "kda_gate_axis": {
+  "skipped": "not a KDA layer"
+ },
+ "layer": 1,
+ "meets_proposed_line": {
+  "prefix_out_ok": true,
+  "prefix_out_relL2": 0.00619460130110383,
+  "router_topk_agreement": 1.0,
+  "router_topk_ok": true
+ },
+ "model_dir": "/home/cereal/omni-campaign/k3/testwork/synthetic-k3",
+ "modeling_import": {
+  "file": "/home/cereal/omni-campaign/k3/k3_src/modeling_kimi_linear.py",
+  "ok": true,
+  "transformers_compat": {
+   "OutputRecorder": "re-exported from transformers.utils.output_capturing (moved in 5.12)"
+  }
+ },
+ "mxfp4": {
+  "available": true,
+  "bit_exact": true,
+  "descale_module": "compressed_tensors.compressors.mx_utils",
+  "e2m1_table_library": [
+   0.0,
+   0.5,
+   1.0,
+   1.5,
+   2.0,
+   3.0,
+   4.0,
+   6.0
+  ],
+  "e2m1_table_matches": true,
+  "expert0_w1": {
+   "absmax": 0.375,
+   "sha256": "e569dfcc59382cc3ee5811a7962ebd9dcd6c130a152baaeb7092e8d6b7ab2408",
+   "shape": [
+    64,
+    32
+   ],
+   "std": 0.103652,
+   "zero_fraction": 0.11914
+  },
+  "max_abs_difference": 0.0,
+  "ours_sha256": "e569dfcc59382cc3ee5811a7962ebd9dcd6c130a152baaeb7092e8d6b7ab2408",
+  "reference_sha256": "e569dfcc59382cc3ee5811a7962ebd9dcd6c130a152baaeb7092e8d6b7ab2408",
+  "unpack_module": "compressed_tensors.compressors.nvfp4.helpers"
+ },
+ "parameters": {
+  "attention": 18744,
+  "body": 29224,
+  "expert_count": 8,
+  "experts": 49152,
+  "residual": 384
+ },
+ "proposed_decision_line": {
+  "prefix_out_relL2_max": 0.02,
+  "router_topk_agreement_min": 0.99,
+  "status": "PROPOSED DECISION LINE for Cyril -- this script never gates on it"
+ },
+ "read": {
+  "MB_per_s": 78.7,
+  "gigabytes": 0.0,
+  "seconds": 0.0,
+  "shards": [
+   {
+    "MB_per_s": 82.7,
+    "gigabytes": 0.0,
+    "seconds": 0.0,
+    "shard": "model-00003-of-00003.safetensors",
+    "tensors": 70
+   }
+  ],
+  "tensors": 70
+ },
+ "seed": 0,
+ "tokens": 64,
+ "torch": "2.11.0+cu128",
+ "total_seconds": 8.2,
+ "whole_layer": {
+  "arithmetic_note": "at bf16 the harness and the reference differ by the reference's own bf16-vs-fp32 floor (measured 6.3e-3 relL2 on the synthetic checkpoint, dominated by SDPA vs the repo's eager softmax); the algebra itself is exact -- fp32 gives relL2 1.6e-7. The proposed D-a2 line of 2e-2 was set knowing that floor.",
+  "block_stack_matches": true,
+  "block_stack_relL2": 0.0,
+  "harness_prefix_sha256": "ed1db9333ff4b7f01a510957a96d079b596b1beafe007be2c8a4a26b54231381",
+  "harness_seconds": 0.17,
+  "missing_keys": [],
+  "prefix_out": {
+   "cos": 0.9999805688858032,
+   "cos_p05": 0.9999526739120483,
+   "max_abs": 0.00146484375,
+   "relL2": 0.00619460130110383
+  },
+  "reference_prefix_sha256": "706ecb70b79b28c6f7c4536483942dc93facd32b8e0416448894687f25743c1f",
+  "reference_seconds": 0.19,
+  "unexpected_keys": []
+ }
+}

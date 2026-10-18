@@ -1,0 +1,22 @@
+{
+  "name": "m2-c15-qimg-pairs",
+  "owner": "claude",
+  "lane": "M2 C15 2026-10-10",
+  "gpu_index": 4,
+  "gpu_uuid": "GPU-2ce6a95c-7b1f-644a-3808-d781732a0582",
+  "route": "host docker (hermes.py status/run hung on the workstation: execv wrapper + lease); recorded here per the environment rules",
+  "image": "comfyui:codex-minimax-h3-runtime-env-r5-20260808",
+  "container_id": "9fa87f508f2ca858aaf9046be7e88c29fdde98df61148ceb8b32e40c88e12f6b",
+  "started_utc": "2026-10-10T09:32:21.635988+00:00",
+  "gpu_used_mib_before": 15,
+  "released_utc": "2026-10-10T09:33:28.169758496Z",
+  "attempts": [
+    {
+      "container_id": "c486d7f4c4ce403a19bdd12fd2ef6ddcd4e3d98035aac2c1ce9b55f89aec4d30",
+      "started_utc": "2026-10-10T09:26:53.089044Z",
+      "result": "python exited at import: the r5 image bakes CUDA_VISIBLE_DEVICES empty; container removed (own)"
+    }
+  ],
+  "env": "NVIDIA_VISIBLE_DEVICES=GPU-2ce6a95c-7b1f-644a-3808-d781732a0582 CUDA_VISIBLE_DEVICES=0 (only GPU4 visible)",
+  "exit_code": 0
+}

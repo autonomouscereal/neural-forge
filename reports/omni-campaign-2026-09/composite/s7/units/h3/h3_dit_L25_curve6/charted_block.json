@@ -1,0 +1,333 @@
+{
+ "accounting": {
+  "child_block_parameters": 212825344,
+  "child_mlp_parameters": 57802752,
+  "parent_block_parameters": 386233600,
+  "parent_mlp_parameters": 231211008,
+  "retained_shared_coefficients": 8216
+ },
+ "capture_deviations": [
+  {
+   "arm": "video_frames",
+   "name": "video_frame_alignment",
+   "what": "video clips are latent frames [1, 2, 3, 4] fed as frames 0..3; consecutive=True, starts_at_zero=False, gaps=[]",
+   "why_it_matters": "FRAME_PER_TOKEN (1, 4, 4, 4, 4) from latent frame 0; rope time axis counts latent frames consecutively"
+  },
+  {
+   "arm": "text",
+   "name": "text_conditioning",
+   "what": "text = seeded gaussian Qwen-width states refined by the parent's condition_proj + token_refiner",
+   "why_it_matters": "H3 is a text-to-AV model: every captured audio/video activation is conditioned through full attention on text states the parent never sees; the parent's real text path (its Qwen encoder states for a fixed prompt set, or the empty-prompt embedding) is not on this box"
+  },
+  {
+   "arm": "stimuli",
+   "name": "s1_media_stimuli",
+   "what": "S1 media stimuli absent; the C15 pair corpora (procedural clips) stand in",
+   "why_it_matters": "the spec's S6H input is 'S1 media stimuli' (STAGES S1: media stimuli remain pending)"
+  }
+ ],
+ "charts": {
+  "chart_out_bias": "not written (c16 never installs it)",
+  "diagnostics_held": {
+   "forward": {
+    "cos": 0.9591691882461574,
+    "cos_p05": 0.9079179969322997,
+    "r2": 0.8498821929838454,
+    "rel_l2": 0.31939585417260064,
+    "rows": 5760
+   },
+   "roundtrip": {
+    "cos": 0.9224774243695238,
+    "cos_p05": 0.8353777098473482,
+    "r2": 0.6061169926814108,
+    "rel_l2": 0.41610596168337194,
+    "rows": 5760
+   }
+  },
+  "file": "charts.safetensors",
+  "hidden": 5120,
+  "method": "ridge (mediafold.linalg.fit_ridge_linear, fp64) refitted on every paired row at the lambdas chosen by the c17 fit-split ladder",
+  "pairs": {
+   "holdout": "group split (see the pair receipt)",
+   "host_site": "block 31 OUTPUT (the residual the charted block inserted after layer 31 reads)",
+   "interface": [
+    "/home/cereal/omni-campaign/composite/s7/interface_latent/companions.json"
+   ],
+   "paired_rows": "/home/cereal/omni-campaign/composite/s7/tap_rows_s3/h3_dit_L25_curve6/paired_rows.safetensors",
+   "paired_rows_sha256": "c7941fe1941e4a5adc999ca9d6b654b51faa86be36a18a57baf58806228a3108",
+   "parent_pairs": "/home/cereal/omni-campaign/composite/s7/pairs/h3_dit_L25_curve6/parent_capture.safetensors",
+   "rows": 28800,
+   "rows_held": 5760,
+   "trunk": "/mnt/lexar/omni-campaign/s3-native-v2-3a25a459-4347-416d-a58a-2cb3c8e738fd/actual/native-s3-text-stage/native"
+  },
+  "policy": "owner 2026-10-06: these numbers are diagnostics, never gates",
+  "producer": {
+   "lane": "M1 2026-10-10",
+   "sha256": "0e3e2a386a67861a048ab75e1973acf3dce3245dcd24ced682368413db165217",
+   "tool": "s7_chart_fit",
+   "version": "1.0.0"
+  },
+  "ridge_rel": {
+   "chart_in": 0.1,
+   "chart_out": 0.1
+  },
+  "sha256": "7222f554e5de25f60f3c2515aa6ab7cb3a665c9ba34162052f22053196a0b8bf",
+  "shapes": {
+   "chart_in.bias": [
+    5376
+   ],
+   "chart_in.weight": [
+    5376,
+    5120
+   ],
+   "chart_out.weight": [
+    5120,
+    5376
+   ]
+  },
+  "valid_only_with": "the latent interface rows these host rows were captured under (s7/interface_latent) and the S3 trunk prefix 0..31; S5 (C10 rewrites FFNs 0-31) needs a recapture"
+ },
+ "holdout": {
+  "cos": 0.9480531622399451,
+  "cos_p05": 0.894386198450414,
+  "r2": 0.9012600230134824,
+  "rel_l2": 0.3033859136783856,
+  "rows": 5760,
+  "width": 5376
+ },
+ "provenance": {
+  "block_state_sha256": "3a34bace2a3ba2911af20127870339b4a8dc274d52a221db0ef275e8942075cf",
+  "capture_references": [
+   {
+    "path": "/mnt/lexar/omni-campaign/media/h3_blocks_v2/step00/L25.safetensors",
+    "selected_tensor_sha256": {
+     "adaln": "ba71ad125c7bca7991294f29a2bcab352c11dfefb12eb703e3c1e73ca404c8b6",
+     "sigma_audio": "c37579c56bb9f0d1131cce7af08b50240e9685145298d40256f5e25505c25099",
+     "sigma_video": "a9a62c6a9239b52bc3f729ee08c43e6f73295ffd12af6a14bf649f9a69486263",
+     "temb": "688b7e97fa902bb9a8dcf4d69c7df62fcc68ab6ede72d7831473860837539b05"
+    }
+   },
+   {
+    "path": "/mnt/lexar/omni-campaign/media/h3_blocks_v2/step01/L25.safetensors",
+    "selected_tensor_sha256": {
+     "adaln": "d77e231de9d1ec21f17855e249f3d8a59fa5ec901d8ab735b09372babcc7c476",
+     "sigma_audio": "9817ae067443f8d3205f3c5de275c51b84db5b7edb784b02a0e2da87472c6bdc",
+     "sigma_video": "120b587dca96c65525a684639d5d6f411492bfa377b7eb9da6ae7c39b1727109",
+     "temb": "2e01444334636908507535061c40c0504d12220a44fa644681939b45a1bfdeeb"
+    }
+   },
+   {
+    "path": "/mnt/lexar/omni-campaign/media/h3_blocks_v2/step02/L25.safetensors",
+    "selected_tensor_sha256": {
+     "adaln": "18eb4e95115346d979baeb45e4418fcb21f4b88a325730b5a746d6c7cbc1a0cc",
+     "sigma_audio": "2f17aed80a95e0a861857bb64da6ee5cef8062ea5f35736bb1c137c4f3f480fb",
+     "sigma_video": "6123b0bab67cdc08704c3b4b9a232d48562d03e14f84057fb6145d94804f9f73",
+     "temb": "a6d08243f75443450cb447922399dfaf34aea1b492242d3352afb2d319681241"
+    }
+   },
+   {
+    "path": "/mnt/lexar/omni-campaign/media/h3_blocks_v2/step03/L25.safetensors",
+    "selected_tensor_sha256": {
+     "adaln": "b25fe5e25fdfe5eebd1a608d701770313f3e1a7efe66aae94557cf95f40a88b8",
+     "sigma_audio": "5187cb945f706cf03145d675f46061bfb72d374c084908536a0be7e837b6bb54",
+     "sigma_video": "d6c026343ad5a600cc4f9fab0b49e08d960016d56430ce3ef113a13019f66476",
+     "temb": "531dc2a44b6ea8bbd25841a57a104050062efe8d858295976167f10fbc65266d"
+    }
+   }
+  ],
+  "codex_container": {
+   "charted_block.json_sha256": "057c5581f58acf21d8f354c7f1cf0414796a0a97b57cb2bcc33b9ef4c66bce8f",
+   "charted_block.safetensors_sha256": "8f1adfe2768513c721c9c77e52f729264883930d6af72b50fdc0f58df9cbfabf",
+   "declared_tensor_sha256_check": {
+    "charted_block": {
+     "declared": 15,
+     "verified": true
+    },
+    "time_reference": {
+     "declared": 3,
+     "verified": true
+    }
+   },
+   "dir": "/home/cereal/omni-campaign/composite/media/h3-native-curve6-sep07",
+   "time_reference.safetensors_sha256": "d09fbd3501ff329a69a4be7824f5d4d3bd1e341f185e5037a818b7ed4d9bd3b0"
+  },
+  "converter": "c16_convert_h3.v1",
+  "converter_sha256": "ac6ecb7a876b79896eb91ad975fc9bac76b8b1292294bb2bcb1e8dcd806da539",
+  "coreset_receipt": "/mnt/lexar/omni-campaign/media/h3_block_coreset_v2/L25/coreset_receipt.json",
+  "coreset_receipt_sha256": "927c3c39f00f80a0453d65c2c5421087de45d2d00653dbde9d221b9fac1a38be",
+  "folded_mlp_sha256": "69a27caca9c93fa3036666fea9b966f690635e3485927c0e2829d73ddedd46aa",
+  "folded_tensor_sha256": {
+   "blocks.25.mlp.fc1.weight": "2f35075cd3a69dd7b8c8d76660257818a1534a07682440db67a9dae40f76931b",
+   "blocks.25.mlp.fc2.weight": "04ebb5962003a0a7c64501e9ca45ad8ea200d9d8e89f3fc77b449581e83480cc"
+  },
+  "frozen_tensor_sha256": {
+   "blocks.25.adaln_proj.linear.bias": "242921acefb395f53279a75640e5a4084ac3bd50c28bc23abebce96aa27bbf9e",
+   "blocks.25.adaln_proj.linear.weight": "bc3836c228312cd2527e10a2807ff4ed18026b0708a7f799f6046f5f27712c7c",
+   "blocks.25.attn.k_norm.weight": "c80348591f1e58295349b4db5614d1aa93234f85b2790d517f0996d8214e5747",
+   "blocks.25.attn.out_proj.weight": "f3f0fd67b02e426c2bb7a3aab18910794dc20e8aa7d6596a557d5459946ecdcc",
+   "blocks.25.attn.q_norm.weight": "4b00021b952df02a14e3160143f964e5f613a6daafc2cb071b418c439cdf4d79",
+   "blocks.25.attn.qkv_proj.weight": "19a117ac89293d0e8f31077342d8355c0449996e170d42b54244e6ab36bb5204",
+   "blocks.25.mlp.fc1.weight": "64f5153377b7331d3fc595af760d7e675cb5bdede4e54132a7635d00039814ba",
+   "blocks.25.mlp.fc2.weight": "e135408092dc74849cec3bad9a0f39f703c8d8f866a2bb9c35c314868c0dc6fe",
+   "blocks.25.norm1.weight": "3ab1afd0cf3056b6876ead3f5b24310e557bfd20b9abbcf0681c0c42dd92e40f",
+   "blocks.25.norm2.weight": "4d726c74ad7cdaa69acde55229781096cecf2852f6a5605213bd1fe888b281e1"
+  },
+  "source_globals_scope": "selected tensors only; full source-file identity is not reverified here",
+  "source_globals_tensor_sha256": {
+   "adaln_t_table": "42c1c8718a10faca042ce6af86d6ed18004a1fa970fb9dc5de1e3c2838425669",
+   "rope.inv_freq": "05121a78cff96871743d65cd19b8325a7aa9d04eaefded9633e52ca42c34ee34"
+  },
+  "source_weights": "/home/cereal/comfyui/models/diffusion_models/minimax_h3_fl2va_pruned_bf16.safetensors"
+ },
+ "runtime_requirements": {
+  "capability_claim": "none: this converts one measured coreset, not an all-source child or media proof",
+  "charts": "paired host/source tap rows still required",
+  "coordinate_inference": "forbidden: native thwr_v1 values are not H3 source coordinates",
+  "source_positions": "explicit h3_thw_v1 coordinates for text and AV rows"
+ },
+ "s7_unit": {
+  "built_by": "symlinks to Codex's h3-native-curve6-sep07 container (both files, canonical names) + json rewrite",
+  "canonical": {
+   "block_parameters_without_charts": 212833560,
+   "canonical_tensor_set": true,
+   "chart_parameters_at_hidden_5120": 55055616,
+   "installed_parameters_at_hidden_5120": 267889176,
+   "spec_mlp_parameter_count": 57802752
+  },
+  "charts_status": "PRESENT at hidden 5120 (lane M1, 2026-10-10); fitted on S3-trunk host rows under the latent interface set",
+  "component_4x": {
+   "meets_4x_component": true,
+   "mlp_compression_x": 4.0,
+   "mlp_ratio": 0.25,
+   "rule": "c16 components(): child MLP / parent MLP <= 0.25 registers as --component",
+   "whole_block_ratio_recorded_only": 0.5510275232398217
+  },
+  "deviations": [
+   "video_frame_alignment",
+   "text_conditioning",
+   "s1_media_stimuli"
+  ],
+  "h3_curve6_time_gate": {
+   "finite": true,
+   "max_abs": 1.430511474609375e-06,
+   "reference_norm": 328.5715637207031,
+   "rel_l2": 1.3166969381472882e-07,
+   "shape": [
+    8,
+    3,
+    6,
+    5376
+   ],
+   "tolerance": 1e-05,
+   "verified": true
+  },
+  "h3_fp32_parameters_source_dtypes": {
+   "attn.rope_inv_freq": "F32",
+   "h3_time.curve_table": "F32",
+   "h3_time.proj.bias": "F32",
+   "h3_time.proj.weight": "F32"
+  },
+  "requires_installer": "c16_install_media >= 1.2.0 (gates the h3_curve6 time_reference.safetensors; keeps H3_FP32_PARAMETERS in FP32 under --charted-dtype match)",
+  "requires_tree": "chimera-omni with MODULATION_KINDS incl. h3_curve6 (tree_ef1ffb9 / 11adb32; NOT c16's default tree_2ec15a8)",
+  "runtime_requirements": {
+   "capability_claim": "none: this converts one measured coreset, not an all-source child or media proof",
+   "charts": "paired host/source tap rows still required",
+   "coordinate_inference": "forbidden: native thwr_v1 values are not H3 source coordinates",
+   "source_positions": "explicit h3_thw_v1 coordinates for text and AV rows"
+  },
+  "source": "H3",
+  "tool": "s7_unit_build",
+  "tool_version": "1.2.0"
+ },
+ "schema": "chimera_omni.composite.charted_block.v1",
+ "spec": {
+  "attn_bias": false,
+  "chart_in_bias": true,
+  "component": "h3.dit.block.mlp",
+  "delta_scale": 1.0,
+  "h3_curve_dim": 8,
+  "h3_curve_grid": 1025,
+  "h3_rope_freqs": 16,
+  "head_dim": 128,
+  "heads": 56,
+  "kv_heads": 56,
+  "metadata": {
+   "context": "text read-only plus AV; no context tower",
+   "sigma_contract": "actual per-type sigma; source shifts video12/audio3",
+   "source_code_sha256": "882c280b05aa60cd17f231e5e2389b921b52880fb3b4e23574c0aba5f2bd5024",
+   "source_position_schema": "h3_thw_v1"
+  },
+  "mlp_kind": "swiglu",
+  "mlp_width": 3584,
+  "modulation": "h3_curve6",
+  "norm_affine": true,
+  "norm_eps": 1e-05,
+  "norm_kind": "rms",
+  "qk_norm": true,
+  "rope_theta": 0.0,
+  "rung": "measured-coreset",
+  "sliding_window": 0,
+  "source": "h3",
+  "source_depth_fraction": 0.5102040816326531,
+  "time_embed_r": false,
+  "time_factor": 1000.0,
+  "time_freq_dim": 256,
+  "time_hidden": 0,
+  "type_ids": [
+   2,
+   3
+  ],
+  "width": 5376
+ },
+ "tensor_sha256": {
+  "charted_block.safetensors": {
+   "attn.k_norm.weight": "c80348591f1e58295349b4db5614d1aa93234f85b2790d517f0996d8214e5747",
+   "attn.k_proj.weight": "837fad13ca3355c101c365ed5c085d738b2a6e5b78a2f39b02f71e9697e74c59",
+   "attn.o_proj.weight": "f3f0fd67b02e426c2bb7a3aab18910794dc20e8aa7d6596a557d5459946ecdcc",
+   "attn.q_norm.weight": "4b00021b952df02a14e3160143f964e5f613a6daafc2cb071b418c439cdf4d79",
+   "attn.q_proj.weight": "cf5516e66ce71bdfdf1cba54906c11f5474302319135e8b6d615b3be4aae728e",
+   "attn.rope_inv_freq": "05121a78cff96871743d65cd19b8325a7aa9d04eaefded9633e52ca42c34ee34",
+   "attn.v_proj.weight": "b92c0f21c6cf0bce9a9d8f4bd42f9389c7ebea858c040ffec2eb9ae06988927c",
+   "attn_norm.weight": "3ab1afd0cf3056b6876ead3f5b24310e557bfd20b9abbcf0681c0c42dd92e40f",
+   "h3_time.curve_table": "42c1c8718a10faca042ce6af86d6ed18004a1fa970fb9dc5de1e3c2838425669",
+   "h3_time.proj.bias": "242921acefb395f53279a75640e5a4084ac3bd50c28bc23abebce96aa27bbf9e",
+   "h3_time.proj.weight": "bc3836c228312cd2527e10a2807ff4ed18026b0708a7f799f6046f5f27712c7c",
+   "mlp.down_proj.weight": "04ebb5962003a0a7c64501e9ca45ad8ea200d9d8e89f3fc77b449581e83480cc",
+   "mlp.gate_proj.weight": "df087a8145cd1dc14c8bc0b394ee4e648dde39b19e815f71fa5f881e3a2b41a8",
+   "mlp.up_proj.weight": "9d888a67f0e28857143b76d19e5a4413aabb885e491e335ee0f76a978aab4cd2",
+   "mlp_norm.weight": "4d726c74ad7cdaa69acde55229781096cecf2852f6a5605213bd1fe888b281e1"
+  },
+  "charts.safetensors": {
+   "chart_in.bias": "2a57a0f3d48d804442336d122161e6abc2359fbc347edfd1ccf8d3b01a39525a",
+   "chart_in.weight": "df2e6b28df17e4851e569c90a846df360d8edda28f0bc83711a8d0ca269fc8b8",
+   "chart_out.weight": "d324ac1da07e5d782159f788582b2af862709a5f3156464eaf1ef226f5085d2f"
+  },
+  "time_reference.safetensors": {
+   "curve": "0f9e935f3940e18f02ccc54f3e9d4a687bf67eb1be1c44825ee0f0c13df4dc0b",
+   "modulation": "c15d0b04281a47995e52fcf555b83c8d438eb21eb469f6b9d780d14bf4905666",
+   "sigma": "c15537ae5f15a441ebe59c12cd6cd0fcec3a1e12ee2b34bf826c8deb6a2aef6f"
+  }
+ },
+ "time_reference": {
+  "conversion_rel_l2": 1.3166843334766967e-07,
+  "curve_rel_l2": 1.1863431656707402e-06,
+  "file": "time_reference.safetensors",
+  "modality_order": [
+   "video",
+   "text",
+   "audio"
+  ],
+  "sigma": [
+   0.30000001192092896,
+   0.6315789222717285,
+   0.6428571343421936,
+   0.8333333134651184,
+   0.8780487775802612,
+   0.9523809552192688,
+   0.9545454382896423,
+   0.9882352948188782
+  ],
+  "tolerance": 1e-05,
+  "verified": true
+ }
+}

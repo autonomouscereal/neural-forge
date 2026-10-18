@@ -1,0 +1,480 @@
+{
+  "schema": "chimera_omni.media_fold.receipt.v1",
+  "created_at_utc": "2026-10-10T09:33:25.993582+00:00",
+  "kind": "c15_pairs",
+  "geometry": {
+    "name": "qwen_image_vae.safetensors",
+    "modality": "image",
+    "latent_channels": 16,
+    "spatial_stride": 8,
+    "latent_group": 2,
+    "pixel_range": [
+      0.0,
+      1.0
+    ],
+    "image_size": 256,
+    "d_raw": 768,
+    "d_latent": 64,
+    "d_centre": 768,
+    "centre_offset": 0,
+    "context": 0,
+    "rows": 12288,
+    "clips": 48,
+    "raw_packing": "(c, y, x) over one 16x16 RGB patch",
+    "latent_packing": "(c, ph, pw) = ComfyUI qwen_image process_img order (img_in input)",
+    "latent_space": "DiT space: comfy.latent_formats.Wan21().process_in(vae.encode(x))",
+    "pairing": "one row per Qwen-Image DiT token"
+  },
+  "pairs": {
+    "path": "/out/pairs.safetensors",
+    "bytes": 79036960,
+    "file_sha256": "250bf5423761c95a5eb0b924a3ca739f520398baff7b01ca2243277b0f8f1445",
+    "state_sha256": "68f9cd235e3caea41d650543eb23d4cac8ec64b7f40c85be067d5bca46434082",
+    "parameters": 19709952,
+    "tensors": {
+      "channel_index": {
+        "dtype": "torch.int64",
+        "shape": [
+          12288
+        ],
+        "sha256": "be0e9b3839c6213795536ff48e79891d68838530eedd6665758fedb9dd827f88"
+      },
+      "clip_index": {
+        "dtype": "torch.int64",
+        "shape": [
+          12288
+        ],
+        "sha256": "c724b4dd4d59cf2f58486a74a8b8b269afb5b766fd736f0569f2f3e347950b32"
+      },
+      "frame_index": {
+        "dtype": "torch.int64",
+        "shape": [
+          12288
+        ],
+        "sha256": "febaee8de7e85ebb717ed3e56298454ad7f42810daf7cf3200cd9dd06dec9fba"
+      },
+      "latent": {
+        "dtype": "torch.float32",
+        "shape": [
+          12288,
+          64
+        ],
+        "sha256": "cac12bd40ed7bab97d92a3f53d6f6729e1b4019b90eab47666529b6cf3e6b7ee"
+      },
+      "raw": {
+        "dtype": "torch.float32",
+        "shape": [
+          12288,
+          768
+        ],
+        "sha256": "ac0657dcbe679867b73836f1e6775787de99189f8209cce3a6def6515c1cc06e"
+      },
+      "roundtrip": {
+        "dtype": "torch.float32",
+        "shape": [
+          12288,
+          768
+        ],
+        "sha256": "3b773dba153e4673d12656ce1235853c6135d8663f9eb0a460619e715673a3c0"
+      },
+      "split": {
+        "dtype": "torch.int64",
+        "shape": [
+          12288
+        ],
+        "sha256": "f3d35c7012797e9d4a6c1678686b67224934f6040475b6f09041bfda9b7280dc"
+      }
+    }
+  },
+  "split": {
+    "fit_rows": 9216,
+    "holdout_rows": 3072,
+    "split_by": "clip"
+  },
+  "runtime": {
+    "python": "3.10.12 (main, Sep 11 2024, 15:47:36) [GCC 11.4.0]",
+    "platform": "Linux-7.0.0-30-generic-x86_64-with-glibc2.35",
+    "cwd": "/opt/ComfyUI",
+    "torch": "2.6.0+cu124",
+    "torch_cuda": "12.4",
+    "cuda_available": true,
+    "nvidia_smi": [
+      "0, NVIDIA GeForce RTX 3090, GPU-2ce6a95c-7b1f-644a-3808-d781732a0582, 2343 MiB"
+    ]
+  },
+  "images": [
+    {
+      "index": 0,
+      "file": "/images/bestiary_ash_conjurer_concept_00001_.png",
+      "sha256": "06a36ac890ef15827568f19fab4c5c49a3868a7c48a92e5ed12d2ad83cb0e49b",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 36.013885498046875
+    },
+    {
+      "index": 1,
+      "file": "/images/bestiary_ember_drake_concept_00001_.png",
+      "sha256": "148d9de891ecb656b40fd65998ef7d1e6cc00d7fc1415f45c1b4651f79397af7",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 37.392086029052734
+    },
+    {
+      "index": 2,
+      "file": "/images/bestiary_orc_ravager_concept_00001_.png",
+      "sha256": "89abcbf0ce68b0f6e3b63218c5f15073d94361c0430a038f10d245de9abd3a4f",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 35.26368713378906
+    },
+    {
+      "index": 3,
+      "file": "/images/bestiary_tower_husk_concept_00001_.png",
+      "sha256": "6ee7b6a04f43a95fded87228d1bbc87065f1436dc2a0ab9f75593a68448913d3",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 36.50168991088867
+    },
+    {
+      "index": 4,
+      "file": "/images/codex_ltx_t2v_00002_.webp",
+      "sha256": "68e70c4d95b19aa24f9605a54731773ad0300e92a6e30adc1ff3503bca86fabe",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 37.444541931152344
+    },
+    {
+      "index": 5,
+      "file": "/images/cybertruck_s14_00001_.png",
+      "sha256": "eb15716d47e9c545448bbe11e0b5620cc915fe94c895d3f894466d8779365749",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 35.984657287597656
+    },
+    {
+      "index": 6,
+      "file": "/images/iceagent_district_judge_none_walk_right_ltxfull33_00003_.webp",
+      "sha256": "519ae4e2cee2d604ba651562522970ff339900b5514a113ed445f5a610c19bed",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 32.51952362060547
+    },
+    {
+      "index": 7,
+      "file": "/images/iceagent_immigrant_illegal_2_walk_right_ltxfull33_00002_.webp",
+      "sha256": "ec9f19b18eb3ea34c20a758ad0df5fb5d646e69d0bbc50c0da7821bfc3bd32bd",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 30.91768455505371
+    },
+    {
+      "index": 8,
+      "file": "/images/iceagent_karen_karen1_body_only_v004_pad1152_00001_.png",
+      "sha256": "ae2ffcffcfd678b1270918c4dd43f2c13ba076efef23286220bef3d2db16c599",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 34.708866119384766
+    },
+    {
+      "index": 9,
+      "file": "/images/iceagent_left_from_right_motion_v022_ltxcleanup_s050_00001_.webp",
+      "sha256": "ae8c44c859af061c5ecac681ad3e8240e8a160474485f6d47d9251202c3e2bfe",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 39.71601104736328
+    },
+    {
+      "index": 10,
+      "file": "/images/iceagent_player_none_walk_right_ltxfull33_00001_.webp",
+      "sha256": "c8811c338db6f53b30e417b4dc4e9f842daef768cbf5eaf5de8b2824142d1668",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 42.75117874145508
+    },
+    {
+      "index": 11,
+      "file": "/images/iceagent_right_ab_s080_00001_.webp",
+      "sha256": "fe8075f9d3ffa09b4f171a96be7fb8dd570a4557fd3aeb534194a9b6602bdd18",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 37.56114959716797
+    },
+    {
+      "index": 12,
+      "file": "/images/iceagent_right_v010_ab_s095_00001_.webp",
+      "sha256": "63fdeaf7477f4938cfff4f64d1b6a1c249c1d852b83851e382838ad31636d40d",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 37.34189987182617
+    },
+    {
+      "index": 13,
+      "file": "/images/iceagent_right_v052_v012_identity_poseguided_s062_f33_00001_.webp",
+      "sha256": "4bf2f9519098c704bba41ffa873d3e045700d06d9faec1cec614a168dbc1df4e",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 37.5267219543457
+    },
+    {
+      "index": 14,
+      "file": "/images/iceagent_right_white_vcond_s100_00001_.webp",
+      "sha256": "8de56334e4905ce22a1eeeac468d4df007c8332db2813edef8201f4560462318",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 40.42393493652344
+    },
+    {
+      "index": 15,
+      "file": "/images/move5_border_sniper_primary_up_a01_00001_.png",
+      "sha256": "d808ea3a42a3ff35d26c530c17cb7232951d7c7c0e4aa590d02db21e33e2daa5",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 39.17904281616211
+    },
+    {
+      "index": 16,
+      "file": "/images/move5_ice_commander_primary_right_a01_00001_.png",
+      "sha256": "798ba26a464e64632317f8d2f185168731640cf27c485430b043880c73a3d57d",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 34.330291748046875
+    },
+    {
+      "index": 17,
+      "file": "/images/move5_riot_enforcer_r_down_a01_00001_.png",
+      "sha256": "f52cf5aeba6d7c7e1a4f22c7e9d05a80883cdf39a4e51d33383a2f2cbfa46435",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 35.925071716308594
+    },
+    {
+      "index": 18,
+      "file": "/images/omnicoder_ltx_video_059ee3a29f1a_00001_.webp",
+      "sha256": "4d64bcbba3d2f0dfdd8911081782378a2ef393f84535f50408447f9812f8718c",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 36.527584075927734
+    },
+    {
+      "index": 19,
+      "file": "/images/omnicoder_ltx_video_1135f7a66476_00002_.webp",
+      "sha256": "18d70a7bdf2dcc8f0ef8bccea71d26d186a18788965289a59ce599419de9ddf5",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 33.19944763183594
+    },
+    {
+      "index": 20,
+      "file": "/images/omnicoder_ltx_video_2546c12e5a4b_00001_.webp",
+      "sha256": "fd4078bece4fbd24dbc3bc9068af1e873fdfda553326f34f89902062d53f27cc",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 38.554542541503906
+    },
+    {
+      "index": 21,
+      "file": "/images/omnicoder_ltx_video_310583e77048_00001_.webp",
+      "sha256": "be2326ffe9e9e7b57632c4674d92be7facdc1ec06d450b08f43f5bfdc532b633",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 32.32622528076172
+    },
+    {
+      "index": 22,
+      "file": "/images/omnicoder_ltx_video_39f3f2a13920_00001_.webp",
+      "sha256": "888d89a55f680365d8e2aa4e211d2df2dabc0d89dc12c10239a2f220f08d5fac",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 35.79697036743164
+    },
+    {
+      "index": 23,
+      "file": "/images/omnicoder_ltx_video_4521a8ef67fd_00001_.webp",
+      "sha256": "c435668b4499aa0b3268aba8591fbe4e2a17372f2eda6425623f50ea455c2cd7",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 34.149742126464844
+    },
+    {
+      "index": 24,
+      "file": "/images/omnicoder_ltx_video_4f9cdef3590d_00001_.webp",
+      "sha256": "3df5dfffa113d555503a449ef0f1cda3468502b798e25e352a857f244cb01309",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 31.285459518432617
+    },
+    {
+      "index": 25,
+      "file": "/images/omnicoder_ltx_video_627572673875_00001_.webp",
+      "sha256": "bb51514f60660977cf30a31ce882b9f4f5539f9fee75079b30af9a4e2b133e99",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 37.00110626220703
+    },
+    {
+      "index": 26,
+      "file": "/images/omnicoder_ltx_video_71de0afddaf7_00001_.webp",
+      "sha256": "116d1991444ba9a86af27a066f416f723a663766f8fae1ae66a47e8b2051e20a",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 37.809444427490234
+    },
+    {
+      "index": 27,
+      "file": "/images/omnicoder_ltx_video_853fcfec4025_00001_.webp",
+      "sha256": "a9f9209d995b1f120b8b726abc3caed25ee08b06198609ff6e2c2ca90e4e8c47",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 31.4963321685791
+    },
+    {
+      "index": 28,
+      "file": "/images/omnicoder_ltx_video_91941fb35dbc_00001_.webp",
+      "sha256": "c769ea2df7634cf126ed30c43d86a2e3844b7f138dc17ffff10be79630f803e4",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 31.78601837158203
+    },
+    {
+      "index": 29,
+      "file": "/images/omnicoder_ltx_video_a42942494ed3_00001_.webp",
+      "sha256": "050d9b2029b1757bbdbf38345ce8ddfa31de8ee1a18786279465455aa926b71e",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 34.30767059326172
+    },
+    {
+      "index": 30,
+      "file": "/images/omnicoder_ltx_video_af24ada23495_00001_.webp",
+      "sha256": "7732107594506bff0bb7b28ebef0df9f8bdd6002d8a9f5e744701b51596c1597",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 32.83562088012695
+    },
+    {
+      "index": 31,
+      "file": "/images/omnicoder_ltx_video_c627e3914802_00001_.webp",
+      "sha256": "e84e6344c61cf0c2bf759479b9b5c054a3980a4f423b94d4d4ab0da97b6b8b78",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 30.80921173095703
+    },
+    {
+      "index": 32,
+      "file": "/images/omnicoder_ltx_video_dd7b9ec61008_00001_.webp",
+      "sha256": "cd478801b9fe8883cbf71054e7198a2c284b762097451dc5c618200fcb96a0d6",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 35.9239387512207
+    },
+    {
+      "index": 33,
+      "file": "/images/omnicoder_ltx_video_e9e60d159d3d_00001_.webp",
+      "sha256": "ff32e7d2ee3103dffc09bd60f3fab01020f46421b5fbfb552e784f8227ab901d",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 33.6413459777832
+    },
+    {
+      "index": 34,
+      "file": "/images/omnicoder_ltx_video_f6985ffaef0f_00001_.webp",
+      "sha256": "518660c39e3a5d0d46b33eeec1b1e0cbf8fce62c3a769da7d4b813248bec389f",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 39.62713623046875
+    },
+    {
+      "index": 35,
+      "file": "/images/omnicoder_ltx_video_ff20484859b7_00001_.webp",
+      "sha256": "81ab7288e01ec4aae1ab2272fe175197c190a1c5104fa87f23823e841d577d2c",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 36.06507873535156
+    },
+    {
+      "index": 36,
+      "file": "/images/omnicoder_qwen_image_edit_229d1fef5b6f_00001_.png",
+      "sha256": "7875057d4181725445785b259534b7644a67107641caa241ae43afa0fe19f6f8",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 32.41133117675781
+    },
+    {
+      "index": 37,
+      "file": "/images/omnicoder_qwen_image_edit_5631c3094d3e_00001_.png",
+      "sha256": "2e91e107cd62443731f03aab1a9d74ffd6265e408fea6ed3acb3f45b92794859",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 32.64198684692383
+    },
+    {
+      "index": 38,
+      "file": "/images/omnicoder_qwen_image_edit_7c8f01e12500_00001_.png",
+      "sha256": "9b3ec75ddcb617486d3253a003267658760741af17168b9633c413069b7d7eeb",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 32.55188751220703
+    },
+    {
+      "index": 39,
+      "file": "/images/omnicoder_qwen_image_edit_aa076da20492_00002_.png",
+      "sha256": "0837746281c0299161df94cce2eecbb679c4551ec0e1588bbf5740ce263fbaf0",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 32.44241714477539
+    },
+    {
+      "index": 40,
+      "file": "/images/omnicoder_qwen_image_edit_cc732ca9e4d4_00001_.png",
+      "sha256": "19c32a85edffafb79183da8616a122359bfa70bddafd5acb081b9e7256b3281f",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 30.79326820373535
+    },
+    {
+      "index": 41,
+      "file": "/images/omnicoder_qwen_image_edit_ec57e9301737_00001_.png",
+      "sha256": "a383f9262495952009301d4b2e753669995dff7ac88b6d41166dc9bd66c1ffc7",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 33.06709671020508
+    },
+    {
+      "index": 42,
+      "file": "/images/omnicoder_qwen_image_generate_11fd90a12cac_00002_.png",
+      "sha256": "12a20400b66b35dd6576b2bb6fb01af1133ad0c1af5b4124d6e668d9341a822c",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 39.745750427246094
+    },
+    {
+      "index": 43,
+      "file": "/images/omnicoder_qwen_image_generate_3a4842052fa5_00001_.png",
+      "sha256": "f387c8d652163e0ceb7e2b064d80478d0d812d15080e40c17715cf4e20d7596b",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 45.13787078857422
+    },
+    {
+      "index": 44,
+      "file": "/images/omnicoder_qwen_image_generate_5e48caed6fb4_00001_.png",
+      "sha256": "5e0a3aa265a5dfd120c794a685f756d08333d4825c6cc809ebe48e83add18e64",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 50.70210266113281
+    },
+    {
+      "index": 45,
+      "file": "/images/omnicoder_qwen_image_generate_7b91b31a9c54_00003_.png",
+      "sha256": "8a8814a981d994427fb1e0ff3abbe82db9ea58a7d5907c6ca52d6c9b3a560cdd",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 40.564353942871094
+    },
+    {
+      "index": 46,
+      "file": "/images/omnicoder_qwen_image_generate_98c5c1b91450_00001_.png",
+      "sha256": "ac4d8c3560f43e161a8cf673f0b60cf14e773daaa57aa4607ae7cbe158366a24",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 30.892311096191406
+    },
+    {
+      "index": 47,
+      "file": "/images/omnicoder_qwen_image_generate_bfc40c18c88c_00001_.png",
+      "sha256": "e9c15b6c840371f446fc676ac8f3d87851c241cbdf3391a73f36c17a16cbb594",
+      "tokens": 256,
+      "vae_roundtrip_psnr_db": 36.818359375
+    }
+  ],
+  "vae": {
+    "path": "/models/vae/qwen_image_vae.safetensors",
+    "sha256": "a70580f0213e67967ee9c95f05bb400e8fb08307e017a924bf3441223e023d1f"
+  },
+  "selection": {
+    "images_dir": "/images",
+    "rule": "sorted names, >= size px short side, evenly spaced",
+    "count": 48
+  },
+  "split_images": {
+    "holdout": [
+      3,
+      6,
+      11,
+      12,
+      15,
+      22,
+      30,
+      36,
+      38,
+      39,
+      40,
+      43
+    ],
+    "seed": 20261010
+  },
+  "argv": {
+    "vae": "/models/vae/qwen_image_vae.safetensors",
+    "images_dir": "/images",
+    "count": 48,
+    "size": 256,
+    "holdout_fraction": 0.25,
+    "seed": 20261010,
+    "device": "cuda:0",
+    "out": "/out"
+  },
+  "lane": "M2 C15 image band (2026-10-10)"
+}

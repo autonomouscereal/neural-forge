@@ -1,0 +1,128 @@
+{
+ "attn_implementation": "eager",
+ "attn_res": {
+  "block_size": 2,
+  "blocks_entering_this_layer": 0,
+  "residual_branch": "snapshot (prefix reset to None)"
+ },
+ "block_residual_shape": [
+  128,
+  0,
+  128
+ ],
+ "device": "cuda:0",
+ "devices": [
+  {
+   "capability": "sm86",
+   "index": 0,
+   "name": "NVIDIA GeForce RTX 3090",
+   "total_GB": 25.3
+  }
+ ],
+ "halves": {
+  "attention_error": "RuntimeError('Error(s) in loading state_dict for KimiDeltaAttention:\\n\\tsize mismatch for A_log: copying a param with shape torch.Size([64]) from checkpoint, the shape in current model is torch.Size([2]).')"
+ },
+ "input_sha256": "d4694b235f2e800dd375a8a72061a42fce222dfc8fbf4328714cf93c2c968ade",
+ "is_kda_layer": true,
+ "is_moe_layer": false,
+ "kda_backend": "fla",
+ "kda_backends": {
+  "fla_vs_torch": {
+   "cos": 0.9999808073043823,
+   "cos_p05": 0.9999576807022095,
+   "max_abs": 1.9073486328125e-05,
+   "relL2": 0.00622948445379734
+  },
+  "gate_before_norm_relL2": 0.00641495268791914,
+  "harness_constant_NORM_BEFORE_GATE": true,
+  "norm_before_gate_relL2": 0.00622948445379734,
+  "o_norm_order": {
+   "bf16": {
+    "gate_before_norm_relL2": 0.8373125195503235,
+    "matched": "norm_before_gate",
+    "norm_before_gate_relL2": 0.0033353487960994244
+   },
+   "fp32": {
+    "gate_before_norm_relL2": 0.8371902704238892,
+    "matched": "norm_before_gate",
+    "norm_before_gate_relL2": 8.572170173692939e-08
+   },
+   "harness_constant_NORM_BEFORE_GATE": true
+  },
+  "order_that_matched_fla": "norm_before_gate",
+  "torch_sha256": "bfa6cf48c99e0a06293d806752402e5ad7900f5b6fed71f72fef545dfc50f10f"
+ },
+ "kda_gate_axis": {
+  "A_log_dtype": "torch.float32",
+  "A_log_numel": 64,
+  "A_log_shape": [
+   64
+  ],
+  "axis_is_num_heads": false,
+  "b_proj_shape": [
+   2,
+   128
+  ],
+  "dt_bias_numel": 128,
+  "head_dim": 64,
+  "num_heads": 2,
+  "o_norm_numel": 64,
+  "resolved_axis": "key_dim",
+  "verdict": "A_log indexes the KEY DIM, not heads.  The repo's KimiDeltaAttention declares torch.empty(num_heads) and fla's kernel hardcodes A_log.view(H, 1), so BOTH refuse this tensor: strict load_state_dict fails and use_gate_in_kernel=True is unusable.  The harness precomputes the decay with A_log.view(1, K) and passes use_gate_in_kernel=False.  WHICH BROADCAST IS SEMANTICALLY CORRECT IS NOT SETTLED HERE -- decision line D-a2b, needs a behavioural receipt."
+ },
+ "layer": 0,
+ "meets_proposed_line": {
+  "prefix_out_ok": false,
+  "prefix_out_relL2": null,
+  "router_topk_agreement": null,
+  "router_topk_ok": false
+ },
+ "model_dir": "/home/cereal/omni-campaign/k3/testwork5/synthetic-k3-gpu-keydim",
+ "modeling_import": {
+  "file": "/home/cereal/omni-campaign/k3/k3_src/modeling_kimi_linear.py",
+  "ok": true,
+  "transformers_compat": {
+   "OutputRecorder": "re-exported from transformers.utils.output_capturing (moved in 5.12)"
+  }
+ },
+ "mxfp4": {
+  "skipped": "layer has no packed experts"
+ },
+ "parameters": {
+  "attention": 100352,
+  "body": 61440,
+  "expert_count": 0,
+  "expert_scale_elements": 0,
+  "expert_scale_note": "E8M0 group scales, one per 32 packed values, NOT counted in `experts`; excluding them understates the parent",
+  "experts": 0,
+  "residual": 768
+ },
+ "proposed_decision_line": {
+  "prefix_out_relL2_max": 0.02,
+  "router_topk_agreement_min": 0.99,
+  "status": "PROPOSED DECISION LINE for Cyril -- this script never gates on it"
+ },
+ "read": {
+  "MB_per_s": 174.6,
+  "bytes": 325504,
+  "gigabytes": 0.0,
+  "seconds": 0.0,
+  "shards": [
+   {
+    "MB_per_s": 187.7,
+    "gigabytes": 0.0,
+    "seconds": 0.0,
+    "shard": "model-00002-of-00003.safetensors",
+    "tensors": 23
+   }
+  ],
+  "tensors": 23
+ },
+ "seed": 0,
+ "tokens": 128,
+ "torch": "2.11.0+cu128",
+ "total_seconds": 21.9,
+ "whole_layer": {
+  "error": "RuntimeError('Error(s) in loading state_dict for KimiDecoderLayer:\\n\\tsize mismatch for self_attn.A_log: copying a param with shape torch.Size([64]) from checkpoint, the shape in current model is torch.Size([2]).')"
+ }
+}

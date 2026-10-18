@@ -1,0 +1,641 @@
+{
+ "arms_notes": {
+  "procrustes": {
+   "centred": true,
+   "mean_x_norm": 90.68465057808554,
+   "mean_y_norm": 162.6180323296921,
+   "mode": "Procrustes in the K3-side SVD chart",
+   "orthogonality_error": 1.3322676295501878e-15,
+   "rule": "fit-row means folded into the biases: y_hat = (x - mean_x) C_in + mean_y; x_hat = (y - mean_y) C_out + mean_x",
+   "singular_effective_rank": 6.364115520704847,
+   "singular_top_share": 0.746192214441411,
+   "svd_chart": {
+    "rank": 2048,
+    "retained_energy": 0.9918280122493118
+   }
+  },
+  "ridge": {
+   "regime": {
+    "backward": "overdetermined",
+    "forward": "overdetermined",
+    "ladder_backward": "overdetermined",
+    "ladder_forward": "overdetermined"
+   },
+   "ridge_lambda_in": 3580.0956700985926,
+   "ridge_lambda_out": 4775.354951878453
+  },
+  "svd": {
+   "centred": true,
+   "control": "orthonormal chart of the centred K3 fit rows; C_out = C_in^T; C_in_bias = -mean_x C_in, C_out_bias = mean_x so the round-trip keeps the mean component; the forward score is a control, only the round-trip is meaningful",
+   "mean_x_norm": 90.68465057808554,
+   "mean_y_norm": 162.6180323296921,
+   "rank": 2048,
+   "retained_energy": 0.9918280122493118,
+   "rule": "fit-row means folded into the biases: y_hat = (x - mean_x) C_in + mean_y; x_hat = (y - mean_y) C_out + mean_x"
+  }
+ },
+ "charted_block_json": {
+  "file": "/home/cereal/omni-campaign/composite/s7/units/hy3d/hy3d_dit_L10/charted_block.json",
+  "pre_m1_backup": "/home/cereal/omni-campaign/composite/s7/units/hy3d/hy3d_dit_L10/charted_block.json.pre-m1",
+  "pre_m1_sha256": "c461702c5f2937e5c2c732a8e2b4af132b37ca080618129e2ec35d13a6470e3e",
+  "sha256": "6eff2077c759a87605ba058dbb7146967ef59deff16da407fd3696d1f2e33d79"
+ },
+ "charts": {
+  "arms": [
+   "ridge",
+   "svd",
+   "procrustes"
+  ],
+  "chart_out_bias": "not written (c16 never installs it)",
+  "diagnostics_held": {
+   "forward": {
+    "cos": 0.40517134538355787,
+    "cos_p05": 0.2887103561829107,
+    "r2": 0.011627095444899704,
+    "rel_l2": 0.928295716137986,
+    "rows": 8194
+   },
+   "roundtrip": {
+    "cos": 0.9641313154994424,
+    "cos_p05": 0.9297952152422588,
+    "r2": 0.694121994043883,
+    "rel_l2": 0.2819364336770953,
+    "rows": 8194
+   }
+  },
+  "file": "charts.safetensors",
+  "hidden": 5120,
+  "method": "ridge (mediafold.linalg.fit_ridge_linear, fp64) refitted on every paired row at the lambdas chosen by the c17 fit-split ladder",
+  "pairs": {
+   "holdout": "group split (see the pair receipt)",
+   "host_site": "block 31 OUTPUT (the residual the charted block inserted after layer 31 reads)",
+   "interface": [
+    "/home/cereal/omni-campaign/composite/s7/interface_latent/companions.json"
+   ],
+   "paired_rows": "/home/cereal/omni-campaign/composite/s7/tap_rows_s3/hy3d_dit_L10/paired_rows.safetensors",
+   "paired_rows_json_sha256": "34354769b05875e3f322e1cf02ea60ef5ecbe1cf2b51bccca8a5e5b7de5093e1",
+   "paired_rows_sha256": "cefe8634d19ba65e2994d83a2a4cd1f92decbd3d96d3f3f716ecbbe919326719",
+   "parent_pairs": "/home/cereal/omni-campaign/composite/s7/pairs/hy3d_dit_L10/parent_capture.safetensors",
+   "parent_pairs_sha256": "d0493c597d89501d1bfd48b3ec18232a242dcc78456abc244195fbd68aa83db9",
+   "rows": 16388,
+   "rows_held": 8194,
+   "trunk": "/mnt/lexar/omni-campaign/s3-native-v2-3a25a459-4347-416d-a58a-2cb3c8e738fd/actual/native-s3-text-stage/native"
+  },
+  "policy": "owner 2026-10-06: these numbers are diagnostics, never gates",
+  "producer": {
+   "lane": "PREP-B 2026-10-11",
+   "sha256": "5abc3676f45c4dffd55a4d964d10e85b53a4210c32d6687dd69d73b1681017ab",
+   "tool": "s7_chart_fit",
+   "version": "1.2.0"
+  },
+  "ridge_rel": {
+   "chart_in": 0.1,
+   "chart_out": 0.01
+  },
+  "sha256": "5209e8343562193140684f719c860c23b28c67cb0785f87dfcdda357c5dd4b5b",
+  "shapes": {
+   "chart_in.bias": [
+    2048
+   ],
+   "chart_in.weight": [
+    2048,
+    5120
+   ],
+   "chart_out.weight": [
+    5120,
+    2048
+   ]
+  },
+  "time_rows": {
+   "held_forward_content": {
+    "cos": 0.4050299099249409,
+    "cos_p05": 0.2887103561829107,
+    "r2": 0.010312190310602487,
+    "rel_l2": 0.9288352801845636,
+    "row_cos": [
+     0.28090912616569763,
+     0.42080947007258657,
+     0.40737361272990835,
+     0.4000005816071581,
+     0.3715015875281621,
+     0.41872445874908026,
+     0.3915989535845008,
+     0.37211932016950466
+    ],
+    "row_rel_l2": [
+     1.05460307686195,
+     0.9339560066663037,
+     0.9449051562117112,
+     0.924907955260089,
+     0.9410089346283496,
+     0.9263501863838328,
+     0.935665034858651,
+     0.9563640029513465
+    ],
+    "rows": 8192,
+    "width": 2048
+   },
+   "held_forward_time": {
+    "cos": 0.9844909838785647,
+    "cos_p05": 0.9842149359185567,
+    "r2": -1.2804592661971324,
+    "rel_l2": 0.1755840147283184,
+    "row_cos": [
+     0.9847670318385728,
+     0.9842149359185568
+    ],
+    "row_rel_l2": [
+     0.17402728562882366,
+     0.17718631146723743
+    ],
+    "rows": 2,
+    "width": 2048
+   },
+   "how": "the time rows are ordinary rows of both charts; each is replicated `weight` times in the fit design (split fit: fit time rows only; record: every time row)",
+   "requirement": "hy3d_time_token_row",
+   "rows": 4,
+   "rows_held": 2,
+   "weight": 4096,
+   "weight_choice": {
+    "chosen_weight": 4096,
+    "file": "/home/cereal/omni-campaign/composite/s7/prep_b/time_row_weight_sweep.json",
+    "policy": "design parameter chosen from measurements (owner 2026-10-06); recorded, never a gate",
+    "present": true,
+    "rule": "DESIGN (fixed before the sweep ran): the weight with the lowest held time-row forward relL2 (4 d.p.) among weights whose held content-row forward relL2 is within +1% of the weight-1 value; ties -> the smaller weight",
+    "schema": "omni-campaign.prepb_time_row_weight_sweep.v1",
+    "sha256": "f547ef46b5366fc8c6478409b9f8430557eed45e04824681586ca2eab081f26a",
+    "weight_used": 4096,
+    "weight_used_equals_choice": true,
+    "weights_swept": [
+     1,
+     64,
+     512,
+     4096
+    ]
+   }
+  },
+  "valid_only_with": "the latent interface rows these host rows were captured under (s7/interface_latent) and the S3 trunk prefix 0..31; S5 (C10 rewrites FFNs 0-31) needs a recapture"
+ },
+ "created_at_utc": "2026-10-11T05:18:10Z",
+ "diagnostics": {
+  "bridge_row_predicts_x31": {
+   "cos_bridge_vs_x31_median": 0.47280266969147733,
+   "design_width": 5121,
+   "held_scores_bridge_row_to_x31": {
+    "cos": 0.9592491869763442,
+    "cos_p05": 0.9169262782929661,
+    "r2": 0.6340502402123298,
+    "rel_l2": 0.3080422414750586,
+    "rows": 819,
+    "width": 5120
+   },
+   "reading": "how much of the trunk's x_31 at a media row is a linear function of the bridge row alone (row-split, small sample)",
+   "regime": "underdetermined",
+   "ridge_rel": 0.001,
+   "rows": 4096
+  },
+  "per_type_held_forward": null,
+  "procrustes_control_held": {
+   "backward": {
+    "cos": 0.6357907443226809,
+    "cos_p05": 0.5659608211094044,
+    "r2": -8.237123666948156,
+    "rel_l2": 1.549335441937938,
+    "rows": 8194
+   },
+   "forward": {
+    "cos": 0.18562594512319566,
+    "cos_p05": 0.1280031348759792,
+    "r2": -0.8860887729154392,
+    "rel_l2": 1.2823512389009495,
+    "rows": 8194
+   },
+   "roundtrip": {
+    "cos": 0.9948046707841822,
+    "cos_p05": 0.9912897381967711,
+    "r2": 0.9617906420775864,
+    "rel_l2": 0.09964647649025192,
+    "rows": 8194
+   }
+  },
+  "record_in_sample": {
+   "backward": {
+    "cos": 0.9574114108441519,
+    "cos_p05": 0.9176327035063724,
+    "r2": 0.6396191643947262,
+    "rel_l2": 0.30591317729238177,
+    "rows": 16388,
+    "width": 5120
+   },
+   "forward": {
+    "cos": 0.6321002798553139,
+    "cos_p05": 0.533147624584604,
+    "r2": 0.31415534735637096,
+    "rel_l2": 0.7747282670347854,
+    "rows": 16388,
+    "width": 2048
+   },
+   "label": "IN-SAMPLE (every row fitted); the held numbers of the split ridge arm are the honest ones",
+   "roundtrip": {
+    "cos": 0.9627525010729353,
+    "cos_p05": 0.9230103338386655,
+    "r2": 0.6841977921786578,
+    "rel_l2": 0.2863682870454571,
+    "rows": 16388,
+    "width": 5120
+   }
+  },
+  "ridge_split_fit": {
+   "backward": {
+    "cos": 0.9813840873793398,
+    "cos_p05": 0.9455460868057861,
+    "r2": 0.8127566028910858,
+    "rel_l2": 0.22276176631277567,
+    "rows": 16384
+   },
+   "forward": {
+    "cos": 0.8448305300593795,
+    "cos_p05": 0.6216682660499515,
+    "r2": 0.84553590223298,
+    "rel_l2": 0.29336993204932477,
+    "rows": 16384
+   },
+   "roundtrip": {
+    "cos": 0.9836484110833988,
+    "cos_p05": 0.9499410809383223,
+    "r2": 0.835482951760802,
+    "rel_l2": 0.20880594107260197,
+    "rows": 16384
+   }
+  },
+  "ridge_split_held": {
+   "backward": {
+    "cos": 0.9002032824718111,
+    "cos_p05": 0.8229413642219076,
+    "r2": 0.14251041123773178,
+    "rel_l2": 0.4720538071415242,
+    "rows": 8194
+   },
+   "forward": {
+    "cos": 0.40517134538355787,
+    "cos_p05": 0.2887103561829107,
+    "r2": 0.011627095444899704,
+    "rel_l2": 0.928295716137986,
+    "rows": 8194
+   },
+   "roundtrip": {
+    "cos": 0.9641313154994424,
+    "cos_p05": 0.9297952152422588,
+    "r2": 0.694121994043883,
+    "rel_l2": 0.2819364336770953,
+    "rows": 8194
+   }
+  },
+  "svd_control_held": {
+   "backward": {
+    "cos": 0.4348638319010232,
+    "cos_p05": 0.3807304082925367,
+    "r2": -5.9490499961123415,
+    "rel_l2": 1.343815960403548,
+    "rows": 8194
+   },
+   "forward": {
+    "cos": -0.004940296278202322,
+    "cos_p05": -0.03956203277009557,
+    "r2": -0.416956229966041,
+    "rel_l2": 1.1114863876504701,
+    "rows": 8194
+   },
+   "roundtrip": {
+    "cos": 0.9948046707841822,
+    "cos_p05": 0.9912897381967711,
+    "r2": 0.9617906420775864,
+    "rel_l2": 0.09964647649025185,
+    "rows": 8194
+   }
+  },
+  "time_rows": {
+   "label": "diagnostics only; 'time' = the parent's evolved time token rows, 'content' = latent rows",
+   "norms": {
+    "host_content_median": 113.79012770470527,
+    "host_time": [
+     93.8151706198966,
+     93.71120777429674,
+     94.94832176950253,
+     93.62756298770738
+    ],
+    "parent_content_median": 138.9173309015758,
+    "parent_time": [
+     313.5507372183634,
+     318.62335654952756,
+     318.60720838534036,
+     312.63482429441535
+    ]
+   },
+   "record_in_sample_forward": {
+    "content": {
+     "cos": 0.6320104610834485,
+     "cos_p05": 0.533147624584604,
+     "r2": 0.313203513161599,
+     "rel_l2": 0.7752035630040077,
+     "row_cos": [
+      0.7355810093268447,
+      0.8174244664259765,
+      0.8024732981689147,
+      0.5778185314836236,
+      0.5439879321747904,
+      0.6112594155364434,
+      0.8528957063994402,
+      0.6458845261900924
+     ],
+     "row_rel_l2": [
+      0.6858455723554373,
+      0.6175169177690945,
+      0.6005581923780554,
+      0.816559652809141,
+      0.8432714838980642,
+      0.7921919056697234,
+      0.5949260131449232,
+      0.7655406833687415
+     ],
+     "rows": 16384,
+     "width": 2048
+    },
+    "time": {
+     "cos": 0.9999979694157507,
+     "cos_p05": 0.9999972307540993,
+     "r2": 0.9997261018386333,
+     "rel_l2": 0.0021079287501162003,
+     "row_cos": [
+      0.9999982241412643,
+      0.9999981920183714,
+      0.9999972307540994,
+      0.9999982307492671
+     ],
+     "row_rel_l2": [
+      0.0018949490567423894,
+      0.0021175630328400447,
+      0.0024555201086158976,
+      0.0019003197971176253
+     ],
+     "rows": 4,
+     "width": 2048
+    }
+   },
+   "rows": 4,
+   "rows_held": 2,
+   "split_ridge_fit_forward_time": {
+    "cos": 0.999999726644759,
+    "cos_p05": 0.9999997253963658,
+    "r2": 0.999933270894231,
+    "rel_l2": 0.0008324616216645396,
+    "row_cos": [
+     0.9999997253963656,
+     0.9999997278931525
+    ],
+    "row_rel_l2": [
+     0.0007562368784905726,
+     0.0009001473838256105
+    ],
+    "rows": 2,
+    "width": 2048
+   },
+   "split_ridge_held_backward": {
+    "content": {
+     "cos": 0.9001866478418584,
+     "cos_p05": 0.8229413642219076,
+     "r2": 0.14227777038111544,
+     "rel_l2": 0.47207938894568807,
+     "row_cos": [
+      0.7871587994522865,
+      0.7641843155590492,
+      0.7283229988219457,
+      0.8056699982890398,
+      0.8516707737318556,
+      0.7364479866235689,
+      0.8481415572986334,
+      0.6609985335586389
+     ],
+     "row_rel_l2": [
+      0.6685561002055503,
+      0.6463641438185258,
+      0.7310196540193418,
+      0.6368021794015503,
+      0.5402142936688472,
+      0.7289820166800263,
+      0.5491814873626734,
+      0.8405459379613587
+     ],
+     "rows": 8192,
+     "width": 5120
+    },
+    "time": {
+     "cos": 0.9683387267582948,
+     "cos_p05": 0.9551654037599838,
+     "r2": -6.953268280533067,
+     "rel_l2": 0.2613297892749265,
+     "row_cos": [
+      0.9815120497566059,
+      0.9551654037599836
+     ],
+     "row_rel_l2": [
+      0.19194534514544587,
+      0.3172334584645378
+     ],
+     "rows": 2,
+     "width": 5120
+    }
+   },
+   "split_ridge_held_forward": {
+    "content": {
+     "cos": 0.4050299099249409,
+     "cos_p05": 0.2887103561829107,
+     "r2": 0.010312190310602487,
+     "rel_l2": 0.9288352801845636,
+     "row_cos": [
+      0.28090912616569763,
+      0.42080947007258657,
+      0.40737361272990835,
+      0.4000005816071581,
+      0.3715015875281621,
+      0.41872445874908026,
+      0.3915989535845008,
+      0.37211932016950466
+     ],
+     "row_rel_l2": [
+      1.05460307686195,
+      0.9339560066663037,
+      0.9449051562117112,
+      0.924907955260089,
+      0.9410089346283496,
+      0.9263501863838328,
+      0.935665034858651,
+      0.9563640029513465
+     ],
+     "rows": 8192,
+     "width": 2048
+    },
+    "time": {
+     "cos": 0.9844909838785647,
+     "cos_p05": 0.9842149359185567,
+     "r2": -1.2804592661971324,
+     "rel_l2": 0.1755840147283184,
+     "row_cos": [
+      0.9847670318385728,
+      0.9842149359185568
+     ],
+     "row_rel_l2": [
+      0.17402728562882366,
+      0.17718631146723743
+     ],
+     "rows": 2,
+     "width": 2048
+    }
+   },
+   "weight": 4096,
+   "weight_choice": {
+    "chosen_weight": 4096,
+    "file": "/home/cereal/omni-campaign/composite/s7/prep_b/time_row_weight_sweep.json",
+    "policy": "design parameter chosen from measurements (owner 2026-10-06); recorded, never a gate",
+    "present": true,
+    "rule": "DESIGN (fixed before the sweep ran): the weight with the lowest held time-row forward relL2 (4 d.p.) among weights whose held content-row forward relL2 is within +1% of the weight-1 value; ties -> the smaller weight",
+    "schema": "omni-campaign.prepb_time_row_weight_sweep.v1",
+    "sha256": "f547ef46b5366fc8c6478409b9f8430557eed45e04824681586ca2eab081f26a",
+    "weight_used": 4096,
+    "weight_used_equals_choice": true,
+    "weights_swept": [
+     1,
+     64,
+     512,
+     4096
+    ]
+   }
+  }
+ },
+ "ridge_notes": {
+  "in": {
+   "design_width": 5121,
+   "fit_bias": true,
+   "fit_rows": 16384,
+   "holdout_rows": 0,
+   "ladder_inner_fit_rows": 13107,
+   "ladder_regime": "overdetermined",
+   "ladder_rows": 16384,
+   "lambda_ladder": [
+    {
+     "rel_l2": 0.6597000780831991,
+     "ridge_rel": 1e-06
+    },
+    {
+     "rel_l2": 0.6455198425299148,
+     "ridge_rel": 1e-05
+    },
+    {
+     "rel_l2": 0.5631897741422973,
+     "ridge_rel": 0.0001
+    },
+    {
+     "rel_l2": 0.4193612035717105,
+     "ridge_rel": 0.001
+    },
+    {
+     "rel_l2": 0.3398443606797994,
+     "ridge_rel": 0.01
+    },
+    {
+     "rel_l2": 0.32407527045317164,
+     "ridge_rel": 0.1
+    },
+    {
+     "rel_l2": 0.3300166919716701,
+     "ridge_rel": 1.0
+    },
+    {
+     "rel_l2": 0.34931881959250344,
+     "ridge_rel": 10.0
+    },
+    {
+     "rel_l2": 0.39416992467863277,
+     "ridge_rel": 100.0
+    }
+   ],
+   "refit_fit_rows": 16384,
+   "refit_regime": "overdetermined",
+   "ridge_rel": 0.1,
+   "ridge_rel_selected": 0.1,
+   "seed": 0
+  },
+  "out": {
+   "design_width": 2049,
+   "fit_bias": true,
+   "fit_rows": 16384,
+   "holdout_rows": 0,
+   "ladder_inner_fit_rows": 13107,
+   "ladder_regime": "overdetermined",
+   "ladder_rows": 16384,
+   "lambda_ladder": [
+    {
+     "rel_l2": 0.2985352335783101,
+     "ridge_rel": 1e-06
+    },
+    {
+     "rel_l2": 0.29846629224597326,
+     "ridge_rel": 1e-05
+    },
+    {
+     "rel_l2": 0.29705107891132276,
+     "ridge_rel": 0.0001
+    },
+    {
+     "rel_l2": 0.287020677817663,
+     "ridge_rel": 0.001
+    },
+    {
+     "rel_l2": 0.2685152362712637,
+     "ridge_rel": 0.01
+    },
+    {
+     "rel_l2": 0.2757472825815352,
+     "ridge_rel": 0.1
+    },
+    {
+     "rel_l2": 0.3322611394361882,
+     "ridge_rel": 1.0
+    },
+    {
+     "rel_l2": 0.4019468244781498,
+     "ridge_rel": 10.0
+    },
+    {
+     "rel_l2": 0.6030267290540939,
+     "ridge_rel": 100.0
+    }
+   ],
+   "refit_fit_rows": 16384,
+   "refit_regime": "overdetermined",
+   "ridge_rel": 0.01,
+   "ridge_rel_selected": 0.01,
+   "seed": 0
+  }
+ },
+ "schema": "omni-campaign.s7_chart_receipt.v1",
+ "seconds": 292.82265853881836,
+ "split_ridge_file": {
+  "file": "/home/cereal/omni-campaign/composite/s7/units/hy3d/hy3d_dit_L10/charts_split_ridge.diagnostic.safetensors",
+  "note": "fit-split ridge chart, diagnostic only",
+  "sha256": "0b172563bdc781201924ce0b0789d6ad92fa73385fdc37083de4f06d216edeca"
+ },
+ "tensor_sha256": {
+  "chart_in.bias": "0fdd591832d8c2e3f815918d33a083332994a740b885d9c3c15be5c2b65eb2ae",
+  "chart_in.weight": "d0c29b79898a333cc551ea517906ec26465b1c2abb599f3dc8223f265387a0fe",
+  "chart_out.weight": "ea547b05c48c9937b582c26aaca6fe424b487c80840b4564b543a8d7ac2f2bbe"
+ },
+ "tool": {
+  "c17_chart_fit_sha256": "a60220946e41ffbffff0f06118ee0aeb592cf3e46495c33ec482c286f1cb6e3c",
+  "name": "s7_chart_fit",
+  "sha256": "5abc3676f45c4dffd55a4d964d10e85b53a4210c32d6687dd69d73b1681017ab",
+  "version": "1.2.0"
+ },
+ "unit": "hy3d_dit_L10",
+ "unit_dir": "/home/cereal/omni-campaign/composite/s7/units/hy3d/hy3d_dit_L10"
+}

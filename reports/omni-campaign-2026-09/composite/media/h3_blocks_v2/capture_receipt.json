@@ -1,0 +1,2001 @@
+{
+  "schema": "chimera_omni.media_fold.receipt.v1",
+  "created_at_utc": "2026-09-07T02:52:56.927221+00:00",
+  "kind": "c16_h3_capture",
+  "stage": "S6H",
+  "source": {
+    "path": "/opt/ComfyUI/models/diffusion_models/minimax_h3_fl2va_pruned_bf16.safetensors",
+    "bytes": 40225724176,
+    "sha256": "a32572fb90b5508b201ec7c2eddcc184b13ddfd3c6f6d2cf06a0b46535d541b4"
+  },
+  "load": {
+    "path": "/opt/ComfyUI/models/diffusion_models/minimax_h3_fl2va_pruned_bf16.safetensors",
+    "bytes": 40225724176,
+    "model_class": "MiniMaxH3",
+    "diffusion_model_class": "MiniMaxH3Model",
+    "unet_config": {
+      "image_model": "minimax_h3",
+      "num_layers": 50,
+      "token_refiner_num_layers": 2,
+      "hidden_size": 5376,
+      "latents_dim": 24,
+      "audio_latents_dim": 32,
+      "attention_head_dim": 128,
+      "num_attention_heads": 56,
+      "ffn_hidden_size": 14336,
+      "text_dim": 5120,
+      "adaln_curve_grid": 1025,
+      "time_embed_dim": 8,
+      "rope_inv_freq_len": 16,
+      "dtype": "torch.bfloat16"
+    },
+    "weight_dtype": "torch.bfloat16",
+    "manual_cast_dtype": "torch.float32",
+    "custom_operations": "None",
+    "model_size_bytes": 40312956928,
+    "parameters": 20111430528,
+    "num_blocks": 50,
+    "load_seconds": 108.37638115882874
+  },
+  "comfy": {
+    "torch_device": "cuda:0",
+    "comfy_root": "/opt/ComfyUI",
+    "should_use_bf16": false,
+    "should_use_fp16": true,
+    "unet_manual_cast_for_bf16": "torch.float32",
+    "free_memory_bytes": 47378792448,
+    "minimum_inference_memory_bytes": 1278423859
+  },
+  "compute_dtype": "torch.float32",
+  "store_dtype": "torch.bfloat16",
+  "residency": {
+    "resident": true,
+    "off_device": [],
+    "off_device_count": 0,
+    "numel": 20111438744,
+    "dtype_numel": {
+      "torch.float32": 45037720,
+      "torch.bfloat16": 20066401024
+    }
+  },
+  "vram_after_load": {
+    "device": "cuda:0",
+    "allocated_bytes": 40395429376,
+    "reserved_bytes": 40508588032,
+    "max_allocated_bytes": 40395429376,
+    "free_bytes": 6870204416,
+    "total_bytes": 47558819840
+  },
+  "vram_peak": {
+    "device": "cuda:0",
+    "allocated_bytes": 40419735040,
+    "reserved_bytes": 41710256128,
+    "max_allocated_bytes": 41362228736,
+    "free_bytes": 5630787584,
+    "total_bytes": 47558819840
+  },
+  "blocks": [
+    25
+  ],
+  "block_weights": {
+    "25": {
+      "path": "/lexar/omni-campaign/media/h3_blocks_v2/blocks/L25.safetensors",
+      "bytes": 774210024,
+      "file_sha256": "3a34bace2a3ba2911af20127870339b4a8dc274d52a221db0ef275e8942075cf",
+      "state_sha256": "1a11f22ac3146cc8db40184f7a81bcac8ab12fc030a57e93ff0ebd487209261c",
+      "parameters": 386233600,
+      "tensors": {
+        "blocks.25.adaln_proj.linear.bias": {
+          "dtype": "torch.float32",
+          "shape": [
+            96768
+          ],
+          "sha256": "66107838d7d09909d28d4633b3b82edd3da359771789924920cfcc2b97bf1acb"
+        },
+        "blocks.25.adaln_proj.linear.weight": {
+          "dtype": "torch.float32",
+          "shape": [
+            96768,
+            8
+          ],
+          "sha256": "513617fbb65d279108c9afd491b6601cdd6a3016f9eb4a2bef7c61709ac79262"
+        },
+        "blocks.25.attn.k_norm.weight": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            128
+          ],
+          "sha256": "f441955fbe5b304cef2cea40944b6a497bb2ac3fc133272a66d42235998f555f"
+        },
+        "blocks.25.attn.out_proj.weight": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            5376,
+            7168
+          ],
+          "sha256": "ce1afe1d382ab741d655c220cf4d428d4c5cac5797c71c80e16951d8aa2df084"
+        },
+        "blocks.25.attn.q_norm.weight": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            128
+          ],
+          "sha256": "a29dc037b8c770db842eecbc949b52d08a1e0ab1690e5aabe3f298916827d883"
+        },
+        "blocks.25.attn.qkv_proj.weight": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            21504,
+            5376
+          ],
+          "sha256": "866d6f4c7e7c126e1e7caa8731696d1ed91f4a0e6ea397427d247f72a03e3bb0"
+        },
+        "blocks.25.mlp.fc1.weight": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            28672,
+            5376
+          ],
+          "sha256": "5682128c0901992bc1df0024f3c246ed81f29a4706d06954a9c6b2bd379784cf"
+        },
+        "blocks.25.mlp.fc2.weight": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            5376,
+            14336
+          ],
+          "sha256": "4eca49f67fa338fdf5b30fc28027ca363f77e5c6a98f95ae48b69ce3c647c586"
+        },
+        "blocks.25.norm1.weight": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            5376
+          ],
+          "sha256": "b3bbdbd237a12338b6e5ba16a9c204f99a947c4e2f08d6c73537a4420449797e"
+        },
+        "blocks.25.norm2.weight": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            5376
+          ],
+          "sha256": "5a4fae2c643c1c16b921ffb145032e48e1299a80642c72a40e6409af749fc3a2"
+        }
+      }
+    }
+  },
+  "mlp_parity": {
+    "25": {
+      "rows": 92,
+      "rel_l2": 0.0,
+      "max_abs_diff": 0.0,
+      "reference": "mediafold.c16_h3.mlp_reference (fp32) vs the container's mlp.forward",
+      "tolerance": 0.001,
+      "pass": true
+    }
+  },
+  "sigmas": [
+    0.631578947368421,
+    0.8780487804878049,
+    0.9523809523809523,
+    0.9882352941176471
+  ],
+  "sigma_grid": "shifted",
+  "sigma_coverage_note": "a shift-12 grid at 4 steps only samples sigma in [0.63, 0.99]; pass --sigma-grid uniform or --sigmas for lower noise (a spec-permitted 4-sigma capture either way)",
+  "deviations": [
+    {
+      "name": "video_frame_alignment",
+      "what": "video clips are latent frames [1, 2, 3, 4] fed as frames 0..3; consecutive=True, starts_at_zero=False, gaps=[]",
+      "why_it_matters": "FRAME_PER_TOKEN (1, 4, 4, 4, 4) from latent frame 0; rope time axis counts latent frames consecutively",
+      "arm": "video_frames"
+    },
+    {
+      "name": "text_conditioning",
+      "what": "text = seeded gaussian Qwen-width states refined by the parent's condition_proj + token_refiner",
+      "why_it_matters": "H3 is a text-to-AV model: every captured audio/video activation is conditioned through full attention on text states the parent never sees; the parent's real text path (its Qwen encoder states for a fixed prompt set, or the empty-prompt embedding) is not on this box",
+      "arm": "text"
+    },
+    {
+      "name": "s1_media_stimuli",
+      "what": "S1 media stimuli absent; the C15 pair corpora (procedural clips) stand in",
+      "why_it_matters": "the spec's S6H input is 'S1 media stimuli' (STAGES S1: media stimuli remain pending)",
+      "arm": "stimuli"
+    }
+  ],
+  "stimulus_arms": {
+    "video_frames": "leading-run",
+    "audio_span": "matched",
+    "audio_windows_per_parent": [
+      3
+    ],
+    "text": "gaussian"
+  },
+  "stimuli": {
+    "rung": "latents",
+    "video_pairs": "/work/media/pairs/h3v_g4_64_merged",
+    "video_pairs_geometry": {
+      "name": "minimax_h3_video_vae_fp16.safetensors",
+      "modality": "video",
+      "latent_channels": 24,
+      "sample_rate_hz": 44100,
+      "hop_samples": 0,
+      "channels": 3,
+      "channel_in_latent": false,
+      "spatial_stride": 16,
+      "temporal_stride": 4,
+      "frame_rate_hz": 0.0,
+      "notes": {
+        "kind": "comfy",
+        "path": "/opt/ComfyUI/models/vae/minimax_h3_video_vae_fp16.safetensors",
+        "comfy_kitchen_stubbed": false,
+        "forced_cpu": false,
+        "expected_class": "comfy.ldm.minimax.vae.MiniMaxH3VideoVAE",
+        "sd_py_lines": "942-964",
+        "latent_dim": 3,
+        "first_stage_class": "MiniMaxH3VideoVAE",
+        "vae_dtype": "torch.float16",
+        "device": "cuda:0",
+        "posterior": "mean",
+        "path_mode": "direct",
+        "crop_input": true,
+        "downscale_ratio": [
+          "callable",
+          16,
+          16
+        ],
+        "upscale_ratio": [
+          "callable",
+          16,
+          16
+        ]
+      },
+      "pairing": "measured_group4_latent1",
+      "latent_group": 1,
+      "temporal_group_size": 4,
+      "selected_latent_frames": [
+        1,
+        2,
+        3,
+        4,
+        6
+      ],
+      "skipped_latent_frames": [
+        0,
+        5
+      ],
+      "measured_group_sizes": [
+        1,
+        4
+      ],
+      "measured_uniform": false,
+      "context": 0,
+      "d_raw": 3072,
+      "d_latent": 24,
+      "d_centre": 3072,
+      "centre_offset": 0,
+      "rows": 9600,
+      "clips": 120,
+      "chimera_patch": 16,
+      "chimera_tubelet": 4,
+      "chimera_native_feature_dim": 3072,
+      "alignment": "measured per-frame ownership (perturbation probe)",
+      "merged_from": 2,
+      "merged_clip_totals": [
+        60,
+        60
+      ],
+      "declared_clips_sum": 120
+    },
+    "video_clips": {
+      "clips": 120,
+      "latent_channels": 24,
+      "grid_hw": [
+        4,
+        4
+      ],
+      "latent_frames_per_clip": [
+        4
+      ],
+      "latent_frame_ids": {
+        "0": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "1": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "2": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "3": [
+          1,
+          2,
+          3,
+          4
+        ]
+      },
+      "latent_frame_ids_in_file": [
+        1,
+        2,
+        3,
+        4,
+        6
+      ],
+      "latent_frame_ids_used": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "frame_policy": "leading-run",
+      "frame_alignment": {
+        "latent_frame_ids": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "consecutive": true,
+        "starts_at_zero": false,
+        "gaps": [],
+        "leading_run": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "aligned": false,
+        "model_assumption": "FRAME_PER_TOKEN (1, 4, 4, 4, 4) from latent frame 0; rope time axis counts latent frames consecutively"
+      },
+      "frame_alignment_in_file": {
+        "latent_frame_ids": [
+          1,
+          2,
+          3,
+          4,
+          6
+        ],
+        "consecutive": false,
+        "starts_at_zero": false,
+        "gaps": [
+          [
+            4,
+            6
+          ]
+        ],
+        "leading_run": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "aligned": false,
+        "model_assumption": "FRAME_PER_TOKEN (1, 4, 4, 4, 4) from latent frame 0; rope time axis counts latent frames consecutively"
+      },
+      "row_order_assumption": "file order within a clip = (latent frame asc, raster h, raster w)"
+    },
+    "audio_pairs": "/work/media/pairs/h3a_d_ctx0_merged",
+    "audio_pairs_geometry": {
+      "name": "minimax_h3_audio_vae_fp32.safetensors",
+      "modality": "audio",
+      "latent_channels": 32,
+      "sample_rate_hz": 32000,
+      "hop_samples": 800,
+      "channels": 2,
+      "channel_in_latent": true,
+      "spatial_stride": 0,
+      "temporal_stride": 0,
+      "frame_rate_hz": 40.0,
+      "notes": {
+        "kind": "comfy",
+        "path": "/opt/ComfyUI/models/vae/minimax_h3_audio_vae_fp32.safetensors",
+        "comfy_kitchen_stubbed": true,
+        "forced_cpu": true,
+        "expected_class": "comfy.ldm.minimax.audio_vae.MiniMaxH3AudioVAE",
+        "sd_py_lines": "965-985",
+        "latent_dim": 2,
+        "first_stage_class": "MiniMaxH3AudioVAE",
+        "vae_dtype": "torch.float32",
+        "device": "cpu",
+        "posterior": "mean",
+        "path_mode": "direct",
+        "crop_input": true,
+        "downscale_ratio": 800,
+        "upscale_ratio": 800
+      },
+      "pairing": "per_channel",
+      "context": 0,
+      "d_raw": 800,
+      "d_latent": 32,
+      "d_centre": 800,
+      "centre_offset": 0,
+      "rows": 7680,
+      "clips": 48,
+      "chimera_segment": 800,
+      "chimera_stride": 800,
+      "chimera_tokens_per_frame": 2,
+      "merged_from": 3,
+      "merged_clip_totals": [
+        16,
+        16,
+        16
+      ],
+      "declared_clips_sum": 48
+    },
+    "audio_clips": {
+      "clips": 144,
+      "parent_clips": 48,
+      "latent_channels": 32,
+      "stereo_channels": 2,
+      "frames_per_clip": [
+        22
+      ],
+      "frames_in_file": [
+        80
+      ],
+      "frames_requested": 22,
+      "windows_requested": 0,
+      "windows_per_parent": [
+        3
+      ],
+      "window_id": "parent * 100 + window"
+    },
+    "audio_frames_used": 22,
+    "matched_audio_frames_for_video": 22,
+    "pairing": "one_to_one",
+    "pairable_clip_pairs": 120,
+    "clip_offset": 0,
+    "clip_pairs_used": 120,
+    "clip_pairs": [
+      [
+        0,
+        0
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        2,
+        2
+      ],
+      [
+        3,
+        100
+      ],
+      [
+        4,
+        101
+      ],
+      [
+        5,
+        102
+      ],
+      [
+        6,
+        200
+      ],
+      [
+        7,
+        201
+      ],
+      [
+        8,
+        202
+      ],
+      [
+        9,
+        300
+      ],
+      [
+        10,
+        301
+      ],
+      [
+        11,
+        302
+      ],
+      [
+        12,
+        400
+      ],
+      [
+        13,
+        401
+      ],
+      [
+        14,
+        402
+      ],
+      [
+        15,
+        500
+      ],
+      [
+        16,
+        501
+      ],
+      [
+        17,
+        502
+      ],
+      [
+        18,
+        600
+      ],
+      [
+        19,
+        601
+      ],
+      [
+        20,
+        602
+      ],
+      [
+        21,
+        700
+      ],
+      [
+        22,
+        701
+      ],
+      [
+        23,
+        702
+      ],
+      [
+        24,
+        800
+      ],
+      [
+        25,
+        801
+      ],
+      [
+        26,
+        802
+      ],
+      [
+        27,
+        900
+      ],
+      [
+        28,
+        901
+      ],
+      [
+        29,
+        902
+      ],
+      [
+        30,
+        1000
+      ],
+      [
+        31,
+        1001
+      ],
+      [
+        32,
+        1002
+      ],
+      [
+        33,
+        1100
+      ],
+      [
+        34,
+        1101
+      ],
+      [
+        35,
+        1102
+      ],
+      [
+        36,
+        1200
+      ],
+      [
+        37,
+        1201
+      ],
+      [
+        38,
+        1202
+      ],
+      [
+        39,
+        1300
+      ],
+      [
+        40,
+        1301
+      ],
+      [
+        41,
+        1302
+      ],
+      [
+        42,
+        1400
+      ],
+      [
+        43,
+        1401
+      ],
+      [
+        44,
+        1402
+      ],
+      [
+        45,
+        1500
+      ],
+      [
+        46,
+        1501
+      ],
+      [
+        47,
+        1502
+      ],
+      [
+        48,
+        1600
+      ],
+      [
+        49,
+        1601
+      ],
+      [
+        50,
+        1602
+      ],
+      [
+        51,
+        1700
+      ],
+      [
+        52,
+        1701
+      ],
+      [
+        53,
+        1702
+      ],
+      [
+        54,
+        1800
+      ],
+      [
+        55,
+        1801
+      ],
+      [
+        56,
+        1802
+      ],
+      [
+        57,
+        1900
+      ],
+      [
+        58,
+        1901
+      ],
+      [
+        59,
+        1902
+      ],
+      [
+        60,
+        2000
+      ],
+      [
+        61,
+        2001
+      ],
+      [
+        62,
+        2002
+      ],
+      [
+        63,
+        2100
+      ],
+      [
+        64,
+        2101
+      ],
+      [
+        65,
+        2102
+      ],
+      [
+        66,
+        2200
+      ],
+      [
+        67,
+        2201
+      ],
+      [
+        68,
+        2202
+      ],
+      [
+        69,
+        2300
+      ],
+      [
+        70,
+        2301
+      ],
+      [
+        71,
+        2302
+      ],
+      [
+        72,
+        2400
+      ],
+      [
+        73,
+        2401
+      ],
+      [
+        74,
+        2402
+      ],
+      [
+        75,
+        2500
+      ],
+      [
+        76,
+        2501
+      ],
+      [
+        77,
+        2502
+      ],
+      [
+        78,
+        2600
+      ],
+      [
+        79,
+        2601
+      ],
+      [
+        80,
+        2602
+      ],
+      [
+        81,
+        2700
+      ],
+      [
+        82,
+        2701
+      ],
+      [
+        83,
+        2702
+      ],
+      [
+        84,
+        2800
+      ],
+      [
+        85,
+        2801
+      ],
+      [
+        86,
+        2802
+      ],
+      [
+        87,
+        2900
+      ],
+      [
+        88,
+        2901
+      ],
+      [
+        89,
+        2902
+      ],
+      [
+        90,
+        3000
+      ],
+      [
+        91,
+        3001
+      ],
+      [
+        92,
+        3002
+      ],
+      [
+        93,
+        3100
+      ],
+      [
+        94,
+        3101
+      ],
+      [
+        95,
+        3102
+      ],
+      [
+        96,
+        3200
+      ],
+      [
+        97,
+        3201
+      ],
+      [
+        98,
+        3202
+      ],
+      [
+        99,
+        3300
+      ],
+      [
+        100,
+        3301
+      ],
+      [
+        101,
+        3302
+      ],
+      [
+        102,
+        3400
+      ],
+      [
+        103,
+        3401
+      ],
+      [
+        104,
+        3402
+      ],
+      [
+        105,
+        3500
+      ],
+      [
+        106,
+        3501
+      ],
+      [
+        107,
+        3502
+      ],
+      [
+        108,
+        3600
+      ],
+      [
+        109,
+        3601
+      ],
+      [
+        110,
+        3602
+      ],
+      [
+        111,
+        3700
+      ],
+      [
+        112,
+        3701
+      ],
+      [
+        113,
+        3702
+      ],
+      [
+        114,
+        3800
+      ],
+      [
+        115,
+        3801
+      ],
+      [
+        116,
+        3802
+      ],
+      [
+        117,
+        3900
+      ],
+      [
+        118,
+        3901
+      ],
+      [
+        119,
+        3902
+      ]
+    ],
+    "audio_parent_of_pairs": {
+      "0": 0,
+      "1": 0,
+      "2": 0,
+      "100": 1,
+      "101": 1,
+      "102": 1,
+      "200": 2,
+      "201": 2,
+      "202": 2,
+      "300": 3,
+      "301": 3,
+      "302": 3,
+      "400": 4,
+      "401": 4,
+      "402": 4,
+      "500": 5,
+      "501": 5,
+      "502": 5,
+      "600": 6,
+      "601": 6,
+      "602": 6,
+      "700": 7,
+      "701": 7,
+      "702": 7,
+      "800": 8,
+      "801": 8,
+      "802": 8,
+      "900": 9,
+      "901": 9,
+      "902": 9,
+      "1000": 10,
+      "1001": 10,
+      "1002": 10,
+      "1100": 11,
+      "1101": 11,
+      "1102": 11,
+      "1200": 12,
+      "1201": 12,
+      "1202": 12,
+      "1300": 13,
+      "1301": 13,
+      "1302": 13,
+      "1400": 14,
+      "1401": 14,
+      "1402": 14,
+      "1500": 15,
+      "1501": 15,
+      "1502": 15,
+      "1600": 16,
+      "1601": 16,
+      "1602": 16,
+      "1700": 17,
+      "1701": 17,
+      "1702": 17,
+      "1800": 18,
+      "1801": 18,
+      "1802": 18,
+      "1900": 19,
+      "1901": 19,
+      "1902": 19,
+      "2000": 20,
+      "2001": 20,
+      "2002": 20,
+      "2100": 21,
+      "2101": 21,
+      "2102": 21,
+      "2200": 22,
+      "2201": 22,
+      "2202": 22,
+      "2300": 23,
+      "2301": 23,
+      "2302": 23,
+      "2400": 24,
+      "2401": 24,
+      "2402": 24,
+      "2500": 25,
+      "2501": 25,
+      "2502": 25,
+      "2600": 26,
+      "2601": 26,
+      "2602": 26,
+      "2700": 27,
+      "2701": 27,
+      "2702": 27,
+      "2800": 28,
+      "2801": 28,
+      "2802": 28,
+      "2900": 29,
+      "2901": 29,
+      "2902": 29,
+      "3000": 30,
+      "3001": 30,
+      "3002": 30,
+      "3100": 31,
+      "3101": 31,
+      "3102": 31,
+      "3200": 32,
+      "3201": 32,
+      "3202": 32,
+      "3300": 33,
+      "3301": 33,
+      "3302": 33,
+      "3400": 34,
+      "3401": 34,
+      "3402": 34,
+      "3500": 35,
+      "3501": 35,
+      "3502": 35,
+      "3600": 36,
+      "3601": 36,
+      "3602": 36,
+      "3700": 37,
+      "3701": 37,
+      "3702": 37,
+      "3800": 38,
+      "3801": 38,
+      "3802": 38,
+      "3900": 39,
+      "3901": 39,
+      "3902": 39
+    },
+    "stimulus_arms": {
+      "video_frames": "leading-run",
+      "audio_span": "matched",
+      "audio_windows_per_parent": [
+        3
+      ],
+      "text": "gaussian"
+    },
+    "deviations": [
+      {
+        "name": "video_frame_alignment",
+        "what": "video clips are latent frames [1, 2, 3, 4] fed as frames 0..3; consecutive=True, starts_at_zero=False, gaps=[]",
+        "why_it_matters": "FRAME_PER_TOKEN (1, 4, 4, 4, 4) from latent frame 0; rope time axis counts latent frames consecutively",
+        "arm": "video_frames"
+      },
+      {
+        "name": "text_conditioning",
+        "what": "text = seeded gaussian Qwen-width states refined by the parent's condition_proj + token_refiner",
+        "why_it_matters": "H3 is a text-to-AV model: every captured audio/video activation is conditioned through full attention on text states the parent never sees; the parent's real text path (its Qwen encoder states for a fixed prompt set, or the empty-prompt embedding) is not on this box",
+        "arm": "text"
+      },
+      {
+        "name": "s1_media_stimuli",
+        "what": "S1 media stimuli absent; the C15 pair corpora (procedural clips) stand in",
+        "why_it_matters": "the spec's S6H input is 'S1 media stimuli' (STAGES S1: media stimuli remain pending)",
+        "arm": "stimuli"
+      }
+    ],
+    "note": "the video and audio corpora are independent procedural clips; a forward joins video clip k with audio window k (its parent audio clip is the row provenance), each video clip used in exactly one forward per sigma and each audio parent on one side of an audio-parent-grouped holdout"
+  },
+  "captures": [
+    {
+      "step": 0,
+      "block": 25,
+      "sigma_video": 0.631578947368421,
+      "sigma_audio": 0.29999999999999993,
+      "forwards": 120,
+      "rows": 11040,
+      "rows_by_kind": {
+        "text": 3840,
+        "audio": 5280,
+        "video": 1920
+      },
+      "stimulus": {
+        "rung": "latents",
+        "sigma_video": 0.631578947368421,
+        "sigma_audio": 0.29999999999999993,
+        "audio_velocity_slope": 0.9025,
+        "clip_id": 0,
+        "audio_clip_id": 0,
+        "audio_parent_clip_id": 0,
+        "audio_window_of_parent": false,
+        "text_len": 32,
+        "video_shape": [
+          24,
+          4,
+          4,
+          4
+        ],
+        "audio_shape": [
+          32,
+          2,
+          22
+        ],
+        "video_tokens_thw": [
+          4,
+          2,
+          2
+        ],
+        "seq_len": 92,
+        "segments": [
+          [
+            0,
+            32,
+            "text"
+          ],
+          [
+            32,
+            76,
+            "audio"
+          ],
+          [
+            76,
+            92,
+            "video"
+          ]
+        ],
+        "text_source": "seeded gaussian Qwen-width states refined by the parent's condition_proj + token_refiner"
+      },
+      "receptive_field": {
+        "attention_receptive_field": "one packed forward [text | audio | video] (every H3 block is full attention over the packed sequence), so a token's activation is a function of every row of its forward",
+        "forward_is_single_clip_pair": true,
+        "reading": "each forward is exactly one video clip and one audio clip, so an activation carries no content from any other clip and a clip-pair-grouped holdout is independent of the fit"
+      },
+      "row_stats": {
+        "x_in": {
+          "rms": 319.7738037109375,
+          "max_abs": 37632.0
+        },
+        "x_out": {
+          "rms": 316.92108154296875,
+          "max_abs": 36352.0
+        },
+        "mlp_in": {
+          "rms": 0.25058433413505554,
+          "max_abs": 4.96875
+        },
+        "mlp_out": {
+          "rms": 113.90027618408203,
+          "max_abs": 2064.0
+        },
+        "attn_out": {
+          "rms": 67.41282653808594,
+          "max_abs": 2400.0
+        }
+      },
+      "path": "/lexar/omni-campaign/media/h3_blocks_v2/step00/L25.safetensors",
+      "bytes": 686702088,
+      "file_sha256": "32edc159efb2a290db01c1d5f529145e3f5150085f798d30b10065a5a08e2c24",
+      "state_sha256": "570c9c4fc9f438e261bfc6dbbdc92071ea52fea25e08f9ae183196221234878d",
+      "parameters": 320026920,
+      "tensors": {
+        "adaln": {
+          "dtype": "torch.float32",
+          "shape": [
+            120,
+            6,
+            6,
+            5376
+          ],
+          "sha256": "aa10d6892eecaf16378bd418b3a97f4ff6eef988c03a72cc2f0abafb4b65c037"
+        },
+        "attn_out": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            11040,
+            5376
+          ],
+          "sha256": "cbf73dc0a02f23a2f5a5ce739815fc8959404547e303dd9babe4d81e5942337f"
+        },
+        "forward_index": {
+          "dtype": "torch.int64",
+          "shape": [
+            11040
+          ],
+          "sha256": "6f6a546e30dc8067b06495dc91eff64266d80c5f6b62c0e0b332b70941e34c26"
+        },
+        "mlp_in": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            11040,
+            5376
+          ],
+          "sha256": "5e0266852deaee46ed3963be79034406cd3fd8417b95c62c8dfaa0e74ee043b8"
+        },
+        "mlp_out": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            11040,
+            5376
+          ],
+          "sha256": "b0a2caf71ead3623ddf71dbb4313f344e35c2e94bdda56631d06785fb98557cd"
+        },
+        "mod_segments": {
+          "dtype": "torch.int64",
+          "shape": [
+            120,
+            3,
+            3
+          ],
+          "sha256": "fbf9887779c46ee6f4c7283b602903f2d1a027ebdef317fb50e8ab19678f0d01"
+        },
+        "sigma_audio": {
+          "dtype": "torch.float32",
+          "shape": [
+            120
+          ],
+          "sha256": "b4e35776a153f2dca0138aae354e0e33568d41c926dd956e0afd57c5c5999d60"
+        },
+        "sigma_video": {
+          "dtype": "torch.float32",
+          "shape": [
+            120
+          ],
+          "sha256": "74904d95b7e42734859f0617269e6dfa02e2f8d6626beb60d4dbd313183efae5"
+        },
+        "temb": {
+          "dtype": "torch.float32",
+          "shape": [
+            120,
+            2,
+            8
+          ],
+          "sha256": "e30e7afb5386e33d063ec78256d5c90ea0ecc4898ee51add5b1136cce5bd1f22"
+        },
+        "token_clip": {
+          "dtype": "torch.int64",
+          "shape": [
+            11040
+          ],
+          "sha256": "853bbe732750617041569e9edded86b0ea58c5cc8dc6ee860b657349fe55988f"
+        },
+        "token_frame": {
+          "dtype": "torch.int64",
+          "shape": [
+            11040
+          ],
+          "sha256": "9a86bd6b77dbd493e84112b242094e8d493d6fb5fcbea18a21c69748d102e4b0"
+        },
+        "token_kind": {
+          "dtype": "torch.int8",
+          "shape": [
+            11040
+          ],
+          "sha256": "c542ec2d6c0aa304d8aa30bc2f7b6c63c8c0bc40168d9d09e18b3359142205b6"
+        },
+        "x_in": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            11040,
+            5376
+          ],
+          "sha256": "f3b39701faabb057eee4ca9d3c5d281e485238b0f5937e4fc98790fb4e607d95"
+        },
+        "x_out": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            11040,
+            5376
+          ],
+          "sha256": "eed105631963755301e1fec91cf3cc2afdc85d8d63fa8ca45f478b435e7b87d2"
+        }
+      }
+    },
+    {
+      "step": 1,
+      "block": 25,
+      "sigma_video": 0.8780487804878049,
+      "sigma_audio": 0.6428571428571427,
+      "forwards": 120,
+      "rows": 11040,
+      "rows_by_kind": {
+        "text": 3840,
+        "audio": 5280,
+        "video": 1920
+      },
+      "stimulus": {
+        "rung": "latents",
+        "sigma_video": 0.8780487804878049,
+        "sigma_audio": 0.6428571428571427,
+        "audio_velocity_slope": 2.1441326530612237,
+        "clip_id": 0,
+        "audio_clip_id": 0,
+        "audio_parent_clip_id": 0,
+        "audio_window_of_parent": false,
+        "text_len": 32,
+        "video_shape": [
+          24,
+          4,
+          4,
+          4
+        ],
+        "audio_shape": [
+          32,
+          2,
+          22
+        ],
+        "video_tokens_thw": [
+          4,
+          2,
+          2
+        ],
+        "seq_len": 92,
+        "segments": [
+          [
+            0,
+            32,
+            "text"
+          ],
+          [
+            32,
+            76,
+            "audio"
+          ],
+          [
+            76,
+            92,
+            "video"
+          ]
+        ],
+        "text_source": "seeded gaussian Qwen-width states refined by the parent's condition_proj + token_refiner"
+      },
+      "receptive_field": {
+        "attention_receptive_field": "one packed forward [text | audio | video] (every H3 block is full attention over the packed sequence), so a token's activation is a function of every row of its forward",
+        "forward_is_single_clip_pair": true,
+        "reading": "each forward is exactly one video clip and one audio clip, so an activation carries no content from any other clip and a clip-pair-grouped holdout is independent of the fit"
+      },
+      "row_stats": {
+        "x_in": {
+          "rms": 309.35223388671875,
+          "max_abs": 167936.0
+        },
+        "x_out": {
+          "rms": 307.0462951660156,
+          "max_abs": 164864.0
+        },
+        "mlp_in": {
+          "rms": 0.24813930690288544,
+          "max_abs": 5.28125
+        },
+        "mlp_out": {
+          "rms": 111.97361755371094,
+          "max_abs": 3024.0
+        },
+        "attn_out": {
+          "rms": 65.33488464355469,
+          "max_abs": 3264.0
+        }
+      },
+      "path": "/lexar/omni-campaign/media/h3_blocks_v2/step01/L25.safetensors",
+      "bytes": 686702088,
+      "file_sha256": "cdbf79e93bb6bad324f61bd713d0935994d09bcf570e111ab005434ca04b5b80",
+      "state_sha256": "2506ee5b1bea515996cf73dba170036f246c9f22ecc55934872057cd8d9d36d4",
+      "parameters": 320026920,
+      "tensors": {
+        "adaln": {
+          "dtype": "torch.float32",
+          "shape": [
+            120,
+            6,
+            6,
+            5376
+          ],
+          "sha256": "b474daa51d3cd46204131fabaca0ba71979a50ed683de59eaf21a14c305d3c1b"
+        },
+        "attn_out": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            11040,
+            5376
+          ],
+          "sha256": "a1092ca76830470b60a3a469fa20bb99797cd17ec93ca44f2bf9ba1988d7c9a8"
+        },
+        "forward_index": {
+          "dtype": "torch.int64",
+          "shape": [
+            11040
+          ],
+          "sha256": "6f6a546e30dc8067b06495dc91eff64266d80c5f6b62c0e0b332b70941e34c26"
+        },
+        "mlp_in": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            11040,
+            5376
+          ],
+          "sha256": "9b3b98f7a44fd9e7f1f04f1d55903f6a04a14b32f875fee8a6c09105d9f73b2c"
+        },
+        "mlp_out": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            11040,
+            5376
+          ],
+          "sha256": "3336acf981bcba2f0797bb010d02e27cc17cf55fda4671f65270cc5dce71d015"
+        },
+        "mod_segments": {
+          "dtype": "torch.int64",
+          "shape": [
+            120,
+            3,
+            3
+          ],
+          "sha256": "fbf9887779c46ee6f4c7283b602903f2d1a027ebdef317fb50e8ab19678f0d01"
+        },
+        "sigma_audio": {
+          "dtype": "torch.float32",
+          "shape": [
+            120
+          ],
+          "sha256": "4c2c9136ad1503b37a967cca5a8c2225ade5a407655944940ada52d3f328026d"
+        },
+        "sigma_video": {
+          "dtype": "torch.float32",
+          "shape": [
+            120
+          ],
+          "sha256": "2c5016d82052c516f9a1e333018639f6c6861320f83eb007b259629f56b0b650"
+        },
+        "temb": {
+          "dtype": "torch.float32",
+          "shape": [
+            120,
+            2,
+            8
+          ],
+          "sha256": "dae58d3d09f863627074cf5fd49eb0fd4138c9d2784fd32a0b4d5738679b7c6e"
+        },
+        "token_clip": {
+          "dtype": "torch.int64",
+          "shape": [
+            11040
+          ],
+          "sha256": "853bbe732750617041569e9edded86b0ea58c5cc8dc6ee860b657349fe55988f"
+        },
+        "token_frame": {
+          "dtype": "torch.int64",
+          "shape": [
+            11040
+          ],
+          "sha256": "9a86bd6b77dbd493e84112b242094e8d493d6fb5fcbea18a21c69748d102e4b0"
+        },
+        "token_kind": {
+          "dtype": "torch.int8",
+          "shape": [
+            11040
+          ],
+          "sha256": "c542ec2d6c0aa304d8aa30bc2f7b6c63c8c0bc40168d9d09e18b3359142205b6"
+        },
+        "x_in": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            11040,
+            5376
+          ],
+          "sha256": "3a7bf41821e03b9277b74d7ffe214990e7d1f322f2f70a2c032aea86ff053d91"
+        },
+        "x_out": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            11040,
+            5376
+          ],
+          "sha256": "be504f9edc0619332c7065a7fb7b5a36a2aefc951cda56000671f60651d012fe"
+        }
+      }
+    },
+    {
+      "step": 2,
+      "block": 25,
+      "sigma_video": 0.9523809523809523,
+      "sigma_audio": 0.8333333333333334,
+      "forwards": 120,
+      "rows": 11040,
+      "rows_by_kind": {
+        "text": 3840,
+        "audio": 5280,
+        "video": 1920
+      },
+      "stimulus": {
+        "rung": "latents",
+        "sigma_video": 0.9523809523809523,
+        "sigma_audio": 0.8333333333333334,
+        "audio_velocity_slope": 3.0625,
+        "clip_id": 0,
+        "audio_clip_id": 0,
+        "audio_parent_clip_id": 0,
+        "audio_window_of_parent": false,
+        "text_len": 32,
+        "video_shape": [
+          24,
+          4,
+          4,
+          4
+        ],
+        "audio_shape": [
+          32,
+          2,
+          22
+        ],
+        "video_tokens_thw": [
+          4,
+          2,
+          2
+        ],
+        "seq_len": 92,
+        "segments": [
+          [
+            0,
+            32,
+            "text"
+          ],
+          [
+            32,
+            76,
+            "audio"
+          ],
+          [
+            76,
+            92,
+            "video"
+          ]
+        ],
+        "text_source": "seeded gaussian Qwen-width states refined by the parent's condition_proj + token_refiner"
+      },
+      "receptive_field": {
+        "attention_receptive_field": "one packed forward [text | audio | video] (every H3 block is full attention over the packed sequence), so a token's activation is a function of every row of its forward",
+        "forward_is_single_clip_pair": true,
+        "reading": "each forward is exactly one video clip and one audio clip, so an activation carries no content from any other clip and a clip-pair-grouped holdout is independent of the fit"
+      },
+      "row_stats": {
+        "x_in": {
+          "rms": 307.2575988769531,
+          "max_abs": 35840.0
+        },
+        "x_out": {
+          "rms": 306.78985595703125,
+          "max_abs": 34816.0
+        },
+        "mlp_in": {
+          "rms": 0.24702146649360657,
+          "max_abs": 4.59375
+        },
+        "mlp_out": {
+          "rms": 111.92822265625,
+          "max_abs": 3696.0
+        },
+        "attn_out": {
+          "rms": 64.25839233398438,
+          "max_abs": 4128.0
+        }
+      },
+      "path": "/lexar/omni-campaign/media/h3_blocks_v2/step02/L25.safetensors",
+      "bytes": 686702088,
+      "file_sha256": "2e97b6c5edf74db20af626b660025ec054c061410d255288e2b13fbd7ec13145",
+      "state_sha256": "6c1cf88459bda44972a93827f34265538d59305b6da806f4e381f6d861a7e7ec",
+      "parameters": 320026920,
+      "tensors": {
+        "adaln": {
+          "dtype": "torch.float32",
+          "shape": [
+            120,
+            6,
+            6,
+            5376
+          ],
+          "sha256": "d81959b6b712f50cff5ac58ff2e24679a3e6c9e67bf4e17a2b0eb152112287fe"
+        },
+        "attn_out": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            11040,
+            5376
+          ],
+          "sha256": "af7ef3d780864fc0223d814258ca533260f752b4dc04983134f03e4d219ad987"
+        },
+        "forward_index": {
+          "dtype": "torch.int64",
+          "shape": [
+            11040
+          ],
+          "sha256": "6f6a546e30dc8067b06495dc91eff64266d80c5f6b62c0e0b332b70941e34c26"
+        },
+        "mlp_in": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            11040,
+            5376
+          ],
+          "sha256": "344d8790c50f1594580b5585f795d93f50b9dee7f5e91cc0e93430cb8111a102"
+        },
+        "mlp_out": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            11040,
+            5376
+          ],
+          "sha256": "b4e1956edea7abc6582a3dc40cdc1b2d80a838b92dc65768c5db9076d6be7c8d"
+        },
+        "mod_segments": {
+          "dtype": "torch.int64",
+          "shape": [
+            120,
+            3,
+            3
+          ],
+          "sha256": "fbf9887779c46ee6f4c7283b602903f2d1a027ebdef317fb50e8ab19678f0d01"
+        },
+        "sigma_audio": {
+          "dtype": "torch.float32",
+          "shape": [
+            120
+          ],
+          "sha256": "18dc5a9f137e525b6c51eead8215b1925e418ddd1bb5cc92b64a265d8f635149"
+        },
+        "sigma_video": {
+          "dtype": "torch.float32",
+          "shape": [
+            120
+          ],
+          "sha256": "7c708f72344876095f24a7c734a2121c56e5f7294b0c88932c349039542d43ef"
+        },
+        "temb": {
+          "dtype": "torch.float32",
+          "shape": [
+            120,
+            2,
+            8
+          ],
+          "sha256": "13a535352e85d76e3688900f737c362c39897c2a26a41f5b987aa2225cd137ca"
+        },
+        "token_clip": {
+          "dtype": "torch.int64",
+          "shape": [
+            11040
+          ],
+          "sha256": "853bbe732750617041569e9edded86b0ea58c5cc8dc6ee860b657349fe55988f"
+        },
+        "token_frame": {
+          "dtype": "torch.int64",
+          "shape": [
+            11040
+          ],
+          "sha256": "9a86bd6b77dbd493e84112b242094e8d493d6fb5fcbea18a21c69748d102e4b0"
+        },
+        "token_kind": {
+          "dtype": "torch.int8",
+          "shape": [
+            11040
+          ],
+          "sha256": "c542ec2d6c0aa304d8aa30bc2f7b6c63c8c0bc40168d9d09e18b3359142205b6"
+        },
+        "x_in": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            11040,
+            5376
+          ],
+          "sha256": "b879d67f1697a5f2cb1b0e2b8554b7951f79e18ffd84a21484c1c3de33b1cdd9"
+        },
+        "x_out": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            11040,
+            5376
+          ],
+          "sha256": "f5f47f7569f060b559554cb0fce1d9e9ebabbd1702027b2d5196492cbdf46c17"
+        }
+      }
+    },
+    {
+      "step": 3,
+      "block": 25,
+      "sigma_video": 0.9882352941176471,
+      "sigma_audio": 0.9545454545454547,
+      "forwards": 120,
+      "rows": 11040,
+      "rows_by_kind": {
+        "text": 3840,
+        "audio": 5280,
+        "video": 1920
+      },
+      "stimulus": {
+        "rung": "latents",
+        "sigma_video": 0.9882352941176471,
+        "sigma_audio": 0.9545454545454547,
+        "audio_velocity_slope": 3.7319214876033073,
+        "clip_id": 0,
+        "audio_clip_id": 0,
+        "audio_parent_clip_id": 0,
+        "audio_window_of_parent": false,
+        "text_len": 32,
+        "video_shape": [
+          24,
+          4,
+          4,
+          4
+        ],
+        "audio_shape": [
+          32,
+          2,
+          22
+        ],
+        "video_tokens_thw": [
+          4,
+          2,
+          2
+        ],
+        "seq_len": 92,
+        "segments": [
+          [
+            0,
+            32,
+            "text"
+          ],
+          [
+            32,
+            76,
+            "audio"
+          ],
+          [
+            76,
+            92,
+            "video"
+          ]
+        ],
+        "text_source": "seeded gaussian Qwen-width states refined by the parent's condition_proj + token_refiner"
+      },
+      "receptive_field": {
+        "attention_receptive_field": "one packed forward [text | audio | video] (every H3 block is full attention over the packed sequence), so a token's activation is a function of every row of its forward",
+        "forward_is_single_clip_pair": true,
+        "reading": "each forward is exactly one video clip and one audio clip, so an activation carries no content from any other clip and a clip-pair-grouped holdout is independent of the fit"
+      },
+      "row_stats": {
+        "x_in": {
+          "rms": 306.8718566894531,
+          "max_abs": 37632.0
+        },
+        "x_out": {
+          "rms": 307.38641357421875,
+          "max_abs": 37888.0
+        },
+        "mlp_in": {
+          "rms": 0.24486279487609863,
+          "max_abs": 4.0
+        },
+        "mlp_out": {
+          "rms": 99.05902862548828,
+          "max_abs": 2272.0
+        },
+        "attn_out": {
+          "rms": 60.010433197021484,
+          "max_abs": 3008.0
+        }
+      },
+      "path": "/lexar/omni-campaign/media/h3_blocks_v2/step03/L25.safetensors",
+      "bytes": 686702088,
+      "file_sha256": "6c66db02981e2ee8937f8cbedd78dda86ee48148b5c77591adf9d8542f6a1203",
+      "state_sha256": "d5b4f577ff5dc67d7dea5f72638dcecfa3408c8bb7d6b7bb2b8622994c958496",
+      "parameters": 320026920,
+      "tensors": {
+        "adaln": {
+          "dtype": "torch.float32",
+          "shape": [
+            120,
+            6,
+            6,
+            5376
+          ],
+          "sha256": "e7088c758d7582edef988b158a921e1666a6102188fe334e1bca1ead85588781"
+        },
+        "attn_out": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            11040,
+            5376
+          ],
+          "sha256": "619599a89e5295feb4da3807e89765a48a7455f87c4abb7b560a18d5eb723005"
+        },
+        "forward_index": {
+          "dtype": "torch.int64",
+          "shape": [
+            11040
+          ],
+          "sha256": "6f6a546e30dc8067b06495dc91eff64266d80c5f6b62c0e0b332b70941e34c26"
+        },
+        "mlp_in": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            11040,
+            5376
+          ],
+          "sha256": "4292807b6083f0c86a6664ad2359d5b96d4130b06725d734fab1249c67dfd7ec"
+        },
+        "mlp_out": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            11040,
+            5376
+          ],
+          "sha256": "a69b55d52a5a5bf467c554571da6ee8787c6f1dddaba70ad025ff29b2a40d436"
+        },
+        "mod_segments": {
+          "dtype": "torch.int64",
+          "shape": [
+            120,
+            3,
+            3
+          ],
+          "sha256": "fbf9887779c46ee6f4c7283b602903f2d1a027ebdef317fb50e8ab19678f0d01"
+        },
+        "sigma_audio": {
+          "dtype": "torch.float32",
+          "shape": [
+            120
+          ],
+          "sha256": "c3661d5dca8162044d82539d949b07b73a0184ac750740786aff2b8ad1f3d994"
+        },
+        "sigma_video": {
+          "dtype": "torch.float32",
+          "shape": [
+            120
+          ],
+          "sha256": "4b1046b76dab7f7f65f6cb6a45a909510b58992381409e8b7e3087d186e26666"
+        },
+        "temb": {
+          "dtype": "torch.float32",
+          "shape": [
+            120,
+            2,
+            8
+          ],
+          "sha256": "3acf297ae710a6fa6577bde820f17b00a11f95a0979482ef524a4810b83e168a"
+        },
+        "token_clip": {
+          "dtype": "torch.int64",
+          "shape": [
+            11040
+          ],
+          "sha256": "853bbe732750617041569e9edded86b0ea58c5cc8dc6ee860b657349fe55988f"
+        },
+        "token_frame": {
+          "dtype": "torch.int64",
+          "shape": [
+            11040
+          ],
+          "sha256": "9a86bd6b77dbd493e84112b242094e8d493d6fb5fcbea18a21c69748d102e4b0"
+        },
+        "token_kind": {
+          "dtype": "torch.int8",
+          "shape": [
+            11040
+          ],
+          "sha256": "c542ec2d6c0aa304d8aa30bc2f7b6c63c8c0bc40168d9d09e18b3359142205b6"
+        },
+        "x_in": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            11040,
+            5376
+          ],
+          "sha256": "530fcf6dca8c081a3e8e1e25bcdaa16e1abccb53cf3f370f7df2b0d8b81b013c"
+        },
+        "x_out": {
+          "dtype": "torch.bfloat16",
+          "shape": [
+            11040,
+            5376
+          ],
+          "sha256": "70b6225a24181e19c7f373aaa3956d5f88da6e7cdda5278ef4f75cd39ef8da29"
+        }
+      }
+    }
+  ],
+  "forwards": 480,
+  "stopped_early": false,
+  "timing": {
+    "forwards": 480,
+    "seconds_total": 1126.3646733760834,
+    "seconds_per_forward_mean": 2.346593069533507,
+    "first": [
+      {
+        "step": 0,
+        "forward": 0,
+        "seq_len": 92,
+        "seconds": 1.5843303203582764,
+        "max_abs_x_out": 30133.16015625
+      },
+      {
+        "step": 0,
+        "forward": 1,
+        "seq_len": 92,
+        "seconds": 0.9730947017669678,
+        "max_abs_x_out": 33278.20703125
+      },
+      {
+        "step": 0,
+        "forward": 2,
+        "seq_len": 92,
+        "seconds": 0.9879610538482666,
+        "max_abs_x_out": 30546.7421875
+      },
+      {
+        "step": 0,
+        "forward": 3,
+        "seq_len": 92,
+        "seconds": 0.9711301326751709,
+        "max_abs_x_out": 29896.880859375
+      }
+    ]
+  },
+  "overflow": [],
+  "runtime": {
+    "python": "3.10.12 (main, Sep 11 2024, 15:47:36) [GCC 11.4.0]",
+    "platform": "Linux-7.0.0-30-generic-x86_64-with-glibc2.35",
+    "cwd": "/opt/ComfyUI",
+    "torch": "2.6.0+cu124",
+    "torch_cuda": "12.4",
+    "cuda_available": true,
+    "device_name": "Quadro RTX 8000",
+    "device_total_memory_bytes": 47558819840,
+    "device_capability": "7.5",
+    "nvidia_smi": [
+      "0, Quadro RTX 8000, GPU-f5a09535-fc85-a027-50f7-734b344747dd, 39986 MiB"
+    ]
+  },
+  "argv": {
+    "model": "/opt/ComfyUI/models/diffusion_models/minimax_h3_fl2va_pruned_bf16.safetensors",
+    "out": "/lexar/omni-campaign/media/h3_blocks_v2",
+    "blocks": "25",
+    "rung": "latents",
+    "video_pairs": "/work/media/pairs/h3v_g4_64_merged",
+    "audio_pairs": "/work/media/pairs/h3a_d_ctx0_merged",
+    "clips": 0,
+    "clip_offset": 0,
+    "audio_frames": -1,
+    "audio_windows": 0,
+    "video_frames": "leading-run",
+    "allow_deviations": true,
+    "text_states": null,
+    "random_grid": [
+      7,
+      12,
+      20
+    ],
+    "steps": 4,
+    "sigma_grid": "shifted",
+    "sigmas": null,
+    "text_len": 32,
+    "seed": 0,
+    "device": "cuda:0",
+    "expect_device_name": "Quadro RTX 8000",
+    "weight_dtype": "bfloat16",
+    "compute_dtype": "auto",
+    "store_dtype": "bfloat16",
+    "parity_rows": 512,
+    "parity_tolerance": 0.001,
+    "max_forwards": 0,
+    "hash_source": true,
+    "overwrite": false,
+    "receipt_copy": "/work/composite/media/h3_blocks_v2"
+  },
+  "source_sha256": {
+    "/work/media/c16_h3_capture.py": "171889b7a03e5c6c37306221cbe16fc6d1a6d749c27784692de2c601d01d928b",
+    "/work/media/mediafold/c16_h3.py": "5701a22159d5a80815c5c3f60377fb75dada0fa7f4e6b019915b2a518b9cc1b1"
+  },
+  "writer": {
+    "uid": 1000,
+    "gid": 1000,
+    "note": "launch with docker --user $(id -u):$(id -g) so the receipt copy is owned by the invoking user"
+  }
+}

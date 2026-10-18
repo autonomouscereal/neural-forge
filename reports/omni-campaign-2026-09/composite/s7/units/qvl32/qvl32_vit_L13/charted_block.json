@@ -1,0 +1,233 @@
+{
+ "accounting": {
+  "child_block_parameters": 7796659,
+  "child_mlp_parameters": 2479027,
+  "parent_block_parameters": 15239504,
+  "parent_intermediate": 4304,
+  "parent_intermediate_source": {
+   "depth": 27,
+   "fc1_shape_all_blocks": [
+    4304,
+    1152
+   ],
+   "fc2_shape_block": [
+    1152,
+    4304
+   ],
+   "hidden_size": 1152,
+   "intermediate_size": 4304,
+   "parent": "/home/cereal/comfyui/models/text_encoders/qwen3vl_32b_minimax_h3_bf16.safetensors",
+   "prefix": "visual.",
+   "read_from": "safetensors header (linear_fc1/linear_fc2 shapes of every visual block)"
+  },
+  "parent_mlp_parameters": 9921872
+ },
+ "charts": {
+  "chart_out_bias": "not written (c16 never installs it)",
+  "diagnostics_held": {
+   "forward": {
+    "cos": 0.3627978770413499,
+    "cos_p05": 0.14572253601483176,
+    "r2": 0.1159262942564897,
+    "rel_l2": 0.923160494409965,
+    "rows": 10848
+   },
+   "roundtrip": {
+    "cos": 0.9553304700534272,
+    "cos_p05": 0.8922285346585543,
+    "r2": 0.5328887821563755,
+    "rel_l2": 0.3201315538298993,
+    "rows": 10848
+   }
+  },
+  "file": "charts.safetensors",
+  "hidden": 5120,
+  "method": "ridge (mediafold.linalg.fit_ridge_linear, fp64) refitted on every paired row at the lambdas chosen by the c17 fit-split ladder",
+  "pairs": {
+   "holdout": "group split (see the pair receipt)",
+   "host_site": "block 31 OUTPUT (the residual the charted block inserted after layer 31 reads)",
+   "interface": [
+    "/home/cereal/omni-campaign/composite/s7/interface_latent/c11/companions.json"
+   ],
+   "paired_rows": "/home/cereal/omni-campaign/composite/s7/tap_rows_s3/qvl32_vit_L13/paired_rows.safetensors",
+   "paired_rows_sha256": "ffd49a1ee116f6d5f6f6d2f43ede30f06d062059a7ad94c830eb4888315afe7f",
+   "parent_pairs": "/home/cereal/omni-campaign/composite/s7/pairs/qvl32_vit_L13/parent_capture.safetensors",
+   "rows": 57856,
+   "rows_held": 10848,
+   "trunk": "/mnt/lexar/omni-campaign/s3-native-v2-3a25a459-4347-416d-a58a-2cb3c8e738fd/actual/native-s3-text-stage/native"
+  },
+  "policy": "owner 2026-10-06: these numbers are diagnostics, never gates",
+  "producer": {
+   "lane": "M1 2026-10-10",
+   "sha256": "0e3e2a386a67861a048ab75e1973acf3dce3245dcd24ced682368413db165217",
+   "tool": "s7_chart_fit",
+   "version": "1.0.0"
+  },
+  "ridge_rel": {
+   "chart_in": 0.01,
+   "chart_out": 0.0001
+  },
+  "sha256": "8cb1db4af70c28fde7024da8041ca37adf0f80db057553a9410cbff3a94f949b",
+  "shapes": {
+   "chart_in.bias": [
+    1152
+   ],
+   "chart_in.weight": [
+    1152,
+    5120
+   ],
+   "chart_out.weight": [
+    5120,
+    1152
+   ]
+  },
+  "type_ids_rewrite": {
+   "from": [
+    6
+   ],
+   "to": [
+    6
+   ],
+   "why": "R0(b): QVL32 [1, 6] collides with QIMG image type 1; the charts were fitted on type-6 (ocr) rows only"
+  },
+  "valid_only_with": "the latent interface rows these host rows were captured under (s7/interface_latent) and the S3 trunk prefix 0..31; S5 (C10 rewrites FFNs 0-31) needs a recapture"
+ },
+ "holdout": {
+  "note": "Codex receipt split 'diagnostic_fit' (24 observation rows per block); no held split"
+ },
+ "insert_after": null,
+ "provenance": {
+  "block_keys": [
+   "blocks.13.attn.proj.bias",
+   "blocks.13.attn.proj.weight",
+   "blocks.13.attn.qkv.bias",
+   "blocks.13.attn.qkv.weight",
+   "blocks.13.mlp.linear_fc1.bias",
+   "blocks.13.mlp.linear_fc1.weight",
+   "blocks.13.mlp.linear_fc2.bias",
+   "blocks.13.mlp.linear_fc2.weight",
+   "blocks.13.norm1.bias",
+   "blocks.13.norm1.weight",
+   "blocks.13.norm2.bias",
+   "blocks.13.norm2.weight"
+  ],
+  "fold_receipt": "/home/cereal/omni-campaign/runtime/qvl32-1075-cpu-01a10f94-2b148ef9-817e-464f-b28c-746319b5ac77/output/native-qvl32-1075-child/fold_receipt.json",
+  "fold_receipt_sha256": "d007e80d3a2a0577c3adf54d511a98c4c80a4a3954ac9d50f9202a809e144d20",
+  "native_config": {
+   "deepstack_visual_indexes": [
+    8,
+    16,
+    24
+   ],
+   "depth": 27,
+   "hidden_size": 1152,
+   "in_channels": 3,
+   "intermediate_size": 1075,
+   "num_heads": 16,
+   "num_position_embeddings": 2304,
+   "out_hidden_size": 5120,
+   "patch_size": 16,
+   "spatial_merge_size": 2,
+   "temporal_patch_size": 2
+  },
+  "source_component": "/home/cereal/omni-campaign/runtime/qvl32-1075-cpu-01a10f94-2b148ef9-817e-464f-b28c-746319b5ac77/output/native-qvl32-1075-child/native_component.safetensors",
+  "source_component_metadata": {
+   "config_sha256": "bc4291c5a004467c85423fc8f3ed6edb99bd2659a3bc8635c8981fff593f0be7",
+   "language_weights": "absent",
+   "parent_component_sha256": "a0535820dbbf1126f157835a54cb0d59453f6f3e16adf2997cc924810385ea50",
+   "schema": "chimera_omni.qvl32_native_diagnostic_FFN_child.v1",
+   "split": "diagnostic_fit",
+   "stage": "source_native_diagnostic_FFN_child"
+  },
+  "source_component_sha256": "eb10bd3060fc3483d14fdb7ae042f764b6145369d6738da30114c181d6fe641b"
+ },
+ "s7_unit": {
+  "built_by": "one ViT block from Codex's qvl32-1075 diagnostic FFN child (read only)",
+  "c11_rows": "built separately: composite/s7/c11/<arm>/companions.json (m3_c11_qvl_rows.py), type 6 ocr",
+  "canonical": {
+   "block_parameters_without_charts": 7796659,
+   "canonical_tensor_set": true,
+   "chart_parameters_at_hidden_5120": 11797632,
+   "installed_parameters_at_hidden_5120": 19594291,
+   "spec_mlp_parameter_count": 2479027
+  },
+  "charts_status": "PRESENT at hidden 5120 (lane M1, 2026-10-10); fitted on S3-trunk host rows under the latent interface set",
+  "component_4x": {
+   "meets_4x_component": true,
+   "mlp_compression_x": 4.002325105777388,
+   "mlp_ratio": 0.24985476531041723,
+   "rule": "c16 components(): child MLP / parent MLP <= 0.25 registers as --component",
+   "whole_block_ratio_recorded_only": 0.5116084486739201
+  },
+  "deviations": [
+   "2-D vision RoPE dropped",
+   "learned interpolated pos_embed not carried (trunk positions instead)",
+   "DeepStack mergers (blocks 8/16/24 -> LM) not carried by a single charted block"
+  ],
+  "source": "QVL32",
+  "tool": "s7_unit_build",
+  "tool_version": "1.2.0"
+ },
+ "schema": "chimera_omni.composite.charted_block.v1",
+ "spec": {
+  "attn_bias": true,
+  "chart_in_bias": true,
+  "component": "qvl32.vit.block13.mlp",
+  "delta_scale": 1.0,
+  "head_dim": 72,
+  "heads": 16,
+  "kv_heads": 16,
+  "metadata": {
+   "act": "gelu tanh: ComfyUI 0.37 comfy/text_encoders/qwen35.py Qwen35VisionMLP F.gelu(approximate='tanh'), the class Qwen3VLVisionModel runs; Qwen3.8-27B-U config vision hidden_act gelu_pytorch_tanh",
+   "converted_from": "/home/cereal/omni-campaign/runtime/qvl32-1075-cpu-01a10f94-2b148ef9-817e-464f-b28c-746319b5ac77/output/native-qvl32-1075-child",
+   "layer_type": "qwen3vl_vision_block",
+   "rope": "2-D vision RoPE dropped (rope_theta 0)",
+   "type_ids": "ocr (6) only: image (1) is QIMG's C15/charted type; [1, 6] made both blocks run on image rows and c16 refuses type 1 in C15 and C11 together"
+  },
+  "mlp_kind": "gelu_tanh",
+  "mlp_width": 1075,
+  "modulation": "none",
+  "norm_affine": true,
+  "norm_eps": 1e-06,
+  "norm_kind": "layer",
+  "qk_norm": false,
+  "rope_theta": 0.0,
+  "rung": "qvl32-1075-diagnostic-fit",
+  "sliding_window": 0,
+  "source": "qvl32",
+  "source_depth_fraction": 0.5,
+  "time_embed_r": false,
+  "time_factor": 1000.0,
+  "time_freq_dim": 256,
+  "time_hidden": 0,
+  "type_ids": [
+   6
+  ],
+  "width": 1152
+ },
+ "tensor_sha256": {
+  "charted_block.safetensors": {
+   "attn.k_proj.bias": "9c8845395d2afba5d6ea1f7c0a6ece9a94109f70d9cee7a02829166f98e6f1e3",
+   "attn.k_proj.weight": "6dacc3fb9b0b7ec08b246aff1dcb068a88fbf8cae28641c7d08831d2d9197707",
+   "attn.o_proj.bias": "d9145d511439e7331507bd07c3db0ca7c0333601a5ed28cdbb4298217d68149d",
+   "attn.o_proj.weight": "9a4039b2602165f71a17d7d003a696347bd56fd33922afc207338854fcab3290",
+   "attn.q_proj.bias": "321c48307274093a8d03ca5769a0e3b92a790aaced6800b88f2259b6b15d1aea",
+   "attn.q_proj.weight": "bbb7efd0d15c6775b19cfa2f98029095146a2142c21fc69978bc7e6f98c15866",
+   "attn.v_proj.bias": "08c065f59580448eac574877abfce75f03cf7e14f1abf9f83da361749a0d0239",
+   "attn.v_proj.weight": "dc6191e9e753cb87a6c4efbdd6a5e7dcacd825131d9ae5b1eae32518b82cadb6",
+   "attn_norm.bias": "e97e401ca11065332bb03a2d2b42194a69b1e153e614052e35fd424b5f182562",
+   "attn_norm.weight": "64afa2148e8d1515b5d3c69331862c2bc0e1f5d3da86609dadd0d256f7289077",
+   "mlp.fc1.bias": "6177811276df7dbaefd86c0986d313b4fac46fe303b416bcb41d1aa9f2760cd4",
+   "mlp.fc1.weight": "342967d1c6aca76207d183a10a5f7fb3d646cfd92c29e40e2935f0156e16a71c",
+   "mlp.fc2.bias": "74e2f2888136850f2c2c89d4542966693bc11e6124419a008f078975fdd66a36",
+   "mlp.fc2.weight": "3bdb8b348898f26fd0a1fc503505ffc859a239de0c8dbf17b8636cba60871661",
+   "mlp_norm.bias": "370ff9e296630008da8c7b11cf47e2a853d9b4e59160443ac1e49b89e5060265",
+   "mlp_norm.weight": "e674ea1ba5f72eaa56b2550a51b4e14677cfee0bd702ea8165974384334527e3"
+  },
+  "charts.safetensors": {
+   "chart_in.bias": "312d19ee1757493abcc6db7b41c41ed610daab353e45a1d8ed36aad3430f1249",
+   "chart_in.weight": "abef01baf00ea3b19a5cf03dd5955018406fb3b95a54c873fc093cb3d02df1fb",
+   "chart_out.weight": "f19e49da3d75c22210a9598535a2a15b688a914b788cc7d1cb7bc32d3cd3a9f2"
+  }
+ }
+}

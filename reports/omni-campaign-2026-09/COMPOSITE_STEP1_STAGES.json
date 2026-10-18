@@ -1,0 +1,285 @@
+[
+  {
+    "id": "S0",
+    "title": "Verify PARENT-Q38-27BU (show/verify, no re-register); measure share MB/s; exact 27B-U -> Chimera bf16 import with music_codes band declared, sealed as PROBE.S0; 27B split-load verify cell",
+    "inputs": [
+      "/home/cereal/models/Qwen3.8-27B-Uncensored (13 shards / 21 files, 51.75 GiB bf16, tokenizer sha 06b95093)",
+      "chimera-omni c5e6052 (the server tree /home/cereal/omni-campaign/import/rq27b/tree_c5e6052; src/chimera_omni is byte-identical at 5a87018, c5e6052 and 5b35906) chimera_omni_27b_profile(allow_unverified_output_gate=True) = s0_import_27b.py --profile chimera_omni_27b (auto-selected for the 27B geometry; tensor bytes are profile-independent, only config.json config.metadata differs)",
+      "ledger row PARENT-Q38-27BU (parameter_count 27781427952, derived-from-safetensors-headers, dir sha 8f6735a4)"
+    ],
+    "outputs": [
+      "composite/receipts/parent_q38_27bu_show.txt",
+      "composite/receipts/share_rate_2026-09.json",
+      "composite/s0/q38-27bu-chimera-bf16/ (index.json with tensor_sha256, manifest ledger_bands DEFAULT+music_codes:65536)",
+      "composite/s0/import_time.txt (peak_rss_bytes)",
+      "composite/s0/receipt_s0_split_verify.json",
+      "composite/s0/receipt_s0_streamed_exactness.json (when the S2P tool lands)"
+    ],
+    "command_or_tool": "$L show --checkpoint-id PARENT-Q38-27BU; $L verify --checkpoint-id PARENT-Q38-27BU --deep; timeout 900 dd if=/mnt/ai_data/models/moonshotai/Kimi-K3/model-00010-of-000096.safetensors of=/dev/null bs=64M count=64 status=progress; setsid nohup /usr/bin/time -v $PY composite/tools/s0_import_27b.py --src /home/cereal/models/Qwen3.8-27B-Uncensored --out composite/s0/q38-27bu-chimera-bf16 --chimera-commit c5e6052 --profile chimera_omni_27b --allow-unverified-output-gate --ledger-band music_codes:65536 (5a87018 is REFUSED against the c5e6052 tree; do not start S6H until the log prints `writing`); run_omni_frozen_review.py --split 46,24 --teacher-forced (GPU6+GPU4)",
+    "resources": "CPU import-only ~152 GiB host peak [assumed, measured by this run] + 54 GB disk, ~4 h, shares the 226 GiB box ONLY with S6H (194 GiB); the whole-model reference column (203 GiB) runs alone. Split verify GPU6+GPU4, host <70 GB, ~1 h before S6H",
+    "hours": 5,
+    "gate": "BUILT: show/verify clean; index.json header count 27,028,104,704 + 671,088,640 = 27,699,193,344 [assumed]; state_sha256 (PROBE.S0 and the S3 re-import key on s0_import_27b.py's own state_sha256, never on the R-Q 0.8B receipt's 5d81a211); receipt checkpoint.directory_shard_files_match_index == true; share_rate MB/s; peak_rss_bytes recorded. MEASURED: split-verify argmax over >=200 positions + max-abs logit diff vs the streamed HF bf16 teacher (0.8B floors: cpu/fp32 210/210 @ 3.19e-05 exactness; cuda/bf16 209/210 @ 0.5 tolerance); [proposed] argmax >= 99% reported not gated until the receipt JSON lands. S2 re-priced as 1.42 TiB / measured MB/s.",
+    "status": "partial",
+    "status_as_of": "2026-09-04",
+    "status_note": "Parent deep verification passed. Guarded import BUILT and independently serialization-VERIFIED at composite/s0/q38-27bu-chimera-bf16-sep04: 27,699,193,344 parameters, 1,011 BF16 tensors, 14 shards, state SHA 3fc569a683111ef447ef287af241ae42311a2ac5fa38522659c9b0fae734509e. Process exited 0 after 33m37.74s; import peak 166.44 GiB. bf16 forward/split parity and streamed exactness remain pending. This is an import probe, not a fold or an all-source child. Historical command/output paths and resource estimates above are not a fresh launch instruction; read REVIEW_AND_HANDOFF_2026-09-04.md.",
+    "current_outputs": [
+      "composite/s0/q38-27bu-chimera-bf16-sep04/",
+      "composite/receipts/sep04/import_receipt.json",
+      "composite/receipts/sep04/s0_serialization_verification.json",
+      "composite/receipts/sep04/s0_import.time.log"
+    ]
+  },
+  {
+    "id": "S1",
+    "title": "Shared calibration corpus (27B tokenizer), K3-side ids with masked bank rows, boundary map, media stimuli manifest",
+    "inputs": [
+      "curated registry MASTER_SHARD_INDEX_POINTER.json (631/631)",
+      "qf_evidence_build.py / qf_evidence_verify.py",
+      "K3 tiktoken (163,584 ranks + 256 reserved)",
+      "banks v1 0ee6bf14 / v2 f26f36bf / probe / smoke"
+    ],
+    "outputs": [
+      "composite/corpus/omni-evidence-27b-v1.json (24 x 4096, 18 fit / 6 held)",
+      "composite/corpus/k3_input_ids.safetensors + row_meta.json (bank rows is_review_prompt=true, masked)",
+      "composite/corpus/boundary_map.json",
+      "composite/corpus/media_stimuli/ manifest"
+    ],
+    "command_or_tool": "$PY qf_evidence_build.py --parent /home/cereal/models/Qwen3.8-27B-Uncensored --allow-unpinned-tokenizer --out composite/corpus/omni-evidence-27b-v1.json; qf_evidence_verify.py; NEW k3_corpus_build.py --append-bank-rows",
+    "resources": "CPU, <8 GB RAM, ~0.5 GiB share reads, 1-2 h",
+    "hours": 2,
+    "gate": "BUILT: four files + verify receipt 12/12 PASS, contamination screen 0 hits, review rows excluded from fit. MEASURED: boundary_map aligned-position fraction (ceiling on S4 paired rows).",
+    "status": "partial",
+    "status_as_of": "2026-09-04",
+    "status_note": "Paired text corpus v2 is built: 98,304 evidence positions, 18 fit/6 held rows, 69,743 K3 fit tokens, 23,186 held tokens and 22,769 held aligned boundary pairs. Separate review files have 45,056 positions and zero fit masks. Media stimuli remain pending; see REVIEW_AND_HANDOFF_2026-09-04.md."
+  },
+  {
+    "id": "S2P",
+    "title": "Engineering lead (dual-stream k3_dense_pass + all new tools) and the one real-layer measurement that prices S2",
+    "inputs": [
+      "k3 harness v3.1 (k3_stream.py single-stream StreamRun, c14_union_coreset.py, k3_layer.py, k3_common.py, 30/30 tests)",
+      "$OC/k3/staged shards 2 and 4 (layer 1 local)",
+      "tps_probe.build_streamed_text_model",
+      "scripts/import_receipt_qwen35.py",
+      "S1 k3_input_ids.safetensors"
+    ],
+    "outputs": [
+      "composite/tools/{s0_import_27b.py,k3_corpus_build.py,k3_dense_pass.py,receipt_q27_streamed.py,run_omni_frozen_review.py,qf_stream27.py,c17_chart_fit.py,c10_union_install.py,c16_install_media.py} with tests green incl. t11c_two_stream_resume_reproduces_a_single_pass",
+      "composite/k3/L01_measure/ (layer 1 dual-stream fold at T=65,536, rung 17,408, k-pool-factor 1; /usr/bin/time -v RSS, wall, dequant s, pivot s, fit relL2)",
+      "distill/tps receipts mirrored locally"
+    ],
+    "command_or_tool": "CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=6 /usr/bin/time -v $PY composite/tools/k3_dense_pass.py --model-dir /mnt/ai_data/models/moonshotai/Kimi-K3 --src-dir $OC/k3/k3_src --input-ids composite/corpus/k3_input_ids.safetensors --layers 1-1 --rung 17408 --k-pool-factor 1 --experts-device cpu --device cuda:0 --kda-backend fla --stage-dir $OC/k3/staged --no-share-read --out composite/k3/L01_measure",
+    "resources": "coding 8-12 h (overlaps the S0 import); measurement GPU6 + host 60-75 GB (~70 GiB), after the S0 import releases RAM and before S6H, ~2 h, no share reads",
+    "hours": 12,
+    "gate": "BUILT: tools + tests; L01 receipt. MEASURED: real peak_rss_bytes and wall at 17,408 / T=65,536 replace S2's RAM and per-layer compute lines; if compute > the 11-min clean read, S2 is compute-bound and re-priced as 92 x measured. Synthetic 3-layer fixture: rung=full width => folded == teacher.",
+    "status": "partial",
+    "status_as_of": "2026-09-04",
+    "status_note": "S0/QF safety guards and inference/no_grad token-chunked AttnRes prerequisite are implemented; 108 focused server tests pass across these three areas. This is not the full dual-stream harness. k3_dense_pass.py, streamed27B exactness, readable review runner and real L01 measurement remain pending. Measure at the actual 98,304 evidence positions, not the historical 65,536 above. Preserve the completed size-checked Lexar K3 copy and verify authoritative digests before use."
+  },
+  {
+    "id": "S6H",
+    "title": "H3 DiT block capture + 4x coreset on GPU6 before the K3 pass takes the card (C16 rung 1, video+audio)",
+    "inputs": [
+      "minimax_h3_fl2va_pruned_bf16 (40.2 GB) + video VAE fp16 4.9 GB + audio VAE fp32 0.6 GB",
+      "docker comfyui:codex-minimax-h3-runtime-env-r5-20260808 -v $OC:/work (R6 e.1 hook recipe, D12)",
+      "S1 media stimuli",
+      "mediafold.c16_transplant.coreset_block_mlp"
+    ],
+    "outputs": [
+      "composite/media/h3_blocks/step{s}/L{i}.safetensors (4 sigmas)",
+      "composite/media/h3_block_coreset/ (MLP 14,336 -> 3,584 + kv-head merge arm) + receipt"
+    ],
+    "command_or_tool": "NEW c16_h3_capture.py; c16_transplant_run.py --rung latents --keep 3584 --prefix-shell --source h3",
+    "resources": "GPU6 RTX 8000 46 GB (H3 bf16 40.2 GB resident, sm75); host ~42 GiB beside the IMPORT-ONLY S0 (194 GiB < 226) or after it; disk ~10 GB; 5-6 h; must end before S2",
+    "hours": 6,
+    "gate": "BUILT: >=1 H3 block capture at 4 sigmas + 4x-coreset block with header counts (MLP ratio <= 0.25; whole-block ratio recorded). MEASURED: clip-grouped held-out rel_l2 / cos per arm (replace / control / random-chart); ACE block-12 reference 0.5442 / 0.8415.",
+    "status": "built_and_measured_pending_s7_spec_extension",
+    "status_note": "2026-09-06 fixer pass on s6h_h3_capture (review verdict fix; all 9 findings applied, 21 server tests). SPEC DEVIATIONS, NAMED (the capture now refuses without --allow-deviations and writes this list into capture_receipt.json.deviations): (1) inputs: C15 pair corpora (procedural clips) stand in for 'S1 media stimuli' (STAGES S1: media stimuli remain pending); (2) text conditioning = seeded gaussian Qwen-width states refined by the parent's condition_proj+token_refiner -- no 5120-wide H3 text encoder is on the box; --text-states FILE drives the real path once it exists; (3) video clips are latent frames [1,2,3,4] (leading consecutive run of the g4 corpus' [1,2,3,4,6]; frame 6 dropped so there is no time hole) fed as frames 0..3, i.e. they do not start at the 1-raw-frame latent 0 -- a frame-0 corpus would need a new C15 video pair set; (4) output layout: composite/media/h3_block_coreset*/L25/{mlp.safetensors (fc1/fc2 only, header = child MLP count), selection.safetensors, coreset_receipt.json}; captures live on /mnt/lexar/omni-campaign/media/h3_blocks_v2 (disk rule), only receipts under $OC. STIMULUS ARMS of the v2 capture: video_frames=leading-run, audio_span=matched (22 audio latent frames = the 4-latent-frame video span; the shipped v1 fed 80 frames beside a 28-frame span), audio_windows=3 non-overlapping matched windows per audio clip (48 clips -> 144 windows, 120 clip pairs, parent clip in the row provenance, holdout grouped by audio parent), text=gaussian, sigma grid shifted-12 at 4 steps (coverage note: sigma in [0.63,0.99]; --sigma-grid uniform / --sigmas is the low-noise arm, not run). S7 CONSUMABILITY GAP (priced, not built): c16_install_media.py --blocks needs a ChartedBlockSpec container; H3's per-modality adaLN (3x6 rows from an 8-dim curve embedding, adaln_proj.linear [96768,8]), its non-sinusoid time path, MHA inner 7168 on hidden 5376 and per-segment rope have no ChartedBlockSpec fields -- the modulation/time_embed decision belongs to the S7 owner; converter+writer+test ~0.5 day after it. Until then h3_Lmid is measured, not installable. MEASURED on the shipped v1 capture with the fixed coreset (composite/media/h3_block_coreset_v1fix/L25/coreset_receipt.json; holdout 7,200 rows = 6,400 audio + 800 video, 89% audio): replace pooled rel_l2 0.3420/cos 0.9636, audio 0.2010/0.9706, video 0.3987/0.9074; prior_only (pivoted channels, parent fc2 columns -- the shipped 0.851 was RANDOM channels) pooled 0.3306/0.9397, audio 0.2983/0.9412, video 0.3471/0.9279 -- the fc2 refit helps audio and HURTS video; random_select 0.5238/0.8470; control 1.4352. MLP 231,211,008 -> 57,802,752 (4.00x, header of mlp.safetensors), whole block 1.81x, solver cholesky, update_scale 0.83. MEASURED on the v2 capture (on-span stimulus; /mnt/lexar/omni-campaign/media/h3_blocks_v2, capture_receipt sha256 145cb6a6..., 480 forwards, 11,040 rows/step = text 3,840 / audio 5,280 / video 1,920, MLP parity rel_l2 0.0, source sha256 a32572fb..., writer uid 1000; coreset composite/media/h3_block_coreset_v2/L25/coreset_receipt.json sha256 927c3c39..., 23,040 fit / 5,760 held rows by AUDIO PARENT clip (40 groups, 8 held, 0 fit rows touching a held clip), 6.43 fit rows per kept channel, cholesky, update_scale 0.646): replace pooled rel_l2 0.3034/cos 0.9481, audio 0.2473/0.9513 (4,224 rows), video 0.3152/0.9391 (1,536 rows); prior_only 0.3266/0.9145, audio 0.3611, video 0.3179; random_select 0.5283/0.8201; control 1.4204; stored-bf16 parity 0.00245; MLP 4.00x by header (57,802,752 in mlp.safetensors, selection in selection.safetensors), whole block 1.81x (kv-head-merge arm NOT BUILT). GATE: BUILT yes (4-sigma capture + 4x coreset with header counts); MEASURED yes (clip-grouped per-arm holdout, pooled and per kind); NOT installable into S7 until the charted-container spec extension above lands."
+  },
+  {
+    "id": "S2",
+    "title": "K3: ALL 896 routed + 2 shared experts x ALL 92 MoE layers, streamed in order, dual-stream folded-prefix fitting -> dense form-E K=17,408; layer 0 dense verbatim; register PARENT-K3 + OC03-F-DK3-17408-ALL92",
+    "inputs": [
+      "/mnt/ai_data/models/moonshotai/Kimi-K3 (96 MXFP4 shards, 1.42 TiB; shards 2 and 4 staged)",
+      "S2P k3_dense_pass.py",
+      "$OC/k3/k3_src",
+      "S1 k3_input_ids.safetensors",
+      "datasets registry-walk receipt (640/640 shards sha-exact)",
+      "RAM freed by S0"
+    ],
+    "outputs": [
+      "composite/k3/dense/L00/mlp.safetensors (dense 33,792 verbatim, 726.7M)",
+      "composite/k3/dense/L{01..92}/ffn.safetensors (form E, 370,675,200 params / 741 MB bf16 each; 92 layers = 34.10B = 68.2 GB)",
+      "composite/k3/resid/L{l}/held_rows.safetensors (teacher + folded, ~11 GB)",
+      "composite/k3/k3_dense_pass_receipt.json (per-layer MB/s, dequant s, fit relL2, veto_binding, update_scale, cumulative residual relL2; end-of-stack top-1 + KL; K3 R-proxy logits on masked bank rows; staged-copy deletion log)",
+      "$OC/oc03/children/OC03-F-DK3-17408-ALL92/ (~93B params / ~186 GB bf16 [assumed; reconcile vs plan 3b K3-3]) registered",
+      "optional arm composite/k3/arm_12288/L01-12/"
+    ],
+    "command_or_tool": "setsid nohup env CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=6 $PY composite/tools/k3_dense_pass.py --model-dir /mnt/ai_data/models/moonshotai/Kimi-K3 --src-dir $OC/k3/k3_src --input-ids composite/corpus/k3_input_ids.safetensors --layers 0-92 --rung 17408 --k-pool-factor 1 --experts-device cpu --device cuda:0 --kda-backend fla --stage-dir $OC/k3/staged --prefetch 2 --stage-window 3 --delete-staged-after-consume --out composite/k3 --resume --arm-rung 12288 --arm-layers 1-12; $L register --checkpoint-id PARENT-K3 --stage parent --directory /mnt/ai_data/models/moonshotai/Kimi-K3 --directory-digest-receipt OC/datasets/registry-walk-2026-09-02.json --confirm; $L register --checkpoint-id OC03-F-DK3-17408-ALL92 --stage fold --parent-checkpoint-id PARENT-K3 --component k3.experts:<headers>:<sum child_moe_total>:model.layers. --confirm (record form=E, K=17408, latent_dim=3584, shared_channels=6144, moe_layers=92)",
+    "resources": "GPU6 (apply_attn_res chunked over tokens); host 60-75 GB ~70 GiB at k-pool-factor 1 [assumed until the S2P L01 receipt] (15.7 GB packed experts incl. scales + fp64 Gram peak ~14.5 GB sequential + two residual-pair streams ~17 GB bf16 + 2.8 GB cache + 1.3 GB body); share read 1.42 TiB sequential offset-sorted; rolling local staging 2-3 shards (34-51 GB) deleted after both streams consume; disk out ~80 GB (+186 GB OC03 body). Wall share-bound: ~17 h at 25.5 MB/s clean, ~82 h at 5.3 MB/s contended; per-layer compute 15-25 min [assumed] hides under the 53-min contended read, not the 11-min clean read. Nothing else may touch /mnt/ai_data.",
+    "hours": 48,
+    "gate": "BUILT: L00/mlp + 92/92 dense/L*/ffn.safetensors with header counts (sum child_moe_total = 34.10B; >= 78x per layer vs 59.2 GB bf16 expert mass); receipt layers_folded == 92 with final_prefix_sha256 for both streams; OC03-F-DK3-17408-ALL92 ledger row. MEASURED (whole-stack diagnostic only, never a gate): end-of-stack held-out top-1 + KL folded vs teacher; K3 R-proxy baseline on bank rows; count of veto_binding layers. S4 starts when the 93 files exist.",
+    "status": "todo"
+  },
+  {
+    "id": "S3",
+    "title": "C2 trunk fold on the 27B-U (MLP 17,408 -> 4,352, 4x) via the streamed harness; register; exact re-import; R3 dossier (teacher-forced proxy during S2, free-run after)",
+    "inputs": [
+      "27B-U",
+      "S1 evidence",
+      "qwen-fold qf_build/qf_mlp/qf_solve/qf_harness.capture_grams (index-aware tap from S2P)/qf_export/qf_register",
+      "tps_probe.build_streamed_text_model (forward-only)"
+    ],
+    "outputs": [
+      "$OC/oc02/children/OC02-F-Q38-27BU-C2K4352/ (HF qwen3_5, intermediate_size 4,352, --drop-mtp with its own fold_accounting line) REGISTERED",
+      "composite/s3/c2k4352-chimera-bf16/ + receipt_s3_streamed_exactness.json",
+      "calibration/out/oc-dossier-OC02-C2K4352-NOTHINK.proxy.json (GPU4, teacher-forced) and oc-dossier-OC02-C2K4352-NOTHINK.json (free-run --split 46,24 after S2)"
+    ],
+    "command_or_tool": "$PY qf_build.py --parent /home/cereal/models/Qwen3.8-27B-Uncensored --evidence composite/corpus/omni-evidence-27b-v1.json --tag C2K4352 --parent-code Q38-27BU --device cuda:0 --dtype bfloat16 --streamed --mlp-keep 4352 --mlp-group 3 --drop-mtp --out oc02/children/OC02-F-Q38-27BU-C2K4352; qf_register.py -> $L register --confirm; s0_import_27b.py on the child; run_omni_frozen_review.py --stream --teacher-forced (GPU4) then --split 46,24 (GPU6+GPU4); oc_assess.py; $L record-review --confirm",
+    "resources": "GPU4 <= 18 GB reserved (owns GPU4); host ~56 GB RSS + page cache (cold after K3 staging) + 3 x 2.4 GB fp64 Grams; child import ~81 GiB [assumed] beside S2 (151 GiB < 226); disk 60 GB; ~1 h capture + 1.7 h solves + 0.5 h export + 1.5 h import + 1 h proxy dossier; free-run dossier ~2 h after S2",
+    "hours": 9,
+    "gate": "BUILT: record with qwen.mlp ratio from headers <= 0.25 (17.11B -> 4.28B; mtp drop recorded separately), net_ratio ~0.53; Chimera import with header count; proxy + free-run dossiers, record-review COMPUTED. MEASURED: per-layer C2 fit relL2; exactness argmax >= 99% [proposed]; canonical signal-lane count on bank v1 vs the 27B-U parent band (4B C2K2304 lost most lanes 5/15 vs 15/15). Frontier rule: if most lanes lost, rebuild --mlp-keep 8704 as a side arm and escalate the composite trunk decision to Cyril; 4x stays the registered rung.",
+    "status": "todo"
+  },
+  {
+    "id": "S6A",
+    "title": "Media interface maps (C15) for all five media sources -> bridge/head rows at hidden 5,120 (written into the counted 90.16M interface)",
+    "inputs": [
+      "$OC/media/pairs (ACE 1.5, H3 audio, H3 video)",
+      "NEW pairs Qwen-Image VAE + Hunyuan3D 2.1 ShapeVAE via c15_vae_pairs_container.py (r5 image)",
+      "mediafold.c15_fit.fit_absorption / compose_interface --hidden 5120",
+      "S1 media stimuli"
+    ],
+    "outputs": [
+      "composite/media/c15/{image_qimg,video_h3,audio_h3,music_ace,volume_hy3d}/ (E/D maps, composed feature_proj/type_embed and head out/type_affine rows) + receipts",
+      "composite/media/c15/companions.json"
+    ],
+    "command_or_tool": "docker run ... c15_vae_pairs_container.py --vae <qwen_image_vae> / --vae <hunyuan3d_vae> (NEW adapters QwenImageVae, Hunyuan3DShapeVae); c15_absorb_run.py --out composite/media/c15 --hidden 5120 --rungs linear,nonlinear --pairs ...; compose_interface per type; branch claude/omni-composite FLOW_TYPE_SHIFTS image(1)/ocr(6)=3.0 [proposed]",
+    "resources": "GPU4 (Qwen-Image VAE ~0.3 GB fp8) sequenced after S3's engine; CPU ShapeVAE encode; 3-4 h pairs + 2 h fp64 fits (Gram 12,288^2 = 1.2 GB); disk ~15 GB",
+    "hours": 6,
+    "gate": "BUILT: five composed-interface row sets with header counts + companions.json. MEASURED per type: PSNR(D o E) vs PSNR(VAE round-trip) on held-out clips vs the D-d2 line (round-trip - 3 dB [proposed]); anchors ACE 23.09 vs 32.78 dB, H3 audio 24.13 vs 36.34 dB; first numbers for image and volume.",
+    "status": "todo"
+  },
+  {
+    "id": "S6B",
+    "title": "C16 captures + 4x coresets for ACE DiT, Qwen-Image MMDiT, Hunyuan3D DiT, Qwen3-VL-32B ViT (+C11 patch-embed/merger); ACE 1.7B LM code-row bridge (C18) into the declared music_codes band",
+    "inputs": [
+      "ACE block-12 coreset c16_L12_v4 (4.00x, 0.5442/0.8415)",
+      "/home/cereal/comfyui/models/{qwen_image*, hunyuan3d*, qwen3vl_32b*}, ACE-Step 1.7B LM",
+      "S1 stimuli + S6A latents",
+      "mediafold.c16_capture / c16_transplant / fit_charts; bridge.token_alignment + embedding_bridge; linalg.fit_ridge_linear"
+    ],
+    "outputs": [
+      "composite/media/c16/{ace_L12,qimg_Lmid,hy3d_Lmid,qvl32_vit_Lmid}/ (captures, 4x-coreset blocks, kv-merge arm, header counts)",
+      "composite/media/c11/qvl32_patch_merger/ (+ 27B-U model.visual.* patch-embed arm)",
+      "composite/media/c18/ace_lm_music_codes.safetensors ([65,536 x 5,120])"
+    ],
+    "command_or_tool": "c16_transplant_run.py --block 12 --rung latents --keep 1536 ... --prefix-shell + NEW rung-2 kv-merge; NEW c16_qimg_capture.py, c16_hy3d_capture.py, c11_qvl32_capture.py, c18_ace_lm_bridge.py",
+    "resources": "GPU4 sequential (Qwen-Image fp8 20 GB; Hunyuan3D 6.9 GB; QVL32 vision tower ~2 GB; ACE LM 3.4 GB) 8-10 h; CPU fp64 solves; RAM < 40 GB; disk ~20 GB",
+    "hours": 10,
+    "gate": "BUILT: four coreset blocks + C11 row set + the 65,536-row band table with header counts, per-component MLP ratio <= 0.25 (whole-block ratio recorded). MEASURED: grouped held-out rel_l2 / cos per block; C18 aligned/unmapped counts over the full 248,320 vocab (token_alignment(full_vocab=True)).",
+    "status": "todo"
+  },
+  {
+    "id": "S4",
+    "title": "C17 cross-width charts + 92 -> 64 depth alignment between the folded K3 stream and the C2 trunk (K3 dense layer 0 -> trunk layer 0 pool)",
+    "inputs": [
+      "S2 resid/L*/held_rows (folded-stream FFN-input rows, 8,192 held tokens, layers 0..92)",
+      "S3 Chimera trunk residual taps at every FFN input on the same held text",
+      "S1 boundary_map.json",
+      "mediafold.linalg"
+    ],
+    "outputs": [
+      "composite/charts/L{00..63}/ (alignment {k -> [1+floor(92k/64), 1+floor(92(k+1)/64))}: 28 trunk layers get two K3 layers, 36 get one; C_in [7,168 x 5,120], C_out [5,120 x 7,168], SVD-chart control)",
+      "composite/charts/receipt.json"
+    ],
+    "command_or_tool": "NEW c17_chart_fit.py --alignment 92:64 --dense-layer0 trunk0; run_omni_frozen_review.py --tap-residuals --model composite/s3/c2k4352-chimera-bf16 --stream --teacher-forced --input composite/corpus/omni-evidence-27b-v1.json --held-only (GPU4)",
+    "resources": "GPU4 streamed 1-2 h (<= 18 GB reserved); CPU fp64 ridge 128 fits ~1 h; RAM < 30 GB; disk 9.4 GB",
+    "hours": 3,
+    "gate": "BUILT: 64 chart pairs + receipt covering all 93 K3 layers exactly once. MEASURED: per-layer held-out cos / relL2 of C_in, C_out, paired-row count (>= 4,096 needed, recorded). No threshold; the chart's worth is read in S5's veto/energy numbers.",
+    "status": "todo"
+  },
+  {
+    "id": "S5",
+    "title": "C10/C19 union install: lift every K3 form-E FFN through latent maps + charts into its trunk layers, union coreset to 12,288 K3 channels per layer, joint refit; register OC02-F-Q38-27BU-C2K4352K3U; R3 free-run dossier",
+    "inputs": [
+      "S3 trunk (4,352-wide)",
+      "S0 parent trunk (targets)",
+      "S2 dense K3 (L00 + 92 form-E layers, K=17,408, latent 3,584, shared 6,144)",
+      "S4 charts",
+      "S1 evidence (73,728 fit rows)",
+      "c14_union_coreset solvers; qf_mlp narrow recipe; safetensors_io; ChimeraConfig.intermediate_sizes"
+    ],
+    "outputs": [
+      "$OC/oc02/children/OC02-F-Q38-27BU-C2K4352K3U/ (fused [4,352 Qwen | 12,288 lifted K3] rows, down [5,120 x 16,640] prior-anchored refit, per-layer veto, music_codes rows carried) REGISTERED",
+      "composite/s5/union_receipt.json",
+      "oc-dossier-OC02-C2K4352K3U-NOTHINK.json"
+    ],
+    "command_or_tool": "$PY c10_union_install.py --trunk composite/s3/c2k4352-chimera-bf16 --parent-trunk composite/s0/q38-27bu-chimera-bf16 --k3-dense composite/k3/dense --k3-form E --charts composite/charts --evidence composite/corpus/omni-evidence-27b-v1.json --k3-channels 12288 --device cuda:0 --out oc02/children/OC02-F-Q38-27BU-C2K4352K3U; $L register --checkpoint-id OC02-F-Q38-27BU-C2K4352K3U --stage fold --parent-checkpoint-id OC02-F-Q38-27BU-C2K4352 --component qwen.mlp:...:...:blocks. --component k3.ffn:<OC03 sum child_moe_total>:12079595520 --accounting-slack <re-derived from headers> --confirm; run_omni_frozen_review.py --split 46,24 (GPU6+GPU4)",
+    "resources": "GPU4 or GPU6 (activation pass over 73,728 rows per layer group; candidate pool up to 4,352 + 2 x 23,552 = 51,456 wide, chunked; ~4 min/layer) ~4-5 h; CPU fp64 pivoted Gram up to 47,104^2 = 17.7 GB + solve ~3 min/layer; RAM < 80 GB; disk 55 GB + digest; no share reads",
+    "hours": 8,
+    "gate": "BUILT: record with header count < the parent record's parameter_count (expected ~26.94B incl. the band; else rebuild --k3-channels 11264), both components sealed, dossier + verdict COMPUTED. MEASURED per layer: held-out relL2 of the union FFN vs target; K3-term energy fraction; count of veto_binding layers. Frontier rule: if the veto binds in most layers, $L delete with the rebuild command recorded; rows-in-name-only do not go into S7. Source-delta lane vs the K3 R-proxy.",
+    "status": "todo"
+  },
+  {
+    "id": "S7",
+    "title": "Attach media last: bridge/head rows, music-code band, charted 4x blocks -> the ALL-SEVEN composite child OC02-F-Q38-27BU-OMNI1, registered",
+    "inputs": [
+      "S5 child",
+      "S6A rows + companions.json (per-entry tensor_sha256)",
+      "S6B blocks (each adaLN container with time_reference.safetensors = the captured temb) + C11 rows + C18 band table",
+      "chimera-omni branch claude/omni-composite (tree 2ec15a8) with the charted block kind incl. time_embed_r + time_path",
+      "fit_charts on trunk media-token residual rows",
+      "the PARENT-Q38-27BU record's directory as the accounting parent"
+    ],
+    "outputs": [
+      "/mnt/lexar/omni-campaign/composite/oc02/children/OC02-F-Q38-27BU-OMNI1/ (64 layers + 5 charted blocks at depth-fraction-paired refinement layers [proposed D-e1]; interface rows written; music_codes rows from C18; every placement time_reference.verified = true; manifest lists every source and rung) REGISTERED with lineage parent OC02-F-Q38-27BU-C2K4352K3U and accounting parent /home/cereal/models/Qwen3.8-27B-Uncensored (register.reachable = true in the manifest)",
+      "composite/s7/composite_manifest.json",
+      "/mnt/lexar/omni-campaign/composite/oc02/children/OC02-F-Q38-27BU-OMNI1-ARMBLEND/ (no-architecture-edit fallback arm via c10_union_install --extra-blocks; c16_install_media --arm blend is diagnostic only, its components register as --passed-through)"
+    ],
+    "command_or_tool": "$PY c16_install_media.py --child oc02/children/OC02-F-Q38-27BU-C2K4352K3U --c15 composite/media/c15 --c11 composite/media/c11 --c18 composite/media/c18/ace_lm_music_codes.safetensors --blocks composite/media/c16/{ace_L12,h3_Lmid,qimg_Lmid,hy3d_Lmid,qvl32_vit_Lmid} --pair-by depth-fraction --arm insert --accounting-parent-directory /home/cereal/models/Qwen3.8-27B-Uncensored --out /mnt/lexar/omni-campaign/composite/oc02/children/OC02-F-Q38-27BU-OMNI1; run_omni_frozen_review.py --tap-residuals --split 46,24 --media composite/corpus/media_stimuli + fit_charts; then the register line the manifest emits (register.reachable must be true): $L register --checkpoint-id OC02-F-Q38-27BU-OMNI1 --stage fold --parent-checkpoint-id OC02-F-Q38-27BU-C2K4352K3U --directory <out> --parent-directory /home/cereal/models/Qwen3.8-27B-Uncensored --component ace.dit.block12.mlp:37748736:9437184 --component h3.dit.block.mlp:... --component qimg.mmdit.block.mlp:... --component hy3d.dit.block.mlp:... --component qvl32.vit.block.mlp:... --recipe <out>/composite_manifest.json --recipe-command '<the c16_install_media.py command line>' --confirm (before it: narrow oc_checkpoint.PROTECTED_PREFIXES '/mnt' to '/mnt/ai_data' with its test, or register from a byte copy under $OC/oc02/children/)",
+    "resources": "GPU6 + GPU4 for media-token taps (54 GB bf16 split, ~1 h); CPU fp64 charts minutes; RAM ~30 GB (lazy views, streamed write); disk 55 GB on /mnt/lexar + digest; refuses below 60 GiB free",
+    "hours": 5,
+    "gate": "BUILT: the sealed record names all seven sources with per-component ratios and fold_accounting, header count < the accounting parent record's parameter_count, quantization: none, composite_manifest.json sha256 in the record, every charted placement's time reference verified (rel_l2 <= 1e-5) against the capture. MEASURED: each charted block's insert-vs-control delta energy on held-out media tokens + blend-arm deltas; per-type bridge PSNR carried from S6A. This is the ledger entry Cyril asked for.",
+    "status": "todo"
+  },
+  {
+    "id": "S8",
+    "title": "Composite review on the readable surface + per-modality media-out; parent measured on the same runner; record-review; package",
+    "inputs": [
+      "OMNI1",
+      "banks v1 0ee6bf14 (16 lanes, thinking off) / v2 f26f36bf (incl. lc-8k/32k/64k) / probe / smoke / 5 vision cards",
+      "oc_assess.py, oc_package.py, oc_dashboard.py",
+      "PROBE.S0 through the same Chimera runner"
+    ],
+    "outputs": [
+      "calibration/out/oc-dossier-OC02-OMNI1-NOTHINK.json, oc-dossier-b2-OC02-OMNI1.json, parent dossiers on the same runner",
+      "composite/s8/media_out/{image.png, video.mp4+wav, music.wav, volume_views/, mesh.glb} + diagnostics",
+      "SCORING-SHEET-OC02-OMNI1.md with source-delta columns",
+      "review record COMPUTED; package $OC/oc02/human-review/OC02-F-Q38-27BU-OMNI1/ (MANIFEST verified) mirrored to OC/; REVIEW_QUEUE.md, SCORECARD.md regenerated"
+    ],
+    "command_or_tool": "CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=6,4 $PY run_omni_frozen_review.py --model oc02/children/OC02-F-Q38-27BU-OMNI1 --split 46,24 --dtype bfloat16 --thinking off --bank banks/lfm2_semantic_whole_response_prompts_v1.json --probe-prompts banks/matrix_campaign_probe_prompts_v1.json --smoke-prompts banks/matrix_campaign_smoke_prompts_v1.json --maximum-new-tokens 1024 --ledger-band-logit-mask --out out/oc-dossier-OC02-OMNI1-NOTHINK.json; then --bank banks/omni_review_bank_v2_draft.json --text-only; then --vision-cards banks/vision_cards_v1; then --media-out image,video,music,volume --stimuli composite/corpus/media_stimuli --steps 8 --x0-diagnostic; same for --model composite/s0/q38-27bu-chimera-bf16; oc_assess.py; $L record-review --confirm; oc_package.py build/verify; oc_dashboard.py",
+    "resources": "GPU6 + GPU4 (54 GB bf16 + KV); ~8 tok/s decode [assumed] -> ~35 min per bank pass, 64k lane ~1 h; media 8 steps x 4 types ~1 h; P40s run companion VAE decodes / GLB export; ~6-8 h incl. the parent pass; RAM < 40 GB; disk < 5 GB",
+    "hours": 8,
+    "gate": "BUILT: review record + package with a verified MANIFEST and manifest.checkpoint_id = OMNI1; four decoded media artifacts with non-zero content flags. MEASURED: canonical signal lanes on bank v1/v2 vs the 27B-U parent band on the same runner; source-delta lanes per parent; vision cards n/5; per-type media diagnostics; partially_capable requires >= 1 canonical signal lane [proposed R5 floor]. Cyril's per-case read governs.",
+    "status": "todo"
+  },
+  {
+    "id": "S9",
+    "title": "Checkpoint + clone before any training (R2) - step 1 closes",
+    "inputs": [
+      "reviewed OMNI1 (--allow-unreviewed-source only as a recorded argument if Cyril's verdict is pending)",
+      "$OC/clones/"
+    ],
+    "outputs": [
+      "$OC/clones/OC02-F-Q38-27BU-OMNI1.clone-pre-D1/ (byte copy, chmod -w) + clone-receipt.json",
+      "ledger row",
+      "OC/ mirror byte-compared",
+      "status report leading with: the composite child exists and contains Q38-27BU, K3, ACE DiT, ACE LM, H3, QIMG, HY3D, QVL32"
+    ],
+    "command_or_tool": "$L clone --source OC02-F-Q38-27BU-OMNI1 --stage-about-to-run D --confirm; $L verify --deep; $PY $OC/ledger/oc_ledger.py verify; oc_dashboard.py",
+    "resources": "CPU + local disk: 55 GB at ~391 MB/s (~3 min) + digest 6-9 min x 2; no GPU",
+    "hours": 1,
+    "gate": "BUILT: clone dir + receipt with source_directory_sha256 == clone_directory_sha256 asserted; ledger verify clean both directions. Stage D may register only with --parent-checkpoint-id naming this clone.",
+    "status": "todo"
+  }
+]

@@ -1,0 +1,4 @@
+qwen-asr 0.0.6 requires flask, which is not installed.
+qwen-asr 0.0.6 requires gradio, which is not installed.
+qwen-asr 0.0.6 requires qwen-omni-utils, which is not installed.
+qwen-asr 0.0.6 requires sox, which is not installed.

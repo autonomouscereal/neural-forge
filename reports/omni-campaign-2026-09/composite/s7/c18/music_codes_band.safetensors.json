@@ -1,0 +1,422 @@
+{
+  "ace_component": {
+    "code_interval": [
+      151669,
+      215669
+    ],
+    "codec_bridge": {
+      "embedding_rows_installed_in_composite_child": false,
+      "generator_eligible_code_count": 64000,
+      "ledger": {
+        "ranges": [
+          {
+            "begin": 0,
+            "end": 248320,
+            "name": "text",
+            "purpose": "language and code tokens",
+            "width": 248320
+          },
+          {
+            "begin": 248320,
+            "end": 248832,
+            "name": "control",
+            "purpose": "roles, routing, sentinels, and loss controls",
+            "width": 512
+          },
+          {
+            "begin": 248832,
+            "end": 250880,
+            "name": "media",
+            "purpose": "native media placeholder and artifact tokens",
+            "width": 2048
+          },
+          {
+            "begin": 250880,
+            "end": 251904,
+            "name": "grounding",
+            "purpose": "spatial, temporal, and reference grounding",
+            "width": 1024
+          },
+          {
+            "begin": 251904,
+            "end": 252032,
+            "name": "sync",
+            "purpose": "audio-video and timeline synchronization",
+            "width": 128
+          },
+          {
+            "begin": 252032,
+            "end": 252416,
+            "name": "tool",
+            "purpose": "tool calls, observations, and agentic state",
+            "width": 384
+          },
+          {
+            "begin": 252416,
+            "end": 317952,
+            "name": "music_codes",
+            "purpose": "ACE-Step LM audio-code rows (C18 embedding bridge)",
+            "width": 65536
+          }
+        ],
+        "schema": "chimera_omni.ledger.v1",
+        "vocab_size": 317952
+      },
+      "named_source_code_count": 65535,
+      "native_eligible_interval": [
+        252416,
+        316416
+      ],
+      "native_unused_interval": [
+        316416,
+        317952
+      ],
+      "nonexistent_named_code_index": 65535,
+      "schema": "chimera.ace_codec_bridge.development.v1",
+      "source_full_vocab_size": 217204,
+      "source_generator_interval": [
+        151669,
+        215669
+      ],
+      "source_named_but_generator_excluded_interval": [
+        215669,
+        217204
+      ],
+      "training_eligibility": 0,
+      "unused_positions": 1536
+    },
+    "dir": "/home/cereal/omni-campaign/runtime/ace-oct06-native-492961ec-82c3-4bed-98ce-cb6c01af973e/output/ace-lm-full28-development/component",
+    "embed_key": "embed_tokens.weight",
+    "embed_shape": [
+      217204,
+      2048
+    ],
+    "native_component_json_sha256": "14331166db8c27c55285a89a5426f11f116c5aaeab87f308d7ed70d2d04368ea",
+    "tied_head": "the ACE LM ties its head to embed_tokens (config tie_word_embeddings true)",
+    "weight_pin_verified": true,
+    "weights_sha256": "3353f93a4d2fc3c2d4c8a6be4f9806d963dcc9f904e528b93fcc62213b1b18a3"
+  },
+  "alignment": {
+    "ace_tokenizer_sha256": "35af56c3f5cb3ea2cc578aa28a8937770981d504f183ac5c8c38baf4bbd4af4d",
+    "aligned_tokens": 247100,
+    "anchor_rule": "trunk id -> exactly one ACE id that is not added/special and lies below the code interval",
+    "anchors_single_piece_text": 129380,
+    "byte_round_trip_exact": true,
+    "candidate_tokens": 248320,
+    "corpus_bytes": 444,
+    "corpus_destination_tokens": 139,
+    "corpus_documents": 6,
+    "corpus_source_tokens": 136,
+    "destination": "qwen3_5",
+    "destination_base_vocab_size": 217204,
+    "destination_round_trip_documents": 6,
+    "identity_tokens": 153,
+    "max_pieces_per_token": 11,
+    "mean_pieces_per_token": 1.6206879805746661,
+    "multi_piece_tokens": 117720,
+    "schema": "chimera_omni.token_alignment.v1",
+    "scope": "full_vocab",
+    "single_piece_tokens": 129380,
+    "source": "qwen3_5",
+    "source_base_vocab_size": 248320,
+    "source_round_trip_documents": 6,
+    "special_tokens": 33,
+    "trunk_tokenizer_dir": "/mnt/lexar/omni-campaign/s3-fold-sep07-codex/S3-C2K4352-sep07",
+    "trunk_tokenizer_sha256": "06b9509352d2af50381ab2247e083b80d32d5c0aba91c272ca9ff729b6a0e523",
+    "unmapped_tokens": 1220
+  },
+  "argv": [],
+  "band_rows": {
+    "written": 64000,
+    "zero": 1536,
+    "zero_rule": "rows >= code_count stay zero: Codex codec bridge native_unused_interval (generator-excluded named codes + the nonexistent index)"
+  },
+  "diagnostics": {
+    "embed.weight": {
+      "calibrated": {
+        "gamma": 7.898126388613346,
+        "held": {
+          "cos_median": 0.13912828114009634,
+          "cos_p05": 0.033567750608631444,
+          "mean_baseline_rel_l2": 0.9952977227236127,
+          "rel_l2": 1.293227300116459,
+          "rows": 12938,
+          "zero_baseline_rel_l2": 1.0
+        },
+        "held_retrieval_among_all_anchor_rows": {
+          "at_1": 0.31450000405311584,
+          "at_10": 0.5414999723434448,
+          "candidates": 129380,
+          "queries": 2000
+        },
+        "mode": "median"
+      },
+      "fit": {
+        "fit_rows": 116442,
+        "inner_val_rows": 11644,
+        "ladder": [
+          {
+            "inner_val_rel_l2": 0.9886207479564657,
+            "ridge_rel": 1e-06
+          },
+          {
+            "inner_val_rel_l2": 0.9886204586673517,
+            "ridge_rel": 1e-05
+          },
+          {
+            "inner_val_rel_l2": 0.9886175869918354,
+            "ridge_rel": 0.0001
+          },
+          {
+            "inner_val_rel_l2": 0.9885907052987111,
+            "ridge_rel": 0.001
+          },
+          {
+            "inner_val_rel_l2": 0.9883918421809971,
+            "ridge_rel": 0.01
+          },
+          {
+            "inner_val_rel_l2": 0.987007246791005,
+            "ridge_rel": 0.1
+          },
+          {
+            "inner_val_rel_l2": 0.9847158858662864,
+            "ridge_rel": 1.0
+          },
+          {
+            "inner_val_rel_l2": 0.9909177490749779,
+            "ridge_rel": 10.0
+          },
+          {
+            "inner_val_rel_l2": 0.9941337698007492,
+            "ridge_rel": 100.0
+          }
+        ],
+        "ridge_lambda": 425.5220984626299,
+        "ridge_rel": 1.0
+      },
+      "held": {
+        "cos_median": 0.13912828114009634,
+        "cos_p05": 0.033567750608631444,
+        "mean_baseline_rel_l2": 0.9952977227236127,
+        "rel_l2": 1.293227300116459,
+        "rows": 12938,
+        "zero_baseline_rel_l2": 1.0
+      },
+      "held_retrieval_among_all_anchor_rows": {
+        "at_1": 0.31450000405311584,
+        "at_10": 0.5414999723434448,
+        "candidates": 129380,
+        "queries": 2000
+      },
+      "norms": {
+        "mapped_anchor_row_norm_median_held": 0.9918108687807,
+        "mapped_code_row_norm_median": 1.2480605177231312,
+        "mapped_code_row_norm_median_uncalibrated": 0.1845116974440589,
+        "true_anchor_row_norm_median_held": 0.9903930159534086,
+        "trunk_mean_row_norm": 0.09460212144334804,
+        "trunk_text_row_norm_median": 0.9288091659545898
+      },
+      "ridge": {
+        "fit_scores": {
+          "cos_median": 0.21716108305960738,
+          "cos_p05": 0.09266713172666151,
+          "mean_baseline_rel_l2": 0.9953170421753211,
+          "rel_l2": 0.9763275095539944,
+          "zero_baseline_rel_l2": 1.0
+        },
+        "held": {
+          "cos_median": 0.15759332969978657,
+          "cos_p05": 0.08965340126463661,
+          "mean_baseline_rel_l2": 0.9952977227236127,
+          "rel_l2": 0.9845257524001789,
+          "rows": 12938,
+          "zero_baseline_rel_l2": 1.0
+        },
+        "held_retrieval_among_all_anchor_rows": {
+          "at_1": 0.19449999928474426,
+          "at_10": 0.4950000047683716,
+          "candidates": 129380,
+          "queries": 2000
+        }
+      }
+    },
+    "extrapolation": {
+      "ace_code_row_norm_median": 4.001706197201427,
+      "ace_text_row_norm_median": 2.595867872238159,
+      "anchor_pca_rank_99pct": 1971,
+      "code_row_offset_from_anchor_mean_rel": 1.3613131137885552,
+      "code_rows_energy_in_anchor_99pct_subspace_median": 0.9746839105337641,
+      "cos_between_mapped_code_mean_and_trunk_text_mean_embed": 0.25139185786247253,
+      "meaning": "the maps are fitted on text anchors; code rows are a different region of the ACE table, so the band rows are an extrapolation of a text-fitted chart (diagnostic only)"
+    },
+    "lm_head.weight": {
+      "calibrated": {
+        "gamma": 7.45379304731527,
+        "held": {
+          "cos_median": 0.20353879161130048,
+          "cos_p05": 0.09637330348251952,
+          "mean_baseline_rel_l2": 0.981657210754493,
+          "rel_l2": 1.2508412973923193,
+          "rows": 12938,
+          "zero_baseline_rel_l2": 1.0
+        },
+        "held_retrieval_among_all_anchor_rows": {
+          "at_1": 0.22599999606609344,
+          "at_10": 0.3695000112056732,
+          "candidates": 129380,
+          "queries": 2000
+        },
+        "mode": "median"
+      },
+      "fit": {
+        "fit_rows": 116442,
+        "inner_val_rows": 11644,
+        "ladder": [
+          {
+            "inner_val_rel_l2": 0.9712414170774335,
+            "ridge_rel": 1e-06
+          },
+          {
+            "inner_val_rel_l2": 0.9712411424512548,
+            "ridge_rel": 1e-05
+          },
+          {
+            "inner_val_rel_l2": 0.971238419952932,
+            "ridge_rel": 0.0001
+          },
+          {
+            "inner_val_rel_l2": 0.9712132302833393,
+            "ridge_rel": 0.001
+          },
+          {
+            "inner_val_rel_l2": 0.9710335061233631,
+            "ridge_rel": 0.01
+          },
+          {
+            "inner_val_rel_l2": 0.9697593573688199,
+            "ridge_rel": 0.1
+          },
+          {
+            "inner_val_rel_l2": 0.9686450918832293,
+            "ridge_rel": 1.0
+          },
+          {
+            "inner_val_rel_l2": 0.9764673824441795,
+            "ridge_rel": 10.0
+          },
+          {
+            "inner_val_rel_l2": 0.9799856999714507,
+            "ridge_rel": 100.0
+          }
+        ],
+        "ridge_lambda": 425.5220984626299,
+        "ridge_rel": 1.0
+      },
+      "held": {
+        "cos_median": 0.20353879161130048,
+        "cos_p05": 0.09637330348251952,
+        "mean_baseline_rel_l2": 0.981657210754493,
+        "rel_l2": 1.2508412973923193,
+        "rows": 12938,
+        "zero_baseline_rel_l2": 1.0
+      },
+      "held_retrieval_among_all_anchor_rows": {
+        "at_1": 0.22599999606609344,
+        "at_10": 0.3695000112056732,
+        "candidates": 129380,
+        "queries": 2000
+      },
+      "norms": {
+        "mapped_anchor_row_norm_median_held": 0.9886008024015795,
+        "mapped_code_row_norm_median": 1.2115516880995398,
+        "mapped_code_row_norm_median_uncalibrated": 0.22990548595502583,
+        "true_anchor_row_norm_median_held": 0.9904823195751634,
+        "trunk_mean_row_norm": 0.19222640335036756,
+        "trunk_text_row_norm_median": 0.9737473726272583
+      },
+      "ridge": {
+        "fit_scores": {
+          "cos_median": 0.28837314790165114,
+          "cos_p05": 0.15871935519253916,
+          "mean_baseline_rel_l2": 0.9814824806737231,
+          "rel_l2": 0.9607361209544979,
+          "zero_baseline_rel_l2": 1.0
+        },
+        "held": {
+          "cos_median": 0.2504975687315575,
+          "cos_p05": 0.1435578708948623,
+          "mean_baseline_rel_l2": 0.981657210754493,
+          "rel_l2": 0.9687840192827546,
+          "rows": 12938,
+          "zero_baseline_rel_l2": 1.0
+        },
+        "held_retrieval_among_all_anchor_rows": {
+          "at_1": 0.020999999716877937,
+          "at_10": 0.029999999329447746,
+          "candidates": 129380,
+          "queries": 2000
+        }
+      }
+    }
+  },
+  "finished_utc": "2026-10-10T09:24:24Z",
+  "installer_check": {
+    "band_width_matches_table": true,
+    "c16_tool_sha256": "5353a27b67330cc521adf080ae723ae33832801670ac92d8b7977ecb8b608832",
+    "target_rows_zero": true,
+    "tensor_sha256_check": {
+      "declared": 2,
+      "verified": true
+    },
+    "untied_head_table_present": true,
+    "verdict": "c16 install_band preconditions hold (width, zero rows, untied head, sidecar digest)"
+  },
+  "maps_file": {
+    "path": "/home/cereal/omni-campaign/composite/s7/c18/music_codes_band_maps.safetensors",
+    "sha256": "1cfa7f769688b0f54f32d521dea697999d8a282d22cdd6c83e6e2895587f37c6"
+  },
+  "owner_policy": "finite numeric values are diagnostics, never gates (Cyril 2026-10-06)",
+  "schema": "chimera_omni.composite.c18_music_band.v1",
+  "seconds": 1011.2,
+  "started_utc": "2026-10-10T09:07:33Z",
+  "table": {
+    "dtype": "float32",
+    "file_sha256": "d9cd751b2bf702b4d713b9f60bc7bfbc51795852c9d51c106f9988da6e8dc299",
+    "path": "/home/cereal/omni-campaign/composite/s7/c18/music_codes_band.safetensors",
+    "shape": [
+      65536,
+      5120
+    ]
+  },
+  "tensor_sha256": {
+    "embed.weight": "4d8271f02ad99ed25f56bc5f34c390033316b91c23195d3731b692986f753522",
+    "lm_head.weight": "6943e849041231c53c4c30d4079360d7002bbdb4040fa1f607b1df7cb37612a5"
+  },
+  "tool": {
+    "name": "c18_music_band.py",
+    "sha256": "c6b026204846ad5c448ed7645ac6aed7185be9137d724a494774fee100eeb92f",
+    "version": "1.0.0"
+  },
+  "trunk": {
+    "band": {
+      "begin": 252416,
+      "end": 317952,
+      "name": "music_codes",
+      "purpose": "ACE-Step LM audio-code rows (C18 embedding bridge)",
+      "width": 65536
+    },
+    "band_rows_nonzero_before": {
+      "embed.weight": 0,
+      "lm_head.weight": 0
+    },
+    "base_vocab": 248320,
+    "chimera_commit": "ef1ffb9c3c1abd9ea79f1d4d5707ac5486dab9ab",
+    "hidden": 5120,
+    "native_dir": "/mnt/lexar/omni-campaign/s3-native-v2-3a25a459-4347-416d-a58a-2cb3c8e738fd/actual/native-s3-text-stage/native",
+    "tensor_sha256_recorded": {
+      "embed.weight": "c850f8fa26b4465aa951afabe248950f5ef31b4e4851e4fa27d12d79ce93b203",
+      "lm_head.weight": "1159aa599cd51429611285909d4916ec8009f414f59c446ca28f3c4bce50a808"
+    }
+  }
+}

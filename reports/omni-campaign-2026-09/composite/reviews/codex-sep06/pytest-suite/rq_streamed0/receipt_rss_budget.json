@@ -1,0 +1,555 @@
+{
+  "assertions": {
+    "gpu_reserved": {
+      "applies": false,
+      "limit_gib": 16.7638,
+      "passed": true,
+      "peak_reserved_bytes": null,
+      "peak_reserved_gib": null,
+      "source": "torch.cuda.max_memory_reserved(device)"
+    },
+    "host_rss": {
+      "limit_gib": 0.001,
+      "passed": true,
+      "peak_rss_bytes": 0,
+      "peak_rss_gib": 0.0,
+      "source": "max(resource.getrusage ru_maxrss, sampled VmRSS)"
+    },
+    "passed": true
+  },
+  "chimera": {
+    "commit_declared": null,
+    "rq_script_sha256": "3776719772812dc43c43421dcc15eae81daad819fe3e1ffbc9af6f58414b12eb",
+    "src": "C:\\Users\\cereal\\Documents\\ai training\\chimera-omni\\src",
+    "tps_probe_sha256": "449eecc4acf985556a2454f4af25ead6379d2d515a7d77879f27d9c9d80f9a1a",
+    "tree": "C:\\Users\\cereal\\Documents\\ai training\\chimera-omni"
+  },
+  "columns": [
+    {
+      "attn_implementation": "eager",
+      "device": "cpu",
+      "dtype": "float32",
+      "engine_order": "hf-streamed pass first, freed, then chimera-streamed pass",
+      "engines": {
+        "chimera": {
+          "band_begin": 512,
+          "block_buffers": [
+            "gated_gqa:256",
+            "kda:256"
+          ],
+          "blocks_streamed": 8,
+          "build_seconds": 0.081,
+          "bytes_read": 36029952,
+          "engine": "ChimeraOmniModel (meta) + embed/norm/lm_head resident + blocks streamed one at a time",
+          "forward_seconds": 1.369,
+          "layer_load_seconds": 0.372,
+          "layer_loads": 64,
+          "lm_head_tied_to_embedding": false,
+          "load_dtype": "torch.float32",
+          "resident_table_bytes_gib": 0.0044,
+          "streaming": true,
+          "tensor_sha256_verified_on_read": true,
+          "tensors_sha256_verified": 992,
+          "vocab_size": 4608
+        },
+        "hf": {
+          "attention_implementation": "eager",
+          "build_seconds": 0.043,
+          "bytes_read": 36545536,
+          "checkpoint_total_size_gib": 0.0047,
+          "engine": "tps_probe.build_streamed_text_model (generalised prefix + single-file reader)",
+          "forward_seconds": 0.427,
+          "layer_buffer_types": [
+            "full_attention",
+            "linear_attention"
+          ],
+          "layer_load_seconds": 0.073,
+          "layer_loads": 64,
+          "layers_streamed": 8,
+          "lm_head_tied_to_embedding": false,
+          "resident_parameter_bytes_gib": 0.0016,
+          "streaming": true,
+          "tensor_prefix": "model"
+        }
+      },
+      "fast_path_available": false,
+      "fast_paths_disabled": {
+        "FusedRMSNormGated": false,
+        "causal_conv1d_fn": false,
+        "causal_conv1d_update": false,
+        "chunk_gated_delta_rule": false,
+        "fused_recurrent_gated_delta_rule": false,
+        "multi_token_path": "torch_recurrent_gated_delta_rule"
+      },
+      "mode": "streamed-teacher-forced",
+      "peak_rss_bytes": null,
+      "prompts": [
+        {
+          "argmax_agreement": 1.0,
+          "argmax_disagreements": 0,
+          "argmax_positions": 13,
+          "band_logits_finite": 0,
+          "index": 0,
+          "max_abs_logit_diff": 6.556510925292969e-07,
+          "per_layer_hidden_max_abs_diff": [
+            {
+              "kind": "kda",
+              "layer": 0,
+              "max_abs_diff": 1.1175870895385742e-08,
+              "reference_rms": 0.021945664659142494
+            },
+            {
+              "kind": "kda",
+              "layer": 1,
+              "max_abs_diff": 1.862645149230957e-08,
+              "reference_rms": 0.023254912346601486
+            },
+            {
+              "kind": "kda",
+              "layer": 2,
+              "max_abs_diff": 2.60770320892334e-08,
+              "reference_rms": 0.02522740140557289
+            },
+            {
+              "kind": "gated_gqa",
+              "layer": 3,
+              "max_abs_diff": 4.842877388000488e-08,
+              "reference_rms": 0.030192537233233452
+            }
+          ],
+          "reference_logit_absmax": 0.9050963521003723,
+          "token_ids_sha256": "31bc85ca15e553854486e193b5fd3a10ca99fbd975d5add26d3715e571a686c6",
+          "tokens": 13
+        },
+        {
+          "argmax_agreement": 1.0,
+          "argmax_disagreements": 0,
+          "argmax_positions": 24,
+          "band_logits_finite": 0,
+          "index": 1,
+          "max_abs_logit_diff": 6.183981895446777e-07,
+          "per_layer_hidden_max_abs_diff": [
+            {
+              "kind": "kda",
+              "layer": 0,
+              "max_abs_diff": 1.1175870895385742e-08,
+              "reference_rms": 0.021581176668405533
+            },
+            {
+              "kind": "kda",
+              "layer": 1,
+              "max_abs_diff": 1.6763806343078613e-08,
+              "reference_rms": 0.023527465760707855
+            },
+            {
+              "kind": "kda",
+              "layer": 2,
+              "max_abs_diff": 2.60770320892334e-08,
+              "reference_rms": 0.025346238166093826
+            },
+            {
+              "kind": "gated_gqa",
+              "layer": 3,
+              "max_abs_diff": 4.284083843231201e-08,
+              "reference_rms": 0.029569173231720924
+            }
+          ],
+          "reference_logit_absmax": 0.9677837491035461,
+          "token_ids_sha256": "e22d67393c571c093d24f5130169cf70852d9d4256f23da9bf681a8c12a2a35f",
+          "tokens": 24
+        },
+        {
+          "argmax_agreement": 1.0,
+          "argmax_disagreements": 0,
+          "argmax_positions": 26,
+          "band_logits_finite": 0,
+          "index": 2,
+          "max_abs_logit_diff": 6.556510925292969e-07,
+          "per_layer_hidden_max_abs_diff": [
+            {
+              "kind": "kda",
+              "layer": 0,
+              "max_abs_diff": 1.1175870895385742e-08,
+              "reference_rms": 0.021614817902445793
+            },
+            {
+              "kind": "kda",
+              "layer": 1,
+              "max_abs_diff": 1.862645149230957e-08,
+              "reference_rms": 0.023241855204105377
+            },
+            {
+              "kind": "kda",
+              "layer": 2,
+              "max_abs_diff": 2.421438694000244e-08,
+              "reference_rms": 0.024936769157648087
+            },
+            {
+              "kind": "gated_gqa",
+              "layer": 3,
+              "max_abs_diff": 4.7963112592697144e-08,
+              "reference_rms": 0.029237862676382065
+            }
+          ],
+          "reference_logit_absmax": 0.9302510023117065,
+          "token_ids_sha256": "c9359b66b77b330092f2ffcec0924ed29690fe889a9f577a57571c961e9621ae",
+          "tokens": 26
+        },
+        {
+          "argmax_agreement": 1.0,
+          "argmax_disagreements": 0,
+          "argmax_positions": 9,
+          "band_logits_finite": 0,
+          "index": 3,
+          "max_abs_logit_diff": 5.960464477539062e-07,
+          "per_layer_hidden_max_abs_diff": [
+            {
+              "kind": "kda",
+              "layer": 0,
+              "max_abs_diff": 9.313225746154785e-09,
+              "reference_rms": 0.021970469504594803
+            },
+            {
+              "kind": "kda",
+              "layer": 1,
+              "max_abs_diff": 2.0489096641540527e-08,
+              "reference_rms": 0.02334735542535782
+            },
+            {
+              "kind": "kda",
+              "layer": 2,
+              "max_abs_diff": 2.2351741790771484e-08,
+              "reference_rms": 0.025158125907182693
+            },
+            {
+              "kind": "gated_gqa",
+              "layer": 3,
+              "max_abs_diff": 4.0046870708465576e-08,
+              "reference_rms": 0.031517934054136276
+            }
+          ],
+          "reference_logit_absmax": 0.9320953488349915,
+          "token_ids_sha256": "af16a80771b85e11deb07acc25e55dc82efd901473e93c180fb7385d05fd0542",
+          "tokens": 9
+        },
+        {
+          "argmax_agreement": 1.0,
+          "argmax_disagreements": 0,
+          "argmax_positions": 66,
+          "band_logits_finite": 0,
+          "index": 4,
+          "max_abs_logit_diff": 6.407499313354492e-07,
+          "per_layer_hidden_max_abs_diff": [
+            {
+              "kind": "kda",
+              "layer": 0,
+              "max_abs_diff": 1.4901161193847656e-08,
+              "reference_rms": 0.02187216840684414
+            },
+            {
+              "kind": "kda",
+              "layer": 1,
+              "max_abs_diff": 2.0489096641540527e-08,
+              "reference_rms": 0.023509878665208817
+            },
+            {
+              "kind": "kda",
+              "layer": 2,
+              "max_abs_diff": 3.3527612686157227e-08,
+              "reference_rms": 0.025376925244927406
+            },
+            {
+              "kind": "gated_gqa",
+              "layer": 3,
+              "max_abs_diff": 4.470348358154297e-08,
+              "reference_rms": 0.028187844902276993
+            }
+          ],
+          "reference_logit_absmax": 0.9103347659111023,
+          "token_ids_sha256": "6ede2731f2cde627abe1e19454d31d7b3a62ad8a5678fae6f1226cd0f96170b3",
+          "tokens": 66
+        },
+        {
+          "argmax_agreement": 1.0,
+          "argmax_disagreements": 0,
+          "argmax_positions": 23,
+          "band_logits_finite": 0,
+          "index": 5,
+          "max_abs_logit_diff": 6.272457540035248e-07,
+          "per_layer_hidden_max_abs_diff": [
+            {
+              "kind": "kda",
+              "layer": 0,
+              "max_abs_diff": 1.3969838619232178e-08,
+              "reference_rms": 0.021595336496829987
+            },
+            {
+              "kind": "kda",
+              "layer": 1,
+              "max_abs_diff": 1.6763806343078613e-08,
+              "reference_rms": 0.02327033132314682
+            },
+            {
+              "kind": "kda",
+              "layer": 2,
+              "max_abs_diff": 2.2351741790771484e-08,
+              "reference_rms": 0.024473320692777634
+            },
+            {
+              "kind": "gated_gqa",
+              "layer": 3,
+              "max_abs_diff": 4.284083843231201e-08,
+              "reference_rms": 0.028809545561671257
+            }
+          ],
+          "reference_logit_absmax": 0.9114766120910645,
+          "token_ids_sha256": "b6872703fd93dba6b94d7c3e613584d645e78ba3ac987728e76fa0af6517c557",
+          "tokens": 23
+        },
+        {
+          "argmax_agreement": 1.0,
+          "argmax_disagreements": 0,
+          "argmax_positions": 14,
+          "band_logits_finite": 0,
+          "index": 6,
+          "max_abs_logit_diff": 5.960464477539062e-07,
+          "per_layer_hidden_max_abs_diff": [
+            {
+              "kind": "kda",
+              "layer": 0,
+              "max_abs_diff": 1.1175870895385742e-08,
+              "reference_rms": 0.02173519693315029
+            },
+            {
+              "kind": "kda",
+              "layer": 1,
+              "max_abs_diff": 1.6763806343078613e-08,
+              "reference_rms": 0.02354937605559826
+            },
+            {
+              "kind": "kda",
+              "layer": 2,
+              "max_abs_diff": 2.60770320892334e-08,
+              "reference_rms": 0.025282511487603188
+            },
+            {
+              "kind": "gated_gqa",
+              "layer": 3,
+              "max_abs_diff": 4.470348358154297e-08,
+              "reference_rms": 0.029997054487466812
+            }
+          ],
+          "reference_logit_absmax": 0.8474387526512146,
+          "token_ids_sha256": "37540653eb17a3d55cfd1891ddcbc876824f0358f39119da98f3bcf906e5c5f2",
+          "tokens": 14
+        },
+        {
+          "argmax_agreement": 1.0,
+          "argmax_disagreements": 0,
+          "argmax_positions": 35,
+          "band_logits_finite": 0,
+          "index": 7,
+          "max_abs_logit_diff": 7.152557373046875e-07,
+          "per_layer_hidden_max_abs_diff": [
+            {
+              "kind": "kda",
+              "layer": 0,
+              "max_abs_diff": 1.1175870895385742e-08,
+              "reference_rms": 0.021534305065870285
+            },
+            {
+              "kind": "kda",
+              "layer": 1,
+              "max_abs_diff": 1.862645149230957e-08,
+              "reference_rms": 0.02343997359275818
+            },
+            {
+              "kind": "kda",
+              "layer": 2,
+              "max_abs_diff": 2.2351741790771484e-08,
+              "reference_rms": 0.025172444060444832
+            },
+            {
+              "kind": "gated_gqa",
+              "layer": 3,
+              "max_abs_diff": 4.470348358154297e-08,
+              "reference_rms": 0.028802964836359024
+            }
+          ],
+          "reference_logit_absmax": 0.9285857677459717,
+          "token_ids_sha256": "addc05937cd14b275aea25f9e5937df1674b6cb423047076e59ad162434f5676",
+          "tokens": 35
+        }
+      ],
+      "reference_multi_token_path": "torch_recurrent_gated_delta_rule",
+      "resources": {
+        "device_wide_min_free_gib": null,
+        "peak_rss_bytes": null,
+        "peak_rss_gib": null,
+        "peak_rss_source": "resource.getrusage(RUSAGE_SELF).ru_maxrss * 1024",
+        "rss_note": "the HF engine's safetensors handles mmap the shards, so touched shard pages count in RSS until the engine is freed",
+        "sampled": {
+          "device_minimum_free_gb": {},
+          "interval_seconds": 0.5,
+          "peak_host_rss_gb_sampled": 0.0,
+          "samples": 7
+        },
+        "torch_peak_allocated_gib": null,
+        "torch_peak_reserved_gib": null
+      },
+      "summary": {
+        "argmax_agreement": 1.0,
+        "argmax_matching_positions": 210,
+        "argmax_positions": 210,
+        "band_logits_finite_total": 0,
+        "max_abs_hidden_diff_first_layers": 4.842877388000488e-08,
+        "max_abs_logit_diff": 7.152557373046875e-07
+      },
+      "torch_version": "2.13.0+cpu",
+      "transformers_version": "5.13.0"
+    }
+  ],
+  "device": {
+    "cuda": false,
+    "device": "cpu"
+  },
+  "devices_visible": [],
+  "generated_utc": "2026-09-07T03:26:20Z",
+  "inputs": {
+    "chimera_dir": "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\omni-campaign-2026-09\\composite\\reviews\\codex-sep06\\pytest-suite\\rq_streamed0\\chimera",
+    "geometry": {
+      "base_vocab": 512,
+      "block_kinds": [
+        "kda",
+        "kda",
+        "kda",
+        "gated_gqa",
+        "kda",
+        "kda",
+        "kda",
+        "gated_gqa"
+      ],
+      "hidden_size": 128,
+      "num_layers": 8,
+      "tie_word_embeddings": false,
+      "vocab_size": 4608
+    },
+    "hf_dir": "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\omni-campaign-2026-09\\composite\\reviews\\codex-sep06\\pytest-suite\\rq_streamed0\\hf",
+    "identity": {
+      "chimera": {
+        "config_sha256": "10dae10ca70aa57065f275c484a5264767557442179b2342f8fb8c3580f364c2",
+        "directory": "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\omni-campaign-2026-09\\composite\\reviews\\codex-sep06\\pytest-suite\\rq_streamed0\\chimera",
+        "index_sha256": "ba257a9c5a1d9002d3e94b5eaf3f062b7c052d94c5d5483c386e0b88fb4d7bc0",
+        "shards": {
+          "model-00001-of-00001.safetensors": 15859920
+        },
+        "tensor_sha256_recorded": 143,
+        "tensors": 143,
+        "tied_weights": {},
+        "total_size": 15846080
+      },
+      "hf": {
+        "directory": "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\omni-campaign-2026-09\\composite\\reviews\\codex-sep06\\pytest-suite\\rq_streamed0\\hf",
+        "files": {
+          "config.json": {
+            "bytes": 1254,
+            "sha256": "5a0fc523cf50266570d1ececbd775c0737e4956fdde89b88cd02265cd542aa15"
+          },
+          "model.safetensors": {
+            "bytes": 5038960,
+            "sha256": null
+          }
+        },
+        "note": "HF shard bytes are hashed only with --hash-hf-shards; sizes and the config/index/tokenizer hashes are always recorded",
+        "shards_hashed": false
+      }
+    },
+    "layers_reported": 4,
+    "max_tokens": 128,
+    "prompt_pack": [
+      {
+        "index": 0,
+        "text": null,
+        "tokens": 13
+      },
+      {
+        "index": 1,
+        "text": null,
+        "tokens": 24
+      },
+      {
+        "index": 2,
+        "text": null,
+        "tokens": 26
+      },
+      {
+        "index": 3,
+        "text": null,
+        "tokens": 9
+      },
+      {
+        "index": 4,
+        "text": null,
+        "tokens": 66
+      },
+      {
+        "index": 5,
+        "text": null,
+        "tokens": 23
+      },
+      {
+        "index": 6,
+        "text": null,
+        "tokens": 14
+      },
+      {
+        "index": 7,
+        "text": null,
+        "tokens": 35
+      }
+    ],
+    "prompt_pack_sha256": "b8f2113bea9e4dc7b699e5656c6358f6fc221823cd12e41a843d150dec303e14",
+    "prompt_source": "--prompt-ids C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\omni-campaign-2026-09\\composite\\reviews\\codex-sep06\\pytest-suite\\rq_streamed0\\prompt_ids.json"
+  },
+  "mode": "streamed-teacher-forced",
+  "notes": [
+    "streamed-teacher-forced: neither the HF reference nor the Chimera model is ever resident; the HF trunk streams one decoder layer at a time (tps_probe engine) and the Chimera trunk one block at a time",
+    "the two passes run one after the other on the same device, so the device peak is one engine, not two",
+    "cpu columns force the transformers torch fallbacks with the exact per-position recurrence (R-Q exactness column); cuda columns run the fla chunked kernel against Chimera's per-position recurrence (R-Q bf16 tolerance column)",
+    "norm weights are imported as 1 + w; exact in an fp32 checkpoint, rounded once at import in a bf16 one",
+    "band logits are masked to -inf by ledger_band_logit_mask=True and excluded from the comparison; band_logits_finite counts any that were not",
+    "nothing here is a gate; the [proposed] 27B bf16 line is argmax >= 99%, reported not gated"
+  ],
+  "nvidia_smi": null,
+  "output_gate_waiver": null,
+  "round_trip_column": null,
+  "schema": "chimera_omni.receipt.import.qwen35.v1",
+  "source_prefix": "model.language_model.",
+  "timing": {
+    "wall_seconds": 11.87
+  },
+  "tool": {
+    "argv": [
+      "--chimera-dir",
+      "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\omni-campaign-2026-09\\composite\\reviews\\codex-sep06\\pytest-suite\\rq_streamed0\\chimera",
+      "--hf-dir",
+      "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\omni-campaign-2026-09\\composite\\reviews\\codex-sep06\\pytest-suite\\rq_streamed0\\hf",
+      "--prompt-ids",
+      "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\omni-campaign-2026-09\\composite\\reviews\\codex-sep06\\pytest-suite\\rq_streamed0\\prompt_ids.json",
+      "--device",
+      "cpu",
+      "--dtype",
+      "float32",
+      "--min-positions",
+      "1",
+      "--max-host-rss-gib",
+      "0.001",
+      "--out",
+      "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\omni-campaign-2026-09\\composite\\reviews\\codex-sep06\\pytest-suite\\rq_streamed0\\receipt_rss_budget.json"
+    ],
+    "command": "CUDA_VISIBLE_DEVICES='' 'C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\.venv\\Scripts\\python.exe' 'C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\omni-campaign-2026-09\\composite\\tools\\receipt_q27_streamed.py' --chimera-dir 'C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\omni-campaign-2026-09\\composite\\reviews\\codex-sep06\\pytest-suite\\rq_streamed0\\chimera' --hf-dir 'C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\omni-campaign-2026-09\\composite\\reviews\\codex-sep06\\pytest-suite\\rq_streamed0\\hf' --prompt-ids 'C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\omni-campaign-2026-09\\composite\\reviews\\codex-sep06\\pytest-suite\\rq_streamed0\\prompt_ids.json' --device cpu --dtype float32 --min-positions 1 --max-host-rss-gib 0.001 --out 'C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\omni-campaign-2026-09\\composite\\reviews\\codex-sep06\\pytest-suite\\rq_streamed0\\receipt_rss_budget.json'",
+    "name": "receipt_q27_streamed",
+    "sha256": "c7fb1b0245d556c3af304ca6aeb9d78d9c294d39c682bcf93576e43488017257",
+    "version": "1.0.0"
+  }
+}

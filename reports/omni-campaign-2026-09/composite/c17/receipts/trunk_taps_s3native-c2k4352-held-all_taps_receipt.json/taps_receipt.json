@@ -1,0 +1,996 @@
+{
+  "convention": "prenorm = input of blocks.{i}.norm2 (post-attention residual); normed = its output",
+  "directory_sha256": "f414ad8c53338724e54f6f5db1109e39777a4cd557df63cca903e533e61caa6a",
+  "dtype": "bfloat16",
+  "evidence": {
+    "held_only": true,
+    "manifest": "/home/cereal/omni-campaign/composite/corpus/omni-evidence-27b-v1.json",
+    "manifest_sha256": "a0a7f0da58e1d1b2ea19bc30e5187139c3618cff678ddabf44c27791b36dd124",
+    "rows": [
+      3,
+      7,
+      11,
+      15,
+      19,
+      23
+    ],
+    "splits": [
+      "held"
+    ],
+    "tokenizer_sha256": "06b9509352d2af50381ab2247e083b80d32d5c0aba91c272ca9ff729b6a0e523"
+  },
+  "hidden_size": 5120,
+  "layers": [
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 0,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L00/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "6150fb13e175982d61339d2fdd1f375512dee71fbff674fcf65dfc87042c171a",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 1,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L01/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "2b1f0ceb15f4e28343160a41be63bf85ec49078b27af290976e239742c0895f4",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 2,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L02/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "64d62cc7908f1719436a4f6e36c30c67177318f4a434dcb053b4337607d0e458",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 3,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L03/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "56ba7b0c68f91538719df1372459a9ad477f740019fe0dd8bd81ce72294aa6d9",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 4,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L04/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "4cb1ca3e401feefa09c44a2bb3631871d9aea913d99b403bec081579b0c959d4",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 5,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L05/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "1ddbae15186cc5bf384414d102e790da2d22d5717af99234cf9e0fc1e06a5b9c",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 6,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L06/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "61729de53a259cc812dbf5e6756774f1ad6e33ea89b5d0f857b5745a2afa0779",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 7,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L07/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "dfa27d51d1ea28c28a2b5186f8adb6c432891069e30d19db458c6775f061d0e2",
+      "zero_gain_coordinates": {
+        "coordinates": [
+          3994
+        ],
+        "coordinates_truncated": false,
+        "count": 1,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 8,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L08/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "8bb44e8c32f988961c202863d2e8ec2d7c3cab5fab57f508f97f0234903bec30",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 9,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L09/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "fb9ae5df07a9aca661b9746455158c45942d2551a13741f0d6782d9ad18cdcae",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 10,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L10/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "844126c34dac0e104305483d2a927e17ababc210f4ff41421ecfe4bbbfb8749e",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 11,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L11/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "e4254addf34e655afcfb3117fea2918500627103716f749d1079369f758cf2c5",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 12,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L12/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "b252ad5e975d4cd7ed73cb3c4d12201be41b8d0a5ef022b054fa470dcb565ec4",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 13,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L13/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "2a9b36a3d5824f2c49d9b3a4aaed690340eac29e6a1bf6b7fbaa7f50082b1ecd",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 14,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L14/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "622436004650140e3af59c64417606f959f07a146464793e91c5f77d1ebe5d8b",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 15,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L15/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "05a4c86c94251a84b863995ff84a154ef7846b53b678a0d5fb445d641884a435",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 16,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L16/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "af81920e1dd863430bd9d154639e334b479607c5c456978e9d08852e3fae12ca",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 17,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L17/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "671128df94399175e21599b1e4b1b2f29ca2c93818efe4b58044aaa958f88501",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 18,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L18/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "065df7d7561dd2eae991f23f02ad0e9722ccc8dd3f0109fbc9dbeb22fb308e2a",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 19,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L19/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "d648432d64567bdd8a1561e8dff79087e79865949b647fd8b9cb10ca15a7214f",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 20,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L20/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "469d3f56c76c2cb4efb8cbb3a7680c28028594673258ba255bd95276c643915b",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 21,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L21/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "a8e58f39001e990ea48bfb5845d400aa801ce51d123785af58bbf0a0f5ff065b",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 22,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L22/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "782a439ae85655dbf8dc432299a77b5b91a54c384c37714aa0d242b9d7f89878",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 23,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L23/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "09eb2c2eac88463c93407b149873e56d8ea80cbbc9f01de548b0ffb6d8c8175d",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 24,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L24/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "4cca0e85443608507dee454d87c7a63b87d548e0c29bf291e77a434cc7b2b36f",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 25,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L25/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "0b8661ce66f6740fcc1f30442df1e7740e8dccaa1c562145e84cc36bf13204d9",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 26,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L26/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "e03fa47ceee50d6c1e2689c365dfd85459d4c6c493ea7bdb9cf40d1aa44c32d4",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 27,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L27/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "5ff8019f641d815f64a0a770a48c74734744fa3b2bb0c42bfb742403631309ab",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 28,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L28/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "8a1feef54c3e11c644cb0625f767bf763f93ff5e01c77507bc2b8ecb6d6cf23a",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 29,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L29/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "ba543276d70b9bcce0cec855489c981a7f4dfbd9105e03f0a4b3af4a4c778f0a",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 30,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L30/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "2ec1c5b4c549877c31cd413b83aa3cb9595855364c379d9a78b72b2d3f717792",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 31,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L31/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "3bb0c38aa274ff045147f6b7ab6f7aa492ee6500a09b2b38ccdf3245d59fa426",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 32,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L32/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "2ec1b4d1bae4e45f677f6d5e94007b2f6b474736d1a6033a32478738f1cf7156",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 33,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L33/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "378c63e1b38be00cbebcc7611d38e7d69fa809228440e8fd5d67292b21c13024",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 34,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L34/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "67c9f6931f1e5f046c432b390d3dbe0420c55d2bf1ce969694656ae8c3eb38da",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 35,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L35/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "627d93d7717cdc19f31ccbe3449764d63021a787aeb60c029dc68f0af0c28ecf",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 36,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L36/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "9990072703b6625f6fc4159d45fc6667c00a1c4dd2ed331c82028263da558bcf",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 37,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L37/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "307e02060ab5d77443634caf80733d03a7c5e3efdcee0263338903a7d5907981",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 38,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L38/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "6308926cfad51361d0f06235e2347f495fd02f3e40d3bea2c5376b6b5ba49bec",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 39,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L39/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "26e28b016f64a7d302a56921108d8240b5773fe1e9ceefc270e7482da51cebb2",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 40,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L40/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "ab448598bc228632c26dca9947a96626146a0c7f618c69fd48dc5a92ae6f6b74",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 41,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L41/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "f469ab3f2c47a09370ce2e68050cd1cbfb5a1cae74070433792c1de828a6ed71",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 42,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L42/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "4d2194373ec168f8ae940a9ed5ecdb2df3dcaeecfcb1ba5d92335d58260efded",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 43,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L43/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "aae6d7249d141febc4409de1f002f40ec7c0c4ed5c7df68ec6bbcef1844a74d3",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 44,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L44/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "b0efccdfdf63f883c23bb1d92bed1db5138da48d737f4c340cfa01be1f13f81b",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 45,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L45/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "3f39a3388d961605afdcc411211813b21ec11420df83b4e8f4534a3b4ce2056e",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 46,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L46/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "3e19fdf299edc0953886b71e535b8073596a793301d927ea457c6d908c0f542c",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 47,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L47/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "8c4b2a97275343579bb6ee4b72b80d3b0a7c39b9550cdc4d5023c6b016c5bd30",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 48,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L48/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "14bb0f58e0da253a55feca0b411dfd6e8e67cf51f419bc8750f84ef66e0f076d",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 49,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L49/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "e911798867d797a81b33c0098a09d00e551819118902d59d799afa74dc7f574f",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 50,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L50/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "16ada29d5d32655d7d689ce2b3f110879b90809074b091ad2525fe0dcf40aa21",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 51,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L51/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "b4a3e51148d6f3269a7a928f81e002de319b28b8192a1f04a8e81d36dc01659b",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 52,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L52/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "02f190a0e3fc9c1543338c07abc03a60d193d9a89cc155f2142941dd5a6530cc",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 53,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L53/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "0d55e6d423ef97f362b75e18941ca8c9cac35c6644293599741ac82a28f387bb",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 54,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L54/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "f1e901dfdbdcac1a5f47a80b4097fe44e46a68621908071f8b8ee9f33a94a2f6",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 55,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L55/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "563305c31b18484fb5e439871d2022b1a609fed6006dd1e821a4806a61c52b22",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 56,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L56/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "bef076d156755984ef42a5d46eadeae1644f42bdfff0cee0c522b27f0d373d7d",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 57,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L57/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "3776b2626e9d0ab8163df59d6e64bcebd7b6ca9955f68cdf572aa54336e94966",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 58,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L58/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "d560290ddc4d8c3036b906d66ec7ca2679adc0b113bea6c35585b1cb221763fe",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 59,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L59/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "ce07d1c19286ebde75b0e13b5c67d5bb82e31c39667a151fd157ccb22f7cf475",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 60,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L60/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "d02132cfa127e4c52ed7f96c1c8939918696db87e78626285bc6f1847bc819b9",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 61,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L61/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "e6e3682b15b3ac3ed052af641f0908b832d3a147bb4c03ba47f10638106d5f42",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 62,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L62/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "7b4621bc97c0931bb4773f630ed8d4cfd5ba99a34736f00055da36c0d3cbf975",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    },
+    {
+      "all_zero_rows": 0,
+      "dtype": "torch.bfloat16",
+      "hidden": 5120,
+      "layer": 63,
+      "path": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L63/ffn_input_rows.safetensors",
+      "rows": 24576,
+      "sha256": "9390cb62ef1bc296bccf39072a7ef9afe329c83b285c21ac86fc7e7a1914b39e",
+      "zero_gain_coordinates": {
+        "coordinates": [],
+        "coordinates_truncated": false,
+        "count": 0,
+        "hidden": 5120
+      }
+    }
+  ],
+  "micro_batch": 1,
+  "mode": "teacher-forced-proxy",
+  "model_directory": "/mnt/lexar/omni-campaign/s3-native-v2-3a25a459-4347-416d-a58a-2cb3c8e738fd/actual/native-s3-text-stage/native",
+  "rows_from": "evidence manifest rows",
+  "schema": "chimera-omni-ffn-input-taps-v1",
+  "stride": 1,
+  "tap_max_rows": 0,
+  "tap_selection": "every valid position (padding never tapped)",
+  "zero_gain_note": "zero_gain_coordinates = channels whose blocks.{i}.norm2 gain is exactly 0 (run-book \u00a73b: the 27B's layers.7.post_attention_layernorm[3994]); the `normed` dump is structurally dead there and C17 must not read such a channel as a fit failure; `prenorm` is the norm's input and is unaffected"
+}

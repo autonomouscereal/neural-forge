@@ -1,0 +1,686 @@
+{
+ "schema": "neural-forge-omni-distill-corpus-v1/contamination_screen",
+ "identity": {
+  "tool": "distill_corpus_build",
+  "version": "1.0.1",
+  "path": "/home/cereal/omni-campaign/distill/tools/distill_corpus_build.py",
+  "sha256": "696559136fb4698c6b92de47ed320c993aba5c3a065a13f18e78cd5c24a7ab94",
+  "host": "cereal-X10DRG",
+  "python": "3.12.3",
+  "built_at_utc": "2026-10-13T00:50:04Z"
+ },
+ "rows_screened": 91984,
+ "rows_sha256": "cf64d6f25b3b59dee2de8dacfbad65109ecce3bc7d293dc68137e0aeba25d1bd",
+ "method": {
+  "words": "NFKC, lower case, letter/digit runs; each CJK character is a word",
+  "exact": "normalised instruction / response / whole row equal to a normalised review item of >= 4 words",
+  "ngram": "any word 13-gram shared with any review item of >= 13 words",
+  "short_item": "whole-item containment of review items of 5..12 words",
+  "literal": "case-insensitive containment of the export envelope needle codes",
+  "media": "sidecar sha256 equal to a bank v2 vision-card asset",
+  "eval_near_duplicate": "a text-family training row sharing > 50% of its 13-grams with the eval split is held out; any training row sharing a media sidecar with an eval row is held out",
+  "dedup": "one representative per identity (normalised text; media rows add their sidecar digests); an eval row's duplicates all join the eval split"
+ },
+ "sources": [
+  {
+   "name": "bank_v1",
+   "role": "frozen review bank v1",
+   "path": "/home/cereal/omni-campaign/calibration/banks/lfm2_semantic_whole_response_prompts_v1.json",
+   "sha256": "0ee6bf14cef51bafc26990db44e5038771426c620c0381285c0cd5571e92786b",
+   "items": 104
+  },
+  {
+   "name": "bank_v2",
+   "role": "review bank v2 draft (text, vision, long-context, media-out lanes)",
+   "path": "/home/cereal/omni-campaign/calibration/banks/omni_review_bank_v2_draft.json",
+   "sha256": "f26f36bf31cb2a062c3e75e9f1567b379ea886e6022e2afb93b572a269f4a20b",
+   "items": 822
+  },
+  {
+   "name": "bank_v2_haystack",
+   "role": "materialised long-context haystacks (oc-filler-v1, digest-checked)",
+   "path": "/home/cereal/omni-campaign/calibration/banks/omni_review_bank_v2_draft.json",
+   "items": 9
+  },
+  {
+   "name": "s8_media_prompts",
+   "role": "S8 media prompts = bank v2 media-out / media-in cases (inside bank_v2 strings)",
+   "items": 10,
+   "case_ids": [
+    "vis-ocr-receipt-total-A",
+    "vis-count-shapes-B",
+    "vis-chart-trend-B",
+    "vis-scene-relation-A",
+    "vis-grid-cell-select-A",
+    "av-clip-what-said-and-shown-A",
+    "av-clip-what-said-and-shown-B",
+    "av-gen-kettle-A",
+    "img-gen-shelf-B",
+    "music-gen-two-bar-A"
+   ]
+  },
+  {
+   "name": "bank_v2_assets",
+   "role": "vision-card images (S8 vision cards)",
+   "path": "/home/cereal/omni-campaign/calibration/banks/assets",
+   "items": 5,
+   "files": {
+    "vis-chart-trend-B.png": "44572311e986594a04f5b769d23bdba9b7ece6ea1d46bccafc465825efe4346b",
+    "vis-count-shapes-B.png": "ccef22a777339235a046f387232fba877d7947d89fb5abc8c7f4b5097889d924",
+    "vis-grid-cell-select-A.png": "64707d7204e3e5e835b7fd8ebac910e262ebd90ce5774b548d42e529a3133193",
+    "vis-ocr-receipt-total-A.png": "1ab615028be6aea5103360149a5f521ff26121af9437b1037108dc15fc47419e",
+    "vis-scene-relation-A.png": "2f16b6b01e1dd5b6a5a067159499a12bce6c7d8535c49a0eb0a21af3a2a1401b"
+   }
+  },
+  {
+   "name": "probe_pack",
+   "role": "sealed probe/smoke pack",
+   "path": "/home/cereal/omni-campaign/calibration/banks/matrix_campaign_probe_prompts_v1.json",
+   "sha256": "6230f878be9287a9abf4ad129d586fc22346867897858b9f1a4f0b75d1f82f2e",
+   "items": 12
+  },
+  {
+   "name": "smoke_pack",
+   "role": "sealed probe/smoke pack",
+   "path": "/home/cereal/omni-campaign/calibration/banks/matrix_campaign_smoke_prompts_v1.json",
+   "sha256": "82ebf70a1606ec8a57c4daa31218fe1d376a91f211246c78716615ca66d2ceca",
+   "items": 7
+  },
+  {
+   "name": "rq_prompts",
+   "role": "R-Q 8 prompts / 210 positions (PROMPT_PACK, read by AST)",
+   "path": "/home/cereal/omni-campaign/import/rq27b/tree_ef1ffb9/scripts/import_receipt_qwen35.py",
+   "sha256": "3776719772812dc43c43421dcc15eae81daad819fe3e1ffbc9af6f58414b12eb",
+   "items": 8
+  },
+  {
+   "name": "probe64_pack",
+   "role": "64-prompt free-run probe source (all 120 prompts; any seeded 64-draw is a subset)",
+   "path": "/home/cereal/omni-campaign/distill/tools/screen_sources/lfm2_on_policy_fit_prompts_v1.json",
+   "sha256": "e85000326c5c39ae683506d69bc7e8edf3557845dc3b06e562f5ba6c23fe436f",
+   "items": 360
+  },
+  {
+   "name": "needle_sets",
+   "role": "export envelope needle templates (llama_probe.py)",
+   "path": "/home/cereal/omni-campaign/export/llama_probe.py",
+   "sha256": "1b82118c867d58fa50d042d0a5706712deea0e4c48e2c495353fd65e2de2d503",
+   "items": 3
+  },
+  {
+   "name": "needle_codes",
+   "role": "export envelope needle codes (envelope_bench.py NEEDLE_CODES), literal containment",
+   "path": "/home/cereal/omni-campaign/export/envelope_bench.py",
+   "sha256": "51071b65e03564964d918e2a0932a2457671f8ed2669777b93cf43b9e497de3f",
+   "items": 10
+  },
+  {
+   "name": "export_parity_bank",
+   "role": "export fidelity prompts (probe surface)",
+   "path": "/home/cereal/omni-campaign/export/parity_bank.json",
+   "sha256": "49bb3102609980fae56b8445f47b5437e55ebd0d267ab5d655796145e870d49f",
+   "items": 45
+  },
+  {
+   "name": "extension_bank_v2",
+   "role": "qwen-fold screen bank",
+   "path": "/home/cereal/omni-campaign/qwen-fold/screen-banks/lfm2_extension_bank_prompts_v2.json",
+   "sha256": "340694a64f7e886ecf1576dd9245a1445d8e763036d842f3730c4c8ab5c9c592",
+   "items": 304
+  },
+  {
+   "name": "paraphrase_triplets_v1",
+   "role": "qwen-fold screen bank",
+   "path": "/home/cereal/omni-campaign/qwen-fold/screen-banks/lfm2_paraphrase_triplets_v1.json",
+   "sha256": "f9ac00e6dd5212f04a9f06d2a177c233562b5276617b14cbab0aa353ab846095",
+   "items": 229
+  },
+  {
+   "name": "composite_s8",
+   "role": "S8 stimuli directory",
+   "path": "/home/cereal/omni-campaign/composite/s8",
+   "exists_at_screen_time": false,
+   "note": "absent at screen time: S8 media prompts are the bank v2 media cases; re-run `screen` if step 1 adds stimuli"
+  }
+ ],
+ "index": {
+  "ngram": 13,
+  "short_item_min_words": 5,
+  "exact_item_min_words": 4,
+  "ngram_count": 508323,
+  "short_items": 153,
+  "exact_keys": 671,
+  "literal_codes": 10,
+  "media_digests": 5,
+  "items_by_source": {
+   "bank_v1": 104,
+   "bank_v2": 822,
+   "bank_v2_haystack": 9,
+   "probe_pack": 12,
+   "smoke_pack": 7,
+   "rq_prompts": 8,
+   "probe64_pack": 360,
+   "needle_sets": 3,
+   "needle_codes": 10,
+   "export_parity_bank": 45,
+   "extension_bank_v2": 304,
+   "paraphrase_triplets_v1": 229
+  }
+ },
+ "liveness": {
+  "rule": "every long item caught verbatim and re-wrapped (upper case, one word per line); every short item and literal code caught; no 12-word fragment and no clean filler caught",
+  "totals": {
+   "long_probes": 71,
+   "long_caught": 71,
+   "rewrapped_caught": 71,
+   "fragment_controls": 54,
+   "short_probes": 39,
+   "short_caught": 39,
+   "literal_probes": 8,
+   "literal_caught": 8
+  },
+  "clean_controls": 32,
+  "clean_controls_falsely_caught": 0,
+  "by_source": [
+   {
+    "source": "bank_v1",
+    "long_probes": 8,
+    "long_caught": 8,
+    "rewrapped_caught": 8,
+    "fragment_controls": 8,
+    "short_probes": 3,
+    "short_caught": 3
+   },
+   {
+    "source": "bank_v2",
+    "long_probes": 8,
+    "long_caught": 8,
+    "rewrapped_caught": 8,
+    "fragment_controls": 8,
+    "short_probes": 8,
+    "short_caught": 8
+   },
+   {
+    "source": "bank_v2_haystack",
+    "long_probes": 8,
+    "long_caught": 8,
+    "rewrapped_caught": 8,
+    "fragment_controls": 7
+   },
+   {
+    "source": "export_parity_bank",
+    "long_probes": 8,
+    "long_caught": 8,
+    "rewrapped_caught": 8,
+    "fragment_controls": 4,
+    "short_probes": 5,
+    "short_caught": 5
+   },
+   {
+    "source": "extension_bank_v2",
+    "long_probes": 8,
+    "long_caught": 8,
+    "rewrapped_caught": 8,
+    "fragment_controls": 8,
+    "short_probes": 3,
+    "short_caught": 3
+   },
+   {
+    "source": "needle_codes",
+    "literal_probes": 8,
+    "literal_caught": 8
+   },
+   {
+    "source": "needle_sets",
+    "long_probes": 2,
+    "long_caught": 2,
+    "rewrapped_caught": 2,
+    "short_probes": 1,
+    "short_caught": 1
+   },
+   {
+    "source": "paraphrase_triplets_v1",
+    "long_probes": 8,
+    "long_caught": 8,
+    "rewrapped_caught": 8,
+    "fragment_controls": 8,
+    "short_probes": 8,
+    "short_caught": 8
+   },
+   {
+    "source": "probe64_pack",
+    "long_probes": 8,
+    "long_caught": 8,
+    "rewrapped_caught": 8,
+    "fragment_controls": 8,
+    "short_probes": 1,
+    "short_caught": 1
+   },
+   {
+    "source": "probe_pack",
+    "long_probes": 3,
+    "long_caught": 3,
+    "rewrapped_caught": 3,
+    "fragment_controls": 1,
+    "short_probes": 7,
+    "short_caught": 7
+   },
+   {
+    "source": "rq_prompts",
+    "long_probes": 6,
+    "long_caught": 6,
+    "rewrapped_caught": 6,
+    "fragment_controls": 1,
+    "short_probes": 2,
+    "short_caught": 2
+   },
+   {
+    "source": "smoke_pack",
+    "long_probes": 4,
+    "long_caught": 4,
+    "rewrapped_caught": 4,
+    "fragment_controls": 1,
+    "short_probes": 1,
+    "short_caught": 1
+   }
+  ],
+  "screen_is_live": true
+ },
+ "fold_evidence": {
+  "path": "/home/cereal/omni-campaign/composite/corpus/omni-evidence-27b-v1.json",
+  "sha256": "a0a7f0da58e1d1b2ea19bc30e5187139c3618cff678ddabf44c27791b36dd124",
+  "manifest_sha256": "8a3422d89d245b79a152ffb1de44d077d39ec5574dc063bf4e8482a5107b4870",
+  "tokenizer_sha256": "06b9509352d2af50381ab2247e083b80d32d5c0aba91c272ca9ff729b6a0e523",
+  "documents_decoded": 196,
+  "distinct_documents": 196,
+  "rows_matching": 253,
+  "eval_rows_matching": 3,
+  "note": "the fold evidence is in-sample for the charts and is never in the eval split; its rows stay training-eligible"
+ },
+ "eval_split": {
+  "rule": "salted hash (omni-distill-eval-v1) < 200/10000 per row identity (normalised text; + sidecar digests for media rows), per-route floor min(4, rows//10) lowest hashes, plus the 28-row stage-T split, plus every duplicate (same normalised text) of an eval row; fold-evidence documents excluded (in-sample for the charts); review-surface hits removed",
+  "rows": 1948,
+  "rows_by_route": {
+   "agentic_task": 8,
+   "agentic_trace": 4,
+   "arc_grid_reasoning": 4,
+   "audio": 49,
+   "broad_domain": 4,
+   "browser": 4,
+   "chemistry_science": 4,
+   "code": 228,
+   "code_and_metrics": 2,
+   "data_pipeline_design": 1,
+   "defensive_runbook": 1,
+   "finance_economics": 4,
+   "grid": 5,
+   "healthcare_workflow": 4,
+   "image": 94,
+   "knowledge_qa": 1,
+   "long_context": 130,
+   "math": 115,
+   "media_flow": 4,
+   "multimodal": 5,
+   "music": 59,
+   "ocr": 49,
+   "ocr_document": 1,
+   "ops_instruction": 2,
+   "ops_runbook": 1,
+   "reasoning": 135,
+   "reasoning_algorithmic": 4,
+   "research_instruction": 2,
+   "science_reasoning": 1,
+   "sound": 18,
+   "speech": 28,
+   "sql_text": 1,
+   "structured_plan": 4,
+   "synthesis": 1,
+   "table": 4,
+   "terminal": 4,
+   "test_design": 1,
+   "text": 565,
+   "tool": 295,
+   "tts": 37,
+   "video": 26,
+   "video_media_flow": 1,
+   "web_concept_reasoning": 3,
+   "web_domain_extraction": 4,
+   "web_knowledge": 31
+  },
+  "chat_tokens_by_route": {
+   "agentic_task": 2948,
+   "agentic_trace": 533,
+   "arc_grid_reasoning": 530,
+   "audio": 8903,
+   "broad_domain": 818,
+   "browser": 1010,
+   "chemistry_science": 385,
+   "code": 130240,
+   "code_and_metrics": 138,
+   "data_pipeline_design": 293,
+   "defensive_runbook": 300,
+   "finance_economics": 441,
+   "grid": 1195,
+   "healthcare_workflow": 764,
+   "image": 23578,
+   "knowledge_qa": 147,
+   "long_context": 112300,
+   "math": 52884,
+   "media_flow": 405,
+   "multimodal": 85,
+   "music": 15946,
+   "ocr": 8843,
+   "ocr_document": 12,
+   "ops_instruction": 380,
+   "ops_runbook": 274,
+   "reasoning": 53723,
+   "reasoning_algorithmic": 712,
+   "research_instruction": 375,
+   "science_reasoning": 143,
+   "sound": 2167,
+   "speech": 6909,
+   "sql_text": 304,
+   "structured_plan": 977,
+   "synthesis": 283,
+   "table": 865,
+   "terminal": 697,
+   "test_design": 322,
+   "text": 305107,
+   "tool": 125847,
+   "tts": 6464,
+   "video": 5042,
+   "video_media_flow": 13,
+   "web_concept_reasoning": 72,
+   "web_domain_extraction": 1033,
+   "web_knowledge": 11119
+  },
+  "stage_t_rows_in_eval": 28
+ },
+ "review_hits": {
+  "rows": 0,
+  "by_source": {},
+  "by_rule": {},
+  "by_route": {},
+  "rows_list": []
+ },
+ "held_out_near_eval": {
+  "code": 4166,
+  "long_context": 2075,
+  "text": 6851,
+  "tool": 2453,
+  "math": 212,
+  "sound:media": 1,
+  "music:media": 2,
+  "reasoning": 3151,
+  "chemistry_science": 8,
+  "healthcare_workflow": 79,
+  "web_knowledge": 355,
+  "ops_instruction": 23,
+  "research_instruction": 18,
+  "sql_text": 2,
+  "defensive_runbook": 17,
+  "ops_runbook": 17,
+  "data_pipeline_design": 17,
+  "test_design": 17,
+  "synthesis": 17,
+  "structured_plan": 17,
+  "science_reasoning": 17,
+  "knowledge_qa": 17,
+  "audio:media": 55,
+  "broad_domain": 52,
+  "browser": 44,
+  "terminal": 28,
+  "agentic_task": 88
+ },
+ "training_pool_duplicates_removed": 4276,
+ "marker_refused": 0,
+ "status_counts": {
+  "eval": 1948,
+  "train": 65961,
+  "eval_media_shared": 58,
+  "duplicate": 4276,
+  "eval_near_duplicate": 19741
+ },
+ "status_by_route": {
+  "agentic_task": {
+   "train": 183,
+   "eval_near_duplicate": 88,
+   "eval": 8,
+   "duplicate": 79
+  },
+  "agentic_trace": {
+   "train": 84,
+   "eval": 4
+  },
+  "arc_grid_reasoning": {
+   "eval": 4,
+   "train": 15,
+   "duplicate": 23
+  },
+  "audio": {
+   "train": 1577,
+   "eval": 49,
+   "duplicate": 103,
+   "eval_media_shared": 55
+  },
+  "broad_domain": {
+   "train": 280,
+   "eval_near_duplicate": 52,
+   "eval": 4
+  },
+  "browser": {
+   "eval": 4,
+   "eval_near_duplicate": 44,
+   "train": 32,
+   "duplicate": 12
+  },
+  "chemistry": {
+   "train": 4
+  },
+  "chemistry_science": {
+   "train": 98,
+   "eval_near_duplicate": 8,
+   "eval": 4
+  },
+  "code": {
+   "train": 6116,
+   "eval": 228,
+   "eval_near_duplicate": 4166,
+   "duplicate": 659
+  },
+  "code_and_metrics": {
+   "train": 24,
+   "eval": 2
+  },
+  "data_pipeline_design": {
+   "eval_near_duplicate": 17,
+   "eval": 1
+  },
+  "defensive_runbook": {
+   "eval_near_duplicate": 17,
+   "eval": 1
+  },
+  "finance": {
+   "train": 4
+  },
+  "finance_economics": {
+   "train": 106,
+   "eval": 4
+  },
+  "grid": {
+   "train": 13,
+   "eval": 5,
+   "duplicate": 2
+  },
+  "healthcare": {
+   "train": 4
+  },
+  "healthcare_workflow": {
+   "train": 27,
+   "eval_near_duplicate": 79,
+   "eval": 4
+  },
+  "image": {
+   "train": 4107,
+   "eval": 94,
+   "duplicate": 27
+  },
+  "image_grounding": {
+   "train": 9
+  },
+  "knowledge_qa": {
+   "eval_near_duplicate": 17,
+   "eval": 1
+  },
+  "long_context": {
+   "train": 2906,
+   "eval_near_duplicate": 2075,
+   "eval": 130,
+   "duplicate": 246
+  },
+  "math": {
+   "eval": 115,
+   "train": 4001,
+   "eval_near_duplicate": 212,
+   "duplicate": 669
+  },
+  "media_flow": {
+   "train": 81,
+   "eval": 4
+  },
+  "multimodal": {
+   "train": 113,
+   "duplicate": 30,
+   "eval": 5
+  },
+  "music": {
+   "eval": 59,
+   "train": 2471,
+   "duplicate": 236,
+   "eval_media_shared": 2
+  },
+  "ocr": {
+   "eval": 49,
+   "train": 2510,
+   "duplicate": 26
+  },
+  "ocr_document": {
+   "train": 17,
+   "eval": 1
+  },
+  "ops_instruction": {
+   "eval": 2,
+   "eval_near_duplicate": 23
+  },
+  "ops_runbook": {
+   "eval_near_duplicate": 17,
+   "eval": 1
+  },
+  "reasoning": {
+   "train": 2680,
+   "eval_near_duplicate": 3151,
+   "eval": 135,
+   "duplicate": 245
+  },
+  "reasoning_algorithmic": {
+   "train": 149,
+   "eval": 4
+  },
+  "research_instruction": {
+   "eval": 2,
+   "eval_near_duplicate": 18
+  },
+  "science": {
+   "train": 4
+  },
+  "science_reasoning": {
+   "eval_near_duplicate": 17,
+   "eval": 1
+  },
+  "sound": {
+   "train": 511,
+   "eval": 18,
+   "eval_media_shared": 1,
+   "duplicate": 68
+  },
+  "speech": {
+   "eval": 28,
+   "train": 1212,
+   "duplicate": 138
+  },
+  "sql_text": {
+   "train": 15,
+   "eval": 1,
+   "eval_near_duplicate": 2
+  },
+  "structured_plan": {
+   "eval_near_duplicate": 17,
+   "eval": 4,
+   "train": 42
+  },
+  "synthesis": {
+   "eval_near_duplicate": 17,
+   "eval": 1
+  },
+  "table": {
+   "train": 56,
+   "eval": 4
+  },
+  "terminal": {
+   "train": 74,
+   "eval": 4,
+   "eval_near_duplicate": 28,
+   "duplicate": 6
+  },
+  "test_design": {
+   "eval_near_duplicate": 17,
+   "eval": 1
+  },
+  "text": {
+   "train": 21754,
+   "eval": 565,
+   "eval_near_duplicate": 6851,
+   "duplicate": 973
+  },
+  "tool": {
+   "train": 11086,
+   "eval": 295,
+   "eval_near_duplicate": 2453,
+   "duplicate": 495
+  },
+  "tts": {
+   "train": 1489,
+   "eval": 37,
+   "duplicate": 174
+  },
+  "video": {
+   "train": 1259,
+   "eval": 26,
+   "duplicate": 51
+  },
+  "video_media_flow": {
+   "train": 11,
+   "eval": 1
+  },
+  "web_concept_reasoning": {
+   "train": 7,
+   "eval": 3,
+   "duplicate": 14
+  },
+  "web_domain_extraction": {
+   "train": 106,
+   "eval": 4
+  },
+  "web_knowledge": {
+   "train": 724,
+   "eval": 31,
+   "eval_near_duplicate": 355
+  }
+ },
+ "carve": {
+  "path": "/home/cereal/omni-campaign/distill/corpus/carve.json",
+  "carve_sha256": "7781ff6c47b89835b55cd161d8ff1d8fb313eb8699373dadb96f9759a60a0a14"
+ },
+ "wall_seconds": 76.51,
+ "screen_sha256": "6ad8d85db331014db23732d58bbbed1d9af1db912308909e0f4ddfdcf604bf4b"
+}

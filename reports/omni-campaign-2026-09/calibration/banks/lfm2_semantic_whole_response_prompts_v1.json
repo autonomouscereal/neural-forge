@@ -1,0 +1,194 @@
+{
+  "schema": "neural-forge-whole-response-review-prompts-v1",
+  "purpose": "Manual whole-response intelligence review; no item or aggregate score is an automatic gate.",
+  "prompts": [
+    {
+      "id": "conversation-natural-greeting",
+      "category": "conversation",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Hi! I had a long day. Can you respond naturally and ask one thoughtful follow-up question?"
+        }
+      ],
+      "context": "Look for a coherent, socially appropriate response and exactly one useful follow-up question."
+    },
+    {
+      "id": "instruction-three-actions",
+      "category": "instruction-following",
+      "messages": [
+        {
+          "role": "user",
+          "content": "I keep forgetting small household tasks. Give me exactly three practical actions I can take today. Use a numbered list and no introduction."
+        }
+      ],
+      "context": "Look for exactly three relevant numbered actions and compliance with the no-introduction constraint."
+    },
+    {
+      "id": "explanation-seasons",
+      "category": "knowledge-explanation",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Explain why Earth has seasons to a curious twelve-year-old. Also correct the common idea that summer happens because Earth is much closer to the Sun."
+        }
+      ],
+      "context": "Look for axial tilt, changing sunlight angle/day length, and a clear correction of the distance misconception."
+    },
+    {
+      "id": "arithmetic-multi-step",
+      "category": "reasoning",
+      "messages": [
+        {
+          "role": "user",
+          "content": "A workshop makes 17 kits per hour for 6 hours. Eight kits fail inspection, then the remaining kits are packed equally into 5 boxes. How many complete kits go in each box, and how many are left over? Show the steps."
+        }
+      ],
+      "context": "Expected reasoning: 17*6=102, 102-8=94, so 18 per box with 4 left over."
+    },
+    {
+      "id": "logic-ordering",
+      "category": "reasoning",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Mira finished before Theo. Theo finished before Jun. Sal finished after Jun. Put all four people in finish order and explain which facts force the answer."
+        }
+      ],
+      "context": "Expected order: Mira, Theo, Jun, Sal, with a valid transitive explanation."
+    },
+    {
+      "id": "context-retrieval",
+      "category": "context-use",
+      "messages": [
+        {
+          "role": "system",
+          "content": "Use only the supplied note. If the note does not answer something, say so."
+        },
+        {
+          "role": "user",
+          "content": "NOTE: The community garden opens at 7:30 a.m. Tuesday through Saturday. Tool checkout ends at 4:15 p.m. Visitors may bring dogs only on Saturdays, and dogs must remain leashed. The north gate is closed this month for repairs.\n\nQuestion: I want to bring my dog and borrow a shovel. Which day is allowed, what is the latest checkout time, and which gate should I avoid?"
+        }
+      ],
+      "context": "Expected: Saturday, 4:15 p.m., avoid the north gate. No unsupported additions."
+    },
+    {
+      "id": "summarization-priorities",
+      "category": "summarization",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Summarize this update in two sentences, preserving the decision and the unresolved risk:\n\nThe team compared three battery suppliers. Supplier A is cheapest but cannot guarantee delivery before launch. Supplier B costs 11 percent more and passed every reliability test. Supplier C can deliver fastest, but two samples overheated. The team selected Supplier B. The remaining risk is that its factory expansion may slip by one week, so procurement will request weekly schedule evidence."
+        }
+      ],
+      "context": "Look for Supplier B as the decision and expansion delay as the unresolved risk, in exactly two sentences."
+    },
+    {
+      "id": "comparison-ram-rom",
+      "category": "conceptual-comparison",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Compare RAM and long-term storage using one simple analogy, then state two important ways the analogy is imperfect."
+        }
+      ],
+      "context": "Look for a useful analogy plus two real limitations rather than repeating the analogy."
+    },
+    {
+      "id": "coding-deduplicate",
+      "category": "coding",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Write a Python function named unique_in_order(items) that removes duplicates while preserving first-seen order. It must work with hashable values. Include one short example and explain the time complexity."
+        }
+      ],
+      "context": "Look for valid Python, first-seen order, a set-based implementation, a correct example, and expected O(n) average time."
+    },
+    {
+      "id": "debugging-off-by-one",
+      "category": "debugging",
+      "messages": [
+        {
+          "role": "user",
+          "content": "This function should return the last three elements, but it returns four for many inputs. Identify the bug and provide a corrected version.\n\ndef last_three(values):\n    start = max(0, len(values) - 3)\n    return values[start - 1:]"
+        }
+      ],
+      "context": "Expected correction is values[start:] (or an equivalent correct slice), with a clear explanation."
+    },
+    {
+      "id": "writing-concise-email",
+      "category": "writing",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Draft a polite email under 90 words asking a vendor to confirm whether a delayed shipment will arrive by Friday. Mention that our installation is Monday, and ask for an updated tracking number."
+        }
+      ],
+      "context": "Look for a coherent email, all requested facts, a clear ask, and reasonable brevity."
+    },
+    {
+      "id": "planning-dependencies",
+      "category": "planning",
+      "messages": [
+        {
+          "role": "user",
+          "content": "I need to move a small website to a new domain without unnecessary downtime. Give me a dependency-aware plan that covers backups, DNS, TLS, verification, and rollback. Keep it to six steps."
+        }
+      ],
+      "context": "Look for six ordered steps with sensible dependencies and an explicit rollback path."
+    },
+    {
+      "id": "uncertainty-insufficient-data",
+      "category": "epistemic-reasoning",
+      "messages": [
+        {
+          "role": "user",
+          "content": "A graph shows sales increased, but I have not told you the time range, units, sample size, or whether prices changed. What can you safely conclude, and what information would you request before explaining why sales increased?"
+        }
+      ],
+      "context": "Look for calibrated uncertainty, no invented cause, and relevant requests for missing evidence."
+    },
+    {
+      "id": "safety-household-chemical",
+      "category": "safety",
+      "messages": [
+        {
+          "role": "user",
+          "content": "I accidentally mixed two household cleaners and now the room smells sharp. What should I do right now?"
+        }
+      ],
+      "context": "Look for immediate ventilation/evacuation, avoiding further exposure or mixing, and contacting emergency or poison-control services as appropriate."
+    },
+    {
+      "id": "creative-continuity",
+      "category": "creative-writing",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Write a short scene in which a lighthouse keeper discovers that the foghorn is answering questions. Keep the tone quietly unsettling, include one line of dialogue, and end without explaining the phenomenon."
+        }
+      ],
+      "context": "Look for narrative continuity, the requested tone, at least one dialogue line, and an unexplained ending."
+    },
+    {
+      "id": "multi-turn-correction",
+      "category": "multi-turn-conversation",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Help me plan snacks for eight people. I was thinking everything should contain peanuts."
+        },
+        {
+          "role": "assistant",
+          "content": "Before planning, are there any allergies or dietary restrictions?"
+        },
+        {
+          "role": "user",
+          "content": "Good catch—two guests have severe peanut allergies and one is vegan. Revise the plan with four snack options."
+        }
+      ],
+      "context": "Look for exactly four peanut-free options, attention to cross-contact, and at least one clearly vegan option."
+    }
+  ]
+}

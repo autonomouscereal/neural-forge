@@ -1,0 +1,84 @@
+{
+ "is_kda_layer": false,
+ "is_moe_layer": true,
+ "kda_shape_verdict": {},
+ "layer": 3,
+ "model_dir": "/mnt/ai_data/models/moonshotai/Kimi-K3",
+ "note": "header-only read: no tensor data was transferred off the share",
+ "shapes": {
+  "language_model.model.layers.3.self_attn.g_proj.weight": {
+   "bytes": 176160768,
+   "dtype": "BF16",
+   "shape": [
+    12288,
+    7168
+   ],
+   "shard": "model-00004-of-000096.safetensors"
+  },
+  "language_model.model.layers.3.self_attn.kv_a_layernorm.weight": {
+   "bytes": 1024,
+   "dtype": "BF16",
+   "shape": [
+    512
+   ],
+   "shard": "model-00004-of-000096.safetensors"
+  },
+  "language_model.model.layers.3.self_attn.kv_a_proj_with_mqa.weight": {
+   "bytes": 8257536,
+   "dtype": "BF16",
+   "shape": [
+    576,
+    7168
+   ],
+   "shard": "model-00004-of-000096.safetensors"
+  },
+  "language_model.model.layers.3.self_attn.kv_b_proj.weight": {
+   "bytes": 25165824,
+   "dtype": "BF16",
+   "shape": [
+    24576,
+    512
+   ],
+   "shard": "model-00004-of-000096.safetensors"
+  },
+  "language_model.model.layers.3.self_attn.o_proj.weight": {
+   "bytes": 176160768,
+   "dtype": "BF16",
+   "shape": [
+    7168,
+    12288
+   ],
+   "shard": "model-00004-of-000096.safetensors"
+  },
+  "language_model.model.layers.3.self_attn.q_a_layernorm.weight": {
+   "bytes": 3072,
+   "dtype": "BF16",
+   "shape": [
+    1536
+   ],
+   "shard": "model-00004-of-000096.safetensors"
+  },
+  "language_model.model.layers.3.self_attn.q_a_proj.weight": {
+   "bytes": 22020096,
+   "dtype": "BF16",
+   "shape": [
+    1536,
+    7168
+   ],
+   "shard": "model-00004-of-000096.safetensors"
+  },
+  "language_model.model.layers.3.self_attn.q_b_proj.weight": {
+   "bytes": 56623104,
+   "dtype": "BF16",
+   "shape": [
+    18432,
+    1536
+   ],
+   "shard": "model-00004-of-000096.safetensors"
+  }
+ },
+ "shards": [
+  "model-00004-of-000096.safetensors"
+ ],
+ "tensor_count": 8
+}

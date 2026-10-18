@@ -1,0 +1,384 @@
+{
+  "chimera_commit": "ef1ffb9c3c1abd9ea79f1d4d5707ac5486dab9ab",
+  "config": {
+    "activation_kind": "silu",
+    "architecture": "dense_decoder_native_omnimodal_encoder_free",
+    "attention_head_dim": 8,
+    "attnres_block_size": 4,
+    "attnres_init": "zero",
+    "aux_heads": [
+      "flow",
+      "grounding",
+      "sync"
+    ],
+    "block_pattern": [
+      "kda",
+      "kda",
+      "kda",
+      "gated_gqa",
+      "charted",
+      "charted",
+      "charted",
+      "charted",
+      "charted",
+      "kda",
+      "kda",
+      "kda",
+      "gated_gqa"
+    ],
+    "charted_blocks": [
+      {
+        "attn_bias": false,
+        "chart_in_bias": true,
+        "component": "ace.dit.block12.mlp",
+        "delta_scale": 1.0,
+        "h3_curve_dim": 0,
+        "h3_curve_grid": 0,
+        "h3_rope_freqs": 0,
+        "head_dim": 128,
+        "heads": 16,
+        "kv_heads": 8,
+        "layer_index": 4,
+        "metadata": {
+          "converted_from": "/home/cereal/omni-campaign/media/out/c16_L12_v4",
+          "cross_attention": "dropped",
+          "layer_type": "sliding_attention",
+          "timestep_r": "0.0 as captured; time_embed_r is evaluated at the trunk noise level (t - 0)"
+        },
+        "mlp_kind": "swiglu",
+        "mlp_width": 1536,
+        "modulation": "adaln6",
+        "norm_affine": true,
+        "norm_eps": 1e-06,
+        "norm_kind": "rms",
+        "qk_norm": true,
+        "rope_theta": 1000000.0,
+        "rung": "latents",
+        "sliding_window": 128,
+        "source": "ace",
+        "source_depth_fraction": 0.5217391304347826,
+        "time_embed_r": true,
+        "time_factor": 1000.0,
+        "time_freq_dim": 256,
+        "time_hidden": 2048,
+        "type_ids": [
+          4
+        ],
+        "width": 2048
+      },
+      {
+        "attn_bias": false,
+        "chart_in_bias": true,
+        "component": "h3.dit.block.mlp",
+        "delta_scale": 1.0,
+        "h3_curve_dim": 8,
+        "h3_curve_grid": 1025,
+        "h3_rope_freqs": 16,
+        "head_dim": 128,
+        "heads": 56,
+        "kv_heads": 56,
+        "layer_index": 5,
+        "metadata": {
+          "context": "text read-only plus AV; no context tower",
+          "sigma_contract": "actual per-type sigma; source shifts video12/audio3",
+          "source_code_sha256": "882c280b05aa60cd17f231e5e2389b921b52880fb3b4e23574c0aba5f2bd5024",
+          "source_position_schema": "h3_thw_v1"
+        },
+        "mlp_kind": "swiglu",
+        "mlp_width": 3584,
+        "modulation": "h3_curve6",
+        "norm_affine": true,
+        "norm_eps": 1e-05,
+        "norm_kind": "rms",
+        "qk_norm": true,
+        "rope_theta": 0.0,
+        "rung": "measured-coreset",
+        "sliding_window": 0,
+        "source": "h3",
+        "source_depth_fraction": 0.5102040816326531,
+        "time_embed_r": false,
+        "time_factor": 1000.0,
+        "time_freq_dim": 256,
+        "time_hidden": 0,
+        "type_ids": [
+          2,
+          3
+        ],
+        "width": 5376
+      },
+      {
+        "attn_bias": true,
+        "chart_in_bias": true,
+        "component": "hy3d.dit.block10.mlp",
+        "delta_scale": 1.0,
+        "h3_curve_dim": 0,
+        "h3_curve_grid": 0,
+        "h3_rope_freqs": 0,
+        "head_dim": 128,
+        "heads": 16,
+        "kv_heads": 16,
+        "layer_index": 6,
+        "metadata": {
+          "converted_from": "/mnt/lexar/omni-campaign/hy3d-native-4983c53b-7eee-4f49-980f-ab3788f5db69/dense-child-blocks/dense-child-block-10-1c1709d9-8afb-47f0-931f-35e01f90f125/dense-child-block10/dense_child.safetensors",
+          "cross_attention": "attn2 (DINO image context) dropped: the charted kind has no conditioning input (structural; owner decision)",
+          "layer_type": "hunyuandit_plain_dense",
+          "mlp_gelu": "exact (non-approximate) per HY3D_NATIVE_COMPONENT.md",
+          "qkv": "re-packed from source per-head (q|k|v) split",
+          "qkv_bias": "zero rows written (source q/k/v have no bias; out_proj does)",
+          "time": "time token = ROW 0 of the volume segment, an owned type-7 row (runtime_requirements.hy3d_time_token_row); the block attends to it exactly as the parent self-attention does (modulation none: HY3D has no adaLN)"
+        },
+        "mlp_kind": "gelu",
+        "mlp_width": 2047,
+        "modulation": "none",
+        "norm_affine": true,
+        "norm_eps": 1e-06,
+        "norm_kind": "layer",
+        "qk_norm": true,
+        "rope_theta": 0.0,
+        "rung": "hy3d-native-dense-child",
+        "sliding_window": 0,
+        "source": "hy3d",
+        "source_depth_fraction": 0.5,
+        "time_embed_r": false,
+        "time_factor": 1000.0,
+        "time_freq_dim": 256,
+        "time_hidden": 0,
+        "type_ids": [
+          7
+        ],
+        "width": 2048
+      },
+      {
+        "attn_bias": true,
+        "chart_in_bias": true,
+        "component": "qimg.mmdit.block30.img_mlp",
+        "delta_scale": 1.0,
+        "h3_curve_dim": 0,
+        "h3_curve_grid": 0,
+        "h3_rope_freqs": 0,
+        "head_dim": 128,
+        "heads": 24,
+        "kv_heads": 24,
+        "layer_index": 7,
+        "metadata": {
+          "converted_from": "/mnt/lexar/omni-campaign/qimg-ownerpolicy-v4-ee1a6166-3e91-405d-8381-3e3ff4c91194",
+          "layer_type": "mmdit_img_stream",
+          "rope": "3-D MM-RoPE dropped (rope_theta 0)",
+          "source_dtype": "F8_E4M3/BF16 widened exactly to BF16",
+          "text_stream": "dropped (trunk is the context)"
+        },
+        "mlp_kind": "gelu_tanh",
+        "mlp_width": 3071,
+        "modulation": "adaln6",
+        "norm_affine": false,
+        "norm_eps": 1e-06,
+        "norm_kind": "layer",
+        "qk_norm": true,
+        "rope_theta": 0.0,
+        "rung": "ownerpolicy-v4-candidate",
+        "sliding_window": 0,
+        "source": "qimg",
+        "source_depth_fraction": 0.5084745762711864,
+        "time_embed_r": false,
+        "time_factor": 1000.0,
+        "time_freq_dim": 256,
+        "time_hidden": 3072,
+        "type_ids": [
+          1
+        ],
+        "width": 3072
+      },
+      {
+        "attn_bias": true,
+        "chart_in_bias": true,
+        "component": "qvl32.vit.block13.mlp",
+        "delta_scale": 1.0,
+        "h3_curve_dim": 0,
+        "h3_curve_grid": 0,
+        "h3_rope_freqs": 0,
+        "head_dim": 72,
+        "heads": 16,
+        "kv_heads": 16,
+        "layer_index": 8,
+        "metadata": {
+          "act": "gelu tanh: ComfyUI 0.37 comfy/text_encoders/qwen35.py Qwen35VisionMLP F.gelu(approximate='tanh'), the class Qwen3VLVisionModel runs; Qwen3.8-27B-U config vision hidden_act gelu_pytorch_tanh",
+          "converted_from": "/home/cereal/omni-campaign/runtime/qvl32-1075-cpu-01a10f94-2b148ef9-817e-464f-b28c-746319b5ac77/output/native-qvl32-1075-child",
+          "layer_type": "qwen3vl_vision_block",
+          "rope": "2-D vision RoPE dropped (rope_theta 0)",
+          "type_ids": "ocr (6) only: image (1) is QIMG's C15/charted type; [1, 6] made both blocks run on image rows and c16 refuses type 1 in C15 and C11 together"
+        },
+        "mlp_kind": "gelu_tanh",
+        "mlp_width": 1075,
+        "modulation": "none",
+        "norm_affine": true,
+        "norm_eps": 1e-06,
+        "norm_kind": "layer",
+        "qk_norm": false,
+        "rope_theta": 0.0,
+        "rung": "qvl32-1075-diagnostic-fit",
+        "sliding_window": 0,
+        "source": "qvl32",
+        "source_depth_fraction": 0.5,
+        "time_embed_r": false,
+        "time_factor": 1000.0,
+        "time_freq_dim": 256,
+        "time_hidden": 0,
+        "type_ids": [
+          6
+        ],
+        "width": 1152
+      }
+    ],
+    "csa_compress_stride": 64,
+    "dropout": 0.0,
+    "feed_forward_kind": "dense",
+    "force_final_gated_mla": false,
+    "gqa_output_gate": true,
+    "gqa_qk_norm": true,
+    "gqa_rope_dim": 2,
+    "gqa_rope_theta": 10000000.0,
+    "hca_compress_stride": 1024,
+    "hidden_size": 5120,
+    "intermediate_size": 96,
+    "intermediate_sizes": [],
+    "kda_conv_bias": false,
+    "kda_decay_kind": "gdn",
+    "kda_decay_rank": 0,
+    "kda_gate_lower_bound": -5.0,
+    "kda_head_dim": 8,
+    "kda_num_heads": 4,
+    "kda_num_key_heads": 2,
+    "kda_output_gate": "silu",
+    "kda_qk_norm_eps": 1e-06,
+    "kda_qk_norm_kind": "fla",
+    "kda_query_scale": "inv_sqrt_key_dim",
+    "kda_short_conv_kernel_size": 4,
+    "kda_value_head_dim": 8,
+    "ledger_bands": [
+      [
+        "control",
+        8
+      ],
+      [
+        "media",
+        16
+      ],
+      [
+        "grounding",
+        8
+      ],
+      [
+        "sync",
+        8
+      ],
+      [
+        "tool",
+        8
+      ],
+      [
+        "music_codes",
+        65536
+      ]
+    ],
+    "ledger_base_vocab_size": 256,
+    "ledger_kind": "fixed_band",
+    "local_window": 256,
+    "max_sequence_length": 256,
+    "metadata": {
+      "composite_arm": "insert",
+      "composite_tool": "c16_install_media 1.3.0",
+      "fixture": "c16_media_fixtures",
+      "profile": "toy_27b_shaped"
+    },
+    "mla_extra_head_dim": 0,
+    "mla_key_head_dim": 0,
+    "mla_latent_norm_eps": 0.0,
+    "mla_latent_size": 0,
+    "mla_query_latent_size": 0,
+    "mla_value_head_dim": 0,
+    "mtp_heads": 0,
+    "native_bidirectional_block_kinds": [
+      "gated_mla"
+    ],
+    "native_bidirectional_refinement": false,
+    "native_coordinate_frequencies": 8,
+    "native_feature_dim": 6144,
+    "native_loss_reduction": "type_balanced",
+    "native_position_dim": 4,
+    "native_type_count": 8,
+    "num_heads": 4,
+    "num_kv_heads": 2,
+    "num_layers": 13,
+    "residual_mode": "none",
+    "rms_norm_eps": 1e-06,
+    "scale_policy": "explicit_config_no_baked_target_size",
+    "schema": "chimera_omni.config.v1",
+    "situ_gate_beta": 4.0,
+    "situ_up_beta": 25.0,
+    "tie_word_embeddings": false,
+    "vocab_size": 65840
+  },
+  "ledger": {
+    "ranges": [
+      {
+        "begin": 0,
+        "end": 256,
+        "name": "text",
+        "purpose": "language and code tokens",
+        "width": 256
+      },
+      {
+        "begin": 256,
+        "end": 264,
+        "name": "control",
+        "purpose": "roles, routing, sentinels, and loss controls",
+        "width": 8
+      },
+      {
+        "begin": 264,
+        "end": 280,
+        "name": "media",
+        "purpose": "native media placeholder and artifact tokens",
+        "width": 16
+      },
+      {
+        "begin": 280,
+        "end": 288,
+        "name": "grounding",
+        "purpose": "spatial, temporal, and reference grounding",
+        "width": 8
+      },
+      {
+        "begin": 288,
+        "end": 296,
+        "name": "sync",
+        "purpose": "audio-video and timeline synchronization",
+        "width": 8
+      },
+      {
+        "begin": 296,
+        "end": 304,
+        "name": "tool",
+        "purpose": "tool calls, observations, and agentic state",
+        "width": 8
+      },
+      {
+        "begin": 304,
+        "end": 65840,
+        "name": "music_codes",
+        "purpose": "ACE-Step LM audio-code rows (C18 embedding bridge)",
+        "width": 65536
+      }
+    ],
+    "schema": "chimera_omni.ledger.v1",
+    "vocab_size": 65840
+  },
+  "schema": "chimera_omni.checkpoint.v1",
+  "source": {
+    "arm": "insert",
+    "child": "/home/cereal/omni-campaign/composite/s7/s5media/scratch_dryrun_s5/tiny_child",
+    "child_index_sha256": "d964b987cef9ca34a8017f4e48fb1c50f7d05853d3385966dae813764bbbe001",
+    "composite_manifest": "composite_manifest.json",
+    "tool": "c16_install_media 1.3.0"
+  }
+}

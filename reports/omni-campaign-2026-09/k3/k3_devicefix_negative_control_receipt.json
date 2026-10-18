@@ -1,0 +1,76 @@
+{
+ "devices": [
+  {
+   "capability": "sm75",
+   "index": 0,
+   "name": "Quadro RTX 8000",
+   "total_GB": 47.6
+  }
+ ],
+ "failed": 1,
+ "modeling_import": "ok",
+ "passed": 2,
+ "peak_rss_gigabytes": 0.932,
+ "python": "3.12.3",
+ "results": [
+  {
+   "detail": {
+    "final_prefix_sha256": "2633a2f0190ba879",
+    "layers_cached": 2,
+    "logits_top_ids": [
+     51,
+     115,
+     93,
+     76,
+     92
+    ],
+    "resume_reproduces": true,
+    "staged_body_reused": true
+   },
+   "seconds": 19.14,
+   "status": "PASS",
+   "test": "t11_streamed_pass_writes_a_resumable_cache"
+  },
+  {
+   "detail": {
+    "cut_after_layer": 0,
+    "final_prefix_sha256": "2633a2f0190ba879",
+    "layers_in_merged_receipt": [
+     0,
+     1
+    ],
+    "matches_single_pass": true
+   },
+   "seconds": 8.89,
+   "status": "PASS",
+   "test": "t11b_segmented_resume_reproduces_a_single_pass"
+  },
+  {
+   "detail": {
+    "traceback": "Traceback (most recent call last):\n  File \"/home/cereal/omni-campaign/k3/prefix-check/test_k3_harness.py\", line 1558, in main\n    detail = fn()\n             ^^^^\n  File \"/home/cereal/omni-campaign/k3/prefix-check/test_k3_harness.py\", line 1026, in t13f_a_device_alias_does_not_zero_the_resident_estimate\n    assert aliased == plain, (aliased, plain)\n           ^^^^^^^^^^^^^^^^\nAssertionError: ({'attention': 0, 'residual': 0, 'body': 0, 'experts_packed': 0, 'total': 0}, {'attention': 37488, 'residual': 768, 'body': 58464, 'experts_packed': 26112, 'total': 122832})\n"
+   },
+   "seconds": 0.01,
+   "status": "FAIL",
+   "test": "t13f_a_device_alias_does_not_zero_the_resident_estimate"
+  }
+ ],
+ "skipped": 0,
+ "synthetic": {
+  "bytes": 266000,
+  "out_dir": "/home/cereal/omni-campaign/k3/prefix-check-work/synthetic-k3",
+  "tensors": 98
+ },
+ "synthetic_attn_res_block_size": 2,
+ "synthetic_branch_fixture": {
+  "attn_res_block_size": 3,
+  "bytes": 862016,
+  "layers": 6,
+  "out_dir": "/home/cereal/omni-campaign/k3/prefix-check-work/synthetic-k3-blocks",
+  "tensors": 396
+ },
+ "torch": "2.11.0+cu128",
+ "transformers": "5.12.1",
+ "transformers_compat": {
+  "OutputRecorder": "re-exported from transformers.utils.output_capturing (moved in 5.12)"
+ }
+}

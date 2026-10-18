@@ -1,0 +1,794 @@
+{
+  "schema": "chimera_omni.media_fold.receipt.v1",
+  "created_at_utc": "2026-09-02T10:37:44.107629+00:00",
+  "kind": "h3_0_c15_proof_rung",
+  "chimera_package": "/home/cereal/chimera-proof-c5a5c18-v4/src",
+  "proof_source_sha256": {
+    "/home/cereal/chimera-proof-c5a5c18-v4/src/chimera_omni/proof/h3_hybrid_av_flow.py": "1c0af1e5a84aa98968c27d10c0ec420fc8263baf5242559a8913b42556bba403"
+  },
+  "geometry": {
+    "frames": 8,
+    "fps": 8.0,
+    "size": 32,
+    "patch": 16,
+    "tubelet": 2,
+    "segment": 1536,
+    "sample_rate_hz": 32000,
+    "feature_dim": 1536,
+    "video_tokens": 16,
+    "audio_tokens": 16
+  },
+  "c15": {
+    "pairs": {
+      "path": "out/h3_0_v5/fixture_pairs.safetensors",
+      "bytes": 25494032,
+      "file_sha256": "bd2fec55a5529b5147ff0991428e3c4eb5c1ad783795c5ac39f232e0014daead",
+      "state_sha256": "5e98a21a4d14bbd89ebf5de1b6841dc7179743682194e17c93eb9b99049b4305",
+      "parameters": 6365184,
+      "tensors": {
+        "channel_index": {
+          "dtype": "torch.int64",
+          "shape": [
+            2048
+          ],
+          "sha256": "64da61b2c9ab23049a626cf9e29ccf62ffae6e657a6495017d4730fa9722e768"
+        },
+        "clip_index": {
+          "dtype": "torch.int64",
+          "shape": [
+            2048
+          ],
+          "sha256": "8fc7d2431cb4977a34c1821b6fe1450bb976877bb59f882f9feced6b92199466"
+        },
+        "frame_index": {
+          "dtype": "torch.int64",
+          "shape": [
+            2048
+          ],
+          "sha256": "2e2b445027428f8d1a09d77e4f3ce2423f4a15f982731cd79d07cfaff57775ab"
+        },
+        "latent": {
+          "dtype": "torch.float32",
+          "shape": [
+            2048,
+            32
+          ],
+          "sha256": "f97d2169343fece11b41df6163364d6bb72fe76fd0dcdc5730198f67177108fb"
+        },
+        "raw": {
+          "dtype": "torch.float32",
+          "shape": [
+            2048,
+            1536
+          ],
+          "sha256": "2d3d22a0d847ed8917da7c50716087355a0624386ea8a59d03895c87dfa8d935"
+        },
+        "roundtrip": {
+          "dtype": "torch.float32",
+          "shape": [
+            2048,
+            1536
+          ],
+          "sha256": "fc8944bbacf93a4f1e665b7d3e60d92948121ab07b7c59f70b3dabf4514805b3"
+        },
+        "split": {
+          "dtype": "torch.int64",
+          "shape": [
+            2048
+          ],
+          "sha256": "61af565de905e0c65bda2616a35afe600d6b37033d60990a5887acf2822a445a"
+        }
+      }
+    },
+    "maps": {
+      "path": "out/h3_0_v5/fixture_maps.safetensors",
+      "bytes": 399808,
+      "file_sha256": "34d1d9351f99301c74bd792468738fe3db558f1bd031c0ef57a367a70358e2d2",
+      "state_sha256": "ffdd36efb2fbfc35f891aa21d06aadcac87eb2ff1af27e9a1c799a4540fc7240",
+      "parameters": 99872,
+      "tensors": {
+        "decoder.bias": {
+          "dtype": "torch.float32",
+          "shape": [
+            1536
+          ],
+          "sha256": "07bc4f59b2e390bc283e03ea65a4314572874adea96b7c1e9f6046516d9e6a48"
+        },
+        "decoder.weight": {
+          "dtype": "torch.float32",
+          "shape": [
+            1536,
+            32
+          ],
+          "sha256": "23b44089c1020b00fd0f2edf81b7b058fbf0114ade239ce5fe746db08e1ab402"
+        },
+        "encoder.bias": {
+          "dtype": "torch.float32",
+          "shape": [
+            32
+          ],
+          "sha256": "6ee7f64ab3ee4df0359d66f7277f8c175d78fbd98bf0e395cb062d6ee730d1c5"
+        },
+        "encoder.weight": {
+          "dtype": "torch.float32",
+          "shape": [
+            32,
+            1536
+          ],
+          "sha256": "518805b008d27550b078e286f00eecddff87241606369c44a345d3dbff27f8e0"
+        }
+      }
+    },
+    "pair_geometry": {
+      "modality": "joint_av",
+      "d_raw": 1536,
+      "d_centre": 1536,
+      "centre_offset": 0,
+      "d_latent": 32,
+      "video": {
+        "name": "synthetic_video_proof",
+        "modality": "video",
+        "latent_channels": 32,
+        "sample_rate_hz": 0,
+        "hop_samples": 0,
+        "channels": 0,
+        "channel_in_latent": false,
+        "spatial_stride": 16,
+        "temporal_stride": 2,
+        "frame_rate_hz": 0.0,
+        "notes": {
+          "kind": "synthetic",
+          "nonlinearity": "tanh",
+          "seed": 20260902,
+          "raw_width": 1536
+        },
+        "pairing": "patch_group1",
+        "latent_group": 1,
+        "context": 0,
+        "d_raw": 1536,
+        "d_latent": 32,
+        "d_centre": 1536,
+        "centre_offset": 0,
+        "rows": 1024,
+        "clips": 64,
+        "chimera_patch": 16,
+        "chimera_tubelet": 2,
+        "chimera_native_feature_dim": 1536,
+        "frame_head": 0,
+        "latent_head": 0,
+        "strict_alignment": true
+      },
+      "audio": {
+        "name": "synthetic_audio_proof",
+        "modality": "audio",
+        "latent_channels": 32,
+        "sample_rate_hz": 32000,
+        "hop_samples": 1536,
+        "channels": 2,
+        "channel_in_latent": false,
+        "spatial_stride": 0,
+        "temporal_stride": 0,
+        "frame_rate_hz": 20.833333333333332,
+        "notes": {
+          "kind": "synthetic",
+          "nonlinearity": "tanh",
+          "seed": 20260901
+        },
+        "pairing": "per_channel",
+        "ambiguous_pairing": true,
+        "ambiguity": {
+          "groups": 512,
+          "rows": 1024,
+          "rows_per_group_max": 2,
+          "unique_latent_rows": 13,
+          "irreducible_rel_l2": 0.07492187878801915,
+          "best_possible_psnr_db": 27.585591070190635,
+          "note": "several raw rows share one latent target; no map can do better than their mean, so this floor must be quoted beside any score fitted through this pairing",
+          "cause": "synthetic_audio_proof emits a latent joint over 2 waveform channels; per_channel pairing was explicitly allowed by the caller"
+        },
+        "context": 0,
+        "d_raw": 1536,
+        "d_latent": 32,
+        "d_centre": 1536,
+        "centre_offset": 0,
+        "rows": 1024,
+        "clips": 64,
+        "chimera_segment": 1536,
+        "chimera_stride": 1536,
+        "chimera_tokens_per_frame": 2
+      },
+      "rows": 2048
+    },
+    "rung": "linear",
+    "map_parameters": 99872,
+    "metrics": {
+      "rows": 512,
+      "split": 1,
+      "encoder_scores": {
+        "rel_l2": 0.08975429259699619,
+        "cos": 0.48131268133476945,
+        "cos_p05": 0.0,
+        "r2": 0.9917837877205423,
+        "rows": 512,
+        "width": 32
+      },
+      "decoder_scores": {
+        "rel_l2": 0.23118742033635967,
+        "cos": 0.45150755956179656,
+        "cos_p05": 0.0,
+        "r2": 0.9456269225791739,
+        "rows": 512,
+        "width": 1536
+      },
+      "composed_scores": {
+        "rel_l2": 0.21326519277395967,
+        "cos": 0.4541291073235446,
+        "cos_p05": 0.0,
+        "r2": 0.9537304287518356,
+        "rows": 512,
+        "width": 1536
+      },
+      "psnr_absorbed_db": 26.50530049372698,
+      "psnr_parent_roundtrip_db": 13.139592485529295,
+      "psnr_gap_db": 13.365708008197686,
+      "proposed_margin_db": 3.0,
+      "meets_proposed_absorption_line": true,
+      "psnr_rows": "all rows (including silent ones)",
+      "absorption_line_not_informative": "the parent's own round-trip on this corpus (13.14 dB) is 17.54 dB BELOW the best linear map of its own latent width, so meets_proposed_absorption_line only says the ceiling is low on this corpus; re-run the band on content the parent reconstructs well",
+      "linear_rank_bound": {
+        "rank": 32,
+        "psnr_db": 30.684322769798857,
+        "retained_energy": 0.986570410031489,
+        "absorbed_vs_bound_db": -4.179022276071876,
+        "bound_vs_parent_db": 17.544730284269562,
+        "ceiling_below_linear_bound": true,
+        "meaning": "PCA of the raw rows at the parent's latent width -- the best possible linear round-trip. A fitted map at this number is at the linear ceiling; a bound far below the parent's round-trip means the band needs a nonlinear decoder (companion VAE decoder, D5b) or a wider native feature width."
+      },
+      "fit_split": {
+        "rows": 1536,
+        "split": 0,
+        "encoder_scores": {
+          "rel_l2": 0.07675572394904251,
+          "cos": 0.4896588487165456,
+          "cos_p05": 0.0,
+          "r2": 0.9939815157314186,
+          "rows": 1536,
+          "width": 32
+        },
+        "decoder_scores": {
+          "rel_l2": 0.21288634920014465,
+          "cos": 0.46482540716346676,
+          "cos_p05": 0.0,
+          "r2": 0.9537677046917484,
+          "rows": 1536,
+          "width": 1536
+        },
+        "composed_scores": {
+          "rel_l2": 0.19938846371500502,
+          "cos": 0.46597502246403893,
+          "cos_p05": 0.0,
+          "r2": 0.9594444886885608,
+          "rows": 1536,
+          "width": 1536
+        },
+        "psnr_absorbed_db": 27.00425162544076,
+        "psnr_parent_roundtrip_db": 13.054288239770793,
+        "psnr_gap_db": 13.949963385669966,
+        "proposed_margin_db": 3.0,
+        "meets_proposed_absorption_line": true,
+        "psnr_rows": "all rows (including silent ones)",
+        "absorption_line_not_informative": "the parent's own round-trip on this corpus (13.05 dB) is 18.75 dB BELOW the best linear map of its own latent width, so meets_proposed_absorption_line only says the ceiling is low on this corpus; re-run the band on content the parent reconstructs well",
+        "linear_rank_bound": {
+          "rank": 32,
+          "psnr_db": 31.804122907507157,
+          "retained_energy": 0.986570410031489,
+          "absorbed_vs_bound_db": -4.799871282066398,
+          "bound_vs_parent_db": 18.749834667736366,
+          "ceiling_below_linear_bound": true,
+          "meaning": "PCA of the raw rows at the parent's latent width -- the best possible linear round-trip. A fitted map at this number is at the linear ceiling; a bound far below the parent's round-trip means the band needs a nonlinear decoder (companion VAE decoder, D5b) or a wider native feature width."
+        }
+      }
+    }
+  },
+  "arms": [
+    {
+      "arm": "raw",
+      "parameters": 3185932,
+      "interface": null,
+      "state_sha256": {
+        "before": "c1ded404193fd144058649409a84a296e3853dd436d957ec8bd7a8e314470da2",
+        "after": "132cc08ff9035e6c5ba0c6941d7120ef4becdb05e292f03d2e583e1f448f370f"
+      },
+      "train_seconds": 628.87,
+      "before": {
+        "understanding_accuracy": 0.21875,
+        "generation": {
+          "direction_accuracy": 0.6875,
+          "pitch_accuracy": 0.5,
+          "mean_av_sync_error": 0.125,
+          "sync_within_015": 0.0,
+          "mean_onset_error_vs_request": 0.375,
+          "video_mse": 0.3608900010585785,
+          "audio_mse": 0.40807008743286133,
+          "decoded_video_range": [
+            -2.1575441360473633,
+            2.384855270385742
+          ],
+          "decoded_audio_rms": 0.5777199864387512,
+          "sample_steps": 16
+        }
+      },
+      "after": {
+        "understanding_accuracy": 0.46875,
+        "generation": {
+          "direction_accuracy": 1.0,
+          "pitch_accuracy": 1.0,
+          "mean_av_sync_error": 0.25,
+          "sync_within_015": 0.5,
+          "mean_onset_error_vs_request": 0.0,
+          "video_mse": 0.0205132644623518,
+          "audio_mse": 0.00021442949946504086,
+          "decoded_video_range": [
+            -0.09059450030326843,
+            0.22841179370880127
+          ],
+          "decoded_audio_rms": 0.2783309817314148,
+          "sample_steps": 16
+        }
+      },
+      "gates": {
+        "understanding_accuracy_ge_0_90": false,
+        "direction_accuracy_ge_0_85": true,
+        "pitch_accuracy_ge_0_85": true,
+        "sync_within_015_ge_0_75": false,
+        "understanding_improved": true,
+        "direction_improved": true,
+        "pitch_improved": true,
+        "sync_improved": true,
+        "video_mse_improved": true,
+        "audio_mse_improved": true,
+        "state_changed": true,
+        "exact_refinement_observed": true,
+        "separate_schedule_update_mask_exact": true
+      },
+      "gates_passed": 11,
+      "gates_total": 13,
+      "passed": false,
+      "training_log": [
+        {
+          "step": 0,
+          "task": "understanding",
+          "loss": 8.087591171264648
+        },
+        {
+          "step": 100,
+          "task": "understanding",
+          "loss": 0.7617533206939697
+        },
+        {
+          "step": 200,
+          "task": "understanding",
+          "loss": 0.7860599756240845
+        },
+        {
+          "step": 300,
+          "task": "understanding",
+          "loss": 0.7115769982337952
+        },
+        {
+          "step": 400,
+          "task": "understanding",
+          "loss": 0.7021502256393433
+        },
+        {
+          "step": 500,
+          "task": "understanding",
+          "loss": 0.6506369709968567
+        },
+        {
+          "step": 599,
+          "task": "joint_av_x0",
+          "loss": 0.010346398688852787
+        }
+      ],
+      "sampling_schedule": {
+        "steps": 16,
+        "video_shift": 12.0,
+        "audio_shift": 3.0
+      },
+      "artifacts": {}
+    },
+    {
+      "arm": "absorbed",
+      "parameters": 3185932,
+      "interface": {
+        "hidden": 128,
+        "d_raw": 1536,
+        "d_latent": 32,
+        "d_centre": 1536,
+        "model_width_in": 32,
+        "model_width_out": 32,
+        "stand_ins": [
+          "source_projection=identity",
+          "output_projection=identity"
+        ],
+        "shapes": {
+          "bridge.feature_proj.weight": [
+            128,
+            1536
+          ],
+          "bridge.type_embed_delta": [
+            128
+          ],
+          "head.out.weight": [
+            1536,
+            128
+          ],
+          "head.type_affine_shift": [
+            1536
+          ]
+        },
+        "parameters": 394880,
+        "scrambled": false,
+        "chart": "orthonormal_columns",
+        "type_embed_write": "add (delta, per c15_fit composition)",
+        "type_embed_deltas": {
+          "2": {
+            "delta_norm": 0.007689857904195914,
+            "row_norm_before": 11.597236633300781,
+            "row_norm_after": 11.596717834472656,
+            "per_type_bias": true
+          },
+          "3": {
+            "delta_norm": 0.0248824085224293,
+            "row_norm_before": 10.98082447052002,
+            "row_norm_after": 10.984517097473145,
+            "per_type_bias": true
+          }
+        },
+        "type_embed_rows": 8,
+        "type_embed_distinct_rows_after_install": 8,
+        "emission_scale": "match_default",
+        "decoder_bias": "skip",
+        "decoder_bias_preimage_norm": 156121.1119162124,
+        "bridge_gain": 4.149170049995199,
+        "head_gain": 0.43921419086786695,
+        "decoder_bias_preimage_residual": 0.015324569669167171,
+        "decoder_bias_norm": 0.031196616755695055,
+        "decoder_bias_relative_residual": 0.49122537194260385,
+        "installed_state_sha256": "b1f3570461e6127d2daa52499fc22203bacbf7141bc694890441b1738d201ef7"
+      },
+      "state_sha256": {
+        "before": "23225fdd60bcc10080924b9696b9593d0b04e202abfabfba4e28385b832adf6f",
+        "after": "d47c78387808de6bb414014dfcb22b11b13a0e998aa4e801053b2f12127e47d2"
+      },
+      "train_seconds": 653.319,
+      "before": {
+        "understanding_accuracy": 0.0,
+        "generation": {
+          "direction_accuracy": 0.625,
+          "pitch_accuracy": 0.46875,
+          "mean_av_sync_error": 0.125,
+          "sync_within_015": 0.0,
+          "mean_onset_error_vs_request": 0.375,
+          "video_mse": 0.45040690898895264,
+          "audio_mse": 0.8271396160125732,
+          "decoded_video_range": [
+            -3.9981675148010254,
+            3.5686497688293457
+          ],
+          "decoded_audio_rms": 0.8604865074157715,
+          "sample_steps": 16
+        }
+      },
+      "after": {
+        "understanding_accuracy": 1.0,
+        "generation": {
+          "direction_accuracy": 1.0,
+          "pitch_accuracy": 1.0,
+          "mean_av_sync_error": 0.1875,
+          "sync_within_015": 0.53125,
+          "mean_onset_error_vs_request": 0.0,
+          "video_mse": 0.02188323438167572,
+          "audio_mse": 0.0003405227034818381,
+          "decoded_video_range": [
+            -0.41260719299316406,
+            1.127712607383728
+          ],
+          "decoded_audio_rms": 0.2779884338378906,
+          "sample_steps": 16
+        }
+      },
+      "gates": {
+        "understanding_accuracy_ge_0_90": true,
+        "direction_accuracy_ge_0_85": true,
+        "pitch_accuracy_ge_0_85": true,
+        "sync_within_015_ge_0_75": false,
+        "understanding_improved": true,
+        "direction_improved": true,
+        "pitch_improved": true,
+        "sync_improved": true,
+        "video_mse_improved": true,
+        "audio_mse_improved": true,
+        "state_changed": true,
+        "exact_refinement_observed": true,
+        "separate_schedule_update_mask_exact": true
+      },
+      "gates_passed": 12,
+      "gates_total": 13,
+      "passed": false,
+      "training_log": [
+        {
+          "step": 0,
+          "task": "understanding",
+          "loss": 8.087481498718262
+        },
+        {
+          "step": 100,
+          "task": "understanding",
+          "loss": 0.7651757001876831
+        },
+        {
+          "step": 200,
+          "task": "understanding",
+          "loss": 0.7804336547851562
+        },
+        {
+          "step": 300,
+          "task": "understanding",
+          "loss": 0.03459465503692627
+        },
+        {
+          "step": 400,
+          "task": "understanding",
+          "loss": 0.00431246031075716
+        },
+        {
+          "step": 500,
+          "task": "understanding",
+          "loss": 0.0023846416734158993
+        },
+        {
+          "step": 599,
+          "task": "joint_av_x0",
+          "loss": 0.007966808043420315
+        }
+      ],
+      "sampling_schedule": {
+        "steps": 16,
+        "video_shift": 12.0,
+        "audio_shift": 3.0
+      },
+      "artifacts": {}
+    },
+    {
+      "arm": "control",
+      "parameters": 3185932,
+      "interface": {
+        "hidden": 128,
+        "d_raw": 1536,
+        "d_latent": 32,
+        "d_centre": 1536,
+        "model_width_in": 32,
+        "model_width_out": 32,
+        "stand_ins": [
+          "source_projection=identity",
+          "output_projection=identity"
+        ],
+        "shapes": {
+          "bridge.feature_proj.weight": [
+            128,
+            1536
+          ],
+          "bridge.type_embed_delta": [
+            128
+          ],
+          "head.out.weight": [
+            1536,
+            128
+          ],
+          "head.type_affine_shift": [
+            1536
+          ]
+        },
+        "parameters": 394880,
+        "scrambled": true,
+        "chart": "orthonormal_columns",
+        "type_embed_write": "add (delta, per c15_fit composition)",
+        "type_embed_deltas": {
+          "2": {
+            "delta_norm": 0.007689857904195901,
+            "row_norm_before": 11.597236633300781,
+            "row_norm_after": 11.598526000976562,
+            "per_type_bias": true
+          },
+          "3": {
+            "delta_norm": 0.024882408522429254,
+            "row_norm_before": 10.98082447052002,
+            "row_norm_after": 10.978960990905762,
+            "per_type_bias": true
+          }
+        },
+        "type_embed_rows": 8,
+        "type_embed_distinct_rows_after_install": 8,
+        "emission_scale": "match_default",
+        "decoder_bias": "skip",
+        "decoder_bias_preimage_norm": 166305.65379709375,
+        "bridge_gain": 4.149170049995192,
+        "head_gain": 0.4392141908678668,
+        "decoder_bias_preimage_residual": 0.029926785504713248,
+        "decoder_bias_norm": 0.031196616755695038,
+        "decoder_bias_relative_residual": 0.9592958665702114,
+        "installed_state_sha256": "30f2b9af1b0242be22d77d2cc07e7abe16c37b6c99425265e7cc006fa4c35cc8"
+      },
+      "state_sha256": {
+        "before": "69d2d8accfab61f428f27376ba578b6c8d12e82a0889e820e75490799e25fbde",
+        "after": "e79f940e674d2eae16fdcbeabb4501319425e56bb7f4482e3139f61de1b1e9ca"
+      },
+      "train_seconds": 379.745,
+      "before": {
+        "understanding_accuracy": 0.21875,
+        "generation": {
+          "direction_accuracy": 0.375,
+          "pitch_accuracy": 0.5,
+          "mean_av_sync_error": 0.125,
+          "sync_within_015": 0.0,
+          "mean_onset_error_vs_request": 0.375,
+          "video_mse": 0.41624924540519714,
+          "audio_mse": 0.4081968069076538,
+          "decoded_video_range": [
+            -2.403655767440796,
+            2.58551025390625
+          ],
+          "decoded_audio_rms": 0.5730810761451721,
+          "sample_steps": 16
+        }
+      },
+      "after": {
+        "understanding_accuracy": 0.46875,
+        "generation": {
+          "direction_accuracy": 1.0,
+          "pitch_accuracy": 1.0,
+          "mean_av_sync_error": 0.25,
+          "sync_within_015": 0.5,
+          "mean_onset_error_vs_request": 0.0,
+          "video_mse": 0.020082920789718628,
+          "audio_mse": 0.0005404608673416078,
+          "decoded_video_range": [
+            -0.12832045555114746,
+            0.42119354009628296
+          ],
+          "decoded_audio_rms": 0.28075146675109863,
+          "sample_steps": 16
+        }
+      },
+      "gates": {
+        "understanding_accuracy_ge_0_90": false,
+        "direction_accuracy_ge_0_85": true,
+        "pitch_accuracy_ge_0_85": true,
+        "sync_within_015_ge_0_75": false,
+        "understanding_improved": true,
+        "direction_improved": true,
+        "pitch_improved": true,
+        "sync_improved": true,
+        "video_mse_improved": true,
+        "audio_mse_improved": true,
+        "state_changed": true,
+        "exact_refinement_observed": true,
+        "separate_schedule_update_mask_exact": true
+      },
+      "gates_passed": 11,
+      "gates_total": 13,
+      "passed": false,
+      "training_log": [
+        {
+          "step": 0,
+          "task": "understanding",
+          "loss": 8.075408935546875
+        },
+        {
+          "step": 100,
+          "task": "understanding",
+          "loss": 0.7922777533531189
+        },
+        {
+          "step": 200,
+          "task": "understanding",
+          "loss": 0.7678676843643188
+        },
+        {
+          "step": 300,
+          "task": "understanding",
+          "loss": 0.7094506025314331
+        },
+        {
+          "step": 400,
+          "task": "understanding",
+          "loss": 0.7008873224258423
+        },
+        {
+          "step": 500,
+          "task": "understanding",
+          "loss": 0.6493070125579834
+        },
+        {
+          "step": 599,
+          "task": "joint_av_x0",
+          "loss": 0.010235887952148914
+        }
+      ],
+      "sampling_schedule": {
+        "steps": 16,
+        "video_shift": 12.0,
+        "audio_shift": 3.0
+      },
+      "artifacts": {}
+    }
+  ],
+  "summary": {
+    "raw": {
+      "gates_passed": 11,
+      "understanding_after": 0.46875,
+      "video_mse_after": 0.0205132644623518,
+      "audio_mse_after": 0.00021442949946504086
+    },
+    "absorbed": {
+      "gates_passed": 12,
+      "understanding_after": 1.0,
+      "video_mse_after": 0.02188323438167572,
+      "audio_mse_after": 0.0003405227034818381
+    },
+    "control": {
+      "gates_passed": 11,
+      "understanding_after": 0.46875,
+      "video_mse_after": 0.020082920789718628,
+      "audio_mse_after": 0.0005404608673416078
+    }
+  },
+  "proposed_decision_line_D_f1": {
+    "statement": "absorption carries if absorbed >= raw gates at equal steps and its clips are not blind-scored worse",
+    "absorbed_ge_raw": true,
+    "absorbed_gt_control": true,
+    "note": "a proposed decision line for Cyril; blind scoring of the decoded clips is the actual instrument"
+  },
+  "runtime": {
+    "python": "3.12.3 (main, Jun 19 2026, 12:46:00) [GCC 13.3.0]",
+    "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39",
+    "cwd": "/home/cereal/omni-campaign/media",
+    "torch": "2.11.0+cu128",
+    "torch_cuda": "12.8",
+    "cuda_available": true,
+    "device_name": "NVIDIA GeForce RTX 3090",
+    "device_total_memory_bytes": 25296044032,
+    "device_capability": "8.6",
+    "nvidia_smi": [
+      "0, NVIDIA GeForce RTX 3090, GPU-4ead7f3a-cc79-fa5b-de42-ef024e27f561, 662 MiB",
+      "1, Tesla P40, GPU-c95fb5b3-f97c-bfb2-9760-79fe107ffe6d, 21405 MiB",
+      "2, Tesla P40, GPU-a92b0dfe-83f8-11ff-db0d-c65921f365b4, 5 MiB",
+      "3, Tesla P40, GPU-08b615f9-8dbe-3edd-d59f-f6ebe8212ca8, 5 MiB",
+      "4, NVIDIA GeForce RTX 3090, GPU-2ce6a95c-7b1f-644a-3808-d781732a0582, 15 MiB",
+      "5, Tesla P40, GPU-ce4a1da0-baa8-3d62-419c-a28f6565610f, 5 MiB",
+      "6, Quadro RTX 8000, GPU-f5a09535-fc85-a027-50f7-734b344747dd, 5 MiB"
+    ]
+  },
+  "argv": {
+    "chimera_src": "/home/cereal/chimera-proof-c5a5c18-v4",
+    "out": "out/h3_0_v5",
+    "arms": "raw,absorbed,control",
+    "steps": 600,
+    "batch_size": 16,
+    "generation_share": 3,
+    "sample_steps": 16,
+    "eval_count": 32,
+    "pair_clips": 64,
+    "latent_width": 32,
+    "audio_adapter": "synthetic",
+    "video_adapter": "synthetic",
+    "rung": "linear",
+    "emission_scale": "match_default",
+    "decoder_bias": "skip",
+    "seed": 2026090110,
+    "device": "cuda",
+    "save_artifacts": false
+  }
+}

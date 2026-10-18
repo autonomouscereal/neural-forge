@@ -1,0 +1,30 @@
+{
+ "counts": {
+  "already_in_d2": 1168,
+  "eligible_rows": 0,
+  "rows_read": 1168
+ },
+ "d2_rows": {
+  "path": "/mnt/lexar/omni-campaign/teacher_cache/qtext/inputs/selfgen/rescore_export.rows.json",
+  "rids": 1168,
+  "sha256": "4e36ec9fad9a822d25bbdfb34a876a43473c8de7db96d677340f5bef423f8321"
+ },
+ "runs": [
+  {
+   "manifest_sha256": "fe1f0784777b8fdfc5cbae75ee8895bba3ad8e997f8c54b1b41aa086987c313f",
+   "prompts": "/home/cereal/omni-campaign/distill/corpus/selfgen/prompts.jsonl",
+   "prompts_sha256": "6dfcec55908f909c9ddf0e1f2bf7432cb20c0e1e69905d586884ed0c1f72bd77",
+   "rows": 1168,
+   "run": "/home/cereal/omni-campaign/distill/selfgen/run-q38-27bu-q4km-2026-10-13"
+  }
+ ],
+ "schema": "omni-d2x1-refill-selfgen-none-v1",
+ "tool": {
+  "name": "d2_refill_build",
+  "path": "/home/cereal/omni-campaign/distill/tools/d2_refill_build.py",
+  "sha256": "577bdbe83748d45570fb07f692bce2f5d6c6f56e6e8449cb25a4849717be1b4f",
+  "version": "1.0.0"
+ },
+ "utc": "2026-10-15T05:09:22Z",
+ "why": "no eligible self-gen row: every row of the named sealed run(s) is already a D2 input, truncated or excluded; rank 2 needs NEW sampling over prompts outside the 1,168 rescored rows (decisions refill_policy rank 2 'how')"
+}

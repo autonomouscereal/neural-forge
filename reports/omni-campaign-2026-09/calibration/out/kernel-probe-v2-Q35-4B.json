@@ -1,0 +1,43 @@
+{
+ "bindings": {
+  "chunk": {
+   "callable": "fla.ops.gated_delta_rule.chunk.chunk_gated_delta_rule",
+   "provider": "fla",
+   "version": "0.5.2"
+  },
+  "conv-decode": {
+   "callable": "transformers.models.qwen3_5.modeling_qwen3_5.torch_causal_conv1d_update",
+   "provider": "torch",
+   "version": null
+  },
+  "conv-prefill": {
+   "callable": null,
+   "provider": "torch",
+   "version": null
+  },
+  "recurrent": {
+   "callable": "fla.ops.gated_delta_rule.fused_recurrent.fused_recurrent_gated_delta_rule",
+   "provider": "fla",
+   "version": "0.5.2"
+  }
+ },
+ "bindings_uniform_across_layers": true,
+ "causal_conv1d_version": null,
+ "fla_version": "0.5.2",
+ "gated_delta_layers_probed": 24,
+ "inventory_label_v1_refuted": "torch-fallback",
+ "kernel_path": "chunk=fla-0.5.2; recurrent=fla-0.5.2; conv-prefill=torch; conv-decode=torch",
+ "kernel_report_schema": "neural-forge-omni-kernel-path-v2",
+ "note": "`kernel_path` is the PER-PRIMITIVE binding read off the loaded model, not the package inventory.  transformers binds the four Gated-DeltaNet primitives independently, so fla's Triton chunked kernel runs even when causal_conv1d is absent and the 'fast path is not available' warning fires -- that warning is printed off is_fast_path_available, which is all() of the four.  `inventory_label_v1_refuted` is what the earlier, wrong rule would have printed, published only so v1 dossiers can be lined up against v2 ones.  Recorded, never enforced.",
+ "packages_present": [
+  "fla-0.5.2"
+ ],
+ "probe_context": {
+  "device": "cpu",
+  "dtype": "bfloat16",
+  "loaded_class": "Qwen3_5ForConditionalGeneration",
+  "model_directory": "/home/cereal/models/Qwen3.5-4B",
+  "transformers_version": "5.12.1"
+ },
+ "transformers_fast_path_flag": false
+}

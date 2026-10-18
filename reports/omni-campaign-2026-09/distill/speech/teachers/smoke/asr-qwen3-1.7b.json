@@ -1,0 +1,64 @@
+{
+ "schema": "omni-campaign.speech-teacher-smoke.asr.v1",
+ "tool_version": "1.0.0",
+ "model": "qwen3-asr-1.7b",
+ "model_dir": "/mnt/lexar/models/Qwen/Qwen3-ASR-1.7B",
+ "revision": "7278e1e70fe206f11671096ffdd38061171dd6e5",
+ "device": "cpu",
+ "dtype": "float32",
+ "threads": 16,
+ "load_seconds": 32.4,
+ "manifest": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/librispeech_smoke4.json",
+ "rows": [
+  {
+   "id": "3570-5695-0015",
+   "reference": "THE RESULT IS A GREAT MOBILITY OF THE LABOR EMPLOYED IN PRINTING PERHAPS GREATER THAN IN ANY OTHER EQUALLY WELL DEFINED AND CONSIDERABLE BODY OF WORKMEN",
+   "transcript": "The result is a great mobility of the labour employed in printing, perhaps greater than in any other equally well-defined and considerable body of workmen.",
+   "word_edits": 1,
+   "reference_words": 26,
+   "wer": 0.0385,
+   "audio_seconds": 7.95,
+   "seconds": 24.31,
+   "rtf": 3.058
+  },
+  {
+   "id": "2830-3980-0064",
+   "reference": "HOW MAY WE OBTAIN REMISSION OF OUR SINS",
+   "transcript": "How may we obtain remission of our sins?",
+   "word_edits": 0,
+   "reference_words": 8,
+   "wer": 0.0,
+   "audio_seconds": 2.88,
+   "seconds": 8.6,
+   "rtf": 2.986
+  },
+  {
+   "id": "7021-79740-0000",
+   "reference": "TO SUCH PERSONS THESE INDIRECT MODES OF TRAINING CHILDREN IN HABITS OF SUBORDINATION TO THEIR WILL OR RATHER OF YIELDING TO THEIR INFLUENCE ARE SPECIALLY USEFUL",
+   "transcript": "To such persons, these indirect modes of training children in habits of subordination to their will, or rather of yielding to their influence, are specially useful.",
+   "word_edits": 0,
+   "reference_words": 26,
+   "wer": 0.0,
+   "audio_seconds": 11.12,
+   "seconds": 24.45,
+   "rtf": 2.198
+  },
+  {
+   "id": "260-123288-0007",
+   "reference": "THE WIND NEVER LULLS BUT TO ACQUIRE INCREASED STRENGTH THE VAST BANK OF HEAVY CLOUDS IS A HUGE RESERVOIR OF FEARFUL WINDY GUSTS AND RUSHING STORMS",
+   "transcript": "The wind never lulls, but to acquire increased strength. The vast bank of heavy clouds is a huge reservoir of fearful, windy gusts and rushing storms.",
+   "word_edits": 0,
+   "reference_words": 26,
+   "wer": 0.0,
+   "audio_seconds": 11.2,
+   "seconds": 24.02,
+   "rtf": 2.144
+  }
+ ],
+ "pooled_wer": 0.0116,
+ "word_edits": 1,
+ "reference_words": 86,
+ "peak_rss_gib": 12.51,
+ "torch": "2.6.0+cu118",
+ "finished_utc": "2026-10-15T00:54:41Z"
+}

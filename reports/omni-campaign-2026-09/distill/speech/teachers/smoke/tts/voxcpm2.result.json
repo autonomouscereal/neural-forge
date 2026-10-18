@@ -1,0 +1,80 @@
+{
+ "schema": "omni-campaign.speech-teacher-smoke.tts.v1",
+ "tool_version": "1.0.0",
+ "model": "voxcpm2",
+ "model_dir": "/mnt/lexar/models/openbmb/VoxCPM2",
+ "revision": "32279effe8c19989596f05d353d1447f51d9e915",
+ "device": "cpu",
+ "dtype": "float32",
+ "threads": 16,
+ "load_seconds": 85.0,
+ "rows": [
+  {
+   "index": 0,
+   "text": "The river rose overnight, so the ferry left an hour later than usual.",
+   "wav": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/tts/voxcpm2-0.wav",
+   "sample_rate": 48000,
+   "audio_seconds": 4.8,
+   "seconds": 138.83,
+   "rtf": 28.923,
+   "peak_abs": 0.7844,
+   "finite": true,
+   "condition": {
+    "cfg_value": 2.0,
+    "steps": 10
+   },
+   "sha256": "39579f5883aedcfccb349f1dd08ed4729f3cdfda2e6a71d334a4d8cb82a465a8"
+  },
+  {
+   "index": 1,
+   "text": "Please set the oven to two hundred degrees and wait ten more minutes.",
+   "wav": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/tts/voxcpm2-1.wav",
+   "sample_rate": 48000,
+   "audio_seconds": 4.64,
+   "seconds": 115.3,
+   "rtf": 24.85,
+   "peak_abs": 0.691,
+   "finite": true,
+   "condition": {
+    "cfg_value": 2.0,
+    "steps": 10
+   },
+   "sha256": "f0024c9a3e7ab1af2207bdc3255316be9eea56c0638130367e19c4267d8ce6ba"
+  },
+  {
+   "index": 2,
+   "text": "She painted the old fence blue, then sat on the porch to watch it dry.",
+   "wav": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/tts/voxcpm2-2.wav",
+   "sample_rate": 48000,
+   "audio_seconds": 4.32,
+   "seconds": 99.01,
+   "rtf": 22.919,
+   "peak_abs": 0.9259,
+   "finite": true,
+   "condition": {
+    "cfg_value": 2.0,
+    "steps": 10
+   },
+   "sha256": "4e67ac0aa7083588da3fc8a99873a45a0f2b6f525133f5f55ecb5b6ca8fb145a"
+  },
+  {
+   "index": 3,
+   "text": "Our meeting moved to Thursday because the projector was broken again.",
+   "wav": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/tts/voxcpm2-3.wav",
+   "sample_rate": 48000,
+   "audio_seconds": 3.36,
+   "seconds": 98.26,
+   "rtf": 29.243,
+   "peak_abs": 0.7822,
+   "finite": true,
+   "condition": {
+    "cfg_value": 2.0,
+    "steps": 10
+   },
+   "sha256": "5722f895547ec04c87f64e8a2992ba854fa1736a98092d58b660087e7e96f15d"
+  }
+ ],
+ "peak_rss_gib": 10.91,
+ "torch": "2.6.0+cu118",
+ "finished_utc": "2026-10-15T01:29:28Z"
+}

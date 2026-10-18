@@ -1,0 +1,147 @@
+{
+  "read_manifest": {
+    "status": "PASS",
+    "evidence": {
+      "manifest_sha256": "643267e8e4b164d32ba3878d2c424246424ba3edff852b24360a05b8dd6535fb",
+      "sequence_length": 4096,
+      "rows": 24,
+      "tokenizer_sha256": "5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42"
+    }
+  },
+  "corpus": {
+    "status": "PASS",
+    "evidence": {
+      "batches": 24,
+      "shape": [
+        1,
+        4096
+      ],
+      "dtype": "torch.int64",
+      "indices_contiguous": true
+    }
+  },
+  "split_by_batch": {
+    "status": "PASS",
+    "evidence": {
+      "fit_batches": 18,
+      "held_batches": 6,
+      "held": [
+        3,
+        7,
+        11,
+        15,
+        19,
+        23
+      ]
+    }
+  },
+  "fit_check_rows": {
+    "status": "PASS",
+    "evidence": {
+      "check_rows": 24576,
+      "of_fit_rows": 73728,
+      "check_batches": [
+        2,
+        6,
+        10,
+        14,
+        18,
+        22
+      ]
+    }
+  },
+  "evidence_receipt": {
+    "status": "PASS",
+    "evidence": {
+      "schema": "neural-forge-omni-evidence-v1",
+      "manifest": "/home/cereal/omni-campaign/qwen-fold/evidence/omni-evidence-v1.json",
+      "manifest_sha256": "643267e8e4b164d32ba3878d2c424246424ba3edff852b24360a05b8dd6535fb",
+      "tokenizer_sha256": "5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42",
+      "source": "qf_evidence_build.py; curated master registry /mnt/ai_data/omnicoder_2026/datasets/MASTER_SHARD_INDEX_POINTER.json (631 entries / 94318 rows); routes text,code,math,tool,reasoning; packed by token-deficit interleave to 4096 tokens; screened against 6 review packs at 48-char containment; seed 20260902; receipt omni-evidence-v1-build-receipt.json",
+      "sequence_length": 4096,
+      "batches": 24,
+      "fit_batches": 18,
+      "held_batches": 6,
+      "fit_rows": 73728,
+      "heldout_rows": 24576,
+      "internal_check_rows": 24576
+    }
+  },
+  "id_range": {
+    "status": "PASS",
+    "evidence": {
+      "lowest_id": 0,
+      "highest_id": 248069,
+      "physical_vocab_size": 248320
+    }
+  },
+  "tamper_refused": {
+    "status": "PASS",
+    "evidence": {
+      "refused": true,
+      "message": "evidence manifest seal is broken: 643267e8e4b164d32ba3878d2c424246424ba3edff852b24360a05b8dd6535"
+    }
+  },
+  "ragged_refused": {
+    "status": "PASS",
+    "evidence": {
+      "refused": true,
+      "message": "/tmp/qf-evidence-verify-hl5aou03/ragged-evidence.json: rows are [4095, 4096] tokens long, manife"
+    }
+  },
+  "tokenizer_gate": {
+    "status": "PASS",
+    "evidence": {
+      "parent": "/home/cereal/models/Qwen3.5-4B",
+      "parent_tokenizer_sha256": "5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42",
+      "other_parent": "/home/cereal/models/Qwen3.8-27B-Uncensored",
+      "other_parent_refused": "the evidence was tokenized by 5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42 and /home/cereal/models/Q"
+    }
+  },
+  "no_batch_begins_mid_row": {
+    "status": "PASS",
+    "evidence": {
+      "separator_id": 248044,
+      "batches_ending_on_separator": 24,
+      "batches_ending_mid_row": 0,
+      "trailing_separator_run_by_batch": [
+        138,
+        22,
+        36,
+        65,
+        167,
+        67,
+        15,
+        57,
+        62,
+        168,
+        23,
+        34,
+        174,
+        17,
+        90,
+        157,
+        9,
+        208,
+        16,
+        17,
+        71,
+        43,
+        33,
+        167
+      ]
+    }
+  },
+  "build_receipt": {
+    "status": "PASS",
+    "evidence": {
+      "receipt_sha256": "6898fcfbf9ca7f5c2b7fc05393163d766ad3c367362eb8eaec62f366d09ee5d8",
+      "builder_sha256": "2004c44dbf49dbe4f9fcad1687785efd76cab0ecf96323f309508fe766a655f4",
+      "batches_checked": 24,
+      "padding_disagreements": [],
+      "rows_spanning_batches": 0,
+      "batches_starting_mid_row": 0,
+      "padding_fraction": 0.018636
+    }
+  }
+}

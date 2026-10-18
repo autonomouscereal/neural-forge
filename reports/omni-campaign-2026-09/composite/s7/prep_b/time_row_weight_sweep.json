@@ -1,0 +1,186 @@
+{
+ "schema": "omni-campaign.prepb_time_row_weight_sweep.v1",
+ "unit": "hy3d_dit_L10",
+ "arms": "ridge only (split fit on fit groups, held = 2 objects)",
+ "rule": "DESIGN (fixed before the sweep ran): the weight with the lowest held time-row forward relL2 (4 d.p.) among weights whose held content-row forward relL2 is within +1% of the weight-1 value; ties -> the smaller weight",
+ "sweep": [
+  {
+   "weight": 1,
+   "held_forward_time": {
+    "cos": 0.964731108878182,
+    "rel_l2": 0.47267948699808887,
+    "row_rel_l2": [
+     0.4765704135521843,
+     0.46860428149878797
+    ],
+    "row_cos": [
+     0.9643242367711367,
+     0.9651379809852272
+    ]
+   },
+   "held_forward_content": {
+    "cos": 0.4036222552334966,
+    "rel_l2": 0.932127572836763
+   },
+   "held_backward_time": {
+    "cos": 0.9738737820280255,
+    "rel_l2": 0.244877200226584
+   },
+   "held_backward_content": {
+    "cos": 0.9097795227720293,
+    "rel_l2": 0.46041715852269227
+   },
+   "held_roundtrip_all": {
+    "cos": 0.9627433600007751,
+    "cos_p05": 0.9266380137120385,
+    "r2": 0.6809255307894966,
+    "rel_l2": 0.28795399251112175,
+    "rows": 8194
+   },
+   "record_in_sample_forward_time": {
+    "cos": 0.972686447584001,
+    "rel_l2": 0.4807685399020007
+   },
+   "ridge_rel": {
+    "chart_in": 0.1,
+    "chart_out": 0.1
+   },
+   "seconds": 1154.6022367477417,
+   "receipt": "/home/cereal/omni-campaign/composite/s7/prep_b/sweep/w1/unit/chart_receipt.json"
+  },
+  {
+   "weight": 64,
+   "held_forward_time": {
+    "cos": 0.9838259325644217,
+    "rel_l2": 0.17963041342362898,
+    "row_rel_l2": [
+     0.17900638637441332,
+     0.180276223623889
+    ],
+    "row_cos": [
+     0.9840310915456725,
+     0.9836207735831712
+    ]
+   },
+   "held_forward_content": {
+    "cos": 0.4017710408022169,
+    "rel_l2": 0.9334595514187061
+   },
+   "held_backward_time": {
+    "cos": 0.9712470258842528,
+    "rel_l2": 0.2513608072124057
+   },
+   "held_backward_content": {
+    "cos": 0.9110575944253009,
+    "rel_l2": 0.45897591990450626
+   },
+   "held_roundtrip_all": {
+    "cos": 0.9624707027622627,
+    "cos_p05": 0.9262577327631574,
+    "r2": 0.6782786006576224,
+    "rel_l2": 0.28914590846125754,
+    "rows": 8194
+   },
+   "record_in_sample_forward_time": {
+    "cos": 0.998719312162467,
+    "rel_l2": 0.05371222158137346
+   },
+   "ridge_rel": {
+    "chart_in": 0.1,
+    "chart_out": 0.1
+   },
+   "seconds": 1182.0288972854614,
+   "receipt": "/home/cereal/omni-campaign/composite/s7/prep_b/sweep/w64/unit/chart_receipt.json"
+  },
+  {
+   "weight": 512,
+   "held_forward_time": {
+    "cos": 0.9840524611219037,
+    "rel_l2": 0.17803667521092426,
+    "row_rel_l2": [
+     0.1767315607761735,
+     0.1793820784706607
+    ],
+    "row_cos": [
+     0.9842935388140588,
+     0.9838113834297484
+    ]
+   },
+   "held_forward_content": {
+    "cos": 0.40223752650161215,
+    "rel_l2": 0.9327629676192802
+   },
+   "held_backward_time": {
+    "cos": 0.9725202711917085,
+    "rel_l2": 0.24715927309969601
+   },
+   "held_backward_content": {
+    "cos": 0.9173125387787917,
+    "rel_l2": 0.45273299178411697
+   },
+   "held_roundtrip_all": {
+    "cos": 0.9606210377102925,
+    "cos_p05": 0.9227435646223981,
+    "r2": 0.6622620824320471,
+    "rel_l2": 0.29625588579931944,
+    "rows": 8194
+   },
+   "record_in_sample_forward_time": {
+    "cos": 0.9999429786803538,
+    "rel_l2": 0.011181506287515191
+   },
+   "ridge_rel": {
+    "chart_in": 0.1,
+    "chart_out": 0.1
+   },
+   "seconds": 1055.558049440384,
+   "receipt": "/home/cereal/omni-campaign/composite/s7/prep_b/sweep/w512/unit/chart_receipt.json"
+  },
+  {
+   "weight": 4096,
+   "held_forward_time": {
+    "cos": 0.9844909838785647,
+    "rel_l2": 0.1755840147283183,
+    "row_rel_l2": [
+     0.17402728562882339,
+     0.17718631146723748
+    ],
+    "row_cos": [
+     0.9847670318385728,
+     0.9842149359185566
+    ]
+   },
+   "held_forward_content": {
+    "cos": 0.4050299099249409,
+    "rel_l2": 0.9288352801845631
+   },
+   "held_backward_time": {
+    "cos": 0.968338726758295,
+    "rel_l2": 0.2613297892749438
+   },
+   "held_backward_content": {
+    "cos": 0.9001866478418572,
+    "rel_l2": 0.4720793889456935
+   },
+   "held_roundtrip_all": {
+    "cos": 0.9641313154994423,
+    "cos_p05": 0.9297952152422577,
+    "r2": 0.6941219940438816,
+    "rel_l2": 0.2819364336770961,
+    "rows": 8194
+   },
+   "record_in_sample_forward_time": {
+    "cos": 0.9999979694157506,
+    "rel_l2": 0.0021079287501162003
+   },
+   "ridge_rel": {
+    "chart_in": 0.1,
+    "chart_out": 0.01
+   },
+   "seconds": 1270.3648602962494,
+   "receipt": "/home/cereal/omni-campaign/composite/s7/prep_b/sweep/w4096/unit/chart_receipt.json"
+  }
+ ],
+ "chosen_weight": 4096,
+ "policy": "design parameter chosen from measurements (owner 2026-10-06); the numbers are diagnostics, never gates"
+}

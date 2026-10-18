@@ -1,0 +1,1508 @@
+{
+  "schema": "neural-forge-omni-evidence-build-receipt-v1",
+  "built_at_utc": "2026-09-02T14:34:56Z",
+  "host": "cereal-X10DRG",
+  "python": "3.12.3",
+  "builder": {
+    "path": "/home/cereal/omni-campaign/qwen-fold/qf_evidence_build.py",
+    "sha256": "2004c44dbf49dbe4f9fcad1687785efd76cab0ecf96323f309508fe766a655f4",
+    "argv": [
+      "--out",
+      "/home/cereal/omni-campaign/qwen-fold/evidence/omni-evidence-v1.json",
+      "--force"
+    ]
+  },
+  "manifest": {
+    "path": "/home/cereal/omni-campaign/qwen-fold/evidence/omni-evidence-v1.json",
+    "file_sha256": "5e1534e12fbd9a7b9ace19cad2721c60ee391c912d7f0100b44209620e75cd75",
+    "schema": "neural-forge-omni-evidence-v1",
+    "manifest": "/home/cereal/omni-campaign/qwen-fold/evidence/omni-evidence-v1.json",
+    "manifest_sha256": "643267e8e4b164d32ba3878d2c424246424ba3edff852b24360a05b8dd6535fb",
+    "tokenizer_sha256": "5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42",
+    "source": "qf_evidence_build.py; curated master registry /mnt/ai_data/omnicoder_2026/datasets/MASTER_SHARD_INDEX_POINTER.json (631 entries / 94318 rows); routes text,code,math,tool,reasoning; packed by token-deficit interleave to 4096 tokens; screened against 6 review packs at 48-char containment; seed 20260902; receipt omni-evidence-v1-build-receipt.json",
+    "sequence_length": 4096,
+    "batches": 24,
+    "fit_batches": 18,
+    "held_batches": 6,
+    "fit_rows": 73728,
+    "heldout_rows": 24576,
+    "internal_check_rows": 24576
+  },
+  "supersedes": {
+    "out": "/home/cereal/omni-campaign/qwen-fold/evidence/omni-evidence-v1.json",
+    "existed": true,
+    "forced": true,
+    "superseded_manifest_sha256": "a4480361fc61f7b1031437637f5f3f1fc4492061ea35ffb2d7575562ddde35d7",
+    "backup_directory": "/home/cereal/omni-campaign/qwen-fold/evidence/.superseded-20260902T143444Z",
+    "backed_up": [
+      {
+        "name": "omni-evidence-v1.json",
+        "sha256": "dd8cb2c8ab784c76147bec69d5341271de6c468d18c47322536bd36aca4b1212"
+      },
+      {
+        "name": "omni-evidence-v1-build-receipt.json",
+        "sha256": "13b36f0d36c8347af73203f28e9f3243caaf6f4ae3a86206f61a77dc306ca82d"
+      }
+    ]
+  },
+  "tokenizer": {
+    "path": "/home/cereal/models/Qwen3.5-4B/tokenizer.json",
+    "sha256": "5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42",
+    "sha256_matches_pin": true,
+    "defined_rows": 248070,
+    "physical_vocab_size": 248320,
+    "dead_rows": 250,
+    "vocabulary_arithmetic": {
+      "physical_rows": 248320,
+      "defined_rows": 248070,
+      "base_bpe_rows": 248044,
+      "added_token_rows": 26,
+      "added_tokens": [
+        {
+          "id": 248044,
+          "content": "<|endoftext|>"
+        },
+        {
+          "id": 248045,
+          "content": "<|im_start|>"
+        },
+        {
+          "id": 248046,
+          "content": "<|im_end|>"
+        },
+        {
+          "id": 248047,
+          "content": "<|object_ref_start|>"
+        },
+        {
+          "id": 248048,
+          "content": "<|object_ref_end|>"
+        },
+        {
+          "id": 248049,
+          "content": "<|box_start|>"
+        },
+        {
+          "id": 248050,
+          "content": "<|box_end|>"
+        },
+        {
+          "id": 248051,
+          "content": "<|quad_start|>"
+        },
+        {
+          "id": 248052,
+          "content": "<|quad_end|>"
+        },
+        {
+          "id": 248053,
+          "content": "<|vision_start|>"
+        },
+        {
+          "id": 248054,
+          "content": "<|vision_end|>"
+        },
+        {
+          "id": 248055,
+          "content": "<|vision_pad|>"
+        },
+        {
+          "id": 248056,
+          "content": "<|image_pad|>"
+        },
+        {
+          "id": 248057,
+          "content": "<|video_pad|>"
+        },
+        {
+          "id": 248058,
+          "content": "<tool_call>"
+        },
+        {
+          "id": 248059,
+          "content": "</tool_call>"
+        },
+        {
+          "id": 248060,
+          "content": "<|fim_prefix|>"
+        },
+        {
+          "id": 248061,
+          "content": "<|fim_middle|>"
+        },
+        {
+          "id": 248062,
+          "content": "<|fim_suffix|>"
+        },
+        {
+          "id": 248063,
+          "content": "<|fim_pad|>"
+        },
+        {
+          "id": 248064,
+          "content": "<|repo_name|>"
+        },
+        {
+          "id": 248065,
+          "content": "<|file_sep|>"
+        },
+        {
+          "id": 248066,
+          "content": "<tool_response>"
+        },
+        {
+          "id": 248067,
+          "content": "</tool_response>"
+        },
+        {
+          "id": 248068,
+          "content": "<think>"
+        },
+        {
+          "id": 248069,
+          "content": "</think>"
+        }
+      ],
+      "dead_rows_measured": 250,
+      "dead_rows_quoted_by_port_spec": 276,
+      "agrees_with_port_spec": false,
+      "hazard": "the quoted 276 is this measurement's 250 dead rows PLUS the 26 added tokens; deriving the dead set as range(config.vocab_size) - base_bpe_ids marks every added token dead and a Stage2DonorVocabulary/C1 port following PORT_SPEC 0.3 would delete them -- eos/bos and the vision/image/video control tokens among them.  Derive dead rows from the DEFINED table (base + added), never from the base alphabet alone."
+    },
+    "separator_id": 248044,
+    "highest_id_in_stream": 248069,
+    "add_special_tokens": false,
+    "sibling_parents": [
+      {
+        "parent": "/home/cereal/models/Qwen3.5-0.8B",
+        "tokenizer_json": "/home/cereal/models/Qwen3.5-0.8B/tokenizer.json",
+        "sha256": "5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42",
+        "shares_tokenizer": true
+      },
+      {
+        "parent": "/home/cereal/models/Qwen3.8-27B-Uncensored",
+        "tokenizer_json": "/home/cereal/models/Qwen3.8-27B-Uncensored/tokenizer.json",
+        "sha256": "06b9509352d2af50381ab2247e083b80d32d5c0aba91c272ca9ff729b6a0e523",
+        "shares_tokenizer": false
+      }
+    ]
+  },
+  "split": {
+    "held_every": 4,
+    "rule": "held on every held_every-th batch counted from the first",
+    "fit_batches": [
+      0,
+      1,
+      2,
+      4,
+      5,
+      6,
+      8,
+      9,
+      10,
+      12,
+      13,
+      14,
+      16,
+      17,
+      18,
+      20,
+      21,
+      22
+    ],
+    "held_batches": [
+      3,
+      7,
+      11,
+      15,
+      19,
+      23
+    ],
+    "internal_check_stride": 3,
+    "internal_check_offset": 2,
+    "internal_check_batches": [
+      2,
+      6,
+      10,
+      14,
+      18,
+      22
+    ],
+    "internal_check_rows": 24576,
+    "internal_check_rows_total": 73728
+  },
+  "routes": {
+    "requested": [
+      "text",
+      "code",
+      "math",
+      "tool",
+      "reasoning"
+    ],
+    "pad": "'pad' in the per-batch composition is eos padding, not a route: it is what row-atomic packing leaves at the end of a batch no remaining row fits into",
+    "tokens_by_route": {
+      "code": 18954,
+      "math": 19523,
+      "pad": 1832,
+      "reasoning": 19466,
+      "text": 19406,
+      "tool": 19123
+    },
+    "tokens_by_route_by_split": {
+      "code": {
+        "fit": 14640,
+        "held": 4314
+      },
+      "math": {
+        "fit": 14237,
+        "held": 5286
+      },
+      "pad": {
+        "fit": 1341,
+        "held": 491
+      },
+      "reasoning": {
+        "fit": 14327,
+        "held": 5139
+      },
+      "text": {
+        "fit": 14206,
+        "held": 5200
+      },
+      "tool": {
+        "fit": 14977,
+        "held": 4146
+      }
+    }
+  },
+  "batches": [
+    {
+      "batch_index": 0,
+      "split": "fit",
+      "tokens": 4096,
+      "rows": 8,
+      "padding_tokens": 137,
+      "opens_a_row": true,
+      "tokens_by_route": {
+        "code": 788,
+        "math": 1229,
+        "pad": 137,
+        "reasoning": 407,
+        "text": 750,
+        "tool": 785
+      },
+      "ids_sha256": "db196d57a200cf84361510b4da4392d7336acb3e98c1546695584954fb6503f3"
+    },
+    {
+      "batch_index": 1,
+      "split": "fit",
+      "tokens": 4096,
+      "rows": 10,
+      "padding_tokens": 21,
+      "opens_a_row": true,
+      "tokens_by_route": {
+        "code": 740,
+        "math": 344,
+        "pad": 21,
+        "reasoning": 1358,
+        "text": 833,
+        "tool": 800
+      },
+      "ids_sha256": "8a6afbabf9a2e877c519eee517522bc5f5cd77b2085aec9cfb5fc6572e1d14e2"
+    },
+    {
+      "batch_index": 2,
+      "split": "fit",
+      "tokens": 4096,
+      "rows": 8,
+      "padding_tokens": 35,
+      "opens_a_row": true,
+      "tokens_by_route": {
+        "code": 786,
+        "math": 1109,
+        "pad": 35,
+        "reasoning": 361,
+        "text": 891,
+        "tool": 914
+      },
+      "ids_sha256": "b4b8ca46b220d9579f06c3ce8d449a3d9707281c4575834559329ce1b84549d4"
+    },
+    {
+      "batch_index": 3,
+      "split": "held",
+      "tokens": 4096,
+      "rows": 8,
+      "padding_tokens": 64,
+      "opens_a_row": true,
+      "tokens_by_route": {
+        "code": 831,
+        "math": 1174,
+        "pad": 64,
+        "reasoning": 898,
+        "text": 594,
+        "tool": 535
+      },
+      "ids_sha256": "11062867abcd1f250fb478d410d324adf504268232374f6df8b9fa143dba3558"
+    },
+    {
+      "batch_index": 4,
+      "split": "fit",
+      "tokens": 4096,
+      "rows": 7,
+      "padding_tokens": 166,
+      "opens_a_row": true,
+      "tokens_by_route": {
+        "code": 831,
+        "pad": 166,
+        "reasoning": 1300,
+        "text": 925,
+        "tool": 874
+      },
+      "ids_sha256": "a617cf3f55c6398d8da71e8f890098dd5bcb437c9b607b6d889c07f46f2e921f"
+    },
+    {
+      "batch_index": 5,
+      "split": "fit",
+      "tokens": 4096,
+      "rows": 8,
+      "padding_tokens": 66,
+      "opens_a_row": true,
+      "tokens_by_route": {
+        "code": 790,
+        "math": 1214,
+        "pad": 66,
+        "reasoning": 374,
+        "text": 1186,
+        "tool": 466
+      },
+      "ids_sha256": "3341be1260667028d0c0891c1d0144f09de25dafc473d89e71df4bf9c429e19e"
+    },
+    {
+      "batch_index": 6,
+      "split": "fit",
+      "tokens": 4096,
+      "rows": 9,
+      "padding_tokens": 14,
+      "opens_a_row": true,
+      "tokens_by_route": {
+        "code": 871,
+        "math": 1002,
+        "pad": 14,
+        "reasoning": 503,
+        "text": 634,
+        "tool": 1072
+      },
+      "ids_sha256": "be6b3b4829d3f8198e19f15ae5f1daf1a595d8996393be264fbd1c3d26afb567"
+    },
+    {
+      "batch_index": 7,
+      "split": "held",
+      "tokens": 4096,
+      "rows": 7,
+      "padding_tokens": 56,
+      "opens_a_row": true,
+      "tokens_by_route": {
+        "code": 782,
+        "math": 399,
+        "pad": 56,
+        "reasoning": 907,
+        "text": 1028,
+        "tool": 924
+      },
+      "ids_sha256": "614eadb7def89c227d7523060862336b33f4ad99d3d26118381986c9a7701da0"
+    },
+    {
+      "batch_index": 8,
+      "split": "fit",
+      "tokens": 4096,
+      "rows": 7,
+      "padding_tokens": 61,
+      "opens_a_row": true,
+      "tokens_by_route": {
+        "code": 521,
+        "math": 907,
+        "pad": 61,
+        "reasoning": 1026,
+        "text": 720,
+        "tool": 861
+      },
+      "ids_sha256": "9b5c336d1dbdcde6321326bca53d9653c8c13159b2eaaedef188d29a548759ee"
+    },
+    {
+      "batch_index": 9,
+      "split": "fit",
+      "tokens": 4096,
+      "rows": 8,
+      "padding_tokens": 167,
+      "opens_a_row": true,
+      "tokens_by_route": {
+        "code": 689,
+        "math": 1091,
+        "pad": 167,
+        "reasoning": 840,
+        "text": 849,
+        "tool": 460
+      },
+      "ids_sha256": "fba92cf8205ffce401ea6657755d2b52bf436fb6c4490c1f3bf6de757b6da745"
+    },
+    {
+      "batch_index": 10,
+      "split": "fit",
+      "tokens": 4096,
+      "rows": 9,
+      "padding_tokens": 22,
+      "opens_a_row": true,
+      "tokens_by_route": {
+        "code": 997,
+        "math": 884,
+        "pad": 22,
+        "reasoning": 897,
+        "text": 460,
+        "tool": 836
+      },
+      "ids_sha256": "cf335c057372dff52791a1ef7abfffb6ea6db067d16a6b36ae88ba4f51fa7347"
+    },
+    {
+      "batch_index": 11,
+      "split": "held",
+      "tokens": 4096,
+      "rows": 10,
+      "padding_tokens": 33,
+      "opens_a_row": true,
+      "tokens_by_route": {
+        "code": 963,
+        "math": 489,
+        "pad": 33,
+        "reasoning": 885,
+        "text": 881,
+        "tool": 845
+      },
+      "ids_sha256": "2775126ebb6231e117bffca381eb201e6021dc3dcf7c0ac278f0452c0b542b0d"
+    },
+    {
+      "batch_index": 12,
+      "split": "fit",
+      "tokens": 4096,
+      "rows": 7,
+      "padding_tokens": 173,
+      "opens_a_row": true,
+      "tokens_by_route": {
+        "code": 1245,
+        "math": 1055,
+        "pad": 173,
+        "reasoning": 405,
+        "text": 330,
+        "tool": 888
+      },
+      "ids_sha256": "8315e29bea1171861e04855cb2f9a3cdd07e00827dad4278b0124bbff4c08a28"
+    },
+    {
+      "batch_index": 13,
+      "split": "fit",
+      "tokens": 4096,
+      "rows": 9,
+      "padding_tokens": 16,
+      "opens_a_row": true,
+      "tokens_by_route": {
+        "code": 477,
+        "math": 248,
+        "pad": 16,
+        "reasoning": 840,
+        "text": 1664,
+        "tool": 851
+      },
+      "ids_sha256": "ab2352320292bede04670a2b2d8b98fe198956c4bbe38920afa6063620ddaf07"
+    },
+    {
+      "batch_index": 14,
+      "split": "fit",
+      "tokens": 4096,
+      "rows": 7,
+      "padding_tokens": 89,
+      "opens_a_row": true,
+      "tokens_by_route": {
+        "code": 936,
+        "math": 910,
+        "pad": 89,
+        "reasoning": 964,
+        "text": 423,
+        "tool": 774
+      },
+      "ids_sha256": "cfccd8d21eb16130bc27929b0a5e1d6be6f071351a00982f16ddeb6fba2e46be"
+    },
+    {
+      "batch_index": 15,
+      "split": "held",
+      "tokens": 4096,
+      "rows": 8,
+      "padding_tokens": 156,
+      "opens_a_row": true,
+      "tokens_by_route": {
+        "code": 400,
+        "math": 1079,
+        "pad": 156,
+        "reasoning": 729,
+        "text": 826,
+        "tool": 906
+      },
+      "ids_sha256": "da943c77453ad96ab96a149711844af44886fad73e25a8fbd8285010bab756f6"
+    },
+    {
+      "batch_index": 16,
+      "split": "fit",
+      "tokens": 4096,
+      "rows": 7,
+      "padding_tokens": 8,
+      "opens_a_row": true,
+      "tokens_by_route": {
+        "code": 683,
+        "math": 1123,
+        "pad": 8,
+        "reasoning": 1001,
+        "text": 762,
+        "tool": 519
+      },
+      "ids_sha256": "e2e37f726f4ad7617f3d556b2a04aa705ec0ee268f435b7a8e2063ad6c440138"
+    },
+    {
+      "batch_index": 17,
+      "split": "fit",
+      "tokens": 4096,
+      "rows": 9,
+      "padding_tokens": 207,
+      "opens_a_row": true,
+      "tokens_by_route": {
+        "code": 1047,
+        "pad": 207,
+        "reasoning": 935,
+        "text": 674,
+        "tool": 1233
+      },
+      "ids_sha256": "45d5dde6188028a3435aa8667fd828e8d891a35986aeb8ff99477850c959e24c"
+    },
+    {
+      "batch_index": 18,
+      "split": "fit",
+      "tokens": 4096,
+      "rows": 9,
+      "padding_tokens": 15,
+      "opens_a_row": true,
+      "tokens_by_route": {
+        "code": 685,
+        "math": 1051,
+        "pad": 15,
+        "reasoning": 644,
+        "text": 896,
+        "tool": 805
+      },
+      "ids_sha256": "560d61393b7ce90e7ef73eccdcabe99495d45c109ee0c316f6d300d1bd14a623"
+    },
+    {
+      "batch_index": 19,
+      "split": "held",
+      "tokens": 4096,
+      "rows": 7,
+      "padding_tokens": 16,
+      "opens_a_row": true,
+      "tokens_by_route": {
+        "code": 1021,
+        "math": 1021,
+        "pad": 16,
+        "reasoning": 556,
+        "text": 1009,
+        "tool": 473
+      },
+      "ids_sha256": "f66f0a7358aa85bf6ac87c1c14274f0f362ba72048297eac7b7e9a3848fd3570"
+    },
+    {
+      "batch_index": 20,
+      "split": "fit",
+      "tokens": 4096,
+      "rows": 9,
+      "padding_tokens": 70,
+      "opens_a_row": true,
+      "tokens_by_route": {
+        "code": 1029,
+        "math": 439,
+        "pad": 70,
+        "reasoning": 923,
+        "text": 959,
+        "tool": 676
+      },
+      "ids_sha256": "4388349b645cc14b08e895e67c23f0728fba1985aaa56423f2a00d8c4c84999b"
+    },
+    {
+      "batch_index": 21,
+      "split": "fit",
+      "tokens": 4096,
+      "rows": 8,
+      "padding_tokens": 42,
+      "opens_a_row": true,
+      "tokens_by_route": {
+        "code": 318,
+        "math": 1135,
+        "pad": 42,
+        "reasoning": 1143,
+        "text": 460,
+        "tool": 998
+      },
+      "ids_sha256": "8d72c10726efbe45411bc8eb42d0f03ef0709fe3c8fb17539696077437a602d0"
+    },
+    {
+      "batch_index": 22,
+      "split": "fit",
+      "tokens": 4096,
+      "rows": 10,
+      "padding_tokens": 32,
+      "opens_a_row": true,
+      "tokens_by_route": {
+        "code": 1207,
+        "math": 496,
+        "pad": 32,
+        "reasoning": 406,
+        "text": 790,
+        "tool": 1165
+      },
+      "ids_sha256": "7c085126bf0acac3711244f488acca129dffed272024cef15f35ba08d6481195"
+    },
+    {
+      "batch_index": 23,
+      "split": "held",
+      "tokens": 4096,
+      "rows": 7,
+      "padding_tokens": 166,
+      "opens_a_row": true,
+      "tokens_by_route": {
+        "code": 317,
+        "math": 1124,
+        "pad": 166,
+        "reasoning": 1164,
+        "text": 862,
+        "tool": 463
+      },
+      "ids_sha256": "7e57caec07aee9bd08a63ee6b0b456dd0ff4630e7391c452ef5b5b861bffe19e"
+    }
+  ],
+  "packing": {
+    "seed": 20260902,
+    "order": "next row from the route with the fewest tokens emitted so far, ties by declared route order; each route's pool shuffled with the seed",
+    "rule": "rows are placed WHOLE; a row that does not fit in the remainder of a batch waits for the next batch and the remainder is padded with the parent's eos id, so no document spans a batch boundary and no batch begins mid-row",
+    "separator": "each row's ids are followed by the parent's eos id",
+    "padding_token_id": 248044,
+    "rows_consumed_by_route": {
+      "text": 27,
+      "code": 46,
+      "math": 22,
+      "tool": 60,
+      "reasoning": 41
+    },
+    "rows_consumed_total": 196,
+    "rows_truncated_to_sequence_length": {},
+    "datasets_consumed_by_route": {
+      "text": [
+        "kepler_broad_domain_knowledge_ready_439",
+        "kepler_reasoning_math_text_longcontext_ready_834",
+        "kepler_reasoning_math_text_longcontext_ready_922_20260605T151735Z",
+        "v9_base_validated_28025"
+      ],
+      "code": [
+        "erdos_broad_domain_code_tool_adjacent_ready_540_162945",
+        "erdos_broad_domain_code_tool_adjacent_ready_540_170208",
+        "erdos_broad_domain_code_tool_adjacent_ready_540_173412",
+        "erdos_code_tools_agentic_ready_446",
+        "erdos_code_tools_agentic_ready_480",
+        "erdos_code_tools_agentic_ready_480_20260605T151526Z",
+        "v9_base_validated_28025"
+      ],
+      "math": [
+        "kepler_broad_domain_knowledge2_ready_431",
+        "kepler_reasoning_math_text_longcontext_ready_834",
+        "kepler_reasoning_math_text_longcontext_ready_922_20260605T151735Z"
+      ],
+      "tool": [
+        "erdos_broad_domain_code_tool_adjacent_ready_540_162945",
+        "erdos_broad_domain_code_tool_adjacent_ready_540_170208",
+        "erdos_broad_domain_code_tool_adjacent_ready_540_173412",
+        "erdos_broad_domain_code_tool_adjacent_ready_540_180317",
+        "erdos_broad_domain_code_tool_adjacent_ready_550",
+        "erdos_code_tools_agentic_ready_446",
+        "erdos_code_tools_agentic_ready_480",
+        "erdos_code_tools_agentic_ready_480_20260605T151526Z"
+      ],
+      "reasoning": [
+        "kepler_broad_domain_knowledge2_ready_431",
+        "kepler_broad_domain_knowledge3_ready_427",
+        "kepler_broad_domain_knowledge4_ready_422",
+        "kepler_broad_domain_knowledge6_ready_394",
+        "kepler_reasoning_math_text_longcontext_ready_834",
+        "kepler_reasoning_math_text_longcontext_ready_922_20260605T151735Z"
+      ]
+    },
+    "rows_available_by_route": {
+      "text": 37,
+      "code": 65,
+      "math": 30,
+      "tool": 80,
+      "reasoning": 57
+    },
+    "rows_left_unused_by_route": {
+      "text": 10,
+      "code": 19,
+      "math": 8,
+      "tool": 20,
+      "reasoning": 16
+    },
+    "fit_window": 8,
+    "rows_taken_from_look_ahead": 15,
+    "rows_by_batch": [
+      8,
+      10,
+      8,
+      8,
+      7,
+      8,
+      9,
+      7,
+      7,
+      8,
+      9,
+      10,
+      7,
+      9,
+      7,
+      8,
+      7,
+      9,
+      9,
+      7,
+      9,
+      8,
+      10,
+      7
+    ],
+    "padding_tokens_by_batch": [
+      137,
+      21,
+      35,
+      64,
+      166,
+      66,
+      14,
+      56,
+      61,
+      167,
+      22,
+      33,
+      173,
+      16,
+      89,
+      156,
+      8,
+      207,
+      15,
+      16,
+      70,
+      42,
+      32,
+      166
+    ],
+    "padding_tokens": 1832,
+    "padding_fraction": 0.018636,
+    "tokens_placed_by_route": {
+      "text": 19406,
+      "code": 18954,
+      "math": 19523,
+      "tool": 19123,
+      "reasoning": 19466
+    },
+    "tokens_used": 98304,
+    "split_leakage": {
+      "measure": "rows are located by (batch, offset); a row whose offset plus its length exceeds the batch would span a boundary, and a batch no row opens at offset 0 would begin mid-row",
+      "rows_placed": 196,
+      "rows_spanning_batches": 0,
+      "batches_starting_mid_row": 0,
+      "held_tokens_continuing_fit_rows": 0,
+      "check_tokens_continuing_non_check_rows": 0,
+      "statement": "no token of any fit document appears in a held or internal-check batch, because no document appears in two batches"
+    }
+  },
+  "registry": {
+    "pointer": "/mnt/ai_data/omnicoder_2026/datasets/MASTER_SHARD_INDEX_POINTER.json",
+    "deadline_seconds": 2400.0,
+    "wall_seconds": 10.09,
+    "tokens_per_route_target": 26543,
+    "entries_visited": [
+      {
+        "dataset_id": "v9_base_validated_28025",
+        "training_status": "trained_base",
+        "rows_taken": 20,
+        "shards_opened": 4
+      },
+      {
+        "dataset_id": "erdos_code_tools_agentic_ready_446",
+        "training_status": "trained_v37_complete",
+        "rows_taken": 20,
+        "shards_opened": 1
+      },
+      {
+        "dataset_id": "kepler_reasoning_math_text_longcontext_ready_834",
+        "training_status": "trained_v37_complete",
+        "rows_taken": 30,
+        "shards_opened": 1
+      },
+      {
+        "dataset_id": "erdos_code_tools_agentic_ready_480",
+        "training_status": "trained_v37_complete",
+        "rows_taken": 20,
+        "shards_opened": 1
+      },
+      {
+        "dataset_id": "erdos_code_tools_agentic_ready_480_20260605T151526Z",
+        "training_status": "trained_v37_complete",
+        "rows_taken": 20,
+        "shards_opened": 1
+      },
+      {
+        "dataset_id": "kepler_reasoning_math_text_longcontext_ready_922_20260605T151735Z",
+        "training_status": "trained_v37_complete",
+        "rows_taken": 30,
+        "shards_opened": 1
+      },
+      {
+        "dataset_id": "kepler_broad_domain_knowledge_ready_439",
+        "training_status": "trained_v37_complete",
+        "rows_taken": 7,
+        "shards_opened": 1
+      },
+      {
+        "dataset_id": "erdos_broad_domain_code_tool_adjacent_ready_550",
+        "training_status": "trained_v37_complete",
+        "rows_taken": 10,
+        "shards_opened": 1
+      },
+      {
+        "dataset_id": "kepler_broad_domain_knowledge2_ready_431",
+        "training_status": "ready_untrained_candidate",
+        "rows_taken": 20,
+        "shards_opened": 1
+      },
+      {
+        "dataset_id": "erdos_broad_domain_code_tool_adjacent_ready_540_162945",
+        "training_status": "trained_v37_complete",
+        "rows_taken": 20,
+        "shards_opened": 1
+      },
+      {
+        "dataset_id": "kepler_broad_domain_knowledge3_ready_427",
+        "training_status": "ready_untrained_candidate",
+        "rows_taken": 10,
+        "shards_opened": 1
+      },
+      {
+        "dataset_id": "erdos_broad_domain_code_tool_adjacent_ready_540_170208",
+        "training_status": "trained_v37_complete",
+        "rows_taken": 20,
+        "shards_opened": 1
+      },
+      {
+        "dataset_id": "kepler_broad_domain_knowledge4_ready_422",
+        "training_status": "ready_untrained_candidate",
+        "rows_taken": 10,
+        "shards_opened": 1
+      },
+      {
+        "dataset_id": "erdos_broad_domain_code_tool_adjacent_ready_540_173412",
+        "training_status": "trained_v37_complete",
+        "rows_taken": 15,
+        "shards_opened": 1
+      },
+      {
+        "dataset_id": "erdos_broad_domain_code_tool_adjacent_ready_540_180317",
+        "training_status": "trained_v37_complete",
+        "rows_taken": 10,
+        "shards_opened": 1
+      },
+      {
+        "dataset_id": "kepler_broad_domain_knowledge6_ready_394",
+        "training_status": "ready_untrained_candidate",
+        "rows_taken": 7,
+        "shards_opened": 1
+      }
+    ],
+    "scanned": {
+      "entries": 16,
+      "shards": 19,
+      "rows": 27638
+    },
+    "dropped_rows_by_reason": {
+      "per_dataset_route_cap": 21540,
+      "route_budget_full": 1511,
+      "route_not_wanted": 4318
+    },
+    "collected_tokens_by_route": {
+      "text": 26748,
+      "code": 26620,
+      "math": 26705,
+      "tool": 27077,
+      "reasoning": 26758
+    },
+    "collected_rows_by_route": {
+      "text": 37,
+      "code": 65,
+      "math": 30,
+      "tool": 80,
+      "reasoning": 57
+    },
+    "collected_rows_total": 269,
+    "shards_opened_total": 17,
+    "datasets_used_total": 16,
+    "mean_characters_by_route": {
+      "text": 3150.2,
+      "code": 1504.2,
+      "math": 2871.7,
+      "tool": 1312.4,
+      "reasoning": 2187.1
+    },
+    "datasets_by_route": {
+      "text": [
+        "kepler_broad_domain_knowledge_ready_439",
+        "kepler_reasoning_math_text_longcontext_ready_834",
+        "kepler_reasoning_math_text_longcontext_ready_922_20260605T151735Z",
+        "v9_base_validated_28025"
+      ],
+      "code": [
+        "erdos_broad_domain_code_tool_adjacent_ready_540_162945",
+        "erdos_broad_domain_code_tool_adjacent_ready_540_170208",
+        "erdos_broad_domain_code_tool_adjacent_ready_540_173412",
+        "erdos_code_tools_agentic_ready_446",
+        "erdos_code_tools_agentic_ready_480",
+        "erdos_code_tools_agentic_ready_480_20260605T151526Z",
+        "v9_base_validated_28025"
+      ],
+      "math": [
+        "kepler_broad_domain_knowledge2_ready_431",
+        "kepler_reasoning_math_text_longcontext_ready_834",
+        "kepler_reasoning_math_text_longcontext_ready_922_20260605T151735Z"
+      ],
+      "tool": [
+        "erdos_broad_domain_code_tool_adjacent_ready_540_162945",
+        "erdos_broad_domain_code_tool_adjacent_ready_540_170208",
+        "erdos_broad_domain_code_tool_adjacent_ready_540_173412",
+        "erdos_broad_domain_code_tool_adjacent_ready_540_180317",
+        "erdos_broad_domain_code_tool_adjacent_ready_550",
+        "erdos_code_tools_agentic_ready_446",
+        "erdos_code_tools_agentic_ready_480",
+        "erdos_code_tools_agentic_ready_480_20260605T151526Z"
+      ],
+      "reasoning": [
+        "kepler_broad_domain_knowledge2_ready_431",
+        "kepler_broad_domain_knowledge3_ready_427",
+        "kepler_broad_domain_knowledge4_ready_422",
+        "kepler_broad_domain_knowledge6_ready_394",
+        "kepler_reasoning_math_text_longcontext_ready_834",
+        "kepler_reasoning_math_text_longcontext_ready_922_20260605T151735Z"
+      ]
+    },
+    "curation_field_values_seen": {
+      "contamination_status": {
+        "clean": 27638
+      },
+      "promotion_status": {
+        "candidate_strict_allmodal_pending_index": 20000,
+        "None": 7638
+      },
+      "training_bucket": {
+        "train": 27638
+      },
+      "split": {
+        "train": 27638
+      }
+    },
+    "source_shards": [
+      {
+        "shard_path": "/mnt/ai_data/omnicoder_2026/datasets/shards/erdos_broad_domain_code_tool_adjacent_162945_20260605T165315Z/jsonl_shards/erdos_broad_domain_code_tool_adjacent_ready_540_162945-000000.jsonl",
+        "dataset_id": "erdos_broad_domain_code_tool_adjacent_ready_540_162945",
+        "training_status": "trained_v37_complete",
+        "shard_fields": {
+          "byte_count": 3177294,
+          "filename": "erdos_broad_domain_code_tool_adjacent_ready_540_162945-000000.jsonl",
+          "row_count": 540,
+          "row_hashes_path": "/mnt/ai_data/omnicoder_2026/datasets/shards/erdos_broad_domain_code_tool_adjacent_162945_20260605T165315Z/jsonl_shards/erdos_broad_domain_code_tool_adjacent_ready_540_162945-000000.row_hashes.jsonl",
+          "row_hashes_sha256": "866bebb96f457ec10abd5c71f2a2794745bfe7c21043c478903e1c5374655343",
+          "sha256": "08c8bea08360b9f7dcd73d7f391560b7eb53ed83cecd788ea95aa162ade69a8b",
+          "shard_id": 0
+        },
+        "rows_used": 20,
+        "tokens_collected": 6516,
+        "routes": {
+          "tool": 10,
+          "code": 10
+        }
+      },
+      {
+        "shard_path": "/mnt/ai_data/omnicoder_2026/datasets/shards/erdos_broad_domain_code_tool_adjacent_170208_20260605T172639Z/jsonl_shards/erdos_broad_domain_code_tool_adjacent_ready_540_170208-000000.jsonl",
+        "dataset_id": "erdos_broad_domain_code_tool_adjacent_ready_540_170208",
+        "training_status": "trained_v37_complete",
+        "shard_fields": {
+          "byte_count": 3286318,
+          "filename": "erdos_broad_domain_code_tool_adjacent_ready_540_170208-000000.jsonl",
+          "row_count": 540,
+          "row_hashes_path": "/mnt/ai_data/omnicoder_2026/datasets/shards/erdos_broad_domain_code_tool_adjacent_170208_20260605T172639Z/jsonl_shards/erdos_broad_domain_code_tool_adjacent_ready_540_170208-000000.row_hashes.jsonl",
+          "row_hashes_sha256": "45c28823e20e1340da03103521aa306fd5f5d58da2747c5ff1911377c65d12d6",
+          "sha256": "e19d14bb790f4bcca402d1e1410d879e70f64309ff2f6f4c2eeb05d4322119aa",
+          "shard_id": 0
+        },
+        "rows_used": 20,
+        "tokens_collected": 7512,
+        "routes": {
+          "tool": 10,
+          "code": 10
+        }
+      },
+      {
+        "shard_path": "/mnt/ai_data/omnicoder_2026/datasets/shards/erdos_broad_domain_code_tool_adjacent_173412_20260605T180100Z/jsonl_shards/erdos_broad_domain_code_tool_adjacent_ready_540_173412-000000.jsonl",
+        "dataset_id": "erdos_broad_domain_code_tool_adjacent_ready_540_173412",
+        "training_status": "trained_v37_complete",
+        "shard_fields": {
+          "byte_count": 3303886,
+          "filename": "erdos_broad_domain_code_tool_adjacent_ready_540_173412-000000.jsonl",
+          "row_count": 540,
+          "row_hashes_path": "/mnt/ai_data/omnicoder_2026/datasets/shards/erdos_broad_domain_code_tool_adjacent_173412_20260605T180100Z/jsonl_shards/erdos_broad_domain_code_tool_adjacent_ready_540_173412-000000.row_hashes.jsonl",
+          "row_hashes_sha256": "34bfce0b8a21285124387371c475794adcb84e9bc8ce47b3ca656b5a868f34dc",
+          "sha256": "dde83c9a858cf003fa582dd44b6085eb5e975f39298f6ea3ca7a72e81d7378d3",
+          "shard_id": 0
+        },
+        "rows_used": 15,
+        "tokens_collected": 6879,
+        "routes": {
+          "tool": 10,
+          "code": 5
+        }
+      },
+      {
+        "shard_path": "/mnt/ai_data/omnicoder_2026/datasets/shards/erdos_broad_domain_code_tool_adjacent_180317_20260605T233811Z/jsonl_shards/erdos_broad_domain_code_tool_adjacent_ready_540_180317-000000.jsonl",
+        "dataset_id": "erdos_broad_domain_code_tool_adjacent_ready_540_180317",
+        "training_status": "trained_v37_complete",
+        "shard_fields": {
+          "byte_count": 3304970,
+          "filename": "erdos_broad_domain_code_tool_adjacent_ready_540_180317-000000.jsonl",
+          "row_count": 540,
+          "row_hashes_path": "/mnt/ai_data/omnicoder_2026/datasets/shards/erdos_broad_domain_code_tool_adjacent_180317_20260605T233811Z/jsonl_shards/erdos_broad_domain_code_tool_adjacent_ready_540_180317-000000.row_hashes.jsonl",
+          "row_hashes_sha256": "c21d692e139061b27a0453aa3595a369c702286617ea486edee9dff43b7a7881",
+          "sha256": "69342f4993b615406f471da92c5563d3883fdd516d7ac144e8b1b678d3b86569",
+          "shard_id": 0
+        },
+        "rows_used": 10,
+        "tokens_collected": 5390,
+        "routes": {
+          "tool": 10
+        }
+      },
+      {
+        "shard_path": "/mnt/ai_data/omnicoder_2026/datasets/shards/erdos_broad_domain_code_tool_adjacent_20260605T155921Z/jsonl_shards/erdos_broad_domain_code_tool_adjacent_ready_550-000000.jsonl",
+        "dataset_id": "erdos_broad_domain_code_tool_adjacent_ready_550",
+        "training_status": "trained_v37_complete",
+        "shard_fields": {
+          "byte_count": 2708241,
+          "filename": "erdos_broad_domain_code_tool_adjacent_ready_550-000000.jsonl",
+          "row_count": 550,
+          "row_hashes_path": "/mnt/ai_data/omnicoder_2026/datasets/shards/erdos_broad_domain_code_tool_adjacent_20260605T155921Z/jsonl_shards/erdos_broad_domain_code_tool_adjacent_ready_550-000000.row_hashes.jsonl",
+          "row_hashes_sha256": "e633230ac907734a7b65d37ddb635b176db229d8e3948d95949ce87f4aa91cfb",
+          "sha256": "b11f393671b222924916286cace1ab3d9927ee1643752d73ce2da26217f25dd4",
+          "shard_id": 0
+        },
+        "rows_used": 10,
+        "tokens_collected": 2370,
+        "routes": {
+          "tool": 10
+        }
+      },
+      {
+        "shard_path": "/mnt/ai_data/omnicoder_2026/datasets/shards/erdos_code_tools_agentic_145350_20260605T151545Z/jsonl_shards/erdos_code_tools_agentic_ready_480-000000.jsonl",
+        "dataset_id": "erdos_code_tools_agentic_ready_480",
+        "training_status": "trained_v37_complete",
+        "shard_fields": {
+          "byte_count": 2721857,
+          "filename": "erdos_code_tools_agentic_ready_480-000000.jsonl",
+          "row_count": 480,
+          "row_hashes_path": "/mnt/ai_data/omnicoder_2026/datasets/shards/erdos_code_tools_agentic_145350_20260605T151545Z/jsonl_shards/erdos_code_tools_agentic_ready_480-000000.row_hashes.jsonl",
+          "row_hashes_sha256": "71e2cdc099f31101dda040a4013f85eaf28a327397f3a2dd911e092aa21b3520",
+          "sha256": "d74ab02f5293ab2bc0d5b77b7fd1c1b7169ff8f885007f4da805c3da66ce6565",
+          "shard_id": 0
+        },
+        "rows_used": 20,
+        "tokens_collected": 6394,
+        "routes": {
+          "tool": 10,
+          "code": 10
+        }
+      },
+      {
+        "shard_path": "/mnt/ai_data/omnicoder_2026/datasets/shards/erdos_code_tools_agentic_151526_20260605T1532Z/jsonl_shards/erdos_code_tools_agentic_ready_480_20260605T151526Z-000000.jsonl",
+        "dataset_id": "erdos_code_tools_agentic_ready_480_20260605T151526Z",
+        "training_status": "trained_v37_complete",
+        "shard_fields": {
+          "byte_count": 2813232,
+          "filename": "erdos_code_tools_agentic_ready_480_20260605T151526Z-000000.jsonl",
+          "row_count": 480,
+          "row_hashes_path": "/mnt/ai_data/omnicoder_2026/datasets/shards/erdos_code_tools_agentic_151526_20260605T1532Z/jsonl_shards/erdos_code_tools_agentic_ready_480_20260605T151526Z-000000.row_hashes.jsonl",
+          "row_hashes_sha256": "9a9d4d0e97e4f9487da06abafbe559d875c5f7f10a520a6d6e370205ee81efcd",
+          "sha256": "44b618e99866fdf97bc4d061dcf5c80c38c08d923324321c5e7c589f683f4d79",
+          "shard_id": 0
+        },
+        "rows_used": 20,
+        "tokens_collected": 6389,
+        "routes": {
+          "tool": 10,
+          "code": 10
+        }
+      },
+      {
+        "shard_path": "/mnt/ai_data/omnicoder_2026/datasets/shards/erdos_code_tools_agentic_20260605T143345Z/jsonl_shards/erdos_code_tools_agentic_ready_446-000000.jsonl",
+        "dataset_id": "erdos_code_tools_agentic_ready_446",
+        "training_status": "trained_v37_complete",
+        "shard_fields": {
+          "byte_count": 2069417,
+          "filename": "erdos_code_tools_agentic_ready_446-000000.jsonl",
+          "row_count": 446,
+          "row_hashes_path": "/mnt/ai_data/omnicoder_2026/datasets/shards/erdos_code_tools_agentic_20260605T143345Z/jsonl_shards/erdos_code_tools_agentic_ready_446-000000.row_hashes.jsonl",
+          "row_hashes_sha256": "6bac52ab1fc4f8090a266d862dc389da4b4a4d2727ad2849360b8416400ade35",
+          "sha256": "534a07934b1686136d7045cec97bc70d82f20cd8a4bcd8cd9e7b8e70fca16762",
+          "shard_id": 0
+        },
+        "rows_used": 20,
+        "tokens_collected": 5058,
+        "routes": {
+          "tool": 10,
+          "code": 10
+        }
+      },
+      {
+        "shard_path": "/mnt/ai_data/omnicoder_2026/datasets/shards/kepler_broad_domain_knowledge2_20260605T165315Z/jsonl_shards/kepler_broad_domain_knowledge2_ready_431-000000.jsonl",
+        "dataset_id": "kepler_broad_domain_knowledge2_ready_431",
+        "training_status": "ready_untrained_candidate",
+        "shard_fields": {
+          "byte_count": 4037189,
+          "filename": "kepler_broad_domain_knowledge2_ready_431-000000.jsonl",
+          "row_count": 431,
+          "row_hashes_path": "/mnt/ai_data/omnicoder_2026/datasets/shards/kepler_broad_domain_knowledge2_20260605T165315Z/jsonl_shards/kepler_broad_domain_knowledge2_ready_431-000000.row_hashes.jsonl",
+          "row_hashes_sha256": "f1f81e3ac02fd5c75c87408951f059d9f198fc9bd941f5e43be38350b9cae98b",
+          "sha256": "1f26aaa9b63369593fd8587c08c7d1623185e98f99a35031ff7722918e5c3538",
+          "shard_id": 0
+        },
+        "rows_used": 20,
+        "tokens_collected": 9287,
+        "routes": {
+          "reasoning": 10,
+          "math": 10
+        }
+      },
+      {
+        "shard_path": "/mnt/ai_data/omnicoder_2026/datasets/shards/kepler_broad_domain_knowledge3_170028_20260605T172639Z/jsonl_shards/kepler_broad_domain_knowledge3_ready_427-000000.jsonl",
+        "dataset_id": "kepler_broad_domain_knowledge3_ready_427",
+        "training_status": "ready_untrained_candidate",
+        "shard_fields": {
+          "byte_count": 4201324,
+          "filename": "kepler_broad_domain_knowledge3_ready_427-000000.jsonl",
+          "row_count": 427,
+          "row_hashes_path": "/mnt/ai_data/omnicoder_2026/datasets/shards/kepler_broad_domain_knowledge3_170028_20260605T172639Z/jsonl_shards/kepler_broad_domain_knowledge3_ready_427-000000.row_hashes.jsonl",
+          "row_hashes_sha256": "9056833a7267615409026f81776c292ae49823304b551950da60fcde6e2a4f61",
+          "sha256": "093e36cc3a0398b5e4c8bb59897edad1c2c195d957f26ac021d95452a35e5f18",
+          "shard_id": 0
+        },
+        "rows_used": 10,
+        "tokens_collected": 4219,
+        "routes": {
+          "reasoning": 10
+        }
+      },
+      {
+        "shard_path": "/mnt/ai_data/omnicoder_2026/datasets/shards/kepler_broad_domain_knowledge4_173319_20260605T180100Z/jsonl_shards/kepler_broad_domain_knowledge4_ready_422-000000.jsonl",
+        "dataset_id": "kepler_broad_domain_knowledge4_ready_422",
+        "training_status": "ready_untrained_candidate",
+        "shard_fields": {
+          "byte_count": 4099983,
+          "filename": "kepler_broad_domain_knowledge4_ready_422-000000.jsonl",
+          "row_count": 422,
+          "row_hashes_path": "/mnt/ai_data/omnicoder_2026/datasets/shards/kepler_broad_domain_knowledge4_173319_20260605T180100Z/jsonl_shards/kepler_broad_domain_knowledge4_ready_422-000000.row_hashes.jsonl",
+          "row_hashes_sha256": "db87b2ae07655d3a5fa07211e901eabeefe57c4c1da3fd34832a2db65415e837",
+          "sha256": "5e3e275486c16b56b7cee9d41e1727b275193fd8f3dd1d8e35a398faacabc8a9",
+          "shard_id": 0
+        },
+        "rows_used": 10,
+        "tokens_collected": 4205,
+        "routes": {
+          "reasoning": 10
+        }
+      },
+      {
+        "shard_path": "/mnt/ai_data/omnicoder_2026/datasets/shards/kepler_broad_domain_knowledge6_003627_20260606T0101Z/jsonl_shards/kepler_broad_domain_knowledge6_ready_394-000000.jsonl",
+        "dataset_id": "kepler_broad_domain_knowledge6_ready_394",
+        "training_status": "ready_untrained_candidate",
+        "shard_fields": {
+          "byte_count": 3532164,
+          "filename": "kepler_broad_domain_knowledge6_ready_394-000000.jsonl",
+          "row_count": 394,
+          "row_hashes_path": "/mnt/ai_data/omnicoder_2026/datasets/shards/kepler_broad_domain_knowledge6_003627_20260606T0101Z/jsonl_shards/kepler_broad_domain_knowledge6_ready_394-000000.row_hashes.jsonl",
+          "row_hashes_sha256": "98531970383dbe8141f9fc55585e7570d6a2703f7682487e895fceff3b8bfdf9",
+          "sha256": "8e282a5d56c073ab043455e86a87f5536c2349385a0f59b7b45ad6be5e3db60a",
+          "shard_id": 0
+        },
+        "rows_used": 7,
+        "tokens_collected": 2907,
+        "routes": {
+          "reasoning": 7
+        }
+      },
+      {
+        "shard_path": "/mnt/ai_data/omnicoder_2026/datasets/shards/kepler_broad_domain_knowledge_20260605T155921Z/jsonl_shards/kepler_broad_domain_knowledge_ready_439-000000.jsonl",
+        "dataset_id": "kepler_broad_domain_knowledge_ready_439",
+        "training_status": "trained_v37_complete",
+        "shard_fields": {
+          "byte_count": 4774860,
+          "filename": "kepler_broad_domain_knowledge_ready_439-000000.jsonl",
+          "row_count": 439,
+          "row_hashes_path": "/mnt/ai_data/omnicoder_2026/datasets/shards/kepler_broad_domain_knowledge_20260605T155921Z/jsonl_shards/kepler_broad_domain_knowledge_ready_439-000000.row_hashes.jsonl",
+          "row_hashes_sha256": "fb179729954e7a1d90e483dd4690b8a8536983c1ba91337b1327acfd711160c3",
+          "sha256": "59ee1d7df84f9bf49987ba59ef7d251a589f957b6a4555be8ee071c3dc487a42",
+          "shard_id": 0
+        },
+        "rows_used": 7,
+        "tokens_collected": 3022,
+        "routes": {
+          "text": 7
+        }
+      },
+      {
+        "shard_path": "/mnt/ai_data/omnicoder_2026/datasets/shards/kepler_reasoning_math_text_longcontext_151735_20260605T1532Z/jsonl_shards/kepler_reasoning_math_text_longcontext_ready_922_20260605T151735Z-000000.jsonl",
+        "dataset_id": "kepler_reasoning_math_text_longcontext_ready_922_20260605T151735Z",
+        "training_status": "trained_v37_complete",
+        "shard_fields": {
+          "byte_count": 10269341,
+          "filename": "kepler_reasoning_math_text_longcontext_ready_922_20260605T151735Z-000000.jsonl",
+          "row_count": 922,
+          "row_hashes_path": "/mnt/ai_data/omnicoder_2026/datasets/shards/kepler_reasoning_math_text_longcontext_151735_20260605T1532Z/jsonl_shards/kepler_reasoning_math_text_longcontext_ready_922_20260605T151735Z-000000.row_hashes.jsonl",
+          "row_hashes_sha256": "c9c5041733293c016e966de1199e574952a252fe9053705f9fc5589bbe2d2aaa",
+          "sha256": "0e65f7d6d612c5ba3d43af6ff0a4b6314c8dad5ba94c633244bb5c765f46d760",
+          "shard_id": 0
+        },
+        "rows_used": 30,
+        "tokens_collected": 25133,
+        "routes": {
+          "math": 10,
+          "reasoning": 10,
+          "text": 10
+        }
+      },
+      {
+        "shard_path": "/mnt/ai_data/omnicoder_2026/datasets/shards/kepler_reasoning_math_text_longcontext_20260605T151545Z/jsonl_shards/kepler_reasoning_math_text_longcontext_ready_834-000000.jsonl",
+        "dataset_id": "kepler_reasoning_math_text_longcontext_ready_834",
+        "training_status": "trained_v37_complete",
+        "shard_fields": {
+          "byte_count": 8379131,
+          "filename": "kepler_reasoning_math_text_longcontext_ready_834-000000.jsonl",
+          "row_count": 834,
+          "row_hashes_path": "/mnt/ai_data/omnicoder_2026/datasets/shards/kepler_reasoning_math_text_longcontext_20260605T151545Z/jsonl_shards/kepler_reasoning_math_text_longcontext_ready_834-000000.row_hashes.jsonl",
+          "row_hashes_sha256": "e9157b6ffa8d437c1df6b39af2e03839cf8daad79f19b6442e463b1b18f9937f",
+          "sha256": "5b243eda611e671ca38b876e3751d5ebf004c128ab577ff9b847d659e8df1de5",
+          "shard_id": 0
+        },
+        "rows_used": 30,
+        "tokens_collected": 24212,
+        "routes": {
+          "math": 10,
+          "reasoning": 10,
+          "text": 10
+        }
+      },
+      {
+        "shard_path": "/mnt/ai_data/omnicoder_2026/datasets/shards/v9_base_20260605T142420Z/jsonl_shards/v9_base_validated_28025-000000.jsonl",
+        "dataset_id": "v9_base_validated_28025",
+        "training_status": "trained_base",
+        "shard_fields": {
+          "byte_count": 28930169,
+          "filename": "v9_base_validated_28025-000000.jsonl",
+          "row_count": 5000,
+          "row_hashes_path": "/mnt/ai_data/omnicoder_2026/datasets/shards/v9_base_20260605T142420Z/jsonl_shards/v9_base_validated_28025-000000.row_hashes.jsonl",
+          "row_hashes_sha256": "a154e3796b363372b4c2d769df014c932e854eb241498911472b7b38e4e9436f",
+          "sha256": "8553c9c29dee81a86d7750b5d1d98a5031af12cfc76aa488b86d9bf813cdae29",
+          "shard_id": 0
+        },
+        "rows_used": 10,
+        "tokens_collected": 7189,
+        "routes": {
+          "code": 10
+        }
+      },
+      {
+        "shard_path": "/mnt/ai_data/omnicoder_2026/datasets/shards/v9_base_20260605T142420Z/jsonl_shards/v9_base_validated_28025-000001.jsonl",
+        "dataset_id": "v9_base_validated_28025",
+        "training_status": "trained_base",
+        "shard_fields": {
+          "byte_count": 22121311,
+          "filename": "v9_base_validated_28025-000001.jsonl",
+          "row_count": 5000,
+          "row_hashes_path": "/mnt/ai_data/omnicoder_2026/datasets/shards/v9_base_20260605T142420Z/jsonl_shards/v9_base_validated_28025-000001.row_hashes.jsonl",
+          "row_hashes_sha256": "a6ede9e48e76c6dfe36447ad1904df45dd8451cd93e8ec6473bdc4a3a331741c",
+          "sha256": "0aaf678c2f6c867d13711af715239fef2d834e9101b6dc375343ca7aaf885595",
+          "shard_id": 1
+        },
+        "rows_used": 10,
+        "tokens_collected": 7226,
+        "routes": {
+          "text": 10
+        }
+      }
+    ],
+    "satisfied": true,
+    "pointer_sha256": "a71120e2c88ac620e96874c08cb93abf4ab51fb9e497d69b79104fde84ad731b",
+    "master_pointer": {
+      "schema_version": "omnicoder.master_shard_collection.v1",
+      "entry_count": 631,
+      "total_rows": 94318,
+      "total_shards": 640,
+      "rows_by_state": {
+        "ready_untrained_candidate": 52416,
+        "trained_addenda_complete": 4964,
+        "trained_base": 28025,
+        "trained_v37_complete": 8913
+      }
+    }
+  },
+  "contamination_screen": {
+    "needle_characters": 48,
+    "digest_count": 810,
+    "window_count": 37336,
+    "rule": "a row or a packed batch is refused if its text (raw or whitespace-normalized) contains ANY window of 48 characters taken from ANY string in ANY listed review pack, or if its digest is one of theirs",
+    "sources": [
+      {
+        "name": "lfm2_semantic_whole_response_prompts_v1.json",
+        "path": "/home/cereal/omni-campaign/calibration/banks/lfm2_semantic_whole_response_prompts_v1.json",
+        "sha256": "0ee6bf14cef51bafc26990db44e5038771426c620c0381285c0cd5571e92786b",
+        "pinned": true,
+        "sha256_matches_pin": true,
+        "texts_harvested": 120,
+        "needle_windows_added": 4221,
+        "needle_windows_own": 4221
+      },
+      {
+        "name": "omni_review_bank_v2_draft.json",
+        "path": "/home/cereal/omni-campaign/calibration/banks/omni_review_bank_v2_draft.json",
+        "sha256": "f26f36bf31cb2a062c3e75e9f1567b379ea886e6022e2afb93b572a269f4a20b",
+        "pinned": true,
+        "sha256_matches_pin": true,
+        "texts_harvested": 862,
+        "needle_windows_added": 13137,
+        "needle_windows_own": 13137
+      },
+      {
+        "name": "matrix_campaign_probe_prompts_v1.json",
+        "path": "/home/cereal/omni-campaign/calibration/banks/matrix_campaign_probe_prompts_v1.json",
+        "sha256": "6230f878be9287a9abf4ad129d586fc22346867897858b9f1a4f0b75d1f82f2e",
+        "pinned": true,
+        "sha256_matches_pin": true,
+        "texts_harvested": 12,
+        "needle_windows_added": 536,
+        "needle_windows_own": 536
+      },
+      {
+        "name": "matrix_campaign_smoke_prompts_v1.json",
+        "path": "/home/cereal/omni-campaign/calibration/banks/matrix_campaign_smoke_prompts_v1.json",
+        "sha256": "82ebf70a1606ec8a57c4daa31218fe1d376a91f211246c78716615ca66d2ceca",
+        "pinned": true,
+        "sha256_matches_pin": true,
+        "texts_harvested": 7,
+        "needle_windows_added": 401,
+        "needle_windows_own": 413
+      },
+      {
+        "name": "lfm2_extension_bank_prompts_v2.json",
+        "path": "/home/cereal/omni-campaign/qwen-fold/screen-banks/lfm2_extension_bank_prompts_v2.json",
+        "sha256": "340694a64f7e886ecf1576dd9245a1445d8e763036d842f3730c4c8ab5c9c592",
+        "pinned": true,
+        "sha256_matches_pin": true,
+        "texts_harvested": 334,
+        "needle_windows_added": 14479,
+        "needle_windows_own": 14479
+      },
+      {
+        "name": "lfm2_paraphrase_triplets_v1.json",
+        "path": "/home/cereal/omni-campaign/qwen-fold/screen-banks/lfm2_paraphrase_triplets_v1.json",
+        "sha256": "f9ac00e6dd5212f04a9f06d2a177c233562b5276617b14cbab0aa353ab846095",
+        "pinned": true,
+        "sha256_matches_pin": true,
+        "texts_harvested": 274,
+        "needle_windows_added": 4562,
+        "needle_windows_own": 4663
+      }
+    ],
+    "liveness": {
+      "rule": "every pack must catch its own whole prompts spliced into filler, verbatim and re-wrapped, and must not catch a quote shorter than the needle or clean filler",
+      "sources": 6,
+      "probes": 44,
+      "spliced_probes_caught": 44,
+      "spliced_probes_missed": 0,
+      "rewrapped_probes": 44,
+      "rewrapped_probes_caught": 44,
+      "short_quote_controls": 44,
+      "short_quote_controls_falsely_caught": 0,
+      "clean_controls": 32,
+      "clean_controls_falsely_caught": 0,
+      "sources_without_full_coverage": [],
+      "sources_with_shared_windows": [],
+      "by_source": [
+        {
+          "source": "lfm2_semantic_whole_response_prompts_v1.json",
+          "probe_texts": 8,
+          "caught": 8,
+          "attributed_to_this_source": 8,
+          "rewrapped_caught": 8,
+          "short_quote_controls_falsely_caught": 0
+        },
+        {
+          "source": "omni_review_bank_v2_draft.json",
+          "probe_texts": 8,
+          "caught": 8,
+          "attributed_to_this_source": 8,
+          "rewrapped_caught": 8,
+          "short_quote_controls_falsely_caught": 0
+        },
+        {
+          "source": "matrix_campaign_probe_prompts_v1.json",
+          "probe_texts": 8,
+          "caught": 8,
+          "attributed_to_this_source": 8,
+          "rewrapped_caught": 8,
+          "short_quote_controls_falsely_caught": 0
+        },
+        {
+          "source": "matrix_campaign_smoke_prompts_v1.json",
+          "probe_texts": 4,
+          "caught": 4,
+          "attributed_to_this_source": 4,
+          "rewrapped_caught": 4,
+          "short_quote_controls_falsely_caught": 0
+        },
+        {
+          "source": "lfm2_extension_bank_prompts_v2.json",
+          "probe_texts": 8,
+          "caught": 8,
+          "attributed_to_this_source": 8,
+          "rewrapped_caught": 8,
+          "short_quote_controls_falsely_caught": 0
+        },
+        {
+          "source": "lfm2_paraphrase_triplets_v1.json",
+          "probe_texts": 8,
+          "caught": 8,
+          "attributed_to_this_source": 8,
+          "rewrapped_caught": 8,
+          "short_quote_controls_falsely_caught": 0
+        }
+      ],
+      "screen_is_live": true
+    },
+    "batch_hits": []
+  },
+  "wall_time_seconds": 12.463,
+  "receipt_sha256": "6898fcfbf9ca7f5c2b7fc05393163d766ad3c367362eb8eaec62f366d09ee5d8"
+}

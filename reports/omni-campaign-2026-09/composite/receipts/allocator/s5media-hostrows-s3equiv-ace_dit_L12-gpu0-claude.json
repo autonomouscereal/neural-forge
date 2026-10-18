@@ -1,0 +1,16 @@
+{
+ "name": "s5media-hostrows-s3equiv-ace_dit_L12-gpu0-claude",
+ "owner": "claude (S7-on-S5 media lane, workflow subagent)",
+ "gpu_index": 0,
+ "gpu_uuid": "GPU-4ead7f3a-cc79-fa5b-de42-ef024e27f561",
+ "gpu_name": "NVIDIA GeForce RTX 3090",
+ "memory_used_mib_at_start": 24,
+ "started_utc": "2026-10-13T00:39:57Z",
+ "job": "s7_host_rows.py 1.3.0 --stream-blocks --unit ace_dit_L12 --model /mnt/lexar/omni-campaign/s3-native-v2-3a25a459-4347-416d-a58a-2cb3c8e738fd/actual/native-s3-text-stage/native (prefix 0..31, bf16)",
+ "log": "/home/cereal/omni-campaign/composite/s7/s5media/logs/host_s3equiv_ace_dit_L12.log",
+ "cpu_threads": 2,
+ "nice": 15,
+ "status": "released",
+ "ended_utc": "2026-10-13T00:44:17Z",
+ "exit": 0
+}

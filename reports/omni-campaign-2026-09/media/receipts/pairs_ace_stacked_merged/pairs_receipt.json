@@ -1,0 +1,257 @@
+{
+  "schema": "chimera_omni.media_fold.receipt.v1",
+  "created_at_utc": "2026-09-02T10:26:12.528807+00:00",
+  "kind": "c15_pairs",
+  "geometry": {
+    "name": "ace_1.5_vae.safetensors",
+    "modality": "audio",
+    "latent_channels": 64,
+    "sample_rate_hz": 48000,
+    "hop_samples": 1920,
+    "channels": 2,
+    "channel_in_latent": false,
+    "spatial_stride": 0,
+    "temporal_stride": 0,
+    "frame_rate_hz": 25.0,
+    "notes": {
+      "kind": "comfy",
+      "path": "/opt/ComfyUI/models/vae/ace_1.5_vae.safetensors",
+      "comfy_kitchen_stubbed": true,
+      "forced_cpu": true,
+      "expected_class": "AudioOobleckVAE(strides=[2,4,4,6,10])",
+      "sd_py_lines": "651-674",
+      "latent_dim": 1,
+      "first_stage_class": "AudioOobleckVAE",
+      "vae_dtype": "torch.float32",
+      "device": "cpu",
+      "posterior": "mean",
+      "path_mode": "direct",
+      "crop_input": true,
+      "downscale_ratio": 1920,
+      "upscale_ratio": 1920
+    },
+    "pairing": "stacked",
+    "ambiguous_pairing": false,
+    "ambiguity": null,
+    "context": 0,
+    "d_raw": 3840,
+    "d_latent": 64,
+    "d_centre": 3840,
+    "centre_offset": 0,
+    "rows": 9600,
+    "clips": 96,
+    "chimera_segment": 1920,
+    "chimera_stride": 1920,
+    "chimera_tokens_per_frame": 2,
+    "merged_from": 6,
+    "merged_clip_totals": [
+      16,
+      16,
+      16,
+      16,
+      16,
+      16
+    ],
+    "declared_clips_sum": 96,
+    "merged_alignments": [
+      {
+        "pairing": "stacked",
+        "ambiguous_pairing": false,
+        "ambiguity": null
+      },
+      {
+        "pairing": "stacked",
+        "ambiguous_pairing": false,
+        "ambiguity": null
+      },
+      {
+        "pairing": "stacked",
+        "ambiguous_pairing": false,
+        "ambiguity": null
+      },
+      {
+        "pairing": "stacked",
+        "ambiguous_pairing": false,
+        "ambiguity": null
+      },
+      {
+        "pairing": "stacked",
+        "ambiguous_pairing": false,
+        "ambiguity": null
+      },
+      {
+        "pairing": "stacked",
+        "ambiguous_pairing": false,
+        "ambiguity": null
+      }
+    ]
+  },
+  "pairs": {
+    "path": "pairs/ace_s_ctx0_merged/pairs.safetensors",
+    "bytes": 297677344,
+    "file_sha256": "43d37f7bf67f15eab87cae009cedcf81a8adcde1a89d4ba57e8073aeaf077d85",
+    "state_sha256": "6f62b3ca29f5acfdd0fd67066dac7acb50c33e901518c992095879df63ee5141",
+    "parameters": 74380800,
+    "tensors": {
+      "channel_index": {
+        "dtype": "torch.int64",
+        "shape": [
+          9600
+        ],
+        "sha256": "42e524ef5058f26ba10002c8a6ed6d3b9bd3c9b4dc14d9a94d82e9b6c7ccc037"
+      },
+      "clip_index": {
+        "dtype": "torch.int64",
+        "shape": [
+          9600
+        ],
+        "sha256": "1128c0c45f829fc4c5597323274c3760aea76f69252ec82262399c03b558bbc1"
+      },
+      "frame_index": {
+        "dtype": "torch.int64",
+        "shape": [
+          9600
+        ],
+        "sha256": "cf4523c22cd4040d1486a51766209602796bba46c35db708a666dcf2be245021"
+      },
+      "latent": {
+        "dtype": "torch.float32",
+        "shape": [
+          9600,
+          64
+        ],
+        "sha256": "670d7c991e468e65751ab8089981c769e1771b652f6a35194f0b1cf5cb654d19"
+      },
+      "raw": {
+        "dtype": "torch.float32",
+        "shape": [
+          9600,
+          3840
+        ],
+        "sha256": "7ecff6e0e1a5366c84f0659a124320964e88f439e04dee780c3b0c75649dea9b"
+      },
+      "roundtrip": {
+        "dtype": "torch.float32",
+        "shape": [
+          9600,
+          3840
+        ],
+        "sha256": "3b8aa6fa679da2cfa78cd9e7aec75153e4c136a4b871dcfbc867bd8b55c3e046"
+      },
+      "split": {
+        "dtype": "torch.int64",
+        "shape": [
+          9600
+        ],
+        "sha256": "fb220db8ded9da0a3b8d740eaaaacb15f2665a506adc9aabbcc45eacb05f3c68"
+      }
+    }
+  },
+  "split": {
+    "fit_rows": 7200,
+    "holdout_rows": 2400,
+    "split_by": "clip"
+  },
+  "runtime": {
+    "python": "3.12.3 (main, Jun 19 2026, 12:46:00) [GCC 13.3.0]",
+    "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39",
+    "cwd": "/home/cereal/omni-campaign/media",
+    "torch": "2.11.0+cu128",
+    "torch_cuda": "12.8",
+    "cuda_available": true,
+    "nvidia_smi": [
+      "0, NVIDIA GeForce RTX 3090, GPU-4ead7f3a-cc79-fa5b-de42-ef024e27f561, 662 MiB",
+      "1, Tesla P40, GPU-c95fb5b3-f97c-bfb2-9760-79fe107ffe6d, 21405 MiB",
+      "2, Tesla P40, GPU-a92b0dfe-83f8-11ff-db0d-c65921f365b4, 7 MiB",
+      "3, Tesla P40, GPU-08b615f9-8dbe-3edd-d59f-f6ebe8212ca8, 7 MiB",
+      "4, NVIDIA GeForce RTX 3090, GPU-2ce6a95c-7b1f-644a-3808-d781732a0582, 18 MiB",
+      "5, Tesla P40, GPU-ce4a1da0-baa8-3d62-419c-a28f6565610f, 7 MiB",
+      "6, Quadro RTX 8000, GPU-f5a09535-fc85-a027-50f7-734b344747dd, 8 MiB"
+    ]
+  },
+  "merged_from": [
+    {
+      "dir": "/home/cereal/omni-campaign/media/pairs/ace_s_ctx0_c0",
+      "rows": 1600,
+      "clips": 16,
+      "receipt_sha256": "b5552576bf84551b3f5ab9b0a250ab4b81fa5a67d5e1a5f3f3d2c8bc043b938a",
+      "pairs_sha256": "1899ee32448ea9cfeb7920cb76ae5a8162f7c6c50788775b3b1b21b5722f885d",
+      "alignment": {
+        "pairing": "stacked",
+        "ambiguous_pairing": false,
+        "ambiguity": null
+      }
+    },
+    {
+      "dir": "/home/cereal/omni-campaign/media/pairs/ace_s_ctx0_c1",
+      "rows": 1600,
+      "clips": 16,
+      "receipt_sha256": "593ec2f5cc1af8b9c9df79e0baef103434137d5ad02927660904920059da0ff7",
+      "pairs_sha256": "31e3640076ffe2f9a52c96316dd0300f6381e976c846bc2c69dd7ca7cd09d3e6",
+      "alignment": {
+        "pairing": "stacked",
+        "ambiguous_pairing": false,
+        "ambiguity": null
+      }
+    },
+    {
+      "dir": "/home/cereal/omni-campaign/media/pairs/ace_s_ctx0_c2",
+      "rows": 1600,
+      "clips": 16,
+      "receipt_sha256": "bb7f77f1766330062bfb919896f3899003aa97af11bf1b6dae6d126db0a4384f",
+      "pairs_sha256": "8d1c4d53f8515bd86e7deecd6c4f9f64356f670776b8497ecf4490eb2d8aeccb",
+      "alignment": {
+        "pairing": "stacked",
+        "ambiguous_pairing": false,
+        "ambiguity": null
+      }
+    },
+    {
+      "dir": "/home/cereal/omni-campaign/media/pairs/ace_s_ctx0_c3",
+      "rows": 1600,
+      "clips": 16,
+      "receipt_sha256": "f489aa34d7eebd668e95f70b4a4a994414730fb28bbbde9419d91cb6f59214a2",
+      "pairs_sha256": "1cc17c1001cd0e12c57987d9cc3c55943318a014d68c0fef0e5a242d075bcb25",
+      "alignment": {
+        "pairing": "stacked",
+        "ambiguous_pairing": false,
+        "ambiguity": null
+      }
+    },
+    {
+      "dir": "/home/cereal/omni-campaign/media/pairs/ace_s_ctx0_c4",
+      "rows": 1600,
+      "clips": 16,
+      "receipt_sha256": "a91cbd346f139b049a54e4f315c81882b49a1d2a5ad5514d9e0402acb104e4e0",
+      "pairs_sha256": "fd7091ea5b0ea3d8d4c39df09a069137860a1337c4e509595bbc59aadb5ee808",
+      "alignment": {
+        "pairing": "stacked",
+        "ambiguous_pairing": false,
+        "ambiguity": null
+      }
+    },
+    {
+      "dir": "/home/cereal/omni-campaign/media/pairs/ace_s_ctx0_c5",
+      "rows": 1600,
+      "clips": 16,
+      "receipt_sha256": "7ed838616e63f02d3fa279894a67284081798c918eda0735e90020aaebb76b19",
+      "pairs_sha256": "9f449ce6d63e3aa8059ad08e9a9589ec5ff250bca5869449aaca0de2b7263025",
+      "alignment": {
+        "pairing": "stacked",
+        "ambiguous_pairing": false,
+        "ambiguity": null
+      }
+    }
+  ],
+  "argv": {
+    "pairs": [
+      "pairs/ace_s_ctx0_c0",
+      "pairs/ace_s_ctx0_c1",
+      "pairs/ace_s_ctx0_c2",
+      "pairs/ace_s_ctx0_c3",
+      "pairs/ace_s_ctx0_c4",
+      "pairs/ace_s_ctx0_c5"
+    ],
+    "out": "pairs/ace_s_ctx0_merged"
+  }
+}

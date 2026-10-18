@@ -1,0 +1,7 @@
+voxcpm 2.0.3 requires datasets, which is not installed.
+voxcpm 2.0.3 requires funasr, which is not installed.
+voxcpm 2.0.3 requires gradio, which is not installed.
+voxcpm 2.0.3 requires matplotlib, which is not installed.
+voxcpm 2.0.3 requires modelscope, which is not installed.
+voxcpm 2.0.3 requires spaces, which is not installed.
+voxcpm 2.0.3 requires torchcodec, which is not installed.

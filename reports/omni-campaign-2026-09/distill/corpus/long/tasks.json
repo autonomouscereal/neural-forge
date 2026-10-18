@@ -1,0 +1,5167 @@
+{
+ "schema": "neural-forge-omni-distill-corpus-v1/long_tasks",
+ "tasks": [
+  {
+   "doc": 0,
+   "route": "code",
+   "rows": [
+    "000:0:3308",
+    "000:0:2562",
+    "012:0:234",
+    "000:0:1944",
+    "000:4:1517",
+    "000:4:3959",
+    "000:4:3904",
+    "000:0:2432",
+    "000:0:3261",
+    "000:5:2061",
+    "000:0:531",
+    "000:5:2930",
+    "000:0:1989",
+    "006:0:242",
+    "000:5:2150",
+    "000:0:693",
+    "000:5:1406",
+    "006:0:181",
+    "000:0:1547",
+    "000:5:1992",
+    "000:4:3682",
+    "000:5:2317",
+    "000:5:1906",
+    "000:0:768",
+    "006:0:241",
+    "208:0:28",
+    "000:4:1550",
+    "000:4:1670"
+   ],
+   "sections": 28,
+   "tokens": 32246,
+   "needles": [
+    {
+     "after_section": 3,
+     "code": "AN-HLW-703",
+     "value": "300838",
+     "section": 21,
+     "text": "Archive note AN-HLW-703: the checksum recorded for section 21 is 300838.",
+     "token_position": 4310,
+     "depth_realised": 0.1337
+    },
+    {
+     "after_section": 14,
+     "code": "AN-QXT-460",
+     "value": "502559",
+     "section": 9,
+     "text": "Archive note AN-QXT-460: the checksum recorded for section 9 is 502559.",
+     "token_position": 19129,
+     "depth_realised": 0.5932
+    },
+    {
+     "after_section": 25,
+     "code": "AN-DJK-268",
+     "value": "766737",
+     "section": 10,
+     "text": "Archive note AN-DJK-268: the checksum recorded for section 10 is 766737.",
+     "token_position": 31074,
+     "depth_realised": 0.9637
+    }
+   ],
+   "passage": {
+    "section": 5,
+    "quote": "Learn this code, terminal, and repair record as executable software-engineering supervision. **Research"
+   },
+   "questions": [
+    "What checksum does archive note AN-HLW-703 record for section 21?",
+    "What checksum does archive note AN-QXT-460 record for section 9?",
+    "What checksum does archive note AN-DJK-268 record for section 10?",
+    "Which section begins with the words \"Learn this code, terminal, and repair record as executable software-engineering supervision. **Research\"?"
+   ],
+   "answers": [
+    "300838",
+    "502559",
+    "766737",
+    "Section 5"
+   ],
+   "answer_spans": [
+    {
+     "answer": "300838",
+     "chars": [
+      105421,
+      105427
+     ],
+     "tokens": [
+      32211,
+      32217
+     ]
+    },
+    {
+     "answer": "502559",
+     "chars": [
+      105431,
+      105437
+     ],
+     "tokens": [
+      32221,
+      32227
+     ]
+    },
+    {
+     "answer": "766737",
+     "chars": [
+      105441,
+      105447
+     ],
+     "tokens": [
+      32231,
+      32237
+     ]
+    },
+    {
+     "answer": "Section 5",
+     "chars": [
+      105451,
+      105460
+     ],
+     "tokens": [
+      32240,
+      32243
+     ]
+    }
+   ],
+   "uids": [
+    "47079388f0ee2a4b4bab17c95f98de25e3115c76eb3c2a10e4ca631abb4232eb",
+    "4e36c5bf568b17d0f28bec37e6b2a54cfc7a44f5140acfc89cb0ee4b8c748cee",
+    "3ad1f86e9cc2a07aa97252c2ae58218c01987597e9b7661ba4f268a6fe0aca59",
+    "aa9ea2a77eedf580b6399eced2484b88ad3ded897bfadf1060e87b4efc6a8024",
+    "3f741785f9454851f507c2076af8f64dae8c8928424e27d64a91859c99368e9a",
+    "125376d7b136918680d7ec2c98b7cfd4f73d6557eea0e5911e0ec202a4d4f6b1",
+    "1eb1673c3beac264fb1d8bc84025b04e25446ec5de5dbf508c8f88b13b7df26e",
+    "0d47ee21ad61814d90385a8e73a33c4750dcf9866addb013246492e7d5c68707",
+    "ebfb9860aa9a7bc3d672dd0baaa76a07aa95c221a1d356340c802c5e9ce7442c",
+    "03648561aa09917a11a0e29bd734a469ca5a987e94c6d0ae2bed66630aa02daa",
+    "181115329ff01374c74b9cb55c87c7557756d300a56a2c14a658e6af865a9046",
+    "71bf01357cfc26ceb98973d595f67cbd89c0f6ba6431cf939f316938fbb8fde5",
+    "c8e8b6635965fdebab54d9e9d7f64aa705989f341e26934ae4ba4493b617c58d",
+    "09809f000500caf06ed703669e92855374b77cea36687cffe08be033381625fb",
+    "6156734a028585ef8f37f39c3af290e23daa8c82bd06c3664c7ce72051e3b13d",
+    "7137a03caf85cb0b2e3c34e8d601cd3ae75872140d3d755c623fe15dfa104647",
+    "eccecd6db3f530385a48981748c2ff0b92c8b194ac7cd6ac9a6e8138a39a6c17",
+    "c23d70c37f7e69f094b4f77b67fd91fcf04c9fddbeaf2f148aaab03bf0928a35",
+    "f03ed994cf36c9ea7c661e4c3396f4ccbc5199fb674653b378d8255acbba1db6",
+    "06a50f1d10f7af84c5d2b6d8ec542ce2d4433c939860af8765d3d189d832fe72",
+    "8bb0a9bfdba3096124d37abd3e1ac97384a88c77d03de756973b149e71ab6ec1",
+    "d1d80bf66bb75df71aaa4129dde1e46e60d0a82453e8d0b7ed4fb0bd4ef196c2",
+    "18816a3050b2a801876269a4589029934ef7eb304e20c47feaf34b1bbea45498",
+    "07fd30e38e0d69bde04f1ca65ceaa80f88425050ee2f3ec3b83cf9abd1f81f74",
+    "78ee072f3257e1511fe50c9f11bc762f7e639e2e18c75e016e6da53485c83f86",
+    "727d1e38468ea148667fde5998e89e7819110344acb1f1dcb552263e589fc32c",
+    "3af0c7616c4e716975f8390d887567099cc412037128e264d54ed2d6e867ddf1",
+    "de6165a6b15b416facdd5a5e2d27a0326c86ff85f90b039c4f66a339658494a2"
+   ],
+   "record_ids": [
+    "f45c9b0390ffef9dd6a19e9fd15dfe36c0ccca5596bdcb045927ff79d92a6d36",
+    "b50bbe66ae5af2a0425baff6cdd99bf4dc687185f09faba114d57722ffe2a0bd",
+    "mega_code_75dcbf20e2d035955ae21d0438ec39fc93c7e001",
+    "805314bb00af67b469074b9728c0029acf2aebf55de90158189d45441e6b197a",
+    "memory_v8_ccb4a44f21143f38f763b6dc2ae1f980cfbccc06870a84546a9a08c3dbaa993c",
+    "v9_qwen_materialized_strict_20260604T065822Z:25f93ed0b3e9581e1f662c90e2a683c60e20f165ae36f0e96e47aea890717cf8",
+    "v9_qwen_materialized_strict_20260604T065822Z:74432b20e3a81974cafa40a2324f5d68bea58ef1833a4c1d4d4c2c6ec47f11c4",
+    "a98bd1e3e3c400f70eefe2b344ee1b6422e4e41e81800ba115710db4ade981d3",
+    "f0d42c47931f37732144a12eaf0a03b8b372b003f799496d98eb00333497bbf1",
+    "v9_qwen_materialized_strict_20260604T065822Z:63a88d21d8a624bb646b5cc8bdae12701d45c91e641ed51221acbb5e4618a55b",
+    "058f7dc759ee2875df1f80e0878058deaa1290b3515b664b6bc90356cbe2b84d",
+    "3c8340d8b7784378f0b5fcdbebd7ab4db7f230663222c7326d0b021569aa0d5d",
+    "84f3b62294c4a5d3dddf0c96275e3d7deae8049687ab1498e4b1f47624e0d144",
+    "mega_code_7f083626159328dd46a246fffeaa328bd1f4a565",
+    "v9_qwen_materialized_strict_20260604T065822Z:b83bf88e1be9287b3c8da45c584b99790a40426a5bda1608de1b39c6c3edea80",
+    "12edf6a05f349f5c3c1a70e5e77c1630cb95a3a3fd01bf17e5a347a89576a41a",
+    "v9_qwen_materialized_strict_20260604T065822Z:d8203283eadba6c58960e064982151460b82249d0d6d24ddcc440188f160e8de",
+    "mega_code_1d9ca6d2974e026fa70abbb3eb2fa6af683ddc2b",
+    "5ccdb6eb767043a338af22f2d4a0570d49255afd3576e2b9991cf8b8ace536b3",
+    "v9_qwen_materialized_strict_20260604T065822Z:800d4c9d11c27b96724bf2fc2aa39264df401c6f3729e386351f5ad1fc018dcb",
+    "v9_qwen_materialized_strict_20260604T065822Z:731ad5dff677e98ad8633f5b70403d402e805278bb938947648164f22e116bdb",
+    "v9_qwen_materialized_strict_20260604T065822Z:d7a4af09b5072985d0c81806f6c25276c6b27973197ab3e9a388058fba985bee",
+    "v9_qwen_materialized_strict_20260604T065822Z:5c0d9a4429b30d156e3148344c5df1444880cd2cc970e1e4b2b6d00a333d8369",
+    "19f1f8231c9da544d094bb948097f50755733fdff0bc56e52a2c561f31691516",
+    "mega_code_7d77c397ff8ef31ff7b068e5c871cf61473b9b87",
+    "broad_science_code_tool_da3a54c8d94b16c84c2168cea5f31fcf13efc6e9",
+    "memory_v8_3bdec61a6b8aa1ab71a9dd97d1ab00123e1312378c8c3be223a64d06b78919cd",
+    "memory_v8_68bd2a3eb0b7d2574eae45e1b45b3c26401be73c376fec7e266da473b56ddbf1"
+   ]
+  },
+  {
+   "doc": 1,
+   "route": "code",
+   "rows": [
+    "000:5:2922",
+    "000:5:2177",
+    "000:0:2733",
+    "000:0:989",
+    "000:4:3909",
+    "000:0:2698",
+    "000:0:1627",
+    "000:5:1318",
+    "000:0:969",
+    "000:0:3049",
+    "000:0:754",
+    "000:0:3335",
+    "000:5:1910",
+    "000:4:3619",
+    "000:0:3151",
+    "000:0:2968",
+    "000:0:1794",
+    "000:4:3748",
+    "000:0:3246",
+    "000:5:1312",
+    "012:0:320",
+    "000:0:3375",
+    "000:5:1196",
+    "000:5:1578",
+    "000:0:827",
+    "000:5:2071",
+    "000:4:1548",
+    "000:4:1457",
+    "101:0:93"
+   ],
+   "sections": 29,
+   "tokens": 32221,
+   "needles": [
+    {
+     "after_section": 3,
+     "code": "AN-MPA-426",
+     "value": "298145",
+     "section": 29,
+     "text": "Archive note AN-MPA-426: the checksum recorded for section 29 is 298145.",
+     "token_position": 5622,
+     "depth_realised": 0.1745
+    },
+    {
+     "after_section": 14,
+     "code": "AN-XFG-136",
+     "value": "703320",
+     "section": 8,
+     "text": "Archive note AN-XFG-136: the checksum recorded for section 8 is 703320.",
+     "token_position": 17885,
+     "depth_realised": 0.5551
+    },
+    {
+     "after_section": 26,
+     "code": "AN-HKD-892",
+     "value": "472250",
+     "section": 22,
+     "text": "Archive note AN-HKD-892: the checksum recorded for section 22 is 472250.",
+     "token_position": 31356,
+     "depth_realised": 0.9732
+    }
+   ],
+   "passage": {
+    "section": 1,
+    "quote": "You are an expert python code programmer. Your task is to generate"
+   },
+   "questions": [
+    "What checksum does archive note AN-MPA-426 record for section 29?",
+    "What checksum does archive note AN-XFG-136 record for section 8?",
+    "What checksum does archive note AN-HKD-892 record for section 22?",
+    "Which section begins with the words \"You are an expert python code programmer. Your task is to generate\"?"
+   ],
+   "answers": [
+    "298145",
+    "703320",
+    "472250",
+    "Section 1"
+   ],
+   "answer_spans": [
+    {
+     "answer": "298145",
+     "chars": [
+      98014,
+      98020
+     ],
+     "tokens": [
+      32186,
+      32192
+     ]
+    },
+    {
+     "answer": "703320",
+     "chars": [
+      98024,
+      98030
+     ],
+     "tokens": [
+      32196,
+      32202
+     ]
+    },
+    {
+     "answer": "472250",
+     "chars": [
+      98034,
+      98040
+     ],
+     "tokens": [
+      32206,
+      32212
+     ]
+    },
+    {
+     "answer": "Section 1",
+     "chars": [
+      98044,
+      98053
+     ],
+     "tokens": [
+      32215,
+      32218
+     ]
+    }
+   ],
+   "uids": [
+    "95a5453270bcf81ae3b68ea2180cd187852f44f58379b7f4729bff9668778973",
+    "17bc91f91bbf35bfa1a3444a029d0c20aaf54616827e6d00f5a516043b434c56",
+    "2c4ff62b12a91d8a6c157263057e7f943b37fc9c682d9aa562422393f872c154",
+    "8eba2afa5e287963c2bce213b240700b140ebb6571adf38be05114e7c1c73350",
+    "2c5730748eb821c3b0db93285cf49a9037257264ce31ac5408b37aacf361252b",
+    "0c85f02b68ea5e900bf1bdebbf87318ef46b33ab03341f3abb9bea3c27ffa660",
+    "35c06bf70765ffc10783fda97996c8acd1e06a5badd58de3e10885500e05d1d1",
+    "92b17b86c0cdad5c9883c7401c97018474e750704868b0eeb7bf166d7dac340d",
+    "43f4547ccbbae653f7703c7bdc41450a4566cd23419e231e10232440c1503f00",
+    "c2e4c16e06d6cb0473231d50205e1d24f5d169f3e5c4be4e1f257586f647ecf8",
+    "84534c18450c6033914ed044f8e0f9c031dcc1e2d39ccdc6e003d4cdabf4bad7",
+    "803d92af9872ec902b3d243198bf9df558f19479aae579b1a7fa275b206cba04",
+    "61b62962ca54e25ff54772766b02809f03e8db9ee5f69db0787e0ba429454323",
+    "90c6def6e006a9d1632302d743e632fc71ce41938145ceec4595e0ab1d49afe6",
+    "4d046f83a8e7cf53ab4b39bcf4a1aff0280035dc743dfd51a08c6e0bf615866e",
+    "4a7cf6456d1feb171390a467f1bcb71c6d11a24c76551f32fa120c4f2a3bf392",
+    "1825558c04fea8107486d16c0542a03c0f4f272f2b7d751a00630d4f61cbec21",
+    "d96ebd5b1f9acae9a1f0c05bf7bd4009b27c85194ceaf81e5c511934d31b5811",
+    "0cd58115cc28053c0d09b23d96bf622858bdee317628f70e52e9c8028dccc7d1",
+    "2f05ffc18afa0bbd35215eb657845a9de7edbfe8ad1b7881180037404305638d",
+    "354690d9ffe57085233c875867bd36438d2ddf13beb6259067c82e187c460d26",
+    "4eb444e6c74f1f4a64fd867a172518d45e86c7c30310dc6c16b81a80d31f0a1f",
+    "5eebb9c37e40faa98434fdd21bcf1eacac4b526206fb89344f9a1ddf1ff5ccb7",
+    "5f97f9ba71ba436c46a1e9b63bebfee623f465dae9f9cbc3f82c0b83257e24d2",
+    "83a64ad53b8946c0aa536a1cd3b33e7b560298884d3d2ffc1eed52ef0b9ffef7",
+    "f7dac83ffa7c4fd9066aea8868052c80538e1692063e7351ccf60a54ad4e5d8c",
+    "7295d0365a72a750638f4d546a658ce170432cc156580d2b9cf1e7e8e5bf8154",
+    "ba440f49cb6ed8cff2b8a2fdeccd207822d6334ae0f577ae8ca0e93c144da344",
+    "b6a4ef72be0c9da37660878eb79630859332869aacccda7520cd3e9c240d213e"
+   ],
+   "record_ids": [
+    "1a208205cc5481c49fae5de093f991f2bd547a393c35d77865d793ed8d13e73e",
+    "v9_qwen_materialized_strict_20260604T065822Z:df5652edc54a4d9b296cc8ba7753059a1fcb57ed4c11a081d9b15c9d130a2aaa",
+    "c48d739e1d16dea39473d7054c636e0b934dd9c816a65a99de05d5145a438b49",
+    "2ceffc4fe80f58443d8b831e75eb0beb3b7f0fa2c2cc8af5b22e1aa7648c5883",
+    "v9_qwen_materialized_strict_20260604T065822Z:d8312b3f0d31957c0feecc625404419cf4450ef2d3b922c63eec2ac4d82fae8d",
+    "c163803c39b77bd415d0502edf29babba30dbf36c9ec509e3a965b0df8bce851",
+    "647f4e61477dc3e641da4e16c640f6c884902c6c9f72946ed35af5dc51b0ebf4",
+    "v9_qwen_materialized_strict_20260604T065822Z:ad13697444b097300580b5ff4ade2302e8812df1c7056b29b05bf38bfbbced62",
+    "2b5780836c53f57eae5190890e937c98144209d3e0094c37d6993777fd25726b",
+    "dec6b0ec6692296d770cc260e9142682686e6fd2cff07b255229bf3403122cf1",
+    "18c03d44bcdd662d36ddab4f27009d4402020a96d1661b164faac519953f874b",
+    "f69d6599844e139accb18bed68deeab151603b7281c171fd6a568586728dff92",
+    "v9_qwen_materialized_strict_20260604T065822Z:031e496b3b10f3aa84682f9d0c4522783952a3b932b74a8afc10a61dabefdb54",
+    "v9_qwen_materialized_strict_20260604T065822Z:8bdf4fec1f0dd6a2e813e98af6ee523c473c3b6dac1061d16a96f26b513a882b",
+    "e8444d9cd70e9c94e8cef6cf675cd82322277f14c3078c2dd66d8b44557416bf",
+    "d822b5a1f9acb0c442440e9c5803959f16c4d30f3bd3e37b702df8950a1ade27",
+    "7185e56c440796228b76127adb3aa8da459e2a5bcec8007dd2c741381498e935",
+    "v9_qwen_materialized_strict_20260604T065822Z:44296f3a93f1a3e6ed1be54333623a18dac2b2f92e2702ce222e6684d3022b26",
+    "ef6c9e7046530cce83020bc8796a3c429b71f6084edff1fd889b8868b13b9321",
+    "v9_qwen_materialized_strict_20260604T065822Z:439dfc687dfea533a2023c1c11e49b86065cb119b07320cff59dd585ced3e8ca",
+    "mega_code_fffb60f7dc837b646743361841c7ce8176980a8f",
+    "f9b632d8fff5ef28712a7c123191cd8a674f9e67c18d54618864ac80aa7f7c1b",
+    "v9_qwen_materialized_strict_20260604T065822Z:c98db73ab229ac43e2735e972127ba60603a0b4678e9bd78616bfb03deb98e75",
+    "v9_qwen_materialized_strict_20260604T065822Z:9499b2cb10492099e96f063ab6f7401abc915ca17e8e2dc9ab2ce2cc97ccc4f1",
+    "1e88e0c499a6ed5afdc14c56eb96ae8d2a960c6a435803bb7419d6b064c4d0cf",
+    "v9_qwen_materialized_strict_20260604T065822Z:27194eb79e02ca5d862bf65f52b8d979afd932923c8dd76a7685e99c30e90933",
+    "memory_v8_61c50acdc7a1951285ba11cffa85cc4163a66c3f442c7bed95153a8ddedb0116",
+    "memory_v8_8f20ddbdbd88e28caa2496611a951e5de39d54d9c56616ad5c417e30e7760c13",
+    "kierkegaard_cc0_operator_broad_ready_180_205437:93"
+   ]
+  },
+  {
+   "doc": 2,
+   "route": "code",
+   "rows": [
+    "002:0:296",
+    "000:0:2407",
+    "000:0:3206",
+    "000:4:3891",
+    "000:5:2354",
+    "000:5:2288",
+    "000:0:3141",
+    "000:0:3056",
+    "000:0:3131",
+    "000:0:2000",
+    "006:0:263",
+    "000:4:3928",
+    "000:0:1253",
+    "000:4:3865",
+    "000:0:1963",
+    "000:0:2993",
+    "000:0:2537",
+    "000:0:3383",
+    "000:0:2854",
+    "000:0:2184",
+    "000:0:1243",
+    "000:0:3034",
+    "000:5:1368",
+    "000:0:762",
+    "000:4:3600",
+    "000:5:2057",
+    "000:5:975",
+    "006:0:237"
+   ],
+   "sections": 28,
+   "tokens": 32243,
+   "needles": [
+    {
+     "after_section": 3,
+     "code": "AN-FTU-441",
+     "value": "444527",
+     "section": 20,
+     "text": "Archive note AN-FTU-441: the checksum recorded for section 20 is 444527.",
+     "token_position": 3594,
+     "depth_realised": 0.1115
+    },
+    {
+     "after_section": 14,
+     "code": "AN-RXG-586",
+     "value": "129509",
+     "section": 19,
+     "text": "Archive note AN-RXG-586: the checksum recorded for section 19 is 129509.",
+     "token_position": 16428,
+     "depth_realised": 0.5095
+    },
+    {
+     "after_section": 25,
+     "code": "AN-APY-104",
+     "value": "641080",
+     "section": 23,
+     "text": "Archive note AN-APY-104: the checksum recorded for section 23 is 641080.",
+     "token_position": 28654,
+     "depth_realised": 0.8887
+    }
+   ],
+   "passage": {
+    "section": 1,
+    "quote": "Reconstruct this Apache-licensed Omnicoder 2026 implementation chunk from src/omnicoder/training/verifier_train.py starting near line"
+   },
+   "questions": [
+    "What checksum does archive note AN-FTU-441 record for section 20?",
+    "What checksum does archive note AN-RXG-586 record for section 19?",
+    "What checksum does archive note AN-APY-104 record for section 23?",
+    "Which section begins with the words \"Reconstruct this Apache-licensed Omnicoder 2026 implementation chunk from src/omnicoder/training/verifier_train.py starting near line\"?"
+   ],
+   "answers": [
+    "444527",
+    "129509",
+    "641080",
+    "Section 1"
+   ],
+   "answer_spans": [
+    {
+     "answer": "444527",
+     "chars": [
+      98739,
+      98745
+     ],
+     "tokens": [
+      32208,
+      32214
+     ]
+    },
+    {
+     "answer": "129509",
+     "chars": [
+      98749,
+      98755
+     ],
+     "tokens": [
+      32218,
+      32224
+     ]
+    },
+    {
+     "answer": "641080",
+     "chars": [
+      98759,
+      98765
+     ],
+     "tokens": [
+      32228,
+      32234
+     ]
+    },
+    {
+     "answer": "Section 1",
+     "chars": [
+      98769,
+      98778
+     ],
+     "tokens": [
+      32237,
+      32240
+     ]
+    }
+   ],
+   "uids": [
+    "0ef6ab69e318746655525fa53a48a7601327fc14da8c78690e65d00e9ea20b1b",
+    "aabc46182db0c0f100f35eacbf4e7f799b390431075c58dcad31eb3d820c6de9",
+    "deb01bd578085883c94cf8ffffca172bffb8abc09347e3b055f877af9e845801",
+    "59c14c8e043180574c9ee83f5bfa2f1edafa65037a6696c571f955bd72ebb03c",
+    "1deb4be1698b3e2be5c45a23ee298f12e5a6bb4c43273b111c6ea195770f400a",
+    "0dbf14e9de5d39e9c2af35ffdd16acbf5b2f114485e18c47f98772c211b0f09d",
+    "6a9c02e0d63e5d9c53008d0a58de773ab54d6f9828802f0a8ce477f8d96b64ff",
+    "e24a84eef1dd2801cc1d6691a69433a0b27c571699bc8902dd2c3ade0e509c7f",
+    "2edb552304ac1198e66f3d1ea18c0a90d97939d9de160d66075e765867245c6a",
+    "6dcd35378efb96f8e54ebae38f206fea969bde0d75abac830d94d485d83ed81c",
+    "bce3fa5fca159e17a582377470784822843fca1538ec565acd21e2ed8764a837",
+    "70c6b1e0a1d542b8927959ce279c7193735e299991b2f06fd2625b8062937b89",
+    "35bc6bfee074269fab70686bf787033ac4c8f4739a65bc57186a76a03afb0994",
+    "5810aafa6604bf1b273275eb3c7d1de6d07e75787a3b13bb46bae40bd819b14b",
+    "4da70e2d2de86402096a990f878b6a0f4b334452e84e2ea49ccbac0ffa3b7884",
+    "b82807dfcf849ba90abb49d114be9aae667c12e34bab65e4c0f242f2cb7795fc",
+    "9543e3fadee81436b790df7e5f311ca4734e0ff0515e46b3683e71f8ddd71105",
+    "2f55665af907c22f22c65d2f304fa3c833df288c4d5cf472bf6ba788e60ef9c6",
+    "152071299a90023ba621e799cc4750b532cc5b34150d5be00a71ff85035f0448",
+    "4c136c27bc9774972805b44514be3263efabb7d88a7d8c8ec2f25ca135b705b0",
+    "409190d4c4357d83528271e0e113696b3ea348fa4beeedeaf04f6899d2beed79",
+    "abaee58a4981d8607315c521a412a896fc33e56e8ef1e077d94be4ffbcf93676",
+    "1c3dd5dc281063215f3571a31dc07c5307460d6cb4f73f577992cc1a9685a5bd",
+    "6e644a5f41c16ff5de934f64e323c5872529c203e7456b663ac02c30effd4391",
+    "79a5ff13202538580eff86f3e81a241a88adb18fbcea88488bec628c0d451b22",
+    "1c57adf792debd4138714b578954001fa4e7841b46921cf1e0faa34eec02d1ec",
+    "302e62c413d25f7dd2a6b70b0f4ce99513984c801dbbf6f568d122f700d15c3b",
+    "5af19946334f4da048dfd76080bb3453359907b764a96cfe36067af7c423c926"
+   ],
+   "record_ids": [
+    "mega_code_f444dfd2100fa3607b84c7113f085e3ae8742ca1",
+    "a66691d369be3e94b01fabb6ab796bfd87d03c264541c789f0306981aee9cec0",
+    "ec9c36b96ed1389302e211ce7ee46cdeb3ce4f55f6d74b83c53fa3fd4f9e2113",
+    "v9_qwen_materialized_strict_20260604T065822Z:2bc3bd26a2ea8bdfa80ab5c2aa006045fb2d8f0008b110caedf38ac0a99f43c4",
+    "v9_qwen_materialized_strict_20260604T065822Z:c557d6838e6ce58e63271f94bfa04f5e0d665595e4d8cb9efea72b731171de0b",
+    "v9_qwen_materialized_strict_20260604T065822Z:da77dc4f3f83ded9156e9d9aa6155027fbb511770d23c9d774326f805cb2a17d",
+    "e78c430ea45e0ce33b497c14885b1af08df27974a01d09ec5746701c620e8a85",
+    "df7d81f50de7a065022a4b862975225a9b00d469c07775206f4c448ce16f5604",
+    "e6b8af2f8a3573125f7e434780095c16b45490d537e471f3567510f6a7168463",
+    "860839c40f18bbd8d8e1ebd6a506cbaee4e4c679f1e1270fc197630e19a732d0",
+    "mega_code_9ec51ddc9c8fd848043b0dd121c938421ec9a2e5",
+    "v9_qwen_materialized_strict_20260604T065822Z:fbd85127c125a6ba333320e9801c56d51463f212753db67d51d559d6b780c9e1",
+    "447b2af59855ceaae51a273ea5613ca36b4a053f3b121a00d3ef60eec18d0de9",
+    "v9_qwen_materialized_strict_20260604T065822Z:f11be491b3e67b5897de67825587e497a510111850c3765c371ffbd009b5ba5e",
+    "8258bd880b5ad870182fae5eb090b22f3c66d01636f4479bebbd18df6b6ff7d5",
+    "da4c088ea5d4b77247081e2400ee09935853e08d720507238420317c4bef171d",
+    "b30001af3eb690132a27420ba32a659a5807aaf09c56670a3562cb88118da8dd",
+    "fa5408ced3947c68938655cbc12b27d3fab39cc7a054a7db6d115f5d7fb70c76",
+    "ce74076eb896cb1af2e84340ca9694af7b9b58cb6540beb71e64810bd306aed2",
+    "929bc3ca16ea72deac3fd4d9032c6d80c8ed6cfca6c3255698c43025865485ed",
+    "4387f4a2a0577b2ec3e33bba127d81c6387d68112193cfbcdf7474cf65a6d0b9",
+    "dd8c39b2f4cb2caae57aa9fd6c43e2440dd174ed16b3dde0cdbbdfed8dbe2829",
+    "v9_qwen_materialized_strict_20260604T065822Z:362173fa07b0ae5d4b6634e14bc8f28f2db628a9647f01d043cc69310a1e2812",
+    "19a413e63221e72492a7f460907ead52cceaf438e5d808d667950ba7a234c9b8",
+    "v9_qwen_materialized_strict_20260604T065822Z:a72e0f17540dd015f01a00ef9d41a2a3b70e0e418a3564a22a2a3f6465f31bf3",
+    "v9_qwen_materialized_strict_20260604T065822Z:8cd809c793c8b216082d4a74351a7e18d627b4c80b21e5a3dec70b84ad1fb203",
+    "v9_qwen_materialized_strict_20260604T065822Z:b357699b27398497cf6d0812688234d158e9f4f025ae0c97db868bd81bb76c60",
+    "mega_code_7ae94b8777d1c4e4f6d2365c121b88652b56fb91"
+   ]
+  },
+  {
+   "doc": 3,
+   "route": "code",
+   "rows": [
+    "000:5:2920",
+    "000:0:2086",
+    "000:0:2737",
+    "000:5:1215",
+    "000:0:1895",
+    "006:0:255",
+    "000:0:2600",
+    "000:4:3933",
+    "000:4:1932",
+    "000:0:1456",
+    "000:0:2768",
+    "000:0:801",
+    "000:0:838",
+    "000:5:2903",
+    "000:5:1351",
+    "000:5:2916",
+    "000:0:677",
+    "000:0:2043",
+    "000:0:2465",
+    "000:5:1957",
+    "000:0:2710",
+    "000:5:1322",
+    "000:4:3947"
+   ],
+   "sections": 23,
+   "tokens": 32283,
+   "needles": [
+    {
+     "after_section": 2,
+     "code": "AN-SHB-225",
+     "value": "409705",
+     "section": 3,
+     "text": "Archive note AN-SHB-225: the checksum recorded for section 3 is 409705.",
+     "token_position": 4776,
+     "depth_realised": 0.1479
+    },
+    {
+     "after_section": 12,
+     "code": "AN-GGY-973",
+     "value": "706071",
+     "section": 4,
+     "text": "Archive note AN-GGY-973: the checksum recorded for section 4 is 706071.",
+     "token_position": 16261,
+     "depth_realised": 0.5037
+    },
+    {
+     "after_section": 21,
+     "code": "AN-KKU-310",
+     "value": "163017",
+     "section": 12,
+     "text": "Archive note AN-KKU-310: the checksum recorded for section 12 is 163017.",
+     "token_position": 30026,
+     "depth_realised": 0.9301
+    }
+   ],
+   "passage": {
+    "section": 6,
+    "quote": "Explain the behavior contract for this Apache-licensed Omnicoder 2026 source region. Return"
+   },
+   "questions": [
+    "What checksum does archive note AN-SHB-225 record for section 3?",
+    "What checksum does archive note AN-GGY-973 record for section 4?",
+    "What checksum does archive note AN-KKU-310 record for section 12?",
+    "Which section begins with the words \"Explain the behavior contract for this Apache-licensed Omnicoder 2026 source region. Return\"?"
+   ],
+   "answers": [
+    "409705",
+    "706071",
+    "163017",
+    "Section 6"
+   ],
+   "answer_spans": [
+    {
+     "answer": "409705",
+     "chars": [
+      105988,
+      105994
+     ],
+     "tokens": [
+      32248,
+      32254
+     ]
+    },
+    {
+     "answer": "706071",
+     "chars": [
+      105998,
+      106004
+     ],
+     "tokens": [
+      32258,
+      32264
+     ]
+    },
+    {
+     "answer": "163017",
+     "chars": [
+      106008,
+      106014
+     ],
+     "tokens": [
+      32268,
+      32274
+     ]
+    },
+    {
+     "answer": "Section 6",
+     "chars": [
+      106018,
+      106027
+     ],
+     "tokens": [
+      32277,
+      32280
+     ]
+    }
+   ],
+   "uids": [
+    "601c56b37ac96c1aabfa36da012afaf70dcfa23ebdf4ecc2fbf33d2b6333a7f8",
+    "b73affcff9a2bf8eebd605d36058e50ba61e77240d06ae11c6249f0e9f70d48e",
+    "d1ac0a72d114b1535bdba5283c50f44d0b90511bda9c3ac8eda90ac5d0046387",
+    "20c7eb26a300d5081165825796d2a14a0fb0aa0ceca4f4adea0069fd307e6758",
+    "ed114f9afc90082b9f9d73ec7e0f82edb1de0ac6107a03a27b53bffebdf21036",
+    "3140dda8dc425a69be26c3bfb0665c2174a691e171786b9fb14141bcaa14465b",
+    "bb9c5efaa08fa44e8c1e3e54086de6b8253465788b9353a2327da64dd13d83eb",
+    "abb022acbdf2569db129f9f607da55bcc27048bf32201d2de946b6870962805e",
+    "ad5ec33a1b4d3561a154f7af099ecabbfe0b7cbe292adaece7a80db7b3d2d123",
+    "b702d38e0867485cb5d92cf66b421ac64ff99db7fe3fe404fafba68a313f97c2",
+    "7deff26af6a03fd161fd4bdf2830f986ec8a7c3e882adcb5ab06fbc138b9f828",
+    "03736a557b6d47ee58cfc2fd77b2037a2062ca9fa1b1cf1cd6e39d61e517b421",
+    "40780d2a6a82b14e359e6911ff032165b5432db14c59ebad638514298d4687d9",
+    "61e93b5e275dcc113c08243f8bfaac765ef0e61226dfa5f98c10a7ad78cd5321",
+    "08dd9125d2dafc6a680b0e0403b0df5fa5efc90348b02a1c8df84fbe462ac60f",
+    "b40680e62b7db61c378dd6fd137b3c59ab48ae8e064fcb614b8ff0d82fb95249",
+    "a0e9c2a4000e53c4fb06036b1caa2e973d1a1283fa2cb0385cd84ad7d4dda5b4",
+    "cf6c6771a64fc23e752f8489834ee2efacd743127c5d9722b03f7ba3cb629523",
+    "546439b5145fb20698459a0673932fcb15cbd9a00938045d9154760283eb7de3",
+    "1584df35708ecd2e941993945ab0294590a27936dcedd8b13aaf8e54af11817a",
+    "5a125f023477320f381280203eb36c7bb1c2a4928b6e23c45e76d2dd668de6cb",
+    "f864613782a619a502d9a1c7fee21a7dd017a50a447d52ce08ad05c03d988f82",
+    "13bdbcbff9b96b6e7f6489a7cab2d62659c061997b38b0bc911f01c64cf45b65"
+   ],
+   "record_ids": [
+    "ef5ac8c06e67b97d434dda1709b5191d416cfbb8493fa36ad757605a9ad36078",
+    "8c3e8b034213e7b67947057cfcb1ca79f454cd0352243832a51065a27c80a595",
+    "c4eca0d0229bb7fbd3347127d3c7d64d4b82e06c31cee772984ee5aa2c0156ac",
+    "v9_qwen_materialized_strict_20260604T065822Z:c74955bb240d15cb96ab7b4721b90f462d926243d030f2d6acd3d6e893c21490",
+    "7c45187702f79f6c91c865c074bb3eea9e4d0dc426b911cf70e82191b499e832",
+    "mega_code_94d35b846f178662e5dbd7025fb0b30efcdc66f3",
+    "b8b262cad16b4b39bc10a5675551791f251c5eeb373c819fde02c3313b712482",
+    "v9_qwen_materialized_strict_20260604T065822Z:f7e2feb734d5697d3e70dea6983e8ea18096df3bd0280db56a95b1c425881ef1",
+    "memory_v8_a4efe6e37b8e8a779c590929c4e3dd598f7bfe050ab07f7b70aab09c8ade1046",
+    "556d9161696af7acd1946612b7d489736aab1a5f943ffa91095016a8cab5db04",
+    "c760307ae6e45555189e76416231e1a0570ec84052b74aca1be7a024da6f4ae2",
+    "1d4105673ce14daaf4559d4f8d0f249fef92a6ac41e1abae8a7c18c20d129b26",
+    "1f9501381a82bc3d757c0b88bee3cd8fd14bc2533d48a7a8fb6cc85efbc1c7fd",
+    "14f4f118afaa5c304cddb1b6a01875cd23147295b975fbd1b5e0ca4feb1bb4d8",
+    "v9_qwen_materialized_strict_20260604T065822Z:85f82c0f1764ed03f5a3049239f34b858e8eb7d4b556c1cd018464a59b67ca61",
+    "76152d930c2bfbfef05f1f3f9a17a71d8a2a35fbc8357e8a89000ce124dd740f",
+    "11fd9e94d957a6867b7e26f92f185df2e6d8107662df941146c29ed43a39b1de",
+    "88e1fe41f891b3bff41eaf76fe833cd36daa4155c4af880a963593cdcdd1b949",
+    "ac886b3f5fc1bfe9a083107d7887413da8faba5a3df889858cec04972d8ed5ce",
+    "v9_qwen_materialized_strict_20260604T065822Z:3b6387264ed929393615ee7e7221d39f1ded46337716e338e7658ec61998ad4e",
+    "c25e8b6aa5185cce3fea1e7a998a77f229174d9477fc847ad5d9a56bde3f0fa6",
+    "v9_qwen_materialized_strict_20260604T065822Z:e6cfb83c62d3f20207ef8114ca0c893b22dbd9544eb4e583f3c7246542d558a0",
+    "v9_qwen_materialized_strict_20260604T065822Z:5a5b06a96c6bded148faa946cfe1f98e7a706b760fc8b4464eda86d1b16ed521"
+   ]
+  },
+  {
+   "doc": 4,
+   "route": "long_context",
+   "rows": [
+    "000:0:3771",
+    "022:0:81",
+    "013:0:848",
+    "013:0:805",
+    "013:0:821",
+    "013:0:892",
+    "000:0:3714",
+    "013:0:812",
+    "000:0:3668",
+    "024:0:51",
+    "000:0:3539",
+    "030:0:44",
+    "000:0:3589",
+    "014:0:38",
+    "024:0:10",
+    "000:0:4081",
+    "000:0:3903"
+   ],
+   "sections": 17,
+   "tokens": 32265,
+   "needles": [
+    {
+     "after_section": 2,
+     "code": "AN-XYS-628",
+     "value": "900072",
+     "section": 13,
+     "text": "Archive note AN-XYS-628: the checksum recorded for section 13 is 900072.",
+     "token_position": 3959,
+     "depth_realised": 0.1227
+    },
+    {
+     "after_section": 8,
+     "code": "AN-WFB-505",
+     "value": "381542",
+     "section": 17,
+     "text": "Archive note AN-WFB-505: the checksum recorded for section 17 is 381542.",
+     "token_position": 14769,
+     "depth_realised": 0.4578
+    },
+    {
+     "after_section": 15,
+     "code": "AN-EUF-589",
+     "value": "498726",
+     "section": 5,
+     "text": "Archive note AN-EUF-589: the checksum recorded for section 5 is 498726.",
+     "token_position": 31909,
+     "depth_realised": 0.989
+    }
+   ],
+   "passage": {
+    "section": 11,
+    "quote": "Model this high-quality long-context document. Geoffrey Colvin Who Lost Super Bowl III?"
+   },
+   "questions": [
+    "What checksum does archive note AN-XYS-628 record for section 13?",
+    "What checksum does archive note AN-WFB-505 record for section 17?",
+    "What checksum does archive note AN-EUF-589 record for section 5?",
+    "Which section begins with the words \"Model this high-quality long-context document. Geoffrey Colvin Who Lost Super Bowl III?\"?"
+   ],
+   "answers": [
+    "900072",
+    "381542",
+    "498726",
+    "Section 11"
+   ],
+   "answer_spans": [
+    {
+     "answer": "900072",
+     "chars": [
+      139137,
+      139143
+     ],
+     "tokens": [
+      32229,
+      32235
+     ]
+    },
+    {
+     "answer": "381542",
+     "chars": [
+      139147,
+      139153
+     ],
+     "tokens": [
+      32239,
+      32245
+     ]
+    },
+    {
+     "answer": "498726",
+     "chars": [
+      139157,
+      139163
+     ],
+     "tokens": [
+      32249,
+      32255
+     ]
+    },
+    {
+     "answer": "Section 11",
+     "chars": [
+      139167,
+      139177
+     ],
+     "tokens": [
+      32258,
+      32262
+     ]
+    }
+   ],
+   "uids": [
+    "dec8963d452621e3b2aae8175973fb6830013aec0215d3626ff679b286a8bfad",
+    "a7f1350cd26b17edc6040f20227b56f81ed2eff98dfc93c35f6a2c97dc0e792b",
+    "cbf817a14d1a66a7a7eee3d21faa0ac73ebb42adcb08fbab8ae98f8482a6aa21",
+    "fc61af94daa28e64d8f81952267df0beac3498fba65da1824d989a42d035d7b1",
+    "5a908d7950d48d855acf61a71523279feae377c3a28d4b1536d005b03086cdb6",
+    "7cb7027f5d613a0f062a7d4696293e6fcdd278478a48a9f9cee4f3881316a0ea",
+    "8d4dd8990dda51e51bb4b09518de9949604b78165a50a6d4405c84e0801967d9",
+    "0f15dfbfc0c2757e518d5812c38dc28118d6eb42d56ff7f581edd15f9f830bbd",
+    "7682d6c4b6d59383475dcf58ea295560bfb371c62cd7653b13dc0dec3a919e9d",
+    "37087a9b9b9f994a40a7829b42725d52a5dab7747f6925cf669c3a3ca604c82a",
+    "96d4bdab379d3797922fa672e15d65c4e21aa5869101ee7355d13fc12da468ba",
+    "0d07d20ae941cd76ec37c2d7ba50e8fa77c37ce35c11abf96fdc8735c9f99995",
+    "ec8449f3427a6663c5a8efe4935425e4f70f8fc9199adc120c4a58ccb66b5be0",
+    "b3ad3fec9c438d8d914af7ffcdf8d3d78d242f7be49232a71ddafe77232b4583",
+    "9cdd12c4e3bc3d6802fea01f8574c82e7691839aa0a5f7c28d408b939a056e47",
+    "81f5ed916dc63ff87ecdbbf8e1dbf29179acca70aa7e96d099cd59c80ca9042e",
+    "dd4963a530889f9a2d19fdd509ac85e296c95b4142643679b4ee902aa79b2cd3"
+   ],
+   "record_ids": [
+    "606bcb0de4fe88424c56f593a98c2d37f6654f5678fb2ca497d6868fd011bf92",
+    "broad_domain_broad_domain_69d6c2a4d79b2c1891cd8148",
+    "mega_long_context_1b4064af3f9ca1e4efe97c78",
+    "mega_long_context_196d64a774d82e02ac6187f0",
+    "mega_long_context_3ef42e6c0d2793096daa0559",
+    "mega_long_context_d1d6a31e603468a64ecefd5d",
+    "49adc6c9e3e23baa8142895793a2b6ff4451f856f984eb58d7d8b6fd0e70ec59",
+    "mega_long_context_441d4355ad0c6351751dcded",
+    "368a99a7b6f342b33400b22d1b23df36694e9e9f83fcf69f21faac191a28f977",
+    "broad_domain_broad_domain_dc40916aa889516b19325fab",
+    "050465748d593e3fb81043f1bb04be1d64b7d38d16bb4be0abeb7d42b97ed236",
+    "broad_domain_broad_domain_19da94b17e2372d7973695b3",
+    "1604bba03e24ff0313a69a7091febb2a9ce1c9aa2b506d6945ce6d39740aef48",
+    "broad_domain_web_interwebz_f3c0cf9a4afe9d8147f5aa28",
+    "broad_domain_broad_domain_b642d29257342ae714393ed0",
+    "dae90b3f62ecec8ed0d0cdeea4363ba8a91ed84a5497d00aad04d639295f2c28",
+    "948922cfb9838f4499bc2ab711845d635a7dfdd8d3284cd3af68d9cbd0addb46"
+   ]
+  },
+  {
+   "doc": 5,
+   "route": "long_context",
+   "rows": [
+    "000:0:4064",
+    "000:0:3562",
+    "000:0:3765",
+    "000:0:3960",
+    "000:0:3890",
+    "000:0:3954",
+    "013:0:794",
+    "000:4:4945",
+    "000:0:3722",
+    "000:0:3731",
+    "000:0:4001"
+   ],
+   "sections": 11,
+   "tokens": 32417,
+   "needles": [
+    {
+     "after_section": 1,
+     "code": "AN-JUQ-706",
+     "value": "688383",
+     "section": 2,
+     "text": "Archive note AN-JUQ-706: the checksum recorded for section 2 is 688383.",
+     "token_position": 7313,
+     "depth_realised": 0.2256
+    },
+    {
+     "after_section": 6,
+     "code": "AN-TKG-906",
+     "value": "246129",
+     "section": 4,
+     "text": "Archive note AN-TKG-906: the checksum recorded for section 4 is 246129.",
+     "token_position": 30235,
+     "depth_realised": 0.9327
+    },
+    {
+     "after_section": 10,
+     "code": "AN-RLV-567",
+     "value": "318170",
+     "section": 7,
+     "text": "Archive note AN-RLV-567: the checksum recorded for section 7 is 318170.",
+     "token_position": 32088,
+     "depth_realised": 0.9899
+    }
+   ],
+   "passage": {
+    "section": 9,
+    "quote": "user: user: arxiv_math/pdf_00054_page15.pdf arxiv_math/pdf_00054_page15.pdf pdf_00054_math_38220120 math \\times |\\lambda_{j,l}|^{N_j^{(0)} - N_k^{(1)}} |\\lambda_{k,j,l}|^{-N_{j,l}^{(0)}} |u|^{\\text{Re}(\\mu_j)}"
+   },
+   "questions": [
+    "What checksum does archive note AN-JUQ-706 record for section 2?",
+    "What checksum does archive note AN-TKG-906 record for section 4?",
+    "What checksum does archive note AN-RLV-567 record for section 7?",
+    "Which section begins with the words \"user: user: arxiv_math/pdf_00054_page15.pdf arxiv_math/pdf_00054_page15.pdf pdf_00054_math_38220120 math \\times |\\lambda_{j,l}|^{N_j^{(0)} - N_k^{(1)}} |\\lambda_{k,j,l}|^{-N_{j,l}^{(0)}} |u|^{\\text{Re}(\\mu_j)}\"?"
+   ],
+   "answers": [
+    "688383",
+    "246129",
+    "318170",
+    "Section 9"
+   ],
+   "answer_spans": [
+    {
+     "answer": "688383",
+     "chars": [
+      146551,
+      146557
+     ],
+     "tokens": [
+      32382,
+      32388
+     ]
+    },
+    {
+     "answer": "246129",
+     "chars": [
+      146561,
+      146567
+     ],
+     "tokens": [
+      32392,
+      32398
+     ]
+    },
+    {
+     "answer": "318170",
+     "chars": [
+      146571,
+      146577
+     ],
+     "tokens": [
+      32402,
+      32408
+     ]
+    },
+    {
+     "answer": "Section 9",
+     "chars": [
+      146581,
+      146590
+     ],
+     "tokens": [
+      32411,
+      32414
+     ]
+    }
+   ],
+   "uids": [
+    "417b8c21f9e11fd06627c54f7c3c09039d75de9675c3fc15f666ef904adaab8a",
+    "b4f7806c182c573b67c050e33a4309358fb971e91d84bef60aa3abb792235e9c",
+    "bad263859b1bf36f8a9eea5ba998862f5e77f810ff7728079db92c70defa37c9",
+    "502fbf1b9de077b2468453a5d2d7a2b00eec313ef4904b821f2cd3fb45add7d4",
+    "8121b837472f4f474afb980d71a3da285f641a8ad81da55203d4ed64956b2f4d",
+    "ac718f6a4e023347be979a38851fa6967866ac8a31d0892f65900ef6e626b148",
+    "c9541c3893d8dc09cef907adb0d69a5cb3d4d5db1d2ae0cb02273a7a84cf081b",
+    "5eef50d979b6a6d08f220f872847382a7bdbf56eaab7efb43d39e41a930fb7a0",
+    "6c0dfcce34a460ba5042bcea1bb80eb12c879c0d0cdcf41909b083bdd476405d",
+    "f66cc9d19b43507cf913f5ce1c9a9afd7bd7833a4a70c24ababc38d40968e83b",
+    "8828c7bbb162e566e463fb8dfd53c645d12f3dd9b5789d500e22963bcea4e45b"
+   ],
+   "record_ids": [
+    "d186b848d4ef25b6d6d9c3bb0cd9d73a35d0a83d81772ca5f7e26e6f2943771e",
+    "0db85a88ed5f37ea328841560956cd2ff28918a388a364252fe1945be2377b92",
+    "5ce6c84a22ba1071a18b5cba786c590861eebc693bd55c5e262edbb78e24013f",
+    "aaec15627a3418fa03f9e54b099a01487722ab30202241e6d9300a3c48804f25",
+    "90a8502b2251895a831605708edd03e8acf66d53e70c4e8025d80e8ca47f0284",
+    "a82c424c0a1949a08e3d75a577ba66010978e5abf997daa9d75d17b001b52b41",
+    "mega_long_context_80aea0dba646ed1f8cc3125b",
+    "v9_qwen_materialized_strict_20260604T065822Z:2a6812b979ae35b55e0a8c2f43196aa2171451d6af968f3f0c9bf792c95aa8be",
+    "4dab6640cdda451d6f18b313acd4bf7176e4f03b89379021f5843162b67810bf",
+    "50cb1d008c4248d886d8f6d87d54334590174cfa0b7bbe4abddc8af6fae11fc6",
+    "bb112eb9f7605fa77f0d0e80069e9faa2f858d802e559aa06e5e993e3b7eb313"
+   ]
+  },
+  {
+   "doc": 6,
+   "route": "long_context",
+   "rows": [
+    "000:0:3900",
+    "000:0:3949",
+    "013:0:899",
+    "000:0:3905",
+    "014:0:42",
+    "000:0:3546",
+    "000:0:4149",
+    "013:0:917",
+    "014:0:7",
+    "000:0:4051",
+    "013:0:802"
+   ],
+   "sections": 11,
+   "tokens": 32314,
+   "needles": [
+    {
+     "after_section": 1,
+     "code": "AN-WXC-785",
+     "value": "965645",
+     "section": 1,
+     "text": "Archive note AN-WXC-785: the checksum recorded for section 1 is 965645.",
+     "token_position": 3781,
+     "depth_realised": 0.117
+    },
+    {
+     "after_section": 6,
+     "code": "AN-HJV-196",
+     "value": "372985",
+     "section": 6,
+     "text": "Archive note AN-HJV-196: the checksum recorded for section 6 is 372985.",
+     "token_position": 19362,
+     "depth_realised": 0.5992
+    },
+    {
+     "after_section": 10,
+     "code": "AN-QGZ-329",
+     "value": "358165",
+     "section": 10,
+     "text": "Archive note AN-QGZ-329: the checksum recorded for section 10 is 358165.",
+     "token_position": 29653,
+     "depth_realised": 0.9177
+    }
+   ],
+   "passage": {
+    "section": 4,
+    "quote": "Model this high-quality long-context document. Page name: Bregan D'aerthe [Exported view] [RSS]"
+   },
+   "questions": [
+    "What checksum does archive note AN-WXC-785 record for section 1?",
+    "What checksum does archive note AN-HJV-196 record for section 6?",
+    "What checksum does archive note AN-QGZ-329 record for section 10?",
+    "Which section begins with the words \"Model this high-quality long-context document. Page name: Bregan D'aerthe [Exported view] [RSS]\"?"
+   ],
+   "answers": [
+    "965645",
+    "372985",
+    "358165",
+    "Section 4"
+   ],
+   "answer_spans": [
+    {
+     "answer": "965645",
+     "chars": [
+      143602,
+      143608
+     ],
+     "tokens": [
+      32279,
+      32285
+     ]
+    },
+    {
+     "answer": "372985",
+     "chars": [
+      143612,
+      143618
+     ],
+     "tokens": [
+      32289,
+      32295
+     ]
+    },
+    {
+     "answer": "358165",
+     "chars": [
+      143622,
+      143628
+     ],
+     "tokens": [
+      32299,
+      32305
+     ]
+    },
+    {
+     "answer": "Section 4",
+     "chars": [
+      143632,
+      143641
+     ],
+     "tokens": [
+      32308,
+      32311
+     ]
+    }
+   ],
+   "uids": [
+    "a18972fc49258ab3a510810acb267755baa29def74477f1ce1e763821b241cb0",
+    "eff6dd015dc70d47175c546bdccbf6b84fa05e5cfe985e9855cc245f51ece858",
+    "6a5be1ab9721bc864df5ac7fe7fa50be3fe97027b2c998c1d99e7ef4245e750c",
+    "f1b76285726c8bd43478fff38586cace3c254501299c695a0389a49b5f1211bd",
+    "4fe338b3077bd61696b66bed30ffbc8a93a4f40a84b4e40bb607550a77679ade",
+    "4f590101fc367d538dd0fcafabd7263f4f68636893778fcc6652fa6f55c32f54",
+    "a3cad2e5af90994fd4b6ef696a99b38f4531bc1e29faa49f0f7f87dbd8629638",
+    "b7b423c49af3ed1d8a3f393100e2c3295c96d5f8ec977a1c3d471ba48759b34e",
+    "841322409e2a1b683ba876e52f4368323bc8d3378575d5eb0d622050235b3576",
+    "91b92afc425d4da8dbb90991cc2ab45bc1df0fc3cf1ef52c15b7be5a68a6d4b9",
+    "7825522b526236a310bd23faee5f82773ae967b1fc87c4231d13b07c5d64074c"
+   ],
+   "record_ids": [
+    "9376244335d4de03f20bcc9d467e2c72656718835573a0c43b21469a13165840",
+    "a6cae8e149abed96eeb9fcf9c7c9f482f8b060b54adea79fb0e3185f2e1e8820",
+    "mega_long_context_21e7112a94c72253506522c0",
+    "955a328a29eb9f67dbb7de24c9458f92f8fa9294e8ed158f5fb2e8fc4d1bc8ec",
+    "broad_domain_science_25a31a591d799e69bafe1eca",
+    "06807492292ddd33aae5fdc0d38e1f83d717a76f7f8f5b4cfbf1c7084b7b93e7",
+    "f6e11bbcc27cc4da89850b4cabc0b11de33ca33dcc67fad0b9afc7c935cf9d88",
+    "mega_long_context_a4f25df8cee76d016afa2fb6",
+    "broad_domain_chemistry_464991c6aa2491fb7dba381a",
+    "cd4b85c7ec537352c56f10ab7097a0c314f08ebb365a61df982f6029a3237471",
+    "mega_long_context_7edd0972576894783b4c67f4"
+   ]
+  },
+  {
+   "doc": 7,
+   "route": "long_context",
+   "rows": [
+    "000:0:3612",
+    "000:0:3953",
+    "000:0:3935",
+    "000:0:3682",
+    "013:0:853",
+    "013:0:850",
+    "024:0:66",
+    "000:0:3704",
+    "000:0:3708",
+    "000:0:4103",
+    "014:0:121",
+    "000:0:4045"
+   ],
+   "sections": 12,
+   "tokens": 32322,
+   "needles": [
+    {
+     "after_section": 1,
+     "code": "AN-CVP-598",
+     "value": "341898",
+     "section": 6,
+     "text": "Archive note AN-CVP-598: the checksum recorded for section 6 is 341898.",
+     "token_position": 2892,
+     "depth_realised": 0.0895
+    },
+    {
+     "after_section": 6,
+     "code": "AN-HQV-407",
+     "value": "978051",
+     "section": 5,
+     "text": "Archive note AN-HQV-407: the checksum recorded for section 5 is 978051.",
+     "token_position": 21034,
+     "depth_realised": 0.6508
+    },
+    {
+     "after_section": 11,
+     "code": "AN-JPL-434",
+     "value": "358574",
+     "section": 11,
+     "text": "Archive note AN-JPL-434: the checksum recorded for section 11 is 358574.",
+     "token_position": 32054,
+     "depth_realised": 0.9917
+    }
+   ],
+   "passage": {
+    "section": 10,
+    "quote": "Model this high-quality long-context document. Part Two – The Basics The most"
+   },
+   "questions": [
+    "What checksum does archive note AN-CVP-598 record for section 6?",
+    "What checksum does archive note AN-HQV-407 record for section 5?",
+    "What checksum does archive note AN-JPL-434 record for section 11?",
+    "Which section begins with the words \"Model this high-quality long-context document. Part Two – The Basics The most\"?"
+   ],
+   "answers": [
+    "341898",
+    "978051",
+    "358574",
+    "Section 10"
+   ],
+   "answer_spans": [
+    {
+     "answer": "341898",
+     "chars": [
+      142598,
+      142604
+     ],
+     "tokens": [
+      32286,
+      32292
+     ]
+    },
+    {
+     "answer": "978051",
+     "chars": [
+      142608,
+      142614
+     ],
+     "tokens": [
+      32296,
+      32302
+     ]
+    },
+    {
+     "answer": "358574",
+     "chars": [
+      142618,
+      142624
+     ],
+     "tokens": [
+      32306,
+      32312
+     ]
+    },
+    {
+     "answer": "Section 10",
+     "chars": [
+      142628,
+      142638
+     ],
+     "tokens": [
+      32315,
+      32319
+     ]
+    }
+   ],
+   "uids": [
+    "ee1822156412a320647c9b4f9f392509c947f92981271d85166761ea31149bbd",
+    "8d1fdaf5c647d833f4aa9716bd7bf535da3d864b56c5c95c5a2b100be9db3a06",
+    "ab7fda69127eda9255f3bc22e5bf535ae535245d9a47bd1693f21df7cf8468de",
+    "38856ce1397708284018b8e51e8fa3b82ed942da016fa9ce8f02d6400c8a5407",
+    "e76dcc9216196be4c6c72608693ddbb1977d2b3f191d3f49112aa9c1f8ff7530",
+    "eabe46c5e8e65459f2cdb8e0492a4600bbb03bf2f76b448ae4d30863abbbc2f3",
+    "2f333c91afdc488f8276112dd93b0f31633239a46deb250334c78a6ab3cef752",
+    "f02a316eca038c916be468a5b8732a73db832457824c8800cb32a8b0c8668429",
+    "38d42065ef76178fdb82333e62e09d206db20f62aeca7bf67107e43b22e1f08b",
+    "bcf6403a7460679fbbe24e11b7fbdc8649f4eebe84c477655c897848806bb7de",
+    "b6640d091cb39214aa82c1180d877089df9edf64cb236e054d68b2b764531688",
+    "21b9111f2ca43348d16a4d7b465ff14233b0c203923804165aa7e8bccdc1fc2c"
+   ],
+   "record_ids": [
+    "1ede9b45601714ae5ef832a16fd3d092f0b2fcc58cc03a8a40c7bbde5ee88764",
+    "a7e106cbb34b4a526d9c6f823667e170305ac3b64ab3c940b20177bc3e4af9de",
+    "a284773d55cc229519fa8f224f747bf8b7381cf793098bd572100ae85ff66345",
+    "3d99b89c1071f54e8b768ea4bf74a3bc748939a66d5bb9fd69b520f01fbe9b51",
+    "mega_long_context_86b4a30c528d64e40c638b8a",
+    "mega_long_context_576549e798da9278b99060f0",
+    "broad_domain_broad_domain_2d17063a9592d34b42d86839",
+    "46a0ed4f20777f09e61385ed2419a63c2d18ef268b9254c21771a3e7b2dcf3e9",
+    "4778ea75cf587139e0ae748c28f7c8e4e8e162bd207b4e13f749f203795b1ec5",
+    "e34b9546406f07493a4c1b25a6fa9264403622fd1e783459a9d0845ca803cdb4",
+    "broad_domain_chemistry_2fdaf4ef8f84096daa12239b",
+    "cbf316fa82f345af384e841a39ceeccd0d6c88b9d66d4f523796a0eedcded744"
+   ]
+  },
+  {
+   "doc": 8,
+   "route": "math",
+   "rows": [
+    "000:4:4663",
+    "000:4:4571",
+    "000:4:4629",
+    "000:4:4493",
+    "000:4:4580",
+    "000:4:3624",
+    "000:4:4778",
+    "000:4:3596",
+    "000:5:972",
+    "000:4:4457",
+    "000:5:2021",
+    "000:4:3663",
+    "000:4:4625",
+    "000:4:4865",
+    "000:5:1914",
+    "000:4:4603",
+    "000:4:4560",
+    "000:4:4678",
+    "000:4:4910",
+    "000:4:4653",
+    "000:4:4769",
+    "000:4:4681",
+    "000:4:4887",
+    "000:5:1843",
+    "000:4:4791",
+    "000:4:4427",
+    "000:4:4853",
+    "112:0:31",
+    "214:0:9",
+    "403:0:12",
+    "088:0:52"
+   ],
+   "sections": 31,
+   "tokens": 32235,
+   "needles": [
+    {
+     "after_section": 3,
+     "code": "AN-ECY-248",
+     "value": "738732",
+     "section": 14,
+     "text": "Archive note AN-ECY-248: the checksum recorded for section 14 is 738732.",
+     "token_position": 3467,
+     "depth_realised": 0.1076
+    },
+    {
+     "after_section": 16,
+     "code": "AN-VMZ-404",
+     "value": "516796",
+     "section": 9,
+     "text": "Archive note AN-VMZ-404: the checksum recorded for section 9 is 516796.",
+     "token_position": 18445,
+     "depth_realised": 0.5722
+    },
+    {
+     "after_section": 28,
+     "code": "AN-QMH-948",
+     "value": "631454",
+     "section": 14,
+     "text": "Archive note AN-QMH-948: the checksum recorded for section 14 is 631454.",
+     "token_position": 31426,
+     "depth_realised": 0.9749
+    }
+   ],
+   "passage": {
+    "section": 30,
+    "quote": "Solve the source-grounded math problem. Show the important steps, state assumptions, and"
+   },
+   "questions": [
+    "What checksum does archive note AN-ECY-248 record for section 14?",
+    "What checksum does archive note AN-VMZ-404 record for section 9?",
+    "What checksum does archive note AN-QMH-948 record for section 14?",
+    "Which section begins with the words \"Solve the source-grounded math problem. Show the important steps, state assumptions, and\"?"
+   ],
+   "answers": [
+    "738732",
+    "516796",
+    "631454",
+    "Section 30"
+   ],
+   "answer_spans": [
+    {
+     "answer": "738732",
+     "chars": [
+      97971,
+      97977
+     ],
+     "tokens": [
+      32199,
+      32205
+     ]
+    },
+    {
+     "answer": "516796",
+     "chars": [
+      97981,
+      97987
+     ],
+     "tokens": [
+      32209,
+      32215
+     ]
+    },
+    {
+     "answer": "631454",
+     "chars": [
+      97991,
+      97997
+     ],
+     "tokens": [
+      32219,
+      32225
+     ]
+    },
+    {
+     "answer": "Section 30",
+     "chars": [
+      98001,
+      98011
+     ],
+     "tokens": [
+      32228,
+      32232
+     ]
+    }
+   ],
+   "uids": [
+    "df4683c7f425bdbeca5b59be2a6610e15acf70a0ca7af9260ac6ec83c32d7201",
+    "5ecd6c0c93d7f8cde39a2803a60dd2339a11c23e36f06ca948d456e2871a40f2",
+    "05e3b4f3f6bbe18a7f638d49e24480df50abbb3af2c944fece241780c478f832",
+    "5538a4b2d336c2c012637328cd0d49d48fe62eb1e3f3b93e493ffcc052fed67b",
+    "91a4802fbb49b3543f3d5b04c7e7e703335d3ffe56ec969df37f6e7290f950f6",
+    "d2268efe89d8e2b2d3cddd42a16ecb14fbe2471e164c0b214a457242f1333627",
+    "1c79f95cf0261102a19576ff3c74f88cf371acd5cb44dba4c6b367b0ed91c90a",
+    "d1d8af4a0b9a472d516d6fb6d1fc77033137f9468fcb6dfb406bc6ff78d4ee7b",
+    "341021d33ac7e140abc12d614f159c2d12e6225ca6fd5a41b43bb3ba44d3fd6d",
+    "9c3e45da16c8cfc17abc5287f9bc3aca6ebf4ef1fcdef5033599f3da47d1be7a",
+    "d1e398904cc10144797d1401bf723cbcebe7fa2e61a56428f6c73d851b8610f8",
+    "3eea10b4b09d6a2e0105839bf3421a0bf6f03ccc508e652563c4e5ad325eb569",
+    "2cd651b4d653cba922b3bf1d10a5507b32f7cd76267d87ac3af58a4a55858d29",
+    "c460f30ae051fe2544b5f258fb5b7cf91bfc26f1c557cbc42a6bf9d112145c59",
+    "9e5e7026956853efe36e35af0b875054172746a4e081b403c22e409c75471b6f",
+    "c2f2c27982d3a9bd2b8179ee095701d5a8d802bdbfd5e64cd6119240ea973d95",
+    "5bcc73c05b81671cbe2a6852c6d7be7e6aa2f87e82e0bf9bffaa40bf33084507",
+    "f2fbd908ebc3f589d11bc63ea3b95d76f933e5b54efb87e9daca234b7fa5ac01",
+    "953b65680aa6b90aa717c93b6f69c4c998d92bc616ce336b728906f9630ffbce",
+    "35253ac37332fb0bddb1fefaa0ce139a40db4e76dbb9e225ca6f39d77a1a9d7f",
+    "8f7545a98a387900ff79e26ece29109068d67a4f234c76c45a922d098272cb5a",
+    "1befe78f63a1601e7606f0d693b6115020ee3b25f449a51622378910d41549bd",
+    "2e6d33e01f441c027a6a3616940b387bd56bfc094525ef6d603d3f8465a10925",
+    "83e88a3ccd144fbc8244dbed713b10254b3eef534c588c860cca8d2e2c3b9086",
+    "100f8665ee5593e77ecdab987f5d3641b29c1e9862f6822c70fd7c8acd905293",
+    "fde19c35db016597d1fe3710ee96ef03da980da1cc24f88c24f8651eae5ff8cb",
+    "71b892337879eada8987ecede7913badc079e4b3e03494a2f630669735eaaa6f",
+    "e6afe5e8fa98561f37fae1023ebf37f28d8d1604fa71fca26d79acf60b9b699e",
+    "b09f551585e87d17c5689f7f67237a4432864a9606892619492ff351187d74cd",
+    "fc328d87b563d61f4db2c8242a654dfe16f42b6abee2ce8934cc3b453a446555",
+    "9e32dfbf3b79b6fe6ed9ece89565f405891984733d9f84d709872af9e9891a8e"
+   ],
+   "record_ids": [
+    "v9_qwen_materialized_strict_20260604T065822Z:5b2a5547203c59153a0373038cc35f0943567574df11905c2ce82bc2ef9ed709",
+    "v9_qwen_materialized_strict_20260604T065822Z:8b7786432cbf94033ac0a9c0f1aea8818dd49c7b3561374b3b6607f750b9b407",
+    "v9_qwen_materialized_strict_20260604T065822Z:c7439a0dd142e4f1181e994e953df781fdc346808b7fd82dac620df84e7d32f3",
+    "v9_qwen_materialized_strict_20260604T065822Z:8ed3534f76c39958b1bd07fb40928499561c2a577d94100e3315367487132e3c",
+    "v9_qwen_materialized_strict_20260604T065822Z:a506ad2330660f1b6cba1d4bdb0f599f9a002228df23673f572e442bde1318e0",
+    "v9_qwen_materialized_strict_20260604T065822Z:4f88dedf8318c59c3ea6836444c6de8e66b52c84310e120e799a485d91a8aab7",
+    "v9_qwen_materialized_strict_20260604T065822Z:bc614200622291e291cbee05ac5f43ba95c58d8e705ec13c40461ff2898cba01",
+    "v9_qwen_materialized_strict_20260604T065822Z:cac824a18abdae1fe1affd1cc0584b8eb217f00e9df8048da4a1f3b29efbd040",
+    "v9_qwen_materialized_strict_20260604T065822Z:b6f1f468ebd2570a3645195d47ace90503d1f27820b813109fffe31c130cf594",
+    "v9_qwen_materialized_strict_20260604T065822Z:3beaa9fba9e4d1d65212a5dc1769f3cd8b9501d5f986ba46477e4eb2bdce409c",
+    "v9_qwen_materialized_strict_20260604T065822Z:3ba5a2b28b924134ab4e32a3cc81e4c47aff9ae2422aec0d23fd0e1bf27cb597",
+    "v9_qwen_materialized_strict_20260604T065822Z:475698693c9bd1383ed0823ea138be9917d4b1c19b610205486dff924ec987eb",
+    "v9_qwen_materialized_strict_20260604T065822Z:1978463172786ffa66b955d02c9673c79a95db470da680edc2e87430d4ec2c64",
+    "v9_qwen_materialized_strict_20260604T065822Z:c6bce4d19cc27b2158c5a218a23e7aff266c9c47452d3ab76a076294f5755efd",
+    "v9_qwen_materialized_strict_20260604T065822Z:017349accb43cb715c839990a0dea0e571b4c55d7db83cc3f64a9536cbd2c4d9",
+    "v9_qwen_materialized_strict_20260604T065822Z:48c95891bc380d1a26dccbd4a3ec2c658846f2a877615715512f4bdbb3e0dd6f",
+    "v9_qwen_materialized_strict_20260604T065822Z:7010b0a1cc9d7d889e18472d40e4d1cec03d42c1c63b8f544972b01ac1460140",
+    "v9_qwen_materialized_strict_20260604T065822Z:37405dc1895aa77202b7b88a1fa1f4b09b48d7f5d04244752c9d402f991b4113",
+    "v9_qwen_materialized_strict_20260604T065822Z:98395f8e0f94c0c23cb702af1540443f95754116438583c8d35625094bdbae1c",
+    "v9_qwen_materialized_strict_20260604T065822Z:48f58c461a503be6af444f26f985318527bc5c4872feb6375c0bbff41e9852d6",
+    "v9_qwen_materialized_strict_20260604T065822Z:c7719f6026556de32f5d30197ef5a5941bfbb444bad8d20addf606a4be88f079",
+    "v9_qwen_materialized_strict_20260604T065822Z:01bb4813362ccf25c72d3d01735d1d4e830691925ce0660d1f632c2831e6ae96",
+    "v9_qwen_materialized_strict_20260604T065822Z:ab8c1ceef5a8dfb2bc870df0ae8bc597a74835933cf7e7a2165efc3c472b6a82",
+    "v9_qwen_materialized_strict_20260604T065822Z:92334760a10102c416b8c0c973ac37d68da7adf045e0278470941a04c0ddbe9e",
+    "v9_qwen_materialized_strict_20260604T065822Z:0b8015bebd9fa9e73180f4f0c81309f05c22820905b668e40bfc7431aa90ad46",
+    "v9_qwen_materialized_strict_20260604T065822Z:70ff1dd9387d1499ca7c0ba4aa05ecb6b6f831ffae143688c0d6d4512c1b31e5",
+    "v9_qwen_materialized_strict_20260604T065822Z:5e6073c67a48f81d09055205090c0dcc60dcfc0c57da35036932a76da0d84ecc",
+    "kepler_broad_domain_knowledge15_20260606T155756Z_cc0_math_001",
+    "hilbert_small_broad_reasoning_20260607T041212Z:9",
+    "broad_domain_broad_domain_144b553bfc12153c232fdee9",
+    "chandrasekhar_lowio_broad_reasoning_text_ready_150_185117:52"
+   ]
+  },
+  {
+   "doc": 9,
+   "route": "math",
+   "rows": [
+    "000:4:4538",
+    "000:5:1893",
+    "000:4:4649",
+    "000:4:4665",
+    "000:5:2780",
+    "000:4:4803",
+    "000:4:3969",
+    "000:5:2890",
+    "000:4:4626",
+    "000:4:3726",
+    "000:4:4886",
+    "000:4:4735",
+    "000:4:4885",
+    "000:4:4379",
+    "000:4:4587",
+    "000:5:1552",
+    "000:4:4737",
+    "000:4:4851",
+    "000:4:3739",
+    "000:4:4531",
+    "000:5:1395",
+    "000:4:4815",
+    "000:4:4627",
+    "000:4:4594"
+   ],
+   "sections": 24,
+   "tokens": 32269,
+   "needles": [
+    {
+     "after_section": 2,
+     "code": "AN-GZM-723",
+     "value": "939995",
+     "section": 10,
+     "text": "Archive note AN-GZM-723: the checksum recorded for section 10 is 939995.",
+     "token_position": 2230,
+     "depth_realised": 0.0691
+    },
+    {
+     "after_section": 12,
+     "code": "AN-YGS-631",
+     "value": "402015",
+     "section": 19,
+     "text": "Archive note AN-YGS-631: the checksum recorded for section 19 is 402015.",
+     "token_position": 18053,
+     "depth_realised": 0.5595
+    },
+    {
+     "after_section": 22,
+     "code": "AN-BGU-470",
+     "value": "827675",
+     "section": 5,
+     "text": "Archive note AN-BGU-470: the checksum recorded for section 5 is 827675.",
+     "token_position": 29706,
+     "depth_realised": 0.9206
+    }
+   ],
+   "passage": {
+    "section": 5,
+    "quote": "Let $ABC$ be a triangle with centroid $G$. Determine, with proof, the"
+   },
+   "questions": [
+    "What checksum does archive note AN-GZM-723 record for section 10?",
+    "What checksum does archive note AN-YGS-631 record for section 19?",
+    "What checksum does archive note AN-BGU-470 record for section 5?",
+    "Which section begins with the words \"Let $ABC$ be a triangle with centroid $G$. Determine, with proof, the\"?"
+   ],
+   "answers": [
+    "939995",
+    "402015",
+    "827675",
+    "Section 5"
+   ],
+   "answer_spans": [
+    {
+     "answer": "939995",
+     "chars": [
+      99960,
+      99966
+     ],
+     "tokens": [
+      32234,
+      32240
+     ]
+    },
+    {
+     "answer": "402015",
+     "chars": [
+      99970,
+      99976
+     ],
+     "tokens": [
+      32244,
+      32250
+     ]
+    },
+    {
+     "answer": "827675",
+     "chars": [
+      99980,
+      99986
+     ],
+     "tokens": [
+      32254,
+      32260
+     ]
+    },
+    {
+     "answer": "Section 5",
+     "chars": [
+      99990,
+      99999
+     ],
+     "tokens": [
+      32263,
+      32266
+     ]
+    }
+   ],
+   "uids": [
+    "fd05f98612578c6adf230a87c8a8aa7e6a73f795b19512b906e10810df110b82",
+    "b1a17c7ebd47f2ed19e330557b1a165743a40a3c9d09b4b8a80bec2afcfcc12a",
+    "163b7ed4f9d5db0809db401ad9561fe34ee21431f93afc6d769613be7c2e2417",
+    "b2ae64464851b5dd62360e70a949cd59713a445c614f6785ea76aa98da6fdead",
+    "bb76c77d85f2e4b4d6c75f01d2bf2249a092cbab745d74420eee5e7122a56c7d",
+    "4a7e9e0d9d7ad906c56a418d7f32acbf297bdbf48bef40bfc950712f309febf1",
+    "297b82caa1a15688c8b7a6f09ae399ca6a790d9509de69f75fc7ae2bf3641694",
+    "8cb0ee0090f2fa7f218a3007e7dbf0cf9fa07afac478ed8c173a47e176393252",
+    "793e905672eb57987ecad860ac22f2003925bde290d08310223a192dea94e8fc",
+    "5ee5375505c7e609d8fc091619af97f5879f3e88e5717ded42ac5bb53e2a1989",
+    "1ad2d5de1f94509476599bf1216cadb66229d032b443aee3dec12b6f4183f972",
+    "e9cb80db4757e0fc55f3143aa456947ca22d64c510e23975062b7b7e39c0ed73",
+    "a0e1500dd52d22622d488bb75dae0937165ea6554ae3fdac2329a3589c1b59de",
+    "27e28d6a252566c2842cf061382a5a82f9307e6f884470e1b40fdf759dbc0928",
+    "fcc54c078e1e1c8d24c214dc2d35bf8841a82d463bc51a4ec7d9e7451879e300",
+    "09b1dce83b9c16f26c768dcb2d846a9e7a3a255abb051812f0adfad991448b57",
+    "fdb024819fcf295e297a98131ca7041fd8270a90996583d2e5427aa561848abb",
+    "388a6908f089ef73037033d871fbb1707e7a0872f1ee8b4008bcd4828ed204e1",
+    "d3fc0c986c4e994e41077b4fbea054e55fbffa80b7c0ea4dcf70db409d61aa34",
+    "05713e1e3489f52fc0f863a93ddc24645c9ba5ea38623f5219aca4686c72a6e8",
+    "d323a5e2d5851e6497676f0886710923978165dbbdc41c0f41fe141d30bbfcc3",
+    "6103f29debe0abcd87c37f1a1f7f3201ef49eed33e35559766d7df9f4c0fbcc9",
+    "7100cbcbabe3206c6588d1aba80a45c56167facdac811b84332f796eeeb82fe1",
+    "fcaedf1b4b109dbca26f192243864e694cafab5ba6b3d375217e7961b1738710"
+   ],
+   "record_ids": [
+    "v9_qwen_materialized_strict_20260604T065822Z:db6ff216961da050570b8bb78666c58b7d857b9a9ebc7d6728604be75b6761e3",
+    "v9_qwen_materialized_strict_20260604T065822Z:0a5be1b0d13b4c8c028f9edb4cc9acefcc0fd6136503c492cd2509a6a9c67db6",
+    "v9_qwen_materialized_strict_20260604T065822Z:da53f8d2628e9fe3245b1e940ebeef1f5e2e0e3b0ff777bd4e5aa0d0748f9e69",
+    "v9_qwen_materialized_strict_20260604T065822Z:e12814a05447c97c4676755757401c7e1f3e5caaa0c9eeff1c78746c93c89f59",
+    "705313d64de59c50dbfb0e65931aee436bc1fa9970eae12e2044338824f65d3d",
+    "v9_qwen_materialized_strict_20260604T065822Z:3e9707dca46795f7d65145197b88e4bb0d2af88c7c4ebc505c9ee8b96a43a24f",
+    "v9_qwen_materialized_strict_20260604T065822Z:f6cad6e28c85f86cdd6974b31ff6682c6bf4ec5564ca48aac90b51becdc82491",
+    "e778f9f8802c2350239100689e6969cc444a857ccc30dda849f5fca11b966974",
+    "v9_qwen_materialized_strict_20260604T065822Z:07fc1bf58f4eaa6e9ac4160f6a956db1553aec30f0b623f7212ee43609ad3f5a",
+    "v9_qwen_materialized_strict_20260604T065822Z:c3d579c22e8022e11f7f861eb424bc5c8c73b3bd32d44e253659d9e7bd1f990f",
+    "v9_qwen_materialized_strict_20260604T065822Z:de9b31230083718e45b459801621dff580762a4c6342e3df960725dd28b58116",
+    "v9_qwen_materialized_strict_20260604T065822Z:4e4b5af280f16658cb2c497373f37e309bd96a34fd42488b84b902bad0a4a01c",
+    "v9_qwen_materialized_strict_20260604T065822Z:01fa248720e9b5dc1536f42d61deebcb00d93ff80a8c7d275c1afa5bb42233b2",
+    "v9_qwen_materialized_strict_20260604T065822Z:25f34b90b9f0ac7b85d56673091af64fd317afcf9c926d8f6280510b8cc6d910",
+    "v9_qwen_materialized_strict_20260604T065822Z:f6a3a4a9a4cdc43f3e07ce6056666a7aaeb6ab5501dfb69544d7b0330b846f38",
+    "v9_qwen_materialized_strict_20260604T065822Z:f08a017a20e3427ffe24cf0ba7969c47751c5ee8e024d88a6ec53facb3ffbeed",
+    "v9_qwen_materialized_strict_20260604T065822Z:331df4f9f61b5b421bfc065a15376a7b23b814c5474407c880f369540cf2b782",
+    "v9_qwen_materialized_strict_20260604T065822Z:c5bcf6f6d6a61a7da2234821766bf87d89592581595de6b570ebd21c31888359",
+    "v9_qwen_materialized_strict_20260604T065822Z:2539a3efec9a63d448b4d2ce8224cd55d00cdb9ea07a33122fe3e40da648796a",
+    "v9_qwen_materialized_strict_20260604T065822Z:8c990fd2a03de621d0d299147f6cdba38094d495dc2515a5c6b9d0d1c5c26cfb",
+    "v9_qwen_materialized_strict_20260604T065822Z:9dd575f0ab0e4f27895f2fc13e96de4195becf5992f20a6a32be60b85fd79eec",
+    "v9_qwen_materialized_strict_20260604T065822Z:6edb9798e8121ad6a3a794401ad26ea2c461cc9d4d05d9fbbce161a8c44166c3",
+    "v9_qwen_materialized_strict_20260604T065822Z:2fec09963325bcf65f942efcfcdda61d3e9a87c68d4af86338871363b977c499",
+    "v9_qwen_materialized_strict_20260604T065822Z:e8eac4d9faf2cf21c5eacb919157c12c1e6dabd42c83d9ec488db836c568e789"
+   ]
+  },
+  {
+   "doc": 10,
+   "route": "reasoning",
+   "rows": [
+    "013:0:385",
+    "013:0:352",
+    "013:0:317",
+    "013:0:359",
+    "475:0:22",
+    "013:0:333",
+    "013:0:340",
+    "013:0:369",
+    "013:0:410",
+    "013:0:403",
+    "013:0:318",
+    "013:0:367",
+    "013:0:328",
+    "013:0:322",
+    "013:0:357",
+    "013:0:408",
+    "013:0:386",
+    "013:0:389",
+    "013:0:338",
+    "013:0:375",
+    "013:0:412",
+    "013:0:347",
+    "013:0:337",
+    "013:0:405",
+    "013:0:361",
+    "013:0:336",
+    "013:0:314",
+    "013:0:312",
+    "013:0:364",
+    "249:0:39",
+    "178:0:10",
+    "103:0:56"
+   ],
+   "sections": 32,
+   "tokens": 32201,
+   "needles": [
+    {
+     "after_section": 3,
+     "code": "AN-WVM-195",
+     "value": "545369",
+     "section": 8,
+     "text": "Archive note AN-WVM-195: the checksum recorded for section 8 is 545369.",
+     "token_position": 3371,
+     "depth_realised": 0.1047
+    },
+    {
+     "after_section": 16,
+     "code": "AN-JZY-584",
+     "value": "539559",
+     "section": 14,
+     "text": "Archive note AN-JZY-584: the checksum recorded for section 14 is 539559.",
+     "token_position": 17467,
+     "depth_realised": 0.5425
+    },
+    {
+     "after_section": 29,
+     "code": "AN-EFF-814",
+     "value": "216057",
+     "section": 5,
+     "text": "Archive note AN-EFF-814: the checksum recorded for section 5 is 216057.",
+     "token_position": 31698,
+     "depth_realised": 0.9844
+    }
+   ],
+   "passage": {
+    "section": 32,
+    "quote": "Answer the chemistry/science supervision item on lab safety workflow. Use safe educational"
+   },
+   "questions": [
+    "What checksum does archive note AN-WVM-195 record for section 8?",
+    "What checksum does archive note AN-JZY-584 record for section 14?",
+    "What checksum does archive note AN-EFF-814 record for section 5?",
+    "Which section begins with the words \"Answer the chemistry/science supervision item on lab safety workflow. Use safe educational\"?"
+   ],
+   "answers": [
+    "545369",
+    "539559",
+    "216057",
+    "Section 32"
+   ],
+   "answer_spans": [
+    {
+     "answer": "545369",
+     "chars": [
+      91917,
+      91923
+     ],
+     "tokens": [
+      32165,
+      32171
+     ]
+    },
+    {
+     "answer": "539559",
+     "chars": [
+      91927,
+      91933
+     ],
+     "tokens": [
+      32175,
+      32181
+     ]
+    },
+    {
+     "answer": "216057",
+     "chars": [
+      91937,
+      91943
+     ],
+     "tokens": [
+      32185,
+      32191
+     ]
+    },
+    {
+     "answer": "Section 32",
+     "chars": [
+      91947,
+      91957
+     ],
+     "tokens": [
+      32194,
+      32198
+     ]
+    }
+   ],
+   "uids": [
+    "8ed0f46fcdee4925f07eb55f74fa95412de6dbf44e0dff191344f1703f9306f1",
+    "6e8709c6ba1bb150ef7ddf5b4d9e8b5338497ad8cdf3ba2ba110584a23a705f9",
+    "6a873953d11ed3929696a92ebb728efc9242ce38a2f2879c990fbe931dfb3ce5",
+    "84f811d39166eb8181203c69d74c2e1adc3495db04a1323d1b7ef48c7a96446a",
+    "7402ed683b8470f483e3ddd5c1c90a1171084bd86d1f49b152a0401db8dd9fa3",
+    "63820dc2cf99030e66fe488370229563b29e673201d34534c680d7bc4eac7be7",
+    "97e5800eb207428870551b88a9bf754ca04799b22ad7d7eea977d92edf38de2e",
+    "353d4eed80971a6b8147627fd1899be53493da97ad614245b614f4811ef4ac3b",
+    "aed9d4f4f860be2eff0ca6bd3d40ba91ae7b4534b38fd7a5eaf2da0e86fe2648",
+    "f31af90d3efcf57fd4bf7e41a1c7d0a988fdd065d2d7f4976f08bcbf07521e03",
+    "165bdf649d4abb3d6bcc882d12b17899256e6c3cde55a3398a3140d1037ca591",
+    "cc806b05df069e121b891d08986e78fb94d3cfb4f998d773ce7bdbe006c67a57",
+    "d654773a9dded12f1b80763e39cc766c5f76f44817a4b64c8d99d561c4326563",
+    "c7a0a1ec41e681f6ae36e17b997ec965a389fabc3045c9c4cb34f4a6265e6035",
+    "10df7989616afb98799c4ddc92f6d1bf167745968fff8a2fb5c36c41865cb717",
+    "8e6c995376f26bc88d9f35451644a1c17d739bf34ca5f09a34f2b657bdfeebab",
+    "ee56daff1dfbc8e799d8cb2d091474e9f044cd3030a1f64cff38c1b61365f3e9",
+    "9be184502f7a8d83142e4e6a5184ea95295f71a298a9ef223d23a5798e2252ba",
+    "0558728eb665f363a1186ad3ad951f926fd9f38d325fe67ae406a09807f48a83",
+    "c15bb3ae02ff754e7c7243655fe487b1ab3f69a59c20839d95bd289a3cccfe21",
+    "2b83cf19e5aa11a21719b51eaf9423b75bec1da291d3407d0c9e1df5965dd6b2",
+    "c24b409a0a420a2966f30aa7b85fa6643026f085098b1a30fbfba4537412fec1",
+    "5df2d12ef5e2f879db3faedce8d874e60bb1fa722f7a793bb3bfdc09d0a3d599",
+    "1d614dadffccf8d2069df555ae40b5af9e5cf3321898a8737af0ce223d054715",
+    "562eec60704c21c8bc34bf0bea176b647849ef15696e7a7d34949f51759278b4",
+    "9626f12f642994351f0ab4d39983339e03b44e598ed43db38848099d8388ddf1",
+    "01f546d5358bd41961f6d4c17b20c41debf53c8b06269b258f090867ff14afe0",
+    "79fda4dc192e5c42396f5ee0629e926ed6ec8ad254d19a1f5f38f6e2513e7354",
+    "b545c43d5fcf39a2dd3524d3d3fecb7eba84136089008c4999225301e64b2c93",
+    "be9462174cb05e96de71aee2734fd798b4f72100c13ed089d670b4c24aaad929",
+    "1f27e6fd16a6b218bafb6c989e1689b990b44f192e4d9574fa7e854313494ba6",
+    "11414f6df1aab2a8cbb4f3fc29e16a5dfec6796c0da0bb49c8438d68aabef664"
+   ],
+   "record_ids": [
+    "mega_reasoning_81f35c46f8419c1e92ed4c4d",
+    "mega_reasoning_a1e507828947138ed5307567",
+    "mega_reasoning_82777ff232ec22fcc542e8a4",
+    "mega_reasoning_54478f83657fed38b0c59b07",
+    "broad_domain_broad_domain_0764b59107228c4ca2f2e494",
+    "mega_reasoning_246eb1ff4192614645fcbfb7",
+    "mega_reasoning_9a447a76f472ebf90fbf4829",
+    "mega_reasoning_5757c1d5ded42e8178694dc3",
+    "mega_reasoning_53a34f5b314dc0f74a7284bb",
+    "mega_reasoning_dbf039017e1699607429cb9b",
+    "mega_reasoning_3cdb8a0577802ad96e2b1e49",
+    "mega_reasoning_74ef24cc94c8090b87c7fc36",
+    "mega_reasoning_7ea266081764a620277d1252",
+    "mega_reasoning_b932028263cbfd36075bdde2",
+    "mega_reasoning_cb43e3565dcaf383772fb416",
+    "mega_reasoning_6d8550a133a278fc854d80cd",
+    "mega_reasoning_7374383114a0d83bfc9579a0",
+    "mega_reasoning_ee92d95e90ad8d1bc20b1e8e",
+    "mega_reasoning_e4e803486179e4518b1fcfce",
+    "mega_reasoning_a5b823389c2346b7a38a2359",
+    "mega_reasoning_84be6993ebc2afeae3016e8b",
+    "mega_reasoning_cacc94119afc43e240621f0e",
+    "mega_reasoning_3debaa7fb066fcad61b09ee1",
+    "mega_reasoning_8930ec4de34a689e2846232f",
+    "mega_reasoning_6b2b5df75ea1f0044f925c19",
+    "mega_reasoning_4ae8c9443dc71b343ce005d3",
+    "mega_reasoning_3cf523257fec976cda191bc6",
+    "mega_reasoning_365aa0effe4c521dd07e38e4",
+    "mega_reasoning_280d8408852f3687ef397c65",
+    "hilbert_small_broad_reasoning_math_text_longcontext_20260607T044916Z:39",
+    "omnicoder_small_broad_domain_reasoning_math_text_longcontext_ready_untrained_20260607T015020Z_finance_reasoning_03",
+    "kuhn_cc0_operator_synth_ready_216_2116:56"
+   ]
+  },
+  {
+   "doc": 11,
+   "route": "reasoning",
+   "rows": [
+    "013:0:382",
+    "013:0:316",
+    "013:0:404",
+    "013:0:339",
+    "013:0:343",
+    "037:0:155",
+    "005:0:350",
+    "095:parfit_cc0_operator_domain_reasoning_ready_216_201305-train:107",
+    "013:0:365",
+    "494:0:101",
+    "196:0:46",
+    "095:parfit_cc0_operator_domain_reasoning_ready_216_201305-train:134",
+    "083:0:186",
+    "030:0:242",
+    "083:0:165",
+    "083:0:52",
+    "043:0:187",
+    "442:0:156",
+    "095:parfit_cc0_operator_domain_reasoning_ready_216_201305-train:171",
+    "061:0:168",
+    "467:0:90",
+    "074:0:131",
+    "438:0:225",
+    "005:0:315",
+    "030:0:319",
+    "024:0:260",
+    "442:0:138",
+    "022:0:298",
+    "043:0:27",
+    "467:0:78",
+    "066:0:79",
+    "061:0:158",
+    "043:0:211",
+    "455:0:65",
+    "013:0:297",
+    "005:0:305",
+    "043:0:137",
+    "500:0:4",
+    "013:0:321",
+    "475:0:53",
+    "144:0:29",
+    "074:0:187",
+    "043:0:189",
+    "013:0:280",
+    "095:parfit_cc0_operator_domain_reasoning_ready_216_201305-train:185",
+    "024:0:281",
+    "066:0:142",
+    "204:0:61",
+    "089:0:163",
+    "024:0:236",
+    "475:0:17",
+    "037:0:192",
+    "074:0:171",
+    "074:0:150",
+    "205:0:39",
+    "005:0:393",
+    "461:0:98",
+    "463:0:61",
+    "193:0:11"
+   ],
+   "sections": 59,
+   "tokens": 32125,
+   "needles": [
+    {
+     "after_section": 6,
+     "code": "AN-ULL-545",
+     "value": "645186",
+     "section": 59,
+     "text": "Archive note AN-ULL-545: the checksum recorded for section 59 is 645186.",
+     "token_position": 6424,
+     "depth_realised": 0.2
+    },
+    {
+     "after_section": 30,
+     "code": "AN-LMJ-410",
+     "value": "256639",
+     "section": 54,
+     "text": "Archive note AN-LMJ-410: the checksum recorded for section 54 is 256639.",
+     "token_position": 18492,
+     "depth_realised": 0.5756
+    },
+    {
+     "after_section": 53,
+     "code": "AN-YAF-399",
+     "value": "172039",
+     "section": 10,
+     "text": "Archive note AN-YAF-399: the checksum recorded for section 10 is 172039.",
+     "token_position": 29954,
+     "depth_realised": 0.9324
+    }
+   ],
+   "passage": {
+    "section": 38,
+    "quote": "Write a Python function count_axis_line_sum_assignments(dimensions, values, mod=1000000007). Count assignments of residues 0..values-1"
+   },
+   "questions": [
+    "What checksum does archive note AN-ULL-545 record for section 59?",
+    "What checksum does archive note AN-LMJ-410 record for section 54?",
+    "What checksum does archive note AN-YAF-399 record for section 10?",
+    "Which section begins with the words \"Write a Python function count_axis_line_sum_assignments(dimensions, values, mod=1000000007). Count assignments of residues 0..values-1\"?"
+   ],
+   "answers": [
+    "645186",
+    "256639",
+    "172039",
+    "Section 38"
+   ],
+   "answer_spans": [
+    {
+     "answer": "645186",
+     "chars": [
+      134028,
+      134034
+     ],
+     "tokens": [
+      32089,
+      32095
+     ]
+    },
+    {
+     "answer": "256639",
+     "chars": [
+      134038,
+      134044
+     ],
+     "tokens": [
+      32099,
+      32105
+     ]
+    },
+    {
+     "answer": "172039",
+     "chars": [
+      134048,
+      134054
+     ],
+     "tokens": [
+      32109,
+      32115
+     ]
+    },
+    {
+     "answer": "Section 38",
+     "chars": [
+      134058,
+      134068
+     ],
+     "tokens": [
+      32118,
+      32122
+     ]
+    }
+   ],
+   "uids": [
+    "fa623297f24f0abed08a4dfbfa283413bfab3e490c32e27314f6325caf494087",
+    "ccd60dd8fb0af60452b28be34d65ad42e8120dff071cc40d1cd7b8833adf17c7",
+    "ef6a8f41c785e6ead02b55ada3fedbd573304be8686032a82fe4939ca79c999a",
+    "40be3ac25ab6a90afa9ad8ef4eaba1757c36cff9985d679841bbd67e9d805572",
+    "1bb16349d36368f3fe62a3ee7034273372f27a17905bb438a8a2d0c1bb8ad951",
+    "c383615cad54f8e4be069a69332f77a444a12263c3bc287b3f59c0b16fd7905b",
+    "c48dcf4367518588d0553796df4a1bfab2f4ef5a3adf38b63beb815967e40e3b",
+    "4cae8bec743b6ae2e254a9f3c26ca3275d80ecdc0d8903553decf45d3c74781b",
+    "791aa6f6f9b8dca5083c95c294b233517ccb6862a5b4f06b4afc4a41be1d8ed2",
+    "7bc7a14ccfd1e13ee8b1c49ae2018aa28acda92d7eaeb305e0d354313ee5fa26",
+    "b7ab0159442b8c306c4c015b78fc0ab48d1db4a2d199aa2c9f03db62f686050a",
+    "8a3e832e04add47eb7aac308be55c22612df2c15398e901321fa6abc62dd936b",
+    "27a763ff6cf15d869353c7553f8284c987868330ba4b29c3903eab316fe473d7",
+    "e2116cb9119c5c9dbc1ab3b6a73cb575cbb49beb310225f25dd01dd60f91dd89",
+    "7e5ebdae9b02016891c6c2dac7c721349cd831d93c6979139e5f10b94c0020c9",
+    "46b92692523ae21d96a6ecbe6f228c934848842c9f38ec169033f9726f552ed1",
+    "48f1e13d4b3b11a6255080dae8bd95a611f236f2d9ee7a67426561a8c274eac1",
+    "22fbcddf4ad683c5a15901d470430a0a4caf7ea75596dc288a12c0bd62fa015a",
+    "495fc48def03d637da72defd9a1edcf2678381fb1058474655d67a38801e9a84",
+    "ff08d8a2be0581da805440dd9ced90131b0b0b6ab1f4382ca509b57219df4f3e",
+    "6a7c942bce52a621a5ef3894947c491f56b4c27fb621978ff80e8606ea5301a6",
+    "4edcc9c25bf018919d865ede3bc5aee3543491b6c50adf857f4168b5836e6d8e",
+    "3241a5d6219eaf7c68a105d27703597af452862018fb5f05debe6a9189c6232d",
+    "8b07b3a28088f5748845885926f2a9daa64d76cbb4ad78a2d6807ad85581377f",
+    "040be435b07b3cae02069e0e244138bc33adb80bb6ef647b13ae98de61ef8869",
+    "ab242fdd03296c72a1ff8ebe312ef64a727c60532316c4dff9a121333a7aeca5",
+    "8831a548419141fcc198bf484ea7aa5dc0631eead9950c672762de5ea8e782cc",
+    "be3f9ef6138e903b4b144e55e61d3a2b000ab65d796130084afcba03f0c2ba4e",
+    "50fd0834e519b9f4a498bbd0e698fcca20ae504d892da3de39d2f9f789baba7b",
+    "24abb61c9824f8f4e44dd67472fdea040738fe771dd423f616fe7016bf887485",
+    "42fc8c32c98872d8eca8da6cfd9b33f3ddf14e6dd49bf9acae7dab081d598079",
+    "82c567309f7511188b8d64eec41b339ee31cdc99364f394e269b7415e6b976d9",
+    "63bba2c54364398afc84f0359eb7413249e6b04dff67d6420585a8329d338fd4",
+    "0530385c7dae3e488f0c302ce653ea673759c9862d0d416636e910f42c49a226",
+    "b4940389d0581c3bdea3b4273b13df581fd853271d4535fe35a48d3977c002c8",
+    "c96cbe9fb2479757d0e0e4cd9a9ebf74135f96840ca89ef6dd9c49914e11b96e",
+    "92a6dd4a2525f9c243c84f6ccad7aeef1f57d9b1c4dfb2f38d1668c50d98ec08",
+    "9c2e6f2b08f774a4329aef7fc9f186e32e41a7996ef241e06d18bc7a824e7f33",
+    "b73a347bc8dc3c5732d38735eb9e77b38e0bc727bf42283beb10d922c7757dff",
+    "f65897f56d489bc936621aca91fa339a38a38bb4c55d0c829daa1446a4947b5f",
+    "faab0da013597a918fef28995c95e70bf43a40d0f07c46e82ad16b8e3e1b6277",
+    "832bb07e64c2267a008c35d27db929437798a3daec298926b6e0bbb0cc1765f4",
+    "3b7362dfb47ae66e60dad32403087422b7da5c6c2f5df0d36a9b7e517bda90f0",
+    "b446aabeb0b38fb612c4adf121138196894b830de418568d3fea6b9fabfa5b96",
+    "83f3315c0d8b05045c24a1b778867d7a6bef6954d4110e4c090150017ea25c0a",
+    "9d3c7ab41933b4e4e6d782e60ff6083cda9ebf492a7c8a566896b4976bc1ca07",
+    "55e9ef70e296a8470f241d9822e8bb7066e4d636dec2286dd28a861ddf26853c",
+    "1781511a244563c38afa234adb12049767a827825bb76f048395968d1f65dd8d",
+    "9d4ca485457e56e84d0c91a36c3ea4330a5e1a2a8f086f558dea2528769d89c2",
+    "8536677a4cff83a95da34e054e251facb699960d3a151d1d2f1b106d6369b72b",
+    "56ca702ffa1f6a352a5f149dd1be0c8df59193af97abfde45ec104d851eee1aa",
+    "0c4b0724c627e29024bf8b100b6314c23e85a600c6580a6539799b3a0089b3a4",
+    "3fcb6e36787f45e8a1b18876835b1b9f04cd4a96b77b5266bdcc958076b9eb8a",
+    "7946fc05e9d7a10632b2389704bb12038fb2a6daf619c00311aa6aec483bd6a8",
+    "422240f5e51a05c7ed9b597a44dcdfae65c4a8c11fef995227343bf5d17feed6",
+    "6d2737ff16fdcf249dba135568e0e14db4458a7f2420cd17f6339145923824ae",
+    "de17671cedfb8676981f9c1736624a3cf7d1ba52e86e9eb88569eada5a705d57",
+    "c70789455316ff6478e2a918f2f18fe152c6182c42d22619af2387df99b75606",
+    "11ce33351580bb093e2720b3b0c7cca32a2aa5fa12ed4c3c4fff8183300780f8"
+   ],
+   "record_ids": [
+    "mega_reasoning_2d1a149246444f8110d74b4c",
+    "mega_reasoning_2556db8c1e005768863e5bfa",
+    "mega_reasoning_5c3adbb2b298695d0f44aeb3",
+    "mega_reasoning_9fb58426f1fd0d55f05cdb40",
+    "mega_reasoning_5ebe2229b32f9032c9e947ed",
+    "broad_domain_healthcare_medical_operations_493d6ed5e54cef340ee3b92f",
+    "mega_reasoning_70e1c41211cd3893ccf5b633",
+    "parfit_cc0_operator_domain_reasoning_ready_216_201305:107",
+    "mega_reasoning_6613566144b703d6a566f9eb",
+    "broad_reasoning_control_cases_d6afd8c62ec318b457f66d1892f51564bfffe4c7",
+    "broad_domain_healthcare_medical_operations_3c024db8c05f059bf79adab6",
+    "parfit_cc0_operator_domain_reasoning_ready_216_201305:134",
+    "broad_domain_healthcare_medical_operations_3d781315fe3b919c46196f5a",
+    "broad_domain_healthcare_medical_operations_e93dc9c0eb4aaa79844ab649",
+    "broad_domain_science_ba0f58afd22da10e1d40cb6a",
+    "broad_domain_broad_domain_8ecb8569bf4b9577dad65f6c",
+    "broad_domain_chemistry_28c8c97286614d717a3aa544",
+    "omnicoder_code_tool_agentic_rawpg_harness_review_candidate_20260607T162954Z_append1636:156",
+    "parfit_cc0_operator_domain_reasoning_ready_216_201305:171",
+    "broad_domain_science_b4269b300261142a1e8310ad",
+    "broad_domain_web_knowledge_bdc2f326b57360504a62caea",
+    "broad_domain_healthcare_medical_operations_a8404391b2e232f875d553ec",
+    "omnicoder_code_tool_agentic_reasoning_lowio_20260607T160626Z_append1611:225",
+    "mega_reasoning_e349f983d5b4ca4e8c63a439",
+    "broad_domain_chemistry_12ab9d53eed0dc5a5b73a2c2",
+    "broad_domain_science_282c6a7f5f1b986827501af9",
+    "omnicoder_code_tool_agentic_rawpg_harness_review_candidate_20260607T162954Z_append1636:138",
+    "broad_domain_healthcare_medical_operations_7db161efd1234ead89002309",
+    "broad_domain_broad_domain_72db02f57b1f4ecca4f8fd7c",
+    "broad_domain_healthcare_medical_operations_9812d99e44ad55d39895e120",
+    "broad_domain_broad_domain_e4b105165778d228a51da77c",
+    "broad_domain_healthcare_medical_operations_e7d67e48631a5b23fee42771",
+    "broad_domain_chemistry_f2f92d6d0e9cd26ecd18a5a9",
+    "bounded_omni_science_reasoning_764963aec9e9b1b3b878f383",
+    "mega_reasoning_e130bb8af3dc32d83cf54694",
+    "mega_reasoning_228328950429268787936db8",
+    "broad_domain_science_ba547fd3da842544f2c6d5eb",
+    "manual_cleanup_batch_000140_math_code_reasoning_ready_15_append_current:4",
+    "mega_reasoning_3f4d3ceebfae939ab113b1b8",
+    "broad_domain_broad_domain_e03bc04070db94f52c09169e",
+    "omnicoder_small_broad_domain_reasoning_math_text_longcontext_ready_untrained_20260607T002204Z_broad_domain_reasoning_04",
+    "broad_domain_healthcare_medical_operations_4c421f6754d56ff99f28a63a",
+    "broad_domain_healthcare_medical_operations_eb32c1c23f6a7da18fccb03b",
+    "mega_reasoning_b3faa5de39a2cbecdf02b31a",
+    "parfit_cc0_operator_domain_reasoning_ready_216_201305:185",
+    "broad_domain_science_69d81ca4f2e0afd64331cf42",
+    "broad_domain_science_9d02572a2ed52d6904188db5",
+    "broad_domain_finance_economics_markets_d22eafe5afbc4f68da44e228",
+    "socrates_lowio_code_tool_reasoning_ready_177_20260606:163",
+    "broad_domain_science_7a682abf495c01c8f423ec21",
+    "broad_domain_broad_domain_544772b19a91f03987b846f1",
+    "broad_domain_healthcare_medical_operations_0322be6dcbe5b3b263c6863b",
+    "broad_domain_healthcare_medical_operations_9dd7f79f72c77ca76c41200d",
+    "broad_domain_healthcare_medical_operations_f81d17aa69c4f9e9d1722a63",
+    "hilbert_broad_domain_reasoning_math_text_longcontext_ready_49_032820:39",
+    "mega_reasoning_07de0861c94f20fc74472b7f",
+    "bounded_omni2026_broad_domain_reasoning_46aa24128461e1b262876b93",
+    "bounded_omnicoder_code_tool_agentic_reasoning_browser_terminal_candidate_20260607T185504Z_append_current:61",
+    "omnicoder_small_broad_domain_reasoning_math_text_longcontext_ready_untrained_20260607T024736Z_finance_reasoning_04"
+   ]
+  },
+  {
+   "doc": 12,
+   "route": "text",
+   "rows": [
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:225",
+    "000:3:197",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:684",
+    "000:4:326",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:155",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:561",
+    "000:2:1475",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:53",
+    "000:1:4667",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:633",
+    "000:2:4146",
+    "000:1:4988",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:867",
+    "000:2:3850",
+    "000:3:3505",
+    "000:2:2284",
+    "000:1:3825",
+    "000:2:4682",
+    "000:3:2540",
+    "105:0:2"
+   ],
+   "sections": 20,
+   "tokens": 32285,
+   "needles": [
+    {
+     "after_section": 2,
+     "code": "AN-CDY-647",
+     "value": "739373",
+     "section": 10,
+     "text": "Archive note AN-CDY-647: the checksum recorded for section 10 is 739373.",
+     "token_position": 3209,
+     "depth_realised": 0.0994
+    },
+    {
+     "after_section": 10,
+     "code": "AN-EGZ-681",
+     "value": "973961",
+     "section": 14,
+     "text": "Archive note AN-EGZ-681: the checksum recorded for section 14 is 973961.",
+     "token_position": 18165,
+     "depth_realised": 0.5627
+    },
+    {
+     "after_section": 18,
+     "code": "AN-QPP-952",
+     "value": "844495",
+     "section": 19,
+     "text": "Archive note AN-QPP-952: the checksum recorded for section 19 is 844495.",
+     "token_position": 31859,
+     "depth_realised": 0.9868
+    }
+   ],
+   "passage": {
+    "section": 2,
+    "quote": "user: Let $\\mathcal{F}$ be a collection of eight-element subsets of $S ="
+   },
+   "questions": [
+    "What checksum does archive note AN-CDY-647 record for section 10?",
+    "What checksum does archive note AN-EGZ-681 record for section 14?",
+    "What checksum does archive note AN-QPP-952 record for section 19?",
+    "Which section begins with the words \"user: Let $\\mathcal{F}$ be a collection of eight-element subsets of $S =\"?"
+   ],
+   "answers": [
+    "739373",
+    "973961",
+    "844495",
+    "Section 2"
+   ],
+   "answer_spans": [
+    {
+     "answer": "739373",
+     "chars": [
+      57791,
+      57797
+     ],
+     "tokens": [
+      32250,
+      32256
+     ]
+    },
+    {
+     "answer": "973961",
+     "chars": [
+      57801,
+      57807
+     ],
+     "tokens": [
+      32260,
+      32266
+     ]
+    },
+    {
+     "answer": "844495",
+     "chars": [
+      57811,
+      57817
+     ],
+     "tokens": [
+      32270,
+      32276
+     ]
+    },
+    {
+     "answer": "Section 2",
+     "chars": [
+      57821,
+      57830
+     ],
+     "tokens": [
+      32279,
+      32282
+     ]
+    }
+   ],
+   "uids": [
+    "0246016ab62cf1d2663936c332db243ab3707a33ae87aaa34e17be02e1894c97",
+    "5f15f4b050b37df37a13808f2c06eedee42626c08af74f4625a3cdac3ff0e649",
+    "8bdecc60a9523faa9fd63c771842e3eba4ebd65d3819c51dd238469ffc6d85bf",
+    "3f5e213288d6080d506505b7453ad19e707a2a77f01b38efa20dcdde7af6d055",
+    "19ae0ded086fbfcd5ebcddd38f6bf4ef37dadf34a7f17c247236dcb74506c1aa",
+    "66077b9e86c1a22d8f3cd29a989438352ed1700cd498b33adf8bfa3c193d2d8b",
+    "09ef3913c65063c09b1c1e0ef6ac464cdd775f33a8bcf3dbf25f58ec5f1753ea",
+    "506b96ef5c30943c7101911f09eedd86986889d7813fdc87e3a2db9f40b1529b",
+    "07072feced10395c14f237dd8e425cf92fa4d260b8475aa3071902629b1a4a61",
+    "96f97a5d73226b33699c056b26029224e27641fdd36bcf1dde2a7bddc726e6b0",
+    "ef4aaf15bb26b91299af73b05ffa158c1c3cadec16a7a360fd14ae283cd949ca",
+    "1a34a136fab9f3a1a77b6d09349beef24995ffb0ac059a6d04be367572585ae4",
+    "ad174510519029ff4c3f58495cbb6dac8e6216536c2b7d68504511da2627decc",
+    "0481c51a6214805d4ca32977a60ab8a14c56625835bc4d7d2865d1c273f21f4a",
+    "180a87872dfc04c3e66b421a2d01b42422bc729227690f9c72565c12274f3018",
+    "ff91be0ed05cd9cc70b30e39aff7e5b72c3553e9d6bfa824fdda19813dde9837",
+    "1712ac5dda1284d172d1c5f545ab40394c3a543159947eecf917258715d50e77",
+    "af7eb2c1a0ed831c75ac713b64164db2315b77f39cdd351b359d6511abf208d8",
+    "23298248cc80542806ff4380669a051964c1d49bb7fe1e6039a97e8fe3c810e9",
+    "328a736374bc917c14deeccecd5dc064500b821da559276bccb9f264e31617e0"
+   ],
+   "record_ids": [
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:225",
+    "9d7376c373a5178667d3de331cbe0b726287fb50bcb647c18ef1e300e04e05a1",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:684",
+    "efa1354300a50e702b0000b25333c46c3acd6a69b929f7e452e7ec8f53f493fd",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:155",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:561",
+    "6344d1354be82317c80d31aa4c6eddde2b59ab0bfd5e6fa24e3ce8663656a879",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:53",
+    "44de5e11c421fdada69430744ae91c90e6f1e3db15c12838dd2495a59719645c",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:633",
+    "8ca52f2b96644f916f7b81d26b65909da256ade0099fa364f102f6b36dd0a43d",
+    "4a9d6e2e926f1d4c3f1d872b0a38ca32dd1d3d34d1d5ed5f95acc5f9d6a828cd",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:867",
+    "8863373ccef7792fe7ef1a0b882905e91e2fc1f277d06d2058da5e155a10cb72",
+    "d28b8a15d359d8e205140988df5697f2bb8a9d999211592036cd6bc0f5e75225",
+    "707d491fbf5b6a20b72b70766ed0e53deadfe19502ab54b662b049249a030dab",
+    "374307cabee9d5571199182ededb92c689d25ea82637e18944b7a5a24667a4d3",
+    "95c339ce9380eb913d7721073544828ca0f391894c36cd236f4e7f01415eee46",
+    "c22d02d518da71c8826e35525611c1c843720cb930dc23ba89193bd02694ff1e",
+    "curie_source_aware_broad_domain_ready_120_213639:2"
+   ]
+  },
+  {
+   "doc": 13,
+   "route": "text",
+   "rows": [
+    "000:2:2248",
+    "000:4:368",
+    "000:4:3639",
+    "000:1:4900",
+    "000:5:2741",
+    "000:2:2066",
+    "000:2:197",
+    "000:1:1122",
+    "000:1:3925",
+    "000:2:4724",
+    "000:1:4237",
+    "000:4:614",
+    "000:4:738",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:309",
+    "000:3:2512",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:157",
+    "000:2:4241",
+    "000:3:2598",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:143",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:901",
+    "000:4:902",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:115",
+    "000:2:4089"
+   ],
+   "sections": 23,
+   "tokens": 32264,
+   "needles": [
+    {
+     "after_section": 2,
+     "code": "AN-PHM-358",
+     "value": "950669",
+     "section": 13,
+     "text": "Archive note AN-PHM-358: the checksum recorded for section 13 is 950669.",
+     "token_position": 2759,
+     "depth_realised": 0.0855
+    },
+    {
+     "after_section": 12,
+     "code": "AN-CAJ-401",
+     "value": "332778",
+     "section": 2,
+     "text": "Archive note AN-CAJ-401: the checksum recorded for section 2 is 332778.",
+     "token_position": 15548,
+     "depth_realised": 0.4819
+    },
+    {
+     "after_section": 21,
+     "code": "AN-WEL-240",
+     "value": "734373",
+     "section": 6,
+     "text": "Archive note AN-WEL-240: the checksum recorded for section 6 is 734373.",
+     "token_position": 30002,
+     "depth_realised": 0.9299
+    }
+   ],
+   "passage": {
+    "section": 11,
+    "quote": "user: Let \\( x, y, z \\) be real numbers such that:"
+   },
+   "questions": [
+    "What checksum does archive note AN-PHM-358 record for section 13?",
+    "What checksum does archive note AN-CAJ-401 record for section 2?",
+    "What checksum does archive note AN-WEL-240 record for section 6?",
+    "Which section begins with the words \"user: Let \\( x, y, z \\) be real numbers such that:\"?"
+   ],
+   "answers": [
+    "950669",
+    "332778",
+    "734373",
+    "Section 11"
+   ],
+   "answer_spans": [
+    {
+     "answer": "950669",
+     "chars": [
+      75747,
+      75753
+     ],
+     "tokens": [
+      32228,
+      32234
+     ]
+    },
+    {
+     "answer": "332778",
+     "chars": [
+      75757,
+      75763
+     ],
+     "tokens": [
+      32238,
+      32244
+     ]
+    },
+    {
+     "answer": "734373",
+     "chars": [
+      75767,
+      75773
+     ],
+     "tokens": [
+      32248,
+      32254
+     ]
+    },
+    {
+     "answer": "Section 11",
+     "chars": [
+      75777,
+      75787
+     ],
+     "tokens": [
+      32257,
+      32261
+     ]
+    }
+   ],
+   "uids": [
+    "c207b51570282c9eb3a94a733414b7f9ac23440b8a06eb7d83a6df224df5e1eb",
+    "11db9dac1a1bf5e3565e4bff444eeb177161fd3cb6f8696de2002608fd7e7d51",
+    "7fb63c4dfd1aaddb0cfe17761c697389c9fa96e7fd4042f162f8e1f932691b47",
+    "bf53a1ed76220b01196e28ecdd1e68805e4bcf3efc9fa72f32df9c5746ce57ed",
+    "a048d0f48f2a19c0e8e14fdbfbe106f65029fa04240e87f273da83ba6363ea6b",
+    "c6a534d287e9bf5cce143b69e61d2750fb0be8963e9f48c6bfad2e3c4ea919ae",
+    "0f4262e32f939de7e7980f6dccea9bdbce184db5ef155eda09bdb3f6a15df02e",
+    "f5a181ef7e2762e27d78d17e602491a46509889669ecab91a495d7080d8a214c",
+    "4cc10ddbf286387dca93958e8bf5e94ee41b0929004a98388197329aa114def0",
+    "5766cc0c72d7387732eba6de4acb6dd161e2080a3a597c98dd9671257bd0f5f2",
+    "7d0b256585a1d919c840ec875e1606cb03f2d241b51440747785a9a2e4058c23",
+    "f3a08a97be37949ecf69e9fea4badf4a3a9e2877411470dd03fe81b57c3425c4",
+    "00197c3e84b379dddd25b3db2a7bb595ad029b873fdb239018d503e7c8bc3c97",
+    "49329761062816d8777ea70f47c14b13d8faa3c7dd6461f9e47fa6326dd02f84",
+    "a0e76879416076029631d30ddbf9928d3987eef473e5073919b73e17ea88d5ca",
+    "0e2ed58168b4cfcbdfbe326d23ca9d3f0d263185ca5628b0368554952754c67a",
+    "7996544c13342aa0a329bba4a7ed680c8e5c781243f0df13f7836560dc561670",
+    "c071d96d8cc6a0d7c281d1cb115c04c014b5b2c7d87f1426d3033660e3a60255",
+    "4a19f890fb38e441922bf64b20bb071336540d8c3f2346924d801cb798a31190",
+    "5d4eea97e7a5c80c3989e6e310e7e141f6f3b925caf0367b2dabaf07d3ef7b79",
+    "4bd94c7680d979d3a25e3ba330e9a72e630de552872367b796686e6a698e7ec3",
+    "320c91604af60d171d164da2a2e38051bb38c21bf01c8803499928772aa04f2c",
+    "3fdf72a52987abf372ca2ea4dc58243bf454066d1aad24574b545bed8370f975"
+   ],
+   "record_ids": [
+    "7008b1ab7e8d1cad78cf831599b4a47d9c568a510381311333f1813100b434d2",
+    "f032b6f1c57d094545aafe09e63b2f68d17ec75cb3ce4471a8d68de46f689cb8",
+    "v9_qwen_materialized_strict_20260604T065822Z:f51447417b42fc5126314bc5b2496ed05ba8f88252e891d37b8367cb5a747776",
+    "48f6992c7887880152fdb522bd5142176f4e6ae9032d4c7dfc9170901ea3311d",
+    "c868be3333e8f739c9415ebeffdf3b98dab4239636a17a720b4f2cd407209f30",
+    "6d0d577c57af50d3f64724a1d9965bb45a92b03b30fc23656796720f6be55c82",
+    "4e3299bc0d7fa4d723cb81530cb7109ee5709e97ffb7a5453e6d8a993919e5ee",
+    "0ae0b22bc833323a562b44f33533d92c5b1c03c4777a02f0bffa75b0053a66c0",
+    "390d5d7d3372148210ae0c930035d6eb6de75f5e0a828663bca2e288d6cc673e",
+    "9656d6e7c64461ff7055f6265e2b00bfd112cef79f0a351f4b76fe76bc462867",
+    "3def58eff5f58a1dd04e53302b6dc55d9698493062d24084711b55bf26743efd",
+    "f422b7669b34e7cac1c1c8b0eee654c924c6b463c4b3455ee5b162d58682ae05",
+    "f5dd5a5977164b055250f4175f40f3069cf00e15480d223206e9f2a08824e0d4",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:309",
+    "c1b859e39fb97a547af0b21c6395a972b699832f748dd1cc8672f84f75aeb16d",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:157",
+    "8e0c7df7ad8bc0da654f7090a4b40d54205749e2121cacbf800e660c8b45fccd",
+    "c2eb4e16ce6417fdcda1d95017a1b2bfedfbedc8fa5922fd1d0bb42990c4cee2",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:143",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:901",
+    "f88f8f81d1f7f04305629609b8cdcfca47a3183370639eeb273918ea79472021",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:115",
+    "8bd89fb3508ffcfc63619928407f1dd58adcfa3406bd27f74ee727319bedd68a"
+   ]
+  },
+  {
+   "doc": 14,
+   "route": "text",
+   "rows": [
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:90",
+    "000:5:2076",
+    "000:5:1325",
+    "000:2:3759",
+    "000:1:588",
+    "000:2:4922",
+    "000:2:894",
+    "000:1:3962",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:205",
+    "000:4:944",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:161",
+    "000:2:4725",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:699",
+    "000:4:312",
+    "014:0:50",
+    "366:0:84"
+   ],
+   "sections": 16,
+   "tokens": 32294,
+   "needles": [
+    {
+     "after_section": 2,
+     "code": "AN-BRB-411",
+     "value": "867853",
+     "section": 16,
+     "text": "Archive note AN-BRB-411: the checksum recorded for section 16 is 867853.",
+     "token_position": 11912,
+     "depth_realised": 0.3689
+    },
+    {
+     "after_section": 8,
+     "code": "AN-KEJ-261",
+     "value": "180447",
+     "section": 6,
+     "text": "Archive note AN-KEJ-261: the checksum recorded for section 6 is 180447.",
+     "token_position": 19035,
+     "depth_realised": 0.5894
+    },
+    {
+     "after_section": 14,
+     "code": "AN-ZUC-663",
+     "value": "530779",
+     "section": 6,
+     "text": "Archive note AN-ZUC-663: the checksum recorded for section 6 is 530779.",
+     "token_position": 31611,
+     "depth_realised": 0.9789
+    }
+   ],
+   "passage": {
+    "section": 15,
+    "quote": "Write a source-grounded educational explanation for healthcare and medical operations. Focus on"
+   },
+   "questions": [
+    "What checksum does archive note AN-BRB-411 record for section 16?",
+    "What checksum does archive note AN-KEJ-261 record for section 6?",
+    "What checksum does archive note AN-ZUC-663 record for section 6?",
+    "Which section begins with the words \"Write a source-grounded educational explanation for healthcare and medical operations. Focus on\"?"
+   ],
+   "answers": [
+    "867853",
+    "180447",
+    "530779",
+    "Section 15"
+   ],
+   "answer_spans": [
+    {
+     "answer": "867853",
+     "chars": [
+      57242,
+      57248
+     ],
+     "tokens": [
+      32258,
+      32264
+     ]
+    },
+    {
+     "answer": "180447",
+     "chars": [
+      57252,
+      57258
+     ],
+     "tokens": [
+      32268,
+      32274
+     ]
+    },
+    {
+     "answer": "530779",
+     "chars": [
+      57262,
+      57268
+     ],
+     "tokens": [
+      32278,
+      32284
+     ]
+    },
+    {
+     "answer": "Section 15",
+     "chars": [
+      57272,
+      57282
+     ],
+     "tokens": [
+      32287,
+      32291
+     ]
+    }
+   ],
+   "uids": [
+    "d0cf1d3dbfcfba1945d5a90cdcdac247805ec8b90056e3d7984fa92f8fb2e90e",
+    "74e194a36f56204b1fe3c35eb7b8fa6ae7c8639acacf8e777694cdb966a00e69",
+    "6d809e5d082348354bfaf7900579cbfb2fd6999a721b6bae227567c77ce906b7",
+    "d2b82723c198211e913c665d3936f1135e854cb735f57c4431cc552e691988f6",
+    "0da8da4ede33807f1169e4374719ec6a8395cd24f4fb7318a7eb7a6d545866f2",
+    "6e9a8d43920880209e8e67d4b52e8152a422b8e887bc5b04ce8cb05bd010d251",
+    "73435268defdc5c113142ddf51ca5c62267546b19f54686596cd621648fb3919",
+    "f7da5b217b0ebecb717f457d3be1b8a389ff0338748f9b47cf55ba2e65c799ab",
+    "1f346fe2a7418d456d14cb41939ada1530cf747cd6d25f69724e5f0943efcf16",
+    "069306e9d6800264827b0b259cb97beaf352ab86bfd07638e8d16b1e73ffb138",
+    "f5f68f9788fe8adaa0079b4c210d2fb1e67b229fb155d6ff8a6b04ed1e0cb236",
+    "048920de090b66126f56eefd639e45186d6f31486954d465ed6aad53fa24719f",
+    "26ec87579bfe2ff772e51a1e136dc0e98449e15f0ccc5b0d409eb3bca1df3119",
+    "9182cbc59a8e1a5551ecf09daff42616087c9572351314c0ef81d104e2170abe",
+    "c4c9b040d7b34e92636de198caf89f57f2700c8fa90f83c26f9883b6aa76da8c",
+    "2810204cdacd963ea93833f88a62f926e6c1e29d434ae03d818cdc8d91af2351"
+   ],
+   "record_ids": [
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:90",
+    "v9_qwen_materialized_strict_20260604T065822Z:76c407faa475ac2ea26bcf078e1ed667a389d14e7821089aacf979ee7da7bed5",
+    "v9_qwen_materialized_strict_20260604T065822Z:75b9c3cb3e774d6f6f726ae6a4becf8d7e29faebbb60294a0f6e3ef8e959675f",
+    "871ac2ae80153132e1d4b1387101a6135712629dc571633a76549873d7cd032e",
+    "02772850114451110455a8290b0dc50b4079b84d729a5fbb6c1f222255699057",
+    "9952dd4efbf48404c43a12d5c7752fb20de98f63d1db446d143529db2ba1b01a",
+    "596fe3814bc6cbb4166b08a3708515a969d957ed05caf2228e4f1376d4cea2b4",
+    "39b924aa7255d69cf4c0fbbdc2cbe5d088525e751931fb36f49f20187be974d3",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:205",
+    "f9283a19137f831bf5574dd93026d3b4ddf4444feb4d06aedc3d60c2144b7dc5",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:161",
+    "965caa5441d11248c15b622357556fdfbc0dfa4917d3d9f100ba59ba7a1eafc8",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:699",
+    "ef59ada2638518a460590329d529951b320c68789069a2950e2b9b283f80660f",
+    "broad_domain_healthcare_medical_operations_174cc173b3428ae602d755cf",
+    "curie_v62_broad_reasoning_20260607T114541Z:84"
+   ]
+  },
+  {
+   "doc": 15,
+   "route": "text",
+   "rows": [
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:366",
+    "000:3:4822",
+    "000:1:654",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:488",
+    "000:1:819",
+    "000:3:1740",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:632",
+    "000:4:3774",
+    "000:3:1170",
+    "000:1:4668",
+    "000:2:2539",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:81",
+    "000:3:1580",
+    "000:3:1289",
+    "000:3:3166"
+   ],
+   "sections": 15,
+   "tokens": 32304,
+   "needles": [
+    {
+     "after_section": 2,
+     "code": "AN-JKF-212",
+     "value": "925237",
+     "section": 12,
+     "text": "Archive note AN-JKF-212: the checksum recorded for section 12 is 925237.",
+     "token_position": 12087,
+     "depth_realised": 0.3742
+    },
+    {
+     "after_section": 8,
+     "code": "AN-XBP-640",
+     "value": "593030",
+     "section": 10,
+     "text": "Archive note AN-XBP-640: the checksum recorded for section 10 is 593030.",
+     "token_position": 25047,
+     "depth_realised": 0.7754
+    },
+    {
+     "after_section": 14,
+     "code": "AN-DSW-145",
+     "value": "435827",
+     "section": 12,
+     "text": "Archive note AN-DSW-145: the checksum recorded for section 12 is 435827.",
+     "token_position": 32076,
+     "depth_realised": 0.993
+    }
+   ],
+   "passage": {
+    "section": 8,
+    "quote": "You are a teacher model producing compact structured distillation targets for Omnicoder's"
+   },
+   "questions": [
+    "What checksum does archive note AN-JKF-212 record for section 12?",
+    "What checksum does archive note AN-XBP-640 record for section 10?",
+    "What checksum does archive note AN-DSW-145 record for section 12?",
+    "Which section begins with the words \"You are a teacher model producing compact structured distillation targets for Omnicoder's\"?"
+   ],
+   "answers": [
+    "925237",
+    "593030",
+    "435827",
+    "Section 8"
+   ],
+   "answer_spans": [
+    {
+     "answer": "925237",
+     "chars": [
+      56183,
+      56189
+     ],
+     "tokens": [
+      32269,
+      32275
+     ]
+    },
+    {
+     "answer": "593030",
+     "chars": [
+      56193,
+      56199
+     ],
+     "tokens": [
+      32279,
+      32285
+     ]
+    },
+    {
+     "answer": "435827",
+     "chars": [
+      56203,
+      56209
+     ],
+     "tokens": [
+      32289,
+      32295
+     ]
+    },
+    {
+     "answer": "Section 8",
+     "chars": [
+      56213,
+      56222
+     ],
+     "tokens": [
+      32298,
+      32301
+     ]
+    }
+   ],
+   "uids": [
+    "8a04fbcd93cab1a18be49891fbcd1888ca4f203e432b0f5020648cfc08205c3c",
+    "5a18b5942d309a79db4e24351665378edcc7afec5b5baa415014ab406e7ec83a",
+    "166957575d106baff15e70eaa3c281e2d843622168ba42fc4fecae1e819ee453",
+    "34464c27290113c809a16b1781f08874b1a1aa2872dbd0333cf40077c46fe654",
+    "bac1076a18803263d599c2264ec05211260cd8e474c9ea4feab3c2df4f8476d6",
+    "ffc764dd2378fedcaef78e4badaca68bb58432005accaa4cfce139e63bc61ce2",
+    "7c62ca92f1f0073dc269da0cd887ff1e46933877274d4ecfdb017a3b9055effa",
+    "d4c14104ab11e8808f34238ddb80269c5da377593c1182f6bb2bc929c54689a6",
+    "1d5f2360103e31cba1dc307cad810d4bb09bd7641d95c8ce0f220d7cb20685d3",
+    "774a78d4d88ac9fc79a4f0d80a281bdcbf77599225b10014fb10ae2d4ccb672b",
+    "47b38b71e1b935228688d3042c11febb3b82f266260a2900f7962d22cc2179a3",
+    "39b6f14a8e34dc0c1b304c79908a7ff5410d4c760e7760a168eede3016f57ae9",
+    "0e17ef52752fd95c89d7ce29f3d7df7d6a86a51e3a3cd67be05957135f699348",
+    "a057e1533cc8ae5907991a57674b58e70079c39e7d93b495ad379c56e758155d",
+    "94e692169781f242046f0188356d1eba1dbba3321a8f38e1c65ec48546bec4b6"
+   ],
+   "record_ids": [
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:366",
+    "e7c5d65cab56daae026f92078d83dba82f9ff749a543a2f36b9f1dea52f12c75",
+    "037013fc68589748b148b48339c726b35961a281786c9072160ec0557426a274",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:488",
+    "06235fae0069b09974213efdfe0a7e6386bc03f22b6567fa11ba33cb7478d613",
+    "b4934390dc45f7a2c262d790794a1f55cfe12deaa724d466ad58efabc1afe451",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:632",
+    "v9_qwen_materialized_strict_20260604T065822Z:484fbb3de28994564bf06dba484b4b741bc7b84fc72411c1ca8b6b2c0b37b389",
+    "abef0ea79c606149b95cca4985358e35ef9da00b8462a3cfe2ca00d79c2caf1c",
+    "44dfa961eb7ac09960d15e01eafe6dc7d454ea8c062604a1b18ceea240b81038",
+    "743cf442e2f94d1131fbcff2a4109ce5979d21f8ab66acaa0a5670058fdbe8f9",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:81",
+    "b1e6d7c5687c27f10a60bb56e01a9e35a3530a32e754b5e9a6d804f57adb207a",
+    "ad80375560e0b490b4872f4928d7d60b0cf3789e2b5aef0dae7db996d12b53a6",
+    "cc9069586f44af54d7bab67868256f5fd77e1a6df2880a0b65524a14a773259a"
+   ]
+  },
+  {
+   "doc": 16,
+   "route": "text",
+   "rows": [
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:809",
+    "000:4:992",
+    "000:1:2275",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:830",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:191",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:65",
+    "000:3:725",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:876",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:199",
+    "000:5:2110",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:806",
+    "000:1:2645",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:704",
+    "000:3:2829",
+    "000:4:726"
+   ],
+   "sections": 15,
+   "tokens": 32318,
+   "needles": [
+    {
+     "after_section": 2,
+     "code": "AN-QCH-863",
+     "value": "798356",
+     "section": 14,
+     "text": "Archive note AN-QCH-863: the checksum recorded for section 14 is 798356.",
+     "token_position": 10179,
+     "depth_realised": 0.315
+    },
+    {
+     "after_section": 8,
+     "code": "AN-FCQ-820",
+     "value": "842187",
+     "section": 11,
+     "text": "Archive note AN-FCQ-820: the checksum recorded for section 11 is 842187.",
+     "token_position": 19717,
+     "depth_realised": 0.6101
+    },
+    {
+     "after_section": 14,
+     "code": "AN-QRE-412",
+     "value": "889015",
+     "section": 7,
+     "text": "Archive note AN-QRE-412: the checksum recorded for section 7 is 889015.",
+     "token_position": 31960,
+     "depth_realised": 0.989
+    }
+   ],
+   "passage": {
+    "section": 2,
+    "quote": "user: Find all integers \\(a\\) and \\(b\\) such that \\(a(a^2 - 6b^2)"
+   },
+   "questions": [
+    "What checksum does archive note AN-QCH-863 record for section 14?",
+    "What checksum does archive note AN-FCQ-820 record for section 11?",
+    "What checksum does archive note AN-QRE-412 record for section 7?",
+    "Which section begins with the words \"user: Find all integers \\(a\\) and \\(b\\) such that \\(a(a^2 - 6b^2)\"?"
+   ],
+   "answers": [
+    "798356",
+    "842187",
+    "889015",
+    "Section 2"
+   ],
+   "answer_spans": [
+    {
+     "answer": "798356",
+     "chars": [
+      50094,
+      50100
+     ],
+     "tokens": [
+      32283,
+      32289
+     ]
+    },
+    {
+     "answer": "842187",
+     "chars": [
+      50104,
+      50110
+     ],
+     "tokens": [
+      32293,
+      32299
+     ]
+    },
+    {
+     "answer": "889015",
+     "chars": [
+      50114,
+      50120
+     ],
+     "tokens": [
+      32303,
+      32309
+     ]
+    },
+    {
+     "answer": "Section 2",
+     "chars": [
+      50124,
+      50133
+     ],
+     "tokens": [
+      32312,
+      32315
+     ]
+    }
+   ],
+   "uids": [
+    "5e9160da67080713b16d348b84e5b94c95d1480d21c4ad506ebf58d2018daeb8",
+    "17bde8230edf6661c07ae1c9731a4f2ab78b079c2fde3fd8752e01c1be4a9f44",
+    "917c4a13f1083d65c0050dca15199a9bb674a9ca6022f531d5317cc290192ade",
+    "ce4e5e1fdf1950f0541fc92d6e18e336579a747179bc91ba567094adf9b49b1d",
+    "edab983fc64e9ee11032017ed5f96c7ee00b5c585ea8f7e4fb442364ab4384ed",
+    "fc1f2134bc6144b522a8cf746c9ada6f219f79bda641027949cecdda092ca956",
+    "9e8d85c36454e137f5dd591936358ac632b598b122c0f84183f903759aff5366",
+    "ef382c3a47cc032ae66c556d8f3fcb725f574857ab0746189bc39d795c10b3d8",
+    "0240a26d10f90c5aa26821e7feda3845dc86dcd91719138303e9406095a6d929",
+    "983e432a7611b1d8545f570e045c61541aad04bcb55145952a3237bdad9a4ae1",
+    "4d91e60843643fb587b672419bdb8722907d0e340b8bfb5d969822e0264d9d89",
+    "8667365ef17387866d7b7273fa0a077fec0c7d0e05f894ca3fa67eadc43aa366",
+    "438e33a52317f4fbb8f5b7fd33222dbdef540ade30aa734720decdb6a7fcf580",
+    "053828d43211b7d73f347d11c00aa95db4cbcd01252b7918a5d3f5aec1001dc2",
+    "e7560965084e5d051b69d09ac7eb0de59df1ea158c5b7f52467d96a4f6912f43"
+   ],
+   "record_ids": [
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:809",
+    "f9cc2ccebfed311acefdc78785eaa06b4728eb9d391c2607b50ac26f0342b905",
+    "1eac4a472c25b2598ed4fa87bb434d3c8f778a7f973f604cac7f1a85d9df34ea",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:830",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:191",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:65",
+    "a587416a0e5203d29b220405e608c539dc6eb64e5324993aea02e33c95613d4d",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:876",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:199",
+    "v9_qwen_materialized_strict_20260604T065822Z:2c2642d7485314a0b25679f0e6e3f9241dcc0c4969a6a8832d9d1859fb200d6e",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:806",
+    "248fd9aecf62bc86b772e921e38fd36cbcb0ec3d7685432915605fd08effd722",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:704",
+    "c69742e13fdf784c5f7e6974b7db7828c69d1661fb59961ea5159b4973306db5",
+    "f5aae47c66f5df02cc872d22a09ffa1ccf0e9a30e219b1de35461fa669f8094b"
+   ]
+  },
+  {
+   "doc": 17,
+   "route": "text",
+   "rows": [
+    "000:2:1015",
+    "000:1:2726",
+    "000:1:3568",
+    "000:2:2877",
+    "000:1:3550",
+    "000:2:4170",
+    "000:1:3274",
+    "000:2:1105",
+    "000:5:1471",
+    "000:2:4265",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:87",
+    "000:1:4530",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:449",
+    "549:manual_cleanup_batch_000168_deep_swe_coding_task_briefs_ready_68_append_current-000000:21",
+    "000:2:20",
+    "000:3:204",
+    "000:1:2776",
+    "000:3:4750",
+    "000:2:2517",
+    "000:2:972",
+    "000:2:3640",
+    "000:1:3966",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:846",
+    "000:2:4329"
+   ],
+   "sections": 24,
+   "tokens": 32260,
+   "needles": [
+    {
+     "after_section": 2,
+     "code": "AN-VFH-543",
+     "value": "473975",
+     "section": 24,
+     "text": "Archive note AN-VFH-543: the checksum recorded for section 24 is 473975.",
+     "token_position": 2377,
+     "depth_realised": 0.0737
+    },
+    {
+     "after_section": 12,
+     "code": "AN-ZZZ-523",
+     "value": "668305",
+     "section": 4,
+     "text": "Archive note AN-ZZZ-523: the checksum recorded for section 4 is 668305.",
+     "token_position": 15031,
+     "depth_realised": 0.4659
+    },
+    {
+     "after_section": 22,
+     "code": "AN-VDG-665",
+     "value": "263651",
+     "section": 11,
+     "text": "Archive note AN-VDG-665: the checksum recorded for section 11 is 263651.",
+     "token_position": 28111,
+     "depth_realised": 0.8714
+    }
+   ],
+   "passage": {
+    "section": 9,
+    "quote": "You are a teacher model producing compact structured distillation targets for Omnicoder's"
+   },
+   "questions": [
+    "What checksum does archive note AN-VFH-543 record for section 24?",
+    "What checksum does archive note AN-ZZZ-523 record for section 4?",
+    "What checksum does archive note AN-VDG-665 record for section 11?",
+    "Which section begins with the words \"You are a teacher model producing compact structured distillation targets for Omnicoder's\"?"
+   ],
+   "answers": [
+    "473975",
+    "668305",
+    "263651",
+    "Section 9"
+   ],
+   "answer_spans": [
+    {
+     "answer": "473975",
+     "chars": [
+      77265,
+      77271
+     ],
+     "tokens": [
+      32225,
+      32231
+     ]
+    },
+    {
+     "answer": "668305",
+     "chars": [
+      77275,
+      77281
+     ],
+     "tokens": [
+      32235,
+      32241
+     ]
+    },
+    {
+     "answer": "263651",
+     "chars": [
+      77285,
+      77291
+     ],
+     "tokens": [
+      32245,
+      32251
+     ]
+    },
+    {
+     "answer": "Section 9",
+     "chars": [
+      77295,
+      77304
+     ],
+     "tokens": [
+      32254,
+      32257
+     ]
+    }
+   ],
+   "uids": [
+    "e950a9e0e1c0d53e1b929c26ee0eb92236f199ee24bff7067b245131b6d5dc8d",
+    "a0c5b0a796958516a875a1cf7044507b3e749a08e8c596a37c942ae14f7ce341",
+    "f09be193bbe7cf8ede60c88eae520ecf754d402a732b61a8373f7992149a3c98",
+    "82f9937776c75402d35de65e30fe8f9b6d1461a364c7d7ca9bdc7fe78050ea50",
+    "6439de34b702a3e2af6103a2a492f4203e1fd9279ad6d5fc1760047ae98f565f",
+    "fa358445278a2bc2c115a427bb922a068363cdc533c8b3a8adaed80dc5da9472",
+    "72003881ac638f8993159f717a031f6f5f7640311507c1cd1abf81fddac8acf4",
+    "311972d10f8bf4d43f988489e90bcda9bdb4f7af01dc89e4b4e27505ad100ab5",
+    "0e6a02096dca387cea918625a3721705834004a7ae769fdd36d7d0117fb7f94d",
+    "816ddb213ac3ccbe5561cd9c76c3c7ab75a24afb59cc4d92c6fef74102fa33ba",
+    "6de6b14737745757eecd4454157a0d0b2cdb53aebaa36b43e9b36af5158f5eff",
+    "7669214f0726875bfac15b8205e607cf5070fa21b03e4dd737cd8a89c0b01bcc",
+    "18f22bdd983e3d6930484552ba7619f85b2af2dd2c0dcb411294fd821e591ed3",
+    "5750451833712eca0760cfa2a89da77ffdc52760de3083fb6909bc6a0651b382",
+    "d5bf2380d22a33d0780ee62b2edc5f9e3c4bdd8758b3c7f41fd43282d0c8dffb",
+    "a6463b5a45d2ce5dca71d8d023dfd5a23691e5a88e67e0a39f65c7e45499d9da",
+    "610328dd6ae815f2f6fdea454b39203f34dbd01c859f09354dd6b2c02ee8e47a",
+    "a44e1e115bca145a9cb660dd200a5116b0347ed16d85ed5ef1325db23229e6df",
+    "1b52be27d99b361fa66d7e0cd126e22cb057065154ae6634047d249ed6ab8ba9",
+    "2cab6a6ddff7af92ace022fb43e02a6b14e8f8d6f4596be4ff2b91d89d6a5e2e",
+    "ea028de6531a58e557f2873979ae693f16aedd605a07a0d62623f95517d316c9",
+    "dd69fbf60cbc5e25b45b01567f78885e6e6a02d5105144c85beefa4eb5bf8226",
+    "aad4f582f38fb72388420dc521c461930f4451f0f46abffa46b15cf414b07e6f",
+    "d07c137fada554ff439b2f1946af0e603052014e49b2722dc766850f444240a2"
+   ],
+   "record_ids": [
+    "5bcb53a69e18a0fd0c28a65899c6d78e5b93569c2ca002047a5fa34a40359cdb",
+    "25e29bd64801d32745abe7d18feee5df2b59e057021a86eafe054ca9c3c2d4ed",
+    "3356e6b552e4d874caeeb39ad6926e8d23cf0c34a8bda811938eeac355091874",
+    "796a5007b98b8ad4218a9ca030a8bc464ed8b7ec27f8bc8c9cd5bf34a70d85c9",
+    "331e4f704d4ba284cb980316e9c10d5e37677574ef1a9b25503404ca1614d382",
+    "8d1806d16aa1261064b37db21ffe47129e445964254063cd96d5cfb4ac70887a",
+    "2e9544d56b11fa7e84bd4756bf2dc5e0ea623095f226eebae0385e1a861ff903",
+    "5d30bb0246373fb4336cc3d64173a3cc8eaef1b2105a9aa390ba38890ddff3a8",
+    "v9_qwen_materialized_strict_20260604T065822Z:84ba8f39585e68cf9c44dd00b403d76f79ff19b216d7d0e00e8fcebcf2a1689a",
+    "8e697be8886f4548442d238076ac552ed0c00d92716d1cbfd154afb4161822d3",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:87",
+    "42c127a0736e7d98e26396b5e193e8740bd71ad30e98e0de91d68c911eabc4e1",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:449",
+    "manual_cleanup_batch_000168_deep_swe_coding_task_briefs_ready_68_append_current:21",
+    "4b231b27cf06e1303994bd00aadf22cc49b9d58502d9e542b9e3b1d652207330",
+    "9d951ebda0a24405ac45ef2b1e876f2945ab02a0322a20ad28844e6f98c26ed7",
+    "26c73a49bb986bf698dde63ea01147e7f585b0766cabbc3e64bad4c6fcede1aa",
+    "e6b8990a513336ec6fc80b5317a6272a2845b4a0f602bb4618ee2b9ef3bb0be4",
+    "73f7191cf098b6ff3ad71a60d13de218c66f0d4b739bcc10b5ad9daefe2b18f7",
+    "5b19d5ea6c4d94944647bbbed5094f1a9d9fcf168e3fe2d93813fe3214c3d309",
+    "851b47e0a868ead735652a2dd79678c8548827ff198e575906240fde10c5021e",
+    "39d60c07f7f3caad77e79eb63ac7c1ffbb631ce881590863839bc81a71994641",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:846",
+    "8f714291f96a1bc094ba0dbf8c34b0a280679a3077ed770f2e90c941376b1f46"
+   ]
+  },
+  {
+   "doc": 18,
+   "route": "text",
+   "rows": [
+    "000:1:4916",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:476",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:539",
+    "000:3:2209",
+    "000:3:1334",
+    "000:2:872",
+    "549:manual_cleanup_batch_000168_deep_swe_coding_task_briefs_ready_68_append_current-000000:25",
+    "000:1:722",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:466",
+    "000:2:1170",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:838",
+    "000:5:2197",
+    "000:3:4536",
+    "000:3:3169",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:487",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:387",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:768",
+    "000:1:3880"
+   ],
+   "sections": 18,
+   "tokens": 32294,
+   "needles": [
+    {
+     "after_section": 2,
+     "code": "AN-USC-233",
+     "value": "899500",
+     "section": 16,
+     "text": "Archive note AN-USC-233: the checksum recorded for section 16 is 899500.",
+     "token_position": 2740,
+     "depth_realised": 0.0848
+    },
+    {
+     "after_section": 9,
+     "code": "AN-PUN-821",
+     "value": "341095",
+     "section": 17,
+     "text": "Archive note AN-PUN-821: the checksum recorded for section 17 is 341095.",
+     "token_position": 16529,
+     "depth_realised": 0.5118
+    },
+    {
+     "after_section": 16,
+     "code": "AN-AQD-967",
+     "value": "448214",
+     "section": 16,
+     "text": "Archive note AN-AQD-967: the checksum recorded for section 16 is 448214.",
+     "token_position": 28292,
+     "depth_realised": 0.8761
+    }
+   ],
+   "passage": {
+    "section": 14,
+    "quote": "user: Right triangle $ABC$ has $\\angle ABC = 90^\\circ$, $AB=3$, and $BC=4$."
+   },
+   "questions": [
+    "What checksum does archive note AN-USC-233 record for section 16?",
+    "What checksum does archive note AN-PUN-821 record for section 17?",
+    "What checksum does archive note AN-AQD-967 record for section 16?",
+    "Which section begins with the words \"user: Right triangle $ABC$ has $\\angle ABC = 90^\\circ$, $AB=3$, and $BC=4$.\"?"
+   ],
+   "answers": [
+    "899500",
+    "341095",
+    "448214",
+    "Section 14"
+   ],
+   "answer_spans": [
+    {
+     "answer": "899500",
+     "chars": [
+      58293,
+      58299
+     ],
+     "tokens": [
+      32258,
+      32264
+     ]
+    },
+    {
+     "answer": "341095",
+     "chars": [
+      58303,
+      58309
+     ],
+     "tokens": [
+      32268,
+      32274
+     ]
+    },
+    {
+     "answer": "448214",
+     "chars": [
+      58313,
+      58319
+     ],
+     "tokens": [
+      32278,
+      32284
+     ]
+    },
+    {
+     "answer": "Section 14",
+     "chars": [
+      58323,
+      58333
+     ],
+     "tokens": [
+      32287,
+      32291
+     ]
+    }
+   ],
+   "uids": [
+    "bb82ad7386c73a0a36df8fd166e07c540d00f7e2c10c44d57f41730e379143d2",
+    "d9ea1fde6fab907262a8e3fc942e8e9e0bc203d053a06fa73a545a6171dd94df",
+    "a9015de3b55fee2583a13022783c457cd5922955d5b9219b56d55ca090e057fc",
+    "c389ffc0d26f71b5092db2ac775b80ebf68bf60cd4b24070c90df6e5618e86e4",
+    "497283330d59cd16287d3e3e786c1787258702b869c4c3ddcefff8399d04cc9b",
+    "a90cf834c6875606e177c5242a9e357ed038a8082cdcafb8e6cdbcb7f45b3c38",
+    "b9860924bf9959048022059800854bd362d464501170a984672d93cf688f43c3",
+    "522c96f70464576e8edac17388afaf41e673dc61d389099706cf20abe722c841",
+    "32176b005b36fdd61259b0d8cbc2319d5e7e9626bd7985baa1dba2b8f2fb9f7d",
+    "9661c2aa95bee76a67d7201d6dd388be9afd56ef12c45220a4ff1701d6bfc990",
+    "7ab75e43d0226d9dd8ea8fae40d969a7f8dc2a81330004934eade666d817e06f",
+    "cd7c75f06478eafcc3f85e52319832aa9c134d4f9f27d08d574a03bc4300de71",
+    "94dfa2edb7736d97a5ef82b687f268aba7019c9e8f38e4584cf423944f7b2009",
+    "e3a9d4f60b3a4562d275bac4770b488b0b47a4fe97fdad169316233ca4546a4e",
+    "af895c5c055666fd06d0f9e516c3acd2246cd7d95c45a8851c0518d392cc0adf",
+    "3422b95d3a35d93e9bb16505dec34775d1508073bbae48a3de651e08b471facc",
+    "7ca44c363b6d1c4f3e96f5f1633af7fb10f49e9da82c7c8da0dfd7286c6dbcf9",
+    "d25573124ea7845b8a4bf2753452f5a3e5a6161e3bd2eda79fcea672332b75fd"
+   ],
+   "record_ids": [
+    "491c77dd6ea86eee745b70df0be7f12a595d0f16b47c2ffb02d9821ce9f73a71",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:476",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:539",
+    "bc747cfa812e25f1b4b4156d61c683a05a040dd4d20c2f1112c5665d4fd7f787",
+    "ae0d77773ccae97f895e2d1c5a429da7736f01c863183fa6f06bc0fdc7e18a3b",
+    "5927fd8eebf34980a40e88b8b1be5d0dc1ef677096132875efe6d47fe235a8b5",
+    "manual_cleanup_batch_000168_deep_swe_coding_task_briefs_ready_68_append_current:25",
+    "047beef95171bf55d21e1cd4248bbd25a74f8bc770c89063787bb4b93f446c40",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:466",
+    "5e290237ebcb8fe0a6135f45e73c4e45de8b7036b3d0cd5cacc46c0a27f683ad",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:838",
+    "v9_qwen_materialized_strict_20260604T065822Z:4253de3ff3d1c0dfb1cd9b509895141c73d4309e11455f0ceaa0dd902bf1fae5",
+    "e33e303dfc22b18349ff8ff455c8cb7afb070bae66cbe54e4f92468554dca2e5",
+    "cca156abb8f9a091cad70dde79336ec9afcc65994217d137d126b95aa239fc28",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:487",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:387",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:768",
+    "385790838afe2cd169899caf4c5aa16165cbf30a581c93a54b0a67650ab79c0e"
+   ]
+  },
+  {
+   "doc": 19,
+   "route": "text",
+   "rows": [
+    "000:3:3575",
+    "000:1:3654",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:186",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:472",
+    "000:2:1112",
+    "000:2:3422",
+    "000:3:4622",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:209",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:367",
+    "000:1:994",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:132",
+    "000:1:3008",
+    "000:1:4349",
+    "000:4:806",
+    "611:memory_batch_000224_neural_forge_matrix_trace_rewrites_ready_append_current-000000:108"
+   ],
+   "sections": 15,
+   "tokens": 32299,
+   "needles": [
+    {
+     "after_section": 2,
+     "code": "AN-HYA-314",
+     "value": "108766",
+     "section": 14,
+     "text": "Archive note AN-HYA-314: the checksum recorded for section 14 is 108766.",
+     "token_position": 2420,
+     "depth_realised": 0.0749
+    },
+    {
+     "after_section": 8,
+     "code": "AN-JZN-740",
+     "value": "299069",
+     "section": 9,
+     "text": "Archive note AN-JZN-740: the checksum recorded for section 9 is 299069.",
+     "token_position": 25909,
+     "depth_realised": 0.8022
+    },
+    {
+     "after_section": 14,
+     "code": "AN-UAM-540",
+     "value": "132361",
+     "section": 8,
+     "text": "Archive note AN-UAM-540: the checksum recorded for section 8 is 132361.",
+     "token_position": 32053,
+     "depth_realised": 0.9924
+    }
+   ],
+   "passage": {
+    "section": 15,
+    "quote": "What acceptance criterion should validate a new composition path before any reduction"
+   },
+   "questions": [
+    "What checksum does archive note AN-HYA-314 record for section 14?",
+    "What checksum does archive note AN-JZN-740 record for section 9?",
+    "What checksum does archive note AN-UAM-540 record for section 8?",
+    "Which section begins with the words \"What acceptance criterion should validate a new composition path before any reduction\"?"
+   ],
+   "answers": [
+    "108766",
+    "299069",
+    "132361",
+    "Section 15"
+   ],
+   "answer_spans": [
+    {
+     "answer": "108766",
+     "chars": [
+      52174,
+      52180
+     ],
+     "tokens": [
+      32263,
+      32269
+     ]
+    },
+    {
+     "answer": "299069",
+     "chars": [
+      52184,
+      52190
+     ],
+     "tokens": [
+      32273,
+      32279
+     ]
+    },
+    {
+     "answer": "132361",
+     "chars": [
+      52194,
+      52200
+     ],
+     "tokens": [
+      32283,
+      32289
+     ]
+    },
+    {
+     "answer": "Section 15",
+     "chars": [
+      52204,
+      52214
+     ],
+     "tokens": [
+      32292,
+      32296
+     ]
+    }
+   ],
+   "uids": [
+    "88c22ab43f678dd536e257b4286b060cd98623deaaaab4fb3842860f9032e645",
+    "aa696fbed8a8a2079df0558ca691d05a872b171fe74c892fc9ffaf56d505df0a",
+    "46456a5cab764596b0dbcc580f6170103e9938b48d6afe1779b7734137c09b54",
+    "228af8b87973fd2da186cf8ed5c168bc30fa72f4ef97c2b0c6807b22bc983698",
+    "17b8a1df6e6ae4a740e502986fbbbf3ff22421334f5f52b589bd51a1436c42c5",
+    "f3c337b098b77c41ceb2d982344e001650f04f76c7f49ba9f1f2a892fb7f3c7b",
+    "dd19719b2aa6616270ffa9009a9b5634ae6e933409afa5dbb8e96483e592cba7",
+    "fc6d4f0b43b027d80c2d820342c01f9a77ab6e007555ab904066a0948af68779",
+    "a963f79751d9c2f2488ce25d61bc3308c3a471fe21923ed01751a0d6d0159a70",
+    "d9cf99ec306a9730a2caf7aaef2920ff9ba13f7450eed56981c2d861a3e037b3",
+    "2e44149d82702051ccb32786eb1a6b59225245a97d3e123ffa91b4e9d401503e",
+    "5bb90dfd387466472db4cb4945337ca4938f3023fb3d766c210a772d5ee8cf2a",
+    "31818996a598d741ad6f79e0cb9e4904fb662bcce67fa5bb82e0d095ff529b26",
+    "468eb9ce2732a274645c207a8b22bf3f120250ec9dc9a1a73079e36c322ae38e",
+    "26eec86d609e11a71d1bbd148b4e5ba4cf9bf0622821da004a4dac7b45db23a0"
+   ],
+   "record_ids": [
+    "d3d88048e0515141ee69f0a8011dfa65f1ac9c6973dc62769d0ced8570cfd55a",
+    "348efe03f5f6653ae67ac265a12567ea46671c29851d368de79e84ccbda9de10",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:186",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:472",
+    "5d5437c4028ea483d4f54e9df78e14dc3e9220c9d2dbf131b195a1a10e50a8dc",
+    "818481e82b88607ade60a66a6e2f1531eb438e53112a0ea7a26755f304b1ab87",
+    "e4a66464b99bffaae600ae840ec4194c06d1fdefd87b9f51b5e4144f7b71cc93",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:209",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:367",
+    "08b69b4f3d6ecb4ad439dd0ca84fe1d56cff6c7c77415f3d0f42f903a69470b5",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:132",
+    "2a784fe124243cb608f78d0c6f97121714cc396826efa967bfb6a332defc08be",
+    "3fc39d4ca4a360f38e2f4d173a82dd7721df805b662991ddd49aecfebee1dd33",
+    "f6e912ceacb8b63730ef7f76b5fdb7e4d04bc34f1382526983a1aa4267a0203e",
+    "memory_batch_000224_neural_forge_matrix_trace_rewrites_ready_append_current:108"
+   ]
+  },
+  {
+   "doc": 20,
+   "route": "text",
+   "rows": [
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:713",
+    "000:3:303",
+    "000:3:724",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:645",
+    "000:2:2405",
+    "000:2:3837",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:74",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:804",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:902",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:219",
+    "000:1:4860",
+    "000:3:1373",
+    "000:3:3491",
+    "000:3:3919"
+   ],
+   "sections": 14,
+   "tokens": 32268,
+   "needles": [
+    {
+     "after_section": 1,
+     "code": "AN-KYV-667",
+     "value": "547028",
+     "section": 11,
+     "text": "Archive note AN-KYV-667: the checksum recorded for section 11 is 547028.",
+     "token_position": 5391,
+     "depth_realised": 0.1671
+    },
+    {
+     "after_section": 7,
+     "code": "AN-JFD-419",
+     "value": "222166",
+     "section": 9,
+     "text": "Archive note AN-JFD-419: the checksum recorded for section 9 is 222166.",
+     "token_position": 15340,
+     "depth_realised": 0.4754
+    },
+    {
+     "after_section": 13,
+     "code": "AN-GVT-525",
+     "value": "239027",
+     "section": 7,
+     "text": "Archive note AN-GVT-525: the checksum recorded for section 7 is 239027.",
+     "token_position": 31793,
+     "depth_realised": 0.9853
+    }
+   ],
+   "passage": {
+    "section": 12,
+    "quote": "user: Consider three boxes with the following compositions: - Box 1: 2"
+   },
+   "questions": [
+    "What checksum does archive note AN-KYV-667 record for section 11?",
+    "What checksum does archive note AN-JFD-419 record for section 9?",
+    "What checksum does archive note AN-GVT-525 record for section 7?",
+    "Which section begins with the words \"user: Consider three boxes with the following compositions: - Box 1: 2\"?"
+   ],
+   "answers": [
+    "547028",
+    "222166",
+    "239027",
+    "Section 12"
+   ],
+   "answer_spans": [
+    {
+     "answer": "547028",
+     "chars": [
+      50632,
+      50638
+     ],
+     "tokens": [
+      32232,
+      32238
+     ]
+    },
+    {
+     "answer": "222166",
+     "chars": [
+      50642,
+      50648
+     ],
+     "tokens": [
+      32242,
+      32248
+     ]
+    },
+    {
+     "answer": "239027",
+     "chars": [
+      50652,
+      50658
+     ],
+     "tokens": [
+      32252,
+      32258
+     ]
+    },
+    {
+     "answer": "Section 12",
+     "chars": [
+      50662,
+      50672
+     ],
+     "tokens": [
+      32261,
+      32265
+     ]
+    }
+   ],
+   "uids": [
+    "3429ee7a5c6d4c67317b0d9771fa079729519edde761d218e18e663840bb43c7",
+    "96932a21bccae820555bf596d3b027d9bbadcfb3c5ff046ba0de155f475dfa5a",
+    "05b1265216854700465936396376327767717af4ee366be6bad1bf4c1f520c90",
+    "908cf1aed8689667e37a43b19b450b3f6a62bb7315cbb85ae9ef2e5595cdcc5a",
+    "16a3af7ac5834c4faa3f51275348f697f30936b7017091d35f016902f70c860e",
+    "b5cfee66b337c4272da5d6eb2b16cafb8a9ac44099fa1135793e2026b53333fe",
+    "9278add6ca29305ccea6424f86a732334ecf031a7ba6aa01a3fa0248976b6272",
+    "10729fb7d2b66caa532ee568a9dffdeb70b57104a184c9a183878d795af34062",
+    "d637c793c6578e7448ea341e0f29fbb1ca64ef7ddb6f26725872a91732f3f305",
+    "bff91a255f159e54ac8a4c23c0db1d77ef0e24e9d83fc4df0eac9af65419a2b7",
+    "bcff4784332c5f145c7e16cf763799eaa4ec896b6bded91bfae15d81ac11d27d",
+    "8a715dbd48e97bf69b29a4c171926668bb50183b117223075313c0f3f202c6e1",
+    "f61bc0bb2134a62ffdcf8f4636b80e96bc9aa63ee35d24fc6e8b54f25a0c358e",
+    "138603b387eecca369f4ced84c6fd451f9ad5eb70c3391c35978a85cd64cdfbd"
+   ],
+   "record_ids": [
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:713",
+    "9f2e5193d174c7c8d9e21b6db3810c566441a66f0f5ad6fd91c620ce3b7b456e",
+    "a5872eac1caa8360cd8c0094f902c035bf106e99d0dd2df33814baca430c1cb6",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:645",
+    "7226625c959ce705c810673c72e0bb3831908197374af4f9a0f4f47afe1f33f3",
+    "882d6690aa3f2333699fefc3bad40088edd29643cba79596a34784d26584dfc2",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:74",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:804",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:902",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:219",
+    "486005cb07d423b770942fc3ca85ceb17e3e93f874af5066dc0a5186ffd627d8",
+    "aeabb23c6eef9b5d68e6e84ed1de250f8a75760e40bef798bc12ef72c95fdd3a",
+    "d2581432a977c7dc56167bdafddcb0ee1567e9d8e769de68019c4de85536707f",
+    "d9736f0d2d09351f6a68bc8b0302880c17f21f0fe93177bcefefbe8bf6bf506f"
+   ]
+  },
+  {
+   "doc": 21,
+   "route": "text",
+   "rows": [
+    "000:4:689",
+    "000:1:4896",
+    "000:1:1012",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:269",
+    "000:2:4835",
+    "000:5:1044",
+    "000:2:3452",
+    "000:2:3803",
+    "000:2:3851",
+    "000:5:1458",
+    "000:2:4628",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:582",
+    "000:2:4769",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:991",
+    "000:1:4198",
+    "000:2:3178",
+    "000:2:2376",
+    "000:2:3304",
+    "000:4:3648",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:107",
+    "000:2:3906",
+    "000:2:4779",
+    "000:3:4118",
+    "612:memory_batch_000225_fable_trace_rewrites_ready_append_current-000000:40"
+   ],
+   "sections": 24,
+   "tokens": 32277,
+   "needles": [
+    {
+     "after_section": 2,
+     "code": "AN-WFS-282",
+     "value": "434232",
+     "section": 17,
+     "text": "Archive note AN-WFS-282: the checksum recorded for section 17 is 434232.",
+     "token_position": 2430,
+     "depth_realised": 0.0753
+    },
+    {
+     "after_section": 12,
+     "code": "AN-WCN-593",
+     "value": "201145",
+     "section": 14,
+     "text": "Archive note AN-WCN-593: the checksum recorded for section 14 is 201145.",
+     "token_position": 15735,
+     "depth_realised": 0.4875
+    },
+    {
+     "after_section": 22,
+     "code": "AN-VTD-504",
+     "value": "889886",
+     "section": 16,
+     "text": "Archive note AN-VTD-504: the checksum recorded for section 16 is 889886.",
+     "token_position": 31773,
+     "depth_realised": 0.9844
+    }
+   ],
+   "passage": {
+    "section": 8,
+    "quote": "user: Let \\( x_n = \\sqrt{n + \\sqrt{n^2 - 1}} \\) for"
+   },
+   "questions": [
+    "What checksum does archive note AN-WFS-282 record for section 17?",
+    "What checksum does archive note AN-WCN-593 record for section 14?",
+    "What checksum does archive note AN-VTD-504 record for section 16?",
+    "Which section begins with the words \"user: Let \\( x_n = \\sqrt{n + \\sqrt{n^2 - 1}} \\) for\"?"
+   ],
+   "answers": [
+    "434232",
+    "201145",
+    "889886",
+    "Section 8"
+   ],
+   "answer_spans": [
+    {
+     "answer": "434232",
+     "chars": [
+      73413,
+      73419
+     ],
+     "tokens": [
+      32242,
+      32248
+     ]
+    },
+    {
+     "answer": "201145",
+     "chars": [
+      73423,
+      73429
+     ],
+     "tokens": [
+      32252,
+      32258
+     ]
+    },
+    {
+     "answer": "889886",
+     "chars": [
+      73433,
+      73439
+     ],
+     "tokens": [
+      32262,
+      32268
+     ]
+    },
+    {
+     "answer": "Section 8",
+     "chars": [
+      73443,
+      73452
+     ],
+     "tokens": [
+      32271,
+      32274
+     ]
+    }
+   ],
+   "uids": [
+    "71517f0a9412d93d5b3ba022d247df4b0c236ff8bbe3d4a7272971b2b971cdfa",
+    "59857dd997e5af516e6e5ca3537754ece8cd45a00af6586c7628f0d3610667ad",
+    "294516f0f68019d6dee4dac5f5c1d2616aba4993cbbf06082b3d59b5c47d0474",
+    "58f92fe7646e4a5d7f5810fe87a706e1444d4b685c542d99d8c7037bcb5f0493",
+    "32bd9002b00c467073c83c66433a225012bc1c8fdf51f1435db9939834dc39ff",
+    "f3dc0d52ce8a591b34840ea87237bb75e7be40bd663138fb98b8962f0f0bfd17",
+    "e20e6e334dfc29eb6b7f75ec1de83e29a76a5c3ec420fef7826a1945190220cd",
+    "97772930cb511443a46294e05e9c88b865bdd07b698b151643bc51d1cd99966d",
+    "9fb0a7d171fa283187c187627db8b465daa67b6394c19c8e34b47c85fa87b126",
+    "d3e90ea926e0338a75fe82c96946dc0051bd05766438e6da50489251a3319980",
+    "a34f90139e5524bcdafa31d1e0c9cd78fe93730279df7f648b972b60abffc3e4",
+    "a87f1becd39407cf756ff39bbc50153b499da5f4228013e92030735e07009907",
+    "b2fae4e859a9498779ee052d94fd6f2ef95f670ec66007afbe41e9d7f548b577",
+    "0d63410b17dc0ec6d4ff3dc7d1dff1cbd51c3cd4b2342e996fff57a94e0590bc",
+    "4e4bdc8e4864f15352efcd58a1c83e6e588b7ab5a583be98a06ef46598288532",
+    "3a523745d66d7af3f4a0628be69e35f1e77fd72185964468b87bae23c0b0cef0",
+    "12aac9a22487db71404160263051f3964e8d2bc518ebe3a61d4ae95922ae023f",
+    "dcc3372f66519388d7215d4d5521e0f057ebfbdcef74b9fb8305c0e094776d86",
+    "0cb6cad0f54c1ff1b8d0a6f57d06749b9b20965614e91b5caadd4b7aec0add78",
+    "87d8de1825b593e20aa5a7082fbbeb6d90d4597280be3f0487c139d1651a35ca",
+    "10cff4d001af6a9bf917da6db001ed19fd927d74727bbacfac2c8b1e56599950",
+    "d2b6eee3e716cd9613de62f9c2559883bb69a2167d5acbe561210cee8c0fe4b6",
+    "265143f3a451f88a4f149301c935a4aea591d270e4c9203da1a23d954569269c",
+    "d03fd8066cbc08fd9521234916a9b33bd5ec81493b49b500d8f00e7aa07ac2d9"
+   ],
+   "record_ids": [
+    "f52ad2fa74e701d3cb52d05a50c9122fd0a4681bdb4d648a4efd464ad291b9bb",
+    "48db6e1888ce5caa85858af6057ed4e5ea86efe3935e14b31ee4fd17f17e18d8",
+    "090c0018227bdc544b1a78d256039ba463f701d8530c0137104d78c17c73ddb3",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:269",
+    "97ffa95b450d46948a1da31a11c7a6910f05b567f87600bdc3d0bd12c17ca048",
+    "v9_qwen_materialized_strict_20260604T065822Z:b967092efeac12c625d179a095187232da0ea301f95cadb20ad29ccb9e7a837e",
+    "82262e79db03c418ba927cea6e8af0e5c97bf68a7d7be09480d97d388d67dbf9",
+    "87b2c1cb64e74b68b42eec447e0afa55fbb123a6ee19012240eca7c7562ccf25",
+    "88684ff7cf5b91fbd420810ed5196e3d248cd75822d7619b25d095bbd65647ac",
+    "v9_qwen_materialized_strict_20260604T065822Z:be780b1076e2e3efcf0022c36d8b44db9ac5b2c6d5073910a250d4cd0ed72f94",
+    "94bacd3edca11fc536370dd8e19a0a19eb6b9402828e5d4635f35b6a2736c93c",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:582",
+    "96ee5595cd7dd52feb98529e17b6dfbbeb5b106fc6bf341fbe8670f9bef74002",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:991",
+    "3d54ac69834f0e9025236a3132873d07de10d5838db48b0549553634801a9c61",
+    "7dfe3d6055ae45119cdc6b3a0c14d42449c9a53e7a17f48128ba6cc376e7eb3f",
+    "71c5235ad2f38f964099d9ff7a65cce24d270ea59e16848d4b7f5409be325c79",
+    "7ff30d7c04a892154587c91cdb86f489f65d25e6da1b693f828bd2d459fa6131",
+    "v9_qwen_materialized_strict_20260604T065822Z:f4c7fc922b62823ddc9e4250c205259ec6f8848d544f0cfd22a659c9631f158b",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:107",
+    "893b3671f7fed9bd3f65afd4418a9badfe71f951eb412b76050f197bbe83f1d7",
+    "970404a9210103282f587b85da724547c42bfc1e45ff4774626117ae8ca2cc6b",
+    "dca1a101cdac6f6b34158dde4d44831ba8bfceae0270278a2a3154874923aa81",
+    "memory_batch_000225_fable_trace_rewrites_ready_append_current:40"
+   ]
+  },
+  {
+   "doc": 22,
+   "route": "text",
+   "rows": [
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:119",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:339",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:93",
+    "000:2:3456",
+    "000:1:3978",
+    "000:2:1744",
+    "000:5:1923",
+    "000:4:882",
+    "000:3:1308",
+    "000:3:1418",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:318",
+    "000:3:2135",
+    "000:5:1105",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:375",
+    "000:3:1086",
+    "000:5:1116",
+    "370:0:100"
+   ],
+   "sections": 17,
+   "tokens": 32271,
+   "needles": [
+    {
+     "after_section": 2,
+     "code": "AN-LPF-892",
+     "value": "804619",
+     "section": 2,
+     "text": "Archive note AN-LPF-892: the checksum recorded for section 2 is 804619.",
+     "token_position": 5639,
+     "depth_realised": 0.1747
+    },
+    {
+     "after_section": 8,
+     "code": "AN-XLN-160",
+     "value": "121409",
+     "section": 6,
+     "text": "Archive note AN-XLN-160: the checksum recorded for section 6 is 121409.",
+     "token_position": 13168,
+     "depth_realised": 0.4081
+    },
+    {
+     "after_section": 15,
+     "code": "AN-PNT-682",
+     "value": "642380",
+     "section": 7,
+     "text": "Archive note AN-PNT-682: the checksum recorded for section 7 is 642380.",
+     "token_position": 30616,
+     "depth_realised": 0.9487
+    }
+   ],
+   "passage": {
+    "section": 10,
+    "quote": "user: Let $ABCD$ be a unit square. $E$ and $F$ are the"
+   },
+   "questions": [
+    "What checksum does archive note AN-LPF-892 record for section 2?",
+    "What checksum does archive note AN-XLN-160 record for section 6?",
+    "What checksum does archive note AN-PNT-682 record for section 7?",
+    "Which section begins with the words \"user: Let $ABCD$ be a unit square. $E$ and $F$ are the\"?"
+   ],
+   "answers": [
+    "804619",
+    "121409",
+    "642380",
+    "Section 10"
+   ],
+   "answer_spans": [
+    {
+     "answer": "804619",
+     "chars": [
+      60899,
+      60905
+     ],
+     "tokens": [
+      32235,
+      32241
+     ]
+    },
+    {
+     "answer": "121409",
+     "chars": [
+      60909,
+      60915
+     ],
+     "tokens": [
+      32245,
+      32251
+     ]
+    },
+    {
+     "answer": "642380",
+     "chars": [
+      60919,
+      60925
+     ],
+     "tokens": [
+      32255,
+      32261
+     ]
+    },
+    {
+     "answer": "Section 10",
+     "chars": [
+      60929,
+      60939
+     ],
+     "tokens": [
+      32264,
+      32268
+     ]
+    }
+   ],
+   "uids": [
+    "a57c712d99cf3994940d716dd6554ef31fff843aaf72f0195d19f06ad36c9aae",
+    "48f8af426eb3bf8932f69900495136164eb5aa130e32fe9228bb947263464a8a",
+    "3dac1acc1b4cd974c6f0fd6284f08092c4add53626f5dd26ae4d32177200626b",
+    "f92cade10aea58e523b54bc3eda61832db5962f6116a155a8d418cf4e97bb611",
+    "265355bb7b59cf161378bfff4c13f20e03170a20a80bbd1b5a13b04585b25e20",
+    "2988d78d23112b697a3b1999361c72924bdc829ddcc64cc5b7bdaafb6f8c44f9",
+    "53b67ad556907548eeded4876af742d08b2403bf964bc53c4be5a096a7991376",
+    "b7f236720213c86e0b6f2b346a4e6973ea1807ebecabe701b0ae2f0b12fc6533",
+    "0feb502201bf4ede27b3a6a6c92f41726b87251a08ce611041c308715745da57",
+    "6d4d710d33c533552f2ec318314a4398cc2c45c407e34d536af7b8912f7a08f0",
+    "1cf4272a5ab92e8ba2d4af8051cff95c6c81649e1fe1499a2733bd97bea1253e",
+    "360833c28c461556ceb18bc1dbe77411a7f6d3cb8e9340e89ff2ec56f729a74f",
+    "2d742cdc02b1d5fa01ffe05a1ce5884206165d4c0924e46c7f47ae79cb0d0468",
+    "86e4d9d7c79dd94eb28f7b5209fcc1c50a3d85dd88c35c5cc828027ebd6ca1ee",
+    "1b5c7dc1d6c5943390343d1de99ab4812c3c8345bd3166614276bb2c69a075ba",
+    "0cc794ef220b1beb3c586d2e6ada2d11a949ea8581c6ff7ea5973d32e3799e1c",
+    "61dbe930a49572b92132673c75c4cb6241617cf5673bd4a08608f4e014f99d56"
+   ],
+   "record_ids": [
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:119",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:339",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:93",
+    "8239f29c93e6e216091f2a644623813cf3ca1bd539d8377e2d9a076d48042fc7",
+    "39f48045e1b55e58144220a183609db86caa7e25b1715ca91a8a64913b1c3324",
+    "679b365426c40f99a22388467dc05faf70f60bc0939209d45a67c2f4b274d571",
+    "v9_qwen_materialized_strict_20260604T065822Z:a2edc3bcfadae37e96c721098cfd95512657545f06f700ff06e03e3683576e49",
+    "f83c5b142fd39f181832766b54fbfcdb8fc1b5ee258b07777a67a7cdeb2a1243",
+    "adc264339706f1b570fd056c94c1bc438cf0f8d7f1d8d191ec24583c1efd436d",
+    "af7c48040573c6df994c47ddc1c4d0eb9b1928d67f8b6bb245c536839fa9ff1c",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:318",
+    "bb395f6062237e01d7bbc8c6542c3e32e771dde99fc8a7a4cb89e3dfe7a855dc",
+    "v9_qwen_materialized_strict_20260604T065822Z:3230e31958f76b199f270c17a8c48cf58ea8d547c3009f75e0b1772bcf38f76e",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:375",
+    "aa9ac2eb71317eb4ed22357ec5eaede1f0079ee39f9a46c47ce151c2026f7071",
+    "v9_qwen_materialized_strict_20260604T065822Z:2097e688afa6a8be323d6984aa9ab2eaf05930276653a4bd9781d378c462c31b",
+    "broad_domain_science_d7131eb8107057a7ac73c7c1"
+   ]
+  },
+  {
+   "doc": 23,
+   "route": "text",
+   "rows": [
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:744",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:948",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:261",
+    "000:2:3549",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:623",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:175",
+    "467:0:192",
+    "000:1:3935"
+   ],
+   "sections": 8,
+   "tokens": 32371,
+   "needles": [
+    {
+     "after_section": 1,
+     "code": "AN-FEA-197",
+     "value": "414070",
+     "section": 1,
+     "text": "Archive note AN-FEA-197: the checksum recorded for section 1 is 414070.",
+     "token_position": 1144,
+     "depth_realised": 0.0353
+    },
+    {
+     "after_section": 4,
+     "code": "AN-DJY-798",
+     "value": "228648",
+     "section": 1,
+     "text": "Archive note AN-DJY-798: the checksum recorded for section 1 is 228648.",
+     "token_position": 25229,
+     "depth_realised": 0.7794
+    },
+    {
+     "after_section": 7,
+     "code": "AN-DLW-810",
+     "value": "284322",
+     "section": 2,
+     "text": "Archive note AN-DLW-810: the checksum recorded for section 2 is 284322.",
+     "token_position": 32037,
+     "depth_realised": 0.9897
+    }
+   ],
+   "passage": {
+    "section": 4,
+    "quote": "user: What is the value of $\\prod_{k=1}^{17} \\sin\\left(\\frac{k\\pi}{18}\\right)$? <think> Okay, so I"
+   },
+   "questions": [
+    "What checksum does archive note AN-FEA-197 record for section 1?",
+    "What checksum does archive note AN-DJY-798 record for section 1?",
+    "What checksum does archive note AN-DLW-810 record for section 2?",
+    "Which section begins with the words \"user: What is the value of $\\prod_{k=1}^{17} \\sin\\left(\\frac{k\\pi}{18}\\right)$? <think> Okay, so I\"?"
+   ],
+   "answers": [
+    "414070",
+    "228648",
+    "284322",
+    "Section 4"
+   ],
+   "answer_spans": [
+    {
+     "answer": "414070",
+     "chars": [
+      40283,
+      40289
+     ],
+     "tokens": [
+      32336,
+      32342
+     ]
+    },
+    {
+     "answer": "228648",
+     "chars": [
+      40293,
+      40299
+     ],
+     "tokens": [
+      32346,
+      32352
+     ]
+    },
+    {
+     "answer": "284322",
+     "chars": [
+      40303,
+      40309
+     ],
+     "tokens": [
+      32356,
+      32362
+     ]
+    },
+    {
+     "answer": "Section 4",
+     "chars": [
+      40313,
+      40322
+     ],
+     "tokens": [
+      32365,
+      32368
+     ]
+    }
+   ],
+   "uids": [
+    "d53a5e5492921b723d3af8c84740ab5a7dc4d1c7d83e3c058a21106866c7939f",
+    "5ed13101fbc053b5b33612448846f383b1578a2f3e1aa9828f09047631cc8aad",
+    "95afbf48a566831af32a0860e48a8aaac7f130b3e6f3dd7a1fc349e4df4ff1df",
+    "db4e688c7fecf58a2891b981b8446b8047a4ac8480dfe4cce2c3b6cadb44d7b2",
+    "e7037aacd0bfb0c2817cdc9b7fbb5e3f4b15fb05c615ec25436137fa093c12cd",
+    "a0ef812efcc9d4111e1fe25fdb368b7e46a7a5827f8d00f2c72f48ea74aab278",
+    "c640d9a3e1d94e3e4ee458c2d829a08096f8832f041681b69065237ab63b3703",
+    "ccf95e5c558566ff8dae2211552b39636c3dd8c050ff261ce68b8d9563736712"
+   ],
+   "record_ids": [
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:744",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:948",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:261",
+    "83ab053bf43871e0e6f998a443f4ebc2d0374394eaa3c33e4b02203337f3580e",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:623",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:175",
+    "broad_domain_finance_economics_markets_35af2fa99f894d98d4f478fb",
+    "392cf55162ccde9540fdd3a6d0501f30a4560e912cdd1a5558f4edbeda2d02ff"
+   ]
+  },
+  {
+   "doc": 24,
+   "route": "text",
+   "rows": [
+    "000:3:1494",
+    "000:5:990",
+    "000:3:2077",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:502",
+    "000:2:2437",
+    "000:3:1266",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:786",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:236",
+    "000:4:960",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:959",
+    "000:2:1488",
+    "000:3:3377",
+    "000:3:3815",
+    "000:1:4775",
+    "000:1:628"
+   ],
+   "sections": 15,
+   "tokens": 32312,
+   "needles": [
+    {
+     "after_section": 2,
+     "code": "AN-QDT-889",
+     "value": "937039",
+     "section": 10,
+     "text": "Archive note AN-QDT-889: the checksum recorded for section 10 is 937039.",
+     "token_position": 2171,
+     "depth_realised": 0.0672
+    },
+    {
+     "after_section": 8,
+     "code": "AN-GXQ-444",
+     "value": "850218",
+     "section": 8,
+     "text": "Archive note AN-GXQ-444: the checksum recorded for section 8 is 850218.",
+     "token_position": 21354,
+     "depth_realised": 0.6609
+    },
+    {
+     "after_section": 14,
+     "code": "AN-WAD-341",
+     "value": "886455",
+     "section": 4,
+     "text": "Archive note AN-WAD-341: the checksum recorded for section 4 is 886455.",
+     "token_position": 32061,
+     "depth_realised": 0.9923
+    }
+   ],
+   "passage": {
+    "section": 3,
+    "quote": "user: Given the function \\( f(x) = x^2 + bx + c"
+   },
+   "questions": [
+    "What checksum does archive note AN-QDT-889 record for section 10?",
+    "What checksum does archive note AN-GXQ-444 record for section 8?",
+    "What checksum does archive note AN-WAD-341 record for section 4?",
+    "Which section begins with the words \"user: Given the function \\( f(x) = x^2 + bx + c\"?"
+   ],
+   "answers": [
+    "937039",
+    "850218",
+    "886455",
+    "Section 3"
+   ],
+   "answer_spans": [
+    {
+     "answer": "937039",
+     "chars": [
+      54311,
+      54317
+     ],
+     "tokens": [
+      32277,
+      32283
+     ]
+    },
+    {
+     "answer": "850218",
+     "chars": [
+      54321,
+      54327
+     ],
+     "tokens": [
+      32287,
+      32293
+     ]
+    },
+    {
+     "answer": "886455",
+     "chars": [
+      54331,
+      54337
+     ],
+     "tokens": [
+      32297,
+      32303
+     ]
+    },
+    {
+     "answer": "Section 3",
+     "chars": [
+      54341,
+      54350
+     ],
+     "tokens": [
+      32306,
+      32309
+     ]
+    }
+   ],
+   "uids": [
+    "b4d3f49c1c145de974340ad886014bb5f1cb3421ebd1a66167176f092e213ee1",
+    "23b54bb18c6363f5bc11c73c8642cb17d1b7d93332812703410bff9267227cc9",
+    "0e38e62a136b42d072cfb426914b8084359b7db6b48051db9ea548b9c2d58ab7",
+    "c0ed2cd8cf547df8ca8d3d6b1cb05e54fb3ae86e4cc4edbeef7f9599b242d249",
+    "0626e7d74b71271b3deb75a274ad028dae8fbea30dbb610ebfe70ccdbff935e6",
+    "a954556df92bae04c4ebd7f725970e2ce3285a8520a31d25d404e53cd0e8431d",
+    "5aa52e5e799ac83699aba56f31ff6afa1a7d56e3cdf7b565e8881b761f560c6b",
+    "95e302f36e80c04a5367ab9b214026ed804828bbbba762f37d397a12309e3701",
+    "0f667646cc911ccc376ff89a0a9593d3a2d88fb93cf20f296015e3a29cb0d003",
+    "3a1c36bbd8b7cce72d318603fea19c5be552569bd8dd3b1ee15d4256796db8e5",
+    "7ed868bd37c9d588dc60e7cbad810709a032867f34165ebc47ca0d0b62ff66de",
+    "3995bce8a526f4e1f06c0a90610ce8392884915c33fcd1eb6094db066c57e1a2",
+    "a5cf0974f4c06c778b0e8d7eb5e9ec6507352c1bf75347d14e2de435b1c77952",
+    "374e3a99ad479b35614bb22ac731a2148ead33fe87190641604d40025c295be9",
+    "c3e7319539524a2e1bc38dffa0d31bec51f0c591509abc843fbee9049794bb07"
+   ],
+   "record_ids": [
+    "b0907f97cae160af7cd863761d9a0551afca0d6c2b7de76dd96c864f9e7c0a38",
+    "v9_qwen_materialized_strict_20260604T065822Z:cc7e1db896aacbef3a4cd609ec5bd241a851fcfab8e93f9bea01dcacc2d7cd4d",
+    "ba16369e0e8466928fd62521929182f0d3cb4dc852368053a533e85dce7a687f",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:502",
+    "72a6cbcf203f01d8a7354161ddcd15bf2862da6a6dcdedee83e5dbf133b7eeca",
+    "ad333f3c64fb080b7f7cdb4fd944f63b8b4bb3957c36de8e81ccf619bedc7a35",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:786",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:236",
+    "f96ac3859049f6f92b5ba2284e8710c4432da93f52f380d05478425836e6fb3e",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:959",
+    "637b4beac24bed00a57f780690b314c11f7112bd5f0a77cf8ded5d4baef974da",
+    "d07a52ec1f017adcc6a62d745b130f773e0e6cd3f1172b71c019d4bc400cb8fa",
+    "d7d5e5bda5906fbc8122ff80e94750cc1c9bcb99fce00c609ef46d159f99f0f8",
+    "470186144762a9cef732f33973a281a74f6c48fd05a453778bc309193d080089",
+    "031693e30a3c9577eba31e599cdac662faa7332bd45653f9f13df4f8056fbdbb"
+   ]
+  },
+  {
+   "doc": 25,
+   "route": "text",
+   "rows": [
+    "000:2:2832",
+    "000:2:3613",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:346",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:728",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:583",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:439",
+    "000:3:4850",
+    "000:1:3999",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:969",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:890",
+    "000:1:3489",
+    "000:1:2574",
+    "000:5:466",
+    "000:1:2873",
+    "000:2:587",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:362",
+    "475:0:215",
+    "000:1:1163"
+   ],
+   "sections": 18,
+   "tokens": 32269,
+   "needles": [
+    {
+     "after_section": 2,
+     "code": "AN-HCL-594",
+     "value": "580748",
+     "section": 2,
+     "text": "Archive note AN-HCL-594: the checksum recorded for section 2 is 580748.",
+     "token_position": 2367,
+     "depth_realised": 0.0734
+    },
+    {
+     "after_section": 9,
+     "code": "AN-SNB-763",
+     "value": "993675",
+     "section": 3,
+     "text": "Archive note AN-SNB-763: the checksum recorded for section 3 is 993675.",
+     "token_position": 20158,
+     "depth_realised": 0.6247
+    },
+    {
+     "after_section": 16,
+     "code": "AN-TJD-368",
+     "value": "522899",
+     "section": 17,
+     "text": "Archive note AN-TJD-368: the checksum recorded for section 17 is 522899.",
+     "token_position": 31562,
+     "depth_realised": 0.9781
+    }
+   ],
+   "passage": {
+    "section": 7,
+    "quote": "user: Calculate the value of $\\left \\lfloor \\frac{n!}{(n - 1)! + (n"
+   },
+   "questions": [
+    "What checksum does archive note AN-HCL-594 record for section 2?",
+    "What checksum does archive note AN-SNB-763 record for section 3?",
+    "What checksum does archive note AN-TJD-368 record for section 17?",
+    "Which section begins with the words \"user: Calculate the value of $\\left \\lfloor \\frac{n!}{(n - 1)! + (n\"?"
+   ],
+   "answers": [
+    "580748",
+    "993675",
+    "522899",
+    "Section 7"
+   ],
+   "answer_spans": [
+    {
+     "answer": "580748",
+     "chars": [
+      56744,
+      56750
+     ],
+     "tokens": [
+      32234,
+      32240
+     ]
+    },
+    {
+     "answer": "993675",
+     "chars": [
+      56754,
+      56760
+     ],
+     "tokens": [
+      32244,
+      32250
+     ]
+    },
+    {
+     "answer": "522899",
+     "chars": [
+      56764,
+      56770
+     ],
+     "tokens": [
+      32254,
+      32260
+     ]
+    },
+    {
+     "answer": "Section 7",
+     "chars": [
+      56774,
+      56783
+     ],
+     "tokens": [
+      32263,
+      32266
+     ]
+    }
+   ],
+   "uids": [
+    "e96a28ea5f6ad08019b84222e44b75da743522ae62f0519cedfa6a940bc4479a",
+    "d9d2770f341f4538a17b94de20515c0e6bd6c1160cb03931b817f2d7af20adf9",
+    "fd62cafb66ba7920c132f9475507ff6d79f2652ac8009ae594df47c2043790c9",
+    "c5c46aeb87e90f06231cb82e6e5cd4c260c6d780a2c38875af403bf021fa23ac",
+    "2f57d818836d157a05b565e33e8dd16d2aaf0a59ae2f2604de4aa3f8f5d0c793",
+    "105906f5f9a7dd1dd42087679c33b36619d8e8b696622f159f9d63b4a9ee3e99",
+    "28b4d16ef33043a105aba298e1af5083331dd92c9f91e550ac6f2075206074dc",
+    "b5c2ee88fc95b4c86b625ea920ed72074a58bfb086a918d0442042459b2f5590",
+    "58569efc4cab9f9b198310514fa658c11a985e183f9caf3d89c0716db0028306",
+    "6fe46547ef5660d535d18d8e4ce343c0a508fb5913d701cae5d67e198fc051c6",
+    "ed85a7387cea5d9ba841b97a6587fe7588519894dd1e9b6a47e2e654a6d39761",
+    "cd48639b32c9d5be1fb72b733b5d3dba54cbeb86a32731fdad4cac6b57e698f2",
+    "db0907c14475d19364a9240f6bc3e6b3c4592f16de2d293f1968740925133d60",
+    "fda84ebbe8161b79d32d06827f95c0715c4c99590639c690daaff3d82cc9e7d7",
+    "dd5956f8d7c1c80d4112b9754f4995d8d5e5e654b2c30c9ef3eafc43631d1694",
+    "bb7e884aef0ac740df75e8ae142cff78940e017033085012970144e7408e3f1b",
+    "9326fee2d4e920471887fb77a211882728ae19c288ca658f11e47f2e2755b4d9",
+    "58c7fbe617160aa1a33ad607b9a6d829180864c11ca59f2c0f607a7f8ee80c84"
+   ],
+   "record_ids": [
+    "78c70607c54eb488109677578c8b4efcb4150cb626479ae366cf50162a52e80c",
+    "84c970a304b6c4b7398063a521920e67e3ebd252d87a2e14a9629f19c5240df7",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:346",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:728",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:583",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:439",
+    "e857f5b095ea042726b688d522d15145035aa32f9ef8bfd6aad7e9d63ca86d6e",
+    "3a6c1fa11d7775908bb5ed28be98c65358f7813e1165a5b468ce9a0e61f4940b",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:969",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:890",
+    "325d52f34af0e9900fa6d2f813a8353c588ea9ee379d74d2ff72c08b01c52713",
+    "2363bad2cb80511033f3d1f22ee24f65649d641fdaf4fd1cbf094650b0c8ff95",
+    "v9_qwen_materialized_strict_20260604T065822Z:aee15485e34971c808721d79a0b567faf43a2fa8c0c302966873b03eb5c84566",
+    "2863308187ea4b94b0fd9e9d0a0ebf1c97f0b967434314e94f8bacfb631941e8",
+    "5487f1b1cd9099b1ed9155cd13b30ca830b9aa54b1ec4091f9412e68bfe77b27",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:362",
+    "broad_domain_science_c7c73a9e00f3442e0a4add1e",
+    "0b86c77cb32b840374baf494d3018cf8d5ad33895f01f59d033dc4786e328999"
+   ]
+  },
+  {
+   "doc": 26,
+   "route": "text",
+   "rows": [
+    "000:3:2915",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:510",
+    "000:3:1757",
+    "000:5:2207",
+    "000:1:523",
+    "000:3:4481",
+    "000:1:2175",
+    "000:2:1004",
+    "000:2:1286",
+    "000:3:990",
+    "000:1:2354",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:808",
+    "548:manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current-000000:131",
+    "000:5:1836",
+    "000:1:3248",
+    "000:2:441",
+    "000:2:1755",
+    "000:2:1849"
+   ],
+   "sections": 18,
+   "tokens": 32310,
+   "needles": [
+    {
+     "after_section": 2,
+     "code": "AN-UMP-289",
+     "value": "679618",
+     "section": 13,
+     "text": "Archive note AN-UMP-289: the checksum recorded for section 13 is 679618.",
+     "token_position": 3180,
+     "depth_realised": 0.0984
+    },
+    {
+     "after_section": 9,
+     "code": "AN-UZQ-242",
+     "value": "750720",
+     "section": 5,
+     "text": "Archive note AN-UZQ-242: the checksum recorded for section 5 is 750720.",
+     "token_position": 11600,
+     "depth_realised": 0.359
+    },
+    {
+     "after_section": 16,
+     "code": "AN-TAS-474",
+     "value": "679325",
+     "section": 4,
+     "text": "Archive note AN-TAS-474: the checksum recorded for section 4 is 679325.",
+     "token_position": 31500,
+     "depth_realised": 0.975
+    }
+   ],
+   "passage": {
+    "section": 8,
+    "quote": "user: Find the exact value of \\( \\tan^2 1^\\circ + \\tan^2 2^\\circ"
+   },
+   "questions": [
+    "What checksum does archive note AN-UMP-289 record for section 13?",
+    "What checksum does archive note AN-UZQ-242 record for section 5?",
+    "What checksum does archive note AN-TAS-474 record for section 4?",
+    "Which section begins with the words \"user: Find the exact value of \\( \\tan^2 1^\\circ + \\tan^2 2^\\circ\"?"
+   ],
+   "answers": [
+    "679618",
+    "750720",
+    "679325",
+    "Section 8"
+   ],
+   "answer_spans": [
+    {
+     "answer": "679618",
+     "chars": [
+      63301,
+      63307
+     ],
+     "tokens": [
+      32275,
+      32281
+     ]
+    },
+    {
+     "answer": "750720",
+     "chars": [
+      63311,
+      63317
+     ],
+     "tokens": [
+      32285,
+      32291
+     ]
+    },
+    {
+     "answer": "679325",
+     "chars": [
+      63321,
+      63327
+     ],
+     "tokens": [
+      32295,
+      32301
+     ]
+    },
+    {
+     "answer": "Section 8",
+     "chars": [
+      63331,
+      63340
+     ],
+     "tokens": [
+      32304,
+      32307
+     ]
+    }
+   ],
+   "uids": [
+    "63838cca7ecc79d89c7815d43bf34a37bf88b89215c55515d813a5068af8f587",
+    "da604a09877380509d1268d19318e1d1b5ee9a97659c4f6cb55d22510470fbd5",
+    "9d5748d0c2842a04938254596fa5cda94d33269d8df196547abf2afa34c28e37",
+    "8c9706d8348544135c717903b3892cff5da1c23442f68c8e6d6f33fc87b54fdf",
+    "50387e94e59e7141ef6ca08bcd045f067d7898c68968cf4a4c6f6a488d93433e",
+    "0c92c917a045bfb2e0980af8c900777010fc1c0395e716570cf4008acfc293ec",
+    "a049a06edce2922fcb30511ae5cc49cc7b03c57b62e718c677ea7a408c1ffa6b",
+    "1e339886509a9927a49f413add84620d5a28ee63b3ba487683afa89772572942",
+    "5372cca3b86373cc2234535476b7b01c424a2847abb47ffdef55d72337c2d619",
+    "4948d40a9ca79c8484235225edbf72e34a033a110166bc8c7a4fb4f25849e25c",
+    "ecd8aa58c57ed496793dd0a406c122574e08e10ae54574faaec00d2a138a343b",
+    "34864c8b948e5786b82df2e7ac53f3656b8073968f1c5bef241405ab9f790209",
+    "9b3bbe57b9402d756807825dab4b2fb5e8de3728f8b1333bea0b502f0ed48b59",
+    "75ec868c9d393ac673591806b497513c748fed810e0019f6f3b7dee05999915c",
+    "9f468de456a5aa62b4836ecc35ac1a8229348fa0bcb62f33bcd4b7be99fd0263",
+    "59db0869619ecc34bbbc0574338d0d99859fb4f90d40680ba78ff5c97dfb9abe",
+    "d17fd262b0470bde1fd2901f7a911364b924944bc855d916cb495deca84412ad",
+    "944ce59a4295db8ee8eaff3716707747965ca5f10407d30dc39214fa7f80aa95"
+   ],
+   "record_ids": [
+    "c834102c1392d6eea7001de2b010b9bf5c4a4778dcc7f3b3acfacbba29b5fbd8",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:510",
+    "b4cdc7ad7300a172d914d7dbba37e14fcd5b76d691c2621123e607376250fe96",
+    "v9_qwen_materialized_strict_20260604T065822Z:ee32c3cfbfe4705256eb4ff3db108f9b1b66ff255bf407392a00526f081ca5ac",
+    "01a01d80c0b2db0fcbd2a6b5861111eade50bf9002c6eb0f491178e1c7b1ebd5",
+    "e254818551a6e5b07f79daf2cffced83f75188989ce4583688bb85769a1b4235",
+    "1d021277c52d4f32b93ff6d40efdff3468e36bb479062200b7eaeb869f78d3f4",
+    "5b9942423d2f9e7cf14faacf69b45f43d87483d33126215a3497307bcae53bd2",
+    "601f36b5ad4d5566e818f7f41c8f26299d38a18d17b658f3e330ec4f257cf8ed",
+    "a95cef4e780fa7469818c5ae91c6150ceb8b97ada6f316a400da03e99c0696dc",
+    "1fea360cda4766963cc3d1d5f9d1d8fe932e4f70fe3eb5749fd0e976f0e2f1b5",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:808",
+    "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current:131",
+    "v9_qwen_materialized_strict_20260604T065822Z:086f753321b90badaa01cec9e460bd571679da44175bc3b2e88acc750655b7e8",
+    "2e2770e665f65e20765d2a946b5acaa8d388032e966b298a68e3bc919e731844",
+    "523ed1b24a3baf67f4fc2eb8cc1c8d5e4624c9aa5c7dead2a175869db0a38559",
+    "67bad6f5a770acebc343d7f5c8aab318504528b680ca2e3567c9133679e9e66c",
+    "6961ad89578f6b3747f3010e6f8b82197c711496915b6cc9351c82ea234cab83"
+   ]
+  },
+  {
+   "doc": 27,
+   "route": "tool",
+   "rows": [
+    "289:0:4",
+    "226:0:1",
+    "405:0:3",
+    "000:5:1061",
+    "000:4:2287",
+    "000:4:2376",
+    "000:4:3134",
+    "314:0:3",
+    "000:4:3910",
+    "000:5:956",
+    "000:4:3178",
+    "000:4:2322",
+    "577:manual_cleanup_batch_000193_corrected_importsafe_immutable_allrows_cardinality_ready_4_append_current-000000:1",
+    "000:5:1808",
+    "000:4:3223",
+    "000:4:3048",
+    "538:manual_cleanup_batch_000156_v10_memory_harness_cleaned_ready_379_append_current-000000:306",
+    "000:5:1818",
+    "000:4:2481",
+    "000:4:3800",
+    "000:4:2566",
+    "619:memory_batch_000232_claude_family_ai_deployment_mobile_trace_rewrites_ready_append_current-000000:13",
+    "000:4:2321",
+    "627:memory_batch_000240_claude_robits_robotics_design_trace_rewrites_ready_append_current-000000:68",
+    "620:memory_batch_000233_claude_ice_agent_game_development_trace_rewrites_ready_append_current-000000:2056",
+    "619:memory_batch_000232_claude_family_ai_deployment_mobile_trace_rewrites_ready_append_current-000000:326"
+   ],
+   "sections": 26,
+   "tokens": 32246,
+   "needles": [
+    {
+     "after_section": 3,
+     "code": "AN-TKV-266",
+     "value": "427536",
+     "section": 2,
+     "text": "Archive note AN-TKV-266: the checksum recorded for section 2 is 427536.",
+     "token_position": 3470,
+     "depth_realised": 0.1076
+    },
+    {
+     "after_section": 13,
+     "code": "AN-ZHT-187",
+     "value": "441988",
+     "section": 6,
+     "text": "Archive note AN-ZHT-187: the checksum recorded for section 6 is 441988.",
+     "token_position": 18689,
+     "depth_realised": 0.5796
+    },
+    {
+     "after_section": 23,
+     "code": "AN-LFA-796",
+     "value": "245397",
+     "section": 18,
+     "text": "Archive note AN-LFA-796: the checksum recorded for section 18 is 245397.",
+     "token_position": 31863,
+     "depth_realised": 0.9882
+    }
+   ],
+   "passage": {
+    "section": 2,
+    "quote": "Agentic workflow task lowio24-4: produce a candidate-only tool plan for web_knowledge goal"
+   },
+   "questions": [
+    "What checksum does archive note AN-TKV-266 record for section 2?",
+    "What checksum does archive note AN-ZHT-187 record for section 6?",
+    "What checksum does archive note AN-LFA-796 record for section 18?",
+    "Which section begins with the words \"Agentic workflow task lowio24-4: produce a candidate-only tool plan for web_knowledge goal\"?"
+   ],
+   "answers": [
+    "427536",
+    "441988",
+    "245397",
+    "Section 2"
+   ],
+   "answer_spans": [
+    {
+     "answer": "427536",
+     "chars": [
+      105514,
+      105520
+     ],
+     "tokens": [
+      32211,
+      32217
+     ]
+    },
+    {
+     "answer": "441988",
+     "chars": [
+      105524,
+      105530
+     ],
+     "tokens": [
+      32221,
+      32227
+     ]
+    },
+    {
+     "answer": "245397",
+     "chars": [
+      105534,
+      105540
+     ],
+     "tokens": [
+      32231,
+      32237
+     ]
+    },
+    {
+     "answer": "Section 2",
+     "chars": [
+      105544,
+      105553
+     ],
+     "tokens": [
+      32240,
+      32243
+     ]
+    }
+   ],
+   "uids": [
+    "f72fd62bade4df6ad5c2f29b647812b3bd10ae98ff17494c744760dbbea034ad",
+    "0172a0181dc4788aba7e9afe8441701a1b58f03f15fb86128e0eb2a1a61c85a8",
+    "c58fe73becfe4351365c820c0457274339c5993f6dc60c5187216d425f3665b9",
+    "39347331bc65369a7c129763005b36fea75cd2df4ce781b7364a3fd1236d991f",
+    "7f47c35be25d797d9207f67818a7e0aa7e600e74cf83ec8134d8d95db7089bf9",
+    "bc0a3ddc2a5a7df06367549d8c2d11f6f9575a55336e16f24e936f348762a644",
+    "22bd22a694acb1d681349570194cb080c7051d69d695bc595c3cc8a3b2d70a7a",
+    "05ac3c7788c25cf560c02034b102e4ca6c7d717229708bb6b1d9a05f6ab9e274",
+    "521f7d2920bc433df4936d4ff41cd6444a0075696de2b0129bc8585ed902eaab",
+    "2ccdec3e1b1dd7e789821dc7ad643796903f75c362614712788da315076aba4f",
+    "62301c23eaa3dce4e43d0c25da9fc544b64275eb9658aa3c194312624fa89166",
+    "c3d47d3afa0fb6ea71b07ea97f4430cd950baa7242e6a024d49d03de458ebffd",
+    "cfb3cc6e4c195a2d8e4179a575317d33dd3be2810d62fde27ee73111eddb821a",
+    "9c3f191d52d7ae05e2186def13615249d762df43dae9ffc81f36a334328ae7a7",
+    "256801f6cb67cf151257be47ed8ed3a881feaa278bbcd0a4673f3b6fc60fc4c8",
+    "076190bb810e68de9ec1b034d4e27f49740b96ced376d1ea7b8ffa119c64a76c",
+    "2379a3ec3168268667d15f599fa3252bc3aaee1c5a7c6dcbd29352c6bbd35da1",
+    "e02decb4fd995f6c1ceadbd75e3b918e0ee6f593e98bc990d0670e0d8838d177",
+    "0f893c3d1c870bf3f7566b734d168ef4481cf47734ada1105b4253745154f2a0",
+    "97812994b3a6ec06b85518ba7d4f890d387bf567275b931215154c1247853a66",
+    "b97c8d62162e3ca827a582535c463237689f1c9c7d85758d317040e1f14a4eac",
+    "22d1e6515681f0b3571b1268e0427823d5f575c56d8587465afa7b6a47f8a371",
+    "3f3cfef3f0fb0cea092779e6cfc1bc86b0d4cc2c89de919229fe8e6d7c235f6f",
+    "d2535da18ca8b9928fe926358c115c1d1c269e2138e15aac763bac4957a5213c",
+    "94710d172115649df6f49736985b1960f6201925f2161472adfa534d494b1de7",
+    "7b0aa0fc93ced29828d23e953087ebdcb0a53f599d4369cdf73a067c767d5050"
+   ],
+   "record_ids": [
+    "broad_broad_domain_agentic_cbfaaa07c1983cade8c9fa705a96df40f59c30a1",
+    "broad_broad_domain_agentic_16f0a9fa05536141392a692a2cc67f6399517608",
+    "broad_broad_domain_agentic_490486199d2cd70d7a89324b53e80f9e879f435f",
+    "v9_qwen_materialized_strict_20260604T065822Z:92e1826b0c74192510999d96e78932f4d9f325293eb0e194d426b8c8c235ec90",
+    "memory_harness_tool_v9_741d54bdd6d36f643d8d71db97200e8a756a2c5fe4e3fecc549d30da93521a5c",
+    "memory_harness_tool_v9_aec1187688a29e0314dde055006dc1d41663da58f9a53caa19cb545535b42d2d",
+    "memory_harness_tool_v9_51637a24eccffe7eb1d0966dae425a5908037b06366ef35aee6eecf6ef12d6b9",
+    "broad_broad_domain_agentic_9c20e6767f619dbd3cceb36d616015a5fa245cd1",
+    "v9_qwen_materialized_strict_20260604T065822Z:14a12a68035fb6ca7ef6698202de333d667b06a16e6807eae671b0d0d65a0a87",
+    "v9_qwen_materialized_strict_20260604T065822Z:4174cc8004f9c53f97c9e258dc0af118bd36cddf4c088b96ec67e421eaf4b3ba",
+    "memory_harness_tool_v9_7469282bf56abcf9100f87f46b7469f06be58732212b5ed25a2cacc207b50df8",
+    "memory_harness_tool_v9_4e0fd8c67b9dde92853a4acde93441ea5a3e9b5082d286187080632ff62d8297",
+    "manual_cleanup_batch_000193_corrected_importsafe_immutable_allrows_cardinality_ready_4_append_current:1",
+    "v9_qwen_materialized_strict_20260604T065822Z:15d85992a800e80ad6912ef95f3dc8612e1c639a33f4aa5db166e86a07ad2896",
+    "memory_harness_tool_v9_0bbe22a48af41240382af9edf46744c0be78f5cc7f515bf8f6c83136b38665c0",
+    "memory_harness_tool_v9_9eb2634f976c5a616f66e9bc7762bd9e2e9d1cf83c29684af96e60138ce09689",
+    "manual_cleanup_batch_000156_v10_memory_harness_cleaned_ready_379_append_current:306",
+    "v9_qwen_materialized_strict_20260604T065822Z:3323d8b6879503a58a90fff31e27e3c1e3956059d42a66b40e725bcd3c039290",
+    "memory_harness_tool_v9_59001e21b860697e0441cc6b22212143fb14362efff47ff4559ab9fae077ad40",
+    "v9_qwen_materialized_strict_20260604T065822Z:3a768503c1bbdc0df5458803bb3176634132a56c9be0c8492b96cbcc011e2f36",
+    "memory_harness_tool_v9_657792fe3d984820068214a07475added53af4adf48f20824e4f223f3fddb2fe",
+    "memory_batch_000232_claude_family_ai_deployment_mobile_trace_rewrites_ready_append_current:13",
+    "memory_harness_tool_v9_9bc0e45d2e45f85f116589656ff73ad3b4a8aaefe2803b3c66192c4c6faa99ff",
+    "memory_batch_000240_claude_robits_robotics_design_trace_rewrites_ready_append_current:68",
+    "memory_batch_000233_claude_ice_agent_game_development_trace_rewrites_ready_append_current:2056",
+    "memory_batch_000232_claude_family_ai_deployment_mobile_trace_rewrites_ready_append_current:326"
+   ]
+  },
+  {
+   "doc": 28,
+   "route": "tool",
+   "rows": [
+    "000:4:2463",
+    "000:4:3284",
+    "572:manual_cleanup_batch_000188_corrected_shared_target_cardinality_clipping_packed_resume_ready_4_append_current-000000:2",
+    "000:4:2347",
+    "000:4:2096",
+    "000:4:3252",
+    "218:0:3",
+    "000:4:3731",
+    "000:4:3118",
+    "411:0:1",
+    "557:manual_cleanup_batch_000173_nemotron_terminal_corrected_ml_training_designs_ready_4_append_current-000000:3",
+    "000:4:3107",
+    "000:4:3104",
+    "559:manual_cleanup_batch_000175_nemotron_terminal_corrected_optimizer_contracts_ready_4_append_current-000000:4",
+    "000:5:1289",
+    "314:0:2",
+    "579:manual_cleanup_batch_000195_corrected_exacttail_plateau_metricvalidity_ready_4_append_current-000000:1",
+    "000:4:2139",
+    "015:0:133",
+    "508:memory_batch_000003_hook_ml_ui_ready_8_append_current-000000:3",
+    "629:memory_batch_000242_claudecode_relay_implementation_trace_rewrites_ready_append_current-000000:51",
+    "620:memory_batch_000233_claude_ice_agent_game_development_trace_rewrites_ready_append_current-000000:1004"
+   ],
+   "sections": 22,
+   "tokens": 32235,
+   "needles": [
+    {
+     "after_section": 2,
+     "code": "AN-DDV-110",
+     "value": "136412",
+     "section": 11,
+     "text": "Archive note AN-DDV-110: the checksum recorded for section 11 is 136412.",
+     "token_position": 2958,
+     "depth_realised": 0.0918
+    },
+    {
+     "after_section": 11,
+     "code": "AN-YKK-671",
+     "value": "651459",
+     "section": 3,
+     "text": "Archive note AN-YKK-671: the checksum recorded for section 3 is 651459.",
+     "token_position": 19444,
+     "depth_realised": 0.6032
+    },
+    {
+     "after_section": 20,
+     "code": "AN-DRC-923",
+     "value": "946627",
+     "section": 22,
+     "text": "Archive note AN-DRC-923: the checksum recorded for section 22 is 946627.",
+     "token_position": 31914,
+     "depth_realised": 0.9901
+    }
+   ],
+   "passage": {
+    "section": 10,
+    "quote": "Agentic workflow task lowio65-0: produce a candidate-only tool plan for terminal_harness goal"
+   },
+   "questions": [
+    "What checksum does archive note AN-DDV-110 record for section 11?",
+    "What checksum does archive note AN-YKK-671 record for section 3?",
+    "What checksum does archive note AN-DRC-923 record for section 22?",
+    "Which section begins with the words \"Agentic workflow task lowio65-0: produce a candidate-only tool plan for terminal_harness goal\"?"
+   ],
+   "answers": [
+    "136412",
+    "651459",
+    "946627",
+    "Section 10"
+   ],
+   "answer_spans": [
+    {
+     "answer": "136412",
+     "chars": [
+      112324,
+      112330
+     ],
+     "tokens": [
+      32199,
+      32205
+     ]
+    },
+    {
+     "answer": "651459",
+     "chars": [
+      112334,
+      112340
+     ],
+     "tokens": [
+      32209,
+      32215
+     ]
+    },
+    {
+     "answer": "946627",
+     "chars": [
+      112344,
+      112350
+     ],
+     "tokens": [
+      32219,
+      32225
+     ]
+    },
+    {
+     "answer": "Section 10",
+     "chars": [
+      112354,
+      112364
+     ],
+     "tokens": [
+      32228,
+      32232
+     ]
+    }
+   ],
+   "uids": [
+    "13908885eaabf1e083616bbf47483b29664e50ac608f04f4d1cee42a95a564c2",
+    "d1c5827c367548873719d37378431074d6910072ac86346d05c9e23ab38f60f6",
+    "d7444837bd13ae2e8060d82d305bcec45fb78f38b5a54da1436f5d4bc3fce53b",
+    "01a668d5847059b6db0af0c9071c16e6cee159e7a6b2e25f99ff944265e93b41",
+    "5375ac1201d5a6846cd134215b7e9b7553a80817fb43952e453b6f542d9898ad",
+    "41384aef7f487811cf752babbbf47186a71ddc2b359b044ca7c22295ad2066ed",
+    "e55ed276bc82810e8f04335e4824344b87d9dd31b45b24b56d5ab99fdce5f24f",
+    "a7c1be0ee33a3ba09997a33defb137f93f9a0dc5797b2046ac31070e3502eabf",
+    "b3fcbaf307f46e624a1211d41fe81ae6981e408114ad403fe2b2aa13253dc860",
+    "16decd8a0411dc2a8e0f8936c4afad2c4f2342e7ca6a31bf034d868aff4bc26e",
+    "c672907ae1f7ab8037c10cfd66cfad049bdf6e26048b649db791010796a90959",
+    "90663803bb07c93d9f9f57652338124774776f928c84fc78f6e6cf86c006e613",
+    "7665a857693be44d4df9036840f48f20a2edcf27a93b45e62229e9261d2a3f01",
+    "9bb62a70ca624c10cc8d2445761c89ff5d8ce1e573956b3faac0488e11463081",
+    "713ca050a1ebde036c15ae275c3404ed31bf17bde10ec3302b658b4a8f8a8198",
+    "90b0881211081d98f8fab6271a46c47d943d6ca03ed1bc875438003f0b44c52a",
+    "5be7ec8ba44a48b02ce911c69c951cbfe070c1ac195272eac3518df3d1431d46",
+    "9c7ca6847974d74762b918967456b261d5eddd3cf7c2a31fe81f55b537a53fe8",
+    "754990454147cd9690711b8c55faf27e4d59db13b5eda945f214fe4ea4568709",
+    "7644bf54d487010c0714b5c80c0b82358b523d5f5b416df9c1c90587d94ac3ae",
+    "a5d727483578824232cdf98bd3fef43dc04960214b95b17a3ff4adad000177b2",
+    "62c2bc4d499b7bc6e28c4e1a3b3054fa29900fe3c74ffca503b580d889b723a0"
+   ],
+   "record_ids": [
+    "memory_harness_tool_v9_ab4c9fe144f03a4ff06b9c4346ecebd3f59039dc1c1ed4d34a51a7eb321ae002",
+    "memory_harness_tool_v9_b146afec7b7f435ec8f9787f5a73d48b375a25a2669f0a23955fe42bb881a758",
+    "manual_cleanup_batch_000188_corrected_shared_target_cardinality_clipping_packed_resume_ready_4_append_current:2",
+    "memory_harness_tool_v9_bd451a61a851a4aeda2d245eac2482cd876b1d631d6eca3210dd1d02970862bb",
+    "memory_harness_tool_v9_d68c6266705ff2dd9c46e0d32cf94816bbb78a8b72f614d0fda3848aa35caac5",
+    "memory_harness_tool_v9_e22ed403b64b1d5eebb174c83c26fee66e60d933c999545609de213a54301f63",
+    "broad_broad_domain_agentic_7c103c2f90bf5360c6b8bb499b20edd90e55e1f0",
+    "v9_qwen_materialized_strict_20260604T065822Z:7448e2729cdaecf2a31b5ffb2bdffb0da49a313213af1ae0ee6d6da55a347310",
+    "memory_harness_tool_v9_a816a16b9c2de2f0631d471897aeb461b662ddb772342b080acc05351656e5da",
+    "broad_broad_domain_agentic_4cac088df7c517f48c281252fc978ce6f2a2f3a9",
+    "manual_cleanup_batch_000173_nemotron_terminal_corrected_ml_training_designs_ready_4_append_current:3",
+    "memory_harness_tool_v9_30f88ce67a13745e6afedd42ca9cc7954296f3ef5385813754c8918bdd1cce06",
+    "memory_harness_tool_v9_3d640de4a810332c8a5b00b2c717176ccec793270126f864cb8238d165fc1c94",
+    "manual_cleanup_batch_000175_nemotron_terminal_corrected_optimizer_contracts_ready_4_append_current:4",
+    "v9_qwen_materialized_strict_20260604T065822Z:f62437a0993353cc94c3c89fc2d2725c6feb8911a0b7dba64bc41e029be1f204",
+    "broad_broad_domain_agentic_98298d0403d2b8080ea535f06bd5c93c24a0acd9",
+    "manual_cleanup_batch_000195_corrected_exacttail_plateau_metricvalidity_ready_4_append_current:1",
+    "memory_harness_tool_v9_87af12c439670eef6dccb0af82e0f0787f6fb8d8ede61e44161393b2f43cbafc",
+    "broad_domain_tool_agentic_2e0d3facf9d7509b0d35fe2a7718fc27c79e8006",
+    "memory_batch_000003_hook_ml_ui_ready_8_append_current:3",
+    "memory_batch_000242_claudecode_relay_implementation_trace_rewrites_ready_append_current:51",
+    "memory_batch_000233_claude_ice_agent_game_development_trace_rewrites_ready_append_current:1004"
+   ]
+  },
+  {
+   "doc": 29,
+   "route": "tool",
+   "rows": [
+    "000:5:1807",
+    "000:4:2264",
+    "000:5:1780",
+    "000:4:2710",
+    "000:5:951",
+    "000:4:3045",
+    "233:0:1",
+    "587:None:39",
+    "000:4:2067",
+    "000:4:2984",
+    "391:0:6",
+    "000:4:2381",
+    "000:5:1013",
+    "265:erdos_broad_domain_code_tool_20260607T062930Z_revalidated-000000:1",
+    "568:manual_cleanup_batch_000184_corrected_accumulation_scheduler_metrics_logging_contracts_ready_4_append_current-000000:1",
+    "000:4:2120",
+    "000:4:3068",
+    "000:4:3279",
+    "000:4:3292",
+    "578:manual_cleanup_batch_000194_corrected_immutable_exactwindow_masked_fp32master_ready_4_append_current-000000:2",
+    "000:4:2780"
+   ],
+   "sections": 21,
+   "tokens": 32350,
+   "needles": [
+    {
+     "after_section": 2,
+     "code": "AN-EPX-596",
+     "value": "325069",
+     "section": 9,
+     "text": "Archive note AN-EPX-596: the checksum recorded for section 9 is 325069.",
+     "token_position": 4011,
+     "depth_realised": 0.124
+    },
+    {
+     "after_section": 10,
+     "code": "AN-FVW-249",
+     "value": "342509",
+     "section": 3,
+     "text": "Archive note AN-FVW-249: the checksum recorded for section 3 is 342509.",
+     "token_position": 16599,
+     "depth_realised": 0.5131
+    },
+    {
+     "after_section": 19,
+     "code": "AN-HXU-366",
+     "value": "702562",
+     "section": 17,
+     "text": "Archive note AN-HXU-366: the checksum recorded for section 17 is 702562.",
+     "token_position": 29629,
+     "depth_realised": 0.9159
+    }
+   ],
+   "passage": {
+    "section": 17,
+    "quote": "Execute the structured tool call and preserve the command semantics. {\"tool_calls\":[{\"arguments\":{\"command\":\"$p='C:\\\\Users\\\\cereal\\\\Documents\\\\Codex\\\\2026-05-22\\\\okay-here-is-the-deal-i\\\\omnicoder_qwen_ltx_push_local\\\\tests\\\\test_model_contract_2026.py'; $i=1;"
+   },
+   "questions": [
+    "What checksum does archive note AN-EPX-596 record for section 9?",
+    "What checksum does archive note AN-FVW-249 record for section 3?",
+    "What checksum does archive note AN-HXU-366 record for section 17?",
+    "Which section begins with the words \"Execute the structured tool call and preserve the command semantics. {\"tool_calls\":[{\"arguments\":{\"command\":\"$p='C:\\\\Users\\\\cereal\\\\Documents\\\\Codex\\\\2026-05-22\\\\okay-here-is-the-deal-i\\\\omnicoder_qwen_ltx_push_local\\\\tests\\\\test_model_contract_2026.py'; $i=1;\"?"
+   ],
+   "answers": [
+    "325069",
+    "342509",
+    "702562",
+    "Section 17"
+   ],
+   "answer_spans": [
+    {
+     "answer": "325069",
+     "chars": [
+      108097,
+      108103
+     ],
+     "tokens": [
+      32314,
+      32320
+     ]
+    },
+    {
+     "answer": "342509",
+     "chars": [
+      108107,
+      108113
+     ],
+     "tokens": [
+      32324,
+      32330
+     ]
+    },
+    {
+     "answer": "702562",
+     "chars": [
+      108117,
+      108123
+     ],
+     "tokens": [
+      32334,
+      32340
+     ]
+    },
+    {
+     "answer": "Section 17",
+     "chars": [
+      108127,
+      108137
+     ],
+     "tokens": [
+      32343,
+      32347
+     ]
+    }
+   ],
+   "uids": [
+    "3ffb28f76a325cf95c1090cda99e08ab3133b2e70e9c316a6086a1596643b94c",
+    "3eee6fe9b26cc84b155bcf06d538a1572f597880435dc8bb7c0e9c989bd14bf1",
+    "9cd74568e382d67553e6e309311678623de4e9f73b4e0a8dc35551c12d49dd36",
+    "5f6d6604cab7cec3174553bd30d6e6a166d038c831c02a37cdba519384748962",
+    "885e5c29f1f4174b4572f520fe89f0cfb31bb804929cdd009aaa4da26025f026",
+    "4b35bf3c8bd62b9b4a3fa85e617a3bf798445073f17cc15c407b6e1971e44051",
+    "4c7bbce9496a49939a17c6f7ae7f03110fd81445d7e5dc8592f6556b28081d1c",
+    "932a37e00d00ed984f1122af13170c97011ead00493471a413246bdcad89794b",
+    "0a5b8a5f41f323f1680e09dd0e37f135a4af41970762caffbe15580288e28f82",
+    "40eb88ddbb0a3ac299c93f6570fbfb6c64bea0e7b24d649a6e8636e3f7fd0f7c",
+    "328609335a02217c161f313417f2bfb3578914fb0ce40a01eaa7dbc5762dab51",
+    "92b2c3a6ecb72edc54cf816b21204fa629337a416095ac685118ddbcc13b910e",
+    "739fc2d2b1114ecda52bac173d9adbda1214d830078dc636f7043824340402cb",
+    "e474ea09979b5a2f112fd78e3db35abb7bd702fca4b198cc0557e78e08d727d2",
+    "0964dae3488e28bc5b3b4bb562ea6b49ceb0c3c5c1f54623bd2a19c425d2f5eb",
+    "0383175e638bdbaca1203905fb3447e253d3fa5b7baad184f891a4d65d4266ab",
+    "3d03f56f09d42315e965986ab101638d1a4077ed329f030987765b37ee89d344",
+    "80f0874511e9760ed05cd25f035310e53e7aaa032fb67e5b6124854d8e5d1878",
+    "2abebc2d2c0d72d6a2da322d8375b8816ff1705cd8196bfec850e9be315c6220",
+    "b23b5d2159100c8a726cb2fa38ad75bac150867b7cee89cf30d110523ed53adf",
+    "77d2d686fb9eb2ae433dd2b6eed30a2f336223c0987bd76747356360e668f122"
+   ],
+   "record_ids": [
+    "v9_qwen_materialized_strict_20260604T065822Z:d1b0ec4c74c062788ef59af8f49371fc6df069b1a4c487ea27772a9ee0a30cab",
+    "memory_harness_tool_v9_7ee09e5c30b65bef6168b4650fb091002f6acd59dd2518e0d3544022f6df1fbb",
+    "v9_qwen_materialized_strict_20260604T065822Z:45114b3ab83decb07c4793e6438283e2e49efad18e540845b9757aeaa512db65",
+    "memory_harness_tool_v9_a243eb71f0ed6e9dd569856635ff5e3ee67f6bf385b7b017f75b5c8a4a294031",
+    "v9_qwen_materialized_strict_20260604T065822Z:04378f7b22fe411bee8f45b656f891699802a3fa754587ae065c7f2149c49551",
+    "memory_harness_tool_v9_6d8bc234728dca53f402278d3f6099dd0ae97bd79e1f14deca5fae79f9624ede",
+    "broad_broad_domain_agentic_009e7880c0e14c966fd94e4a75e31dd0589be484",
+    "manual_cleanup_batch_000200_nemotron_terminal_primary_rewrites_ready_39_append_current:39",
+    "memory_harness_tool_v9_29bfc35a8704c3b0a581af65fb692c9fb5dbf158b43a8baa75ba609897dadc57",
+    "memory_harness_tool_v9_5532bd3cbc8664c4f47fbffba7fc4f82b0b13a141ef7cf409891c9100e57dc9a",
+    "broad_broad_domain_agentic_f7dec8d2d044f5abe5417f8818f1da47b85b9ba1",
+    "memory_harness_tool_v9_18b2b6e7ae7d9b2e1bba88c12bda8116def9cefb86510e141825798ff9b053a2",
+    "v9_qwen_materialized_strict_20260604T065822Z:efb86f46c014c5f4817561b0af55d5241b3886b63b903b19e2269395f6f46880",
+    "broad_broad_domain_agentic_00f8a1296b5a0e102700ab691f990d85b727b667",
+    "manual_cleanup_batch_000184_corrected_accumulation_scheduler_metrics_logging_contracts_ready_4_append_current:1",
+    "memory_harness_tool_v9_70c6d0ded94bb753a7acc5e813117814aba2df7c40249118d7eee232114231e2",
+    "memory_harness_tool_v9_d37ca6aae2fd8f8f454adc1c88ee14c39b9f7ecdbd9308ca30e262c1a1baa20d",
+    "memory_harness_tool_v9_8e898de65ca5c48c809213e41e73f6f85a0dd004e098b2b7c59381f3675d0c13",
+    "memory_harness_tool_v9_1d3888d346cd312ced14f2eb99dfa803970a6df628c31c93c152b48f7ea634e7",
+    "manual_cleanup_batch_000194_corrected_immutable_exactwindow_masked_fp32master_ready_4_append_current:2",
+    "memory_harness_tool_v9_09070f55eab7a78efdbd3abeec966ab1e9534e6d92fdd1d30a9862c8832dff25"
+   ]
+  },
+  {
+   "doc": 30,
+   "route": "tool",
+   "rows": [
+    "587:None:27",
+    "000:4:3066",
+    "587:None:29",
+    "000:4:2396",
+    "342:0:6",
+    "000:4:3125",
+    "430:0:2",
+    "000:5:1786",
+    "000:5:989",
+    "411:0:6",
+    "000:4:2847",
+    "000:4:2956",
+    "319:0:5",
+    "564:manual_cleanup_batch_000180_corrected_warmup_text_resume_plateau_contracts_ready_4_append_current-000000:4",
+    "374:0:4",
+    "587:None:33",
+    "000:4:2918",
+    "000:4:2292",
+    "575:manual_cleanup_batch_000191_corrected_fixture_randomlabel_epochcarry_updatehorizon_ready_4_append_current-000000:2",
+    "000:5:1779",
+    "619:memory_batch_000232_claude_family_ai_deployment_mobile_trace_rewrites_ready_append_current-000000:65",
+    "595:memory_batch_000210_nemotron_terminal_corrected_training_workflows_ready_append_current-000000:54"
+   ],
+   "sections": 22,
+   "tokens": 32241,
+   "needles": [
+    {
+     "after_section": 2,
+     "code": "AN-WSP-879",
+     "value": "653308",
+     "section": 21,
+     "text": "Archive note AN-WSP-879: the checksum recorded for section 21 is 653308.",
+     "token_position": 3367,
+     "depth_realised": 0.1044
+    },
+    {
+     "after_section": 11,
+     "code": "AN-BPD-719",
+     "value": "821845",
+     "section": 9,
+     "text": "Archive note AN-BPD-719: the checksum recorded for section 9 is 821845.",
+     "token_position": 16796,
+     "depth_realised": 0.521
+    },
+    {
+     "after_section": 20,
+     "code": "AN-KRR-413",
+     "value": "935868",
+     "section": 22,
+     "text": "Archive note AN-KRR-413: the checksum recorded for section 22 is 935868.",
+     "token_position": 31810,
+     "depth_realised": 0.9867
+    }
+   ],
+   "passage": {
+    "section": 6,
+    "quote": "Execute the structured tool call and preserve the command semantics. {\"tool_calls\":[{\"arguments\":{\"command\":\"& {"
+   },
+   "questions": [
+    "What checksum does archive note AN-WSP-879 record for section 21?",
+    "What checksum does archive note AN-BPD-719 record for section 9?",
+    "What checksum does archive note AN-KRR-413 record for section 22?",
+    "Which section begins with the words \"Execute the structured tool call and preserve the command semantics. {\"tool_calls\":[{\"arguments\":{\"command\":\"& {\"?"
+   ],
+   "answers": [
+    "653308",
+    "821845",
+    "935868",
+    "Section 6"
+   ],
+   "answer_spans": [
+    {
+     "answer": "653308",
+     "chars": [
+      113240,
+      113246
+     ],
+     "tokens": [
+      32206,
+      32212
+     ]
+    },
+    {
+     "answer": "821845",
+     "chars": [
+      113250,
+      113256
+     ],
+     "tokens": [
+      32216,
+      32222
+     ]
+    },
+    {
+     "answer": "935868",
+     "chars": [
+      113260,
+      113266
+     ],
+     "tokens": [
+      32226,
+      32232
+     ]
+    },
+    {
+     "answer": "Section 6",
+     "chars": [
+      113270,
+      113279
+     ],
+     "tokens": [
+      32235,
+      32238
+     ]
+    }
+   ],
+   "uids": [
+    "aada4dc8cf4b4584573c6a971b2721cde4ebe529d914c0ba101093451d7491e2",
+    "8f5392d85eb3e0a5422f31d21c724ed5757eaa2944b275008576038223240dec",
+    "ab7c409bdb3eefb5a565ccfa61b38260f5c1a09d1c48a604a43d0e9d96de7588",
+    "ff2c65477509f90adbb8fd7186bc9cf180b0941996a2681dfd38080660e4ef6e",
+    "37ecb26c1eed69ce2b426bb7fbe8f0ad258386f44951c7c9ca2aba381df4ca38",
+    "5e49f6a832e5ae71fa04623afe8c44181ea57f5daa460cc1ddb2b5176c15a908",
+    "845c5fa7bdbac6d7c4f599f568603d901403129d8e3188b60bef7a6a349ab723",
+    "40839572d71e683bd42938715811f930fa6fb63481e351648e704b526fbf7e5c",
+    "27899c3e1545a2bc397b1ffd2e78def0a111ef8484d6edd3a9bffc0b3c1ca10d",
+    "17fc9126f01d90f69b3a1a2c8b1d9688079c9eb6efcaf7612a12390f1e0d6c7f",
+    "6b8cb581ac2c6dfd6476df31886337d58b5f2955099427bc0c0c914bd369392f",
+    "e5d5f8df71dc8433795de23738b475e5eefd90d822e65d9dbb921f6ef9ef072c",
+    "08dec8810f8c943d86f068bc603cec479ae870b9227a0d65d2d4108c72968889",
+    "d2a47aead22bbfac55536ac21ea8f4b7ebc75f5e8307085eb56cb3b2406a06dc",
+    "4c2e833a2a9770c9b97ad839c6564a568f31018256c2fc6651e6940a3df50810",
+    "b32d398743ae5778693848601fdceab16327fe7ae872804017ea4ca66e4bc5da",
+    "0055c22671782fc1babfdccc1cd61807e2b48d46447a343bf89db4f49a918e8e",
+    "9049c8ed098f0d488e9afc1d65c324a644f7c9a20696f3b092ded34edd094287",
+    "089b34fff4afcd9f3dc6ea58f1f9f90b5d19f698a919c8034276e42f888e178c",
+    "e6b5f718898a1a501ed2837a61cf48b11bcee4f7f71d88b71699bfbd84b59f65",
+    "09fbedb98fb8010dac840d0c5a15c2d31eead5d58e945d3bd02d8e7276c88377",
+    "2151f835cc3002507cd2a6f8132ecb02f044f345d692177f782b1648d787da51"
+   ],
+   "record_ids": [
+    "manual_cleanup_batch_000200_nemotron_terminal_primary_rewrites_ready_39_append_current:27",
+    "memory_harness_tool_v9_60305af8a2c261118634cf998b919751e475cfe2ca3f812ac0ecf72d4b5f12e1",
+    "manual_cleanup_batch_000200_nemotron_terminal_primary_rewrites_ready_39_append_current:29",
+    "memory_harness_tool_v9_bb1daa842c3b1b7b508c0d96f8dc7f6d9054ad69061c218d27f49c116af4a5a0",
+    "broad_broad_domain_agentic_cf1c9a1de0b4b960ec976c73e2ed2271f77bcb98",
+    "memory_harness_tool_v9_4b3f1daca611e3f010aa07e7d4cca12d15d5c913c0e11152bb17ba979754a382",
+    "broad_broad_domain_agentic_397a91092e67ca616b67a28451c5d15dfc778c5f",
+    "v9_qwen_materialized_strict_20260604T065822Z:674e971995ca79f2480ce0d4c3125bf8337dc25facd3e829c952460b7093bdc0",
+    "v9_qwen_materialized_strict_20260604T065822Z:ca6923c032f26eb8b089476762fddfb0c1a3d9f65811b86c04e0e03fa54fb9b8",
+    "broad_broad_domain_agentic_dc72dd81c495baa91100fa7da4fbfcd710a6e395",
+    "memory_harness_tool_v9_8fc30602c9cb92f975e1c1247d384287b533128fd7c97fdd39a2d8ba3459feca",
+    "memory_harness_tool_v9_79a987954902dd760b52adf68ca491d8a669be908937475826a973f5803e7ce1",
+    "broad_broad_domain_agentic_9924a09fbc4740432c1f266862475164f979369c",
+    "manual_cleanup_batch_000180_corrected_warmup_text_resume_plateau_contracts_ready_4_append_current:4",
+    "broad_broad_domain_agentic_993f6dfe2242c552eab45d583e17ffc9302771a1",
+    "manual_cleanup_batch_000200_nemotron_terminal_primary_rewrites_ready_39_append_current:33",
+    "memory_harness_tool_v9_0a8c7ef1f3d6f6885e608cf9ac367bf07e48e0f010bb437801e527e8d46f59a2",
+    "memory_harness_tool_v9_60a1a0a16b0a2158d6197370f838ee9e3eb6a8f6205f4b5795aa866725aededb",
+    "manual_cleanup_batch_000191_corrected_fixture_randomlabel_epochcarry_updatehorizon_ready_4_append_current:2",
+    "v9_qwen_materialized_strict_20260604T065822Z:8c9fa70b937c018eff62e04e0dd1b4057720c60f304306a2dbcf048bb3d67fd5",
+    "memory_batch_000232_claude_family_ai_deployment_mobile_trace_rewrites_ready_append_current:65",
+    "memory_batch_000210_nemotron_terminal_corrected_training_workflows_ready_append_current:54"
+   ]
+  }
+ ],
+ "tasks_sha256": "d1e53046e5582450e8f75c01fc7e859a0f1ae8cc9242ce5c41bdb2f7d17af096"
+}

@@ -1,0 +1,1752 @@
+{
+  "schema": "omni-campaign.e3.k3-rows-farm.v1",
+  "made_utc": "2026-10-09T21:04:56Z",
+  "pinned_receipt": {
+    "path": "/mnt/ai_data/omni-campaign/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139/model/receipts/k3_dense_pass_receipt.json",
+    "sha256": "0f810f1126b401cd638696647811285c9113fca6bcb092a539f8cc781a98f556"
+  },
+  "rule": "link the candidate whose sha256 equals receipt.layers[l].held_rows.sha256; symlinks only",
+  "layers": [
+    {
+      "layer": 1,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L01/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "8e12d2a4068c2bbc82b1732824e2d08f22e276acde2a3c1eb04f4164a3fd3647"
+      },
+      "chosen": {
+        "root": "lexar-048cff57",
+        "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L01/held_rows.safetensors",
+        "exists": true,
+        "sha256": "8e12d2a4068c2bbc82b1732824e2d08f22e276acde2a3c1eb04f4164a3fd3647",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 2.2
+      },
+      "tried": [
+        {
+          "root": "lexar-048cff57",
+          "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L01/held_rows.safetensors",
+          "exists": true,
+          "sha256": "8e12d2a4068c2bbc82b1732824e2d08f22e276acde2a3c1eb04f4164a3fd3647",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 2.2
+        }
+      ]
+    },
+    {
+      "layer": 2,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L02/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "d9b40c351da24d4797a3f918742f0cd4609d64c8a9989ed3a08f6ee81517ae4a"
+      },
+      "chosen": {
+        "root": "lexar-048cff57",
+        "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L02/held_rows.safetensors",
+        "exists": true,
+        "sha256": "d9b40c351da24d4797a3f918742f0cd4609d64c8a9989ed3a08f6ee81517ae4a",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 3.2
+      },
+      "tried": [
+        {
+          "root": "lexar-048cff57",
+          "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L02/held_rows.safetensors",
+          "exists": true,
+          "sha256": "d9b40c351da24d4797a3f918742f0cd4609d64c8a9989ed3a08f6ee81517ae4a",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 3.2
+        }
+      ]
+    },
+    {
+      "layer": 3,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L03/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "c330ca2f84316f49187e4e9cef6307973dae41a84a8841c8a4d30835e71114ef"
+      },
+      "chosen": {
+        "root": "lexar-048cff57",
+        "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L03/held_rows.safetensors",
+        "exists": true,
+        "sha256": "c330ca2f84316f49187e4e9cef6307973dae41a84a8841c8a4d30835e71114ef",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 2.9
+      },
+      "tried": [
+        {
+          "root": "lexar-048cff57",
+          "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L03/held_rows.safetensors",
+          "exists": true,
+          "sha256": "c330ca2f84316f49187e4e9cef6307973dae41a84a8841c8a4d30835e71114ef",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 2.9
+        }
+      ]
+    },
+    {
+      "layer": 4,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L04/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "8e12d9921dea14a0e722aa2953508ddde2c18bf86708997270e26f4c87e2bc34"
+      },
+      "chosen": {
+        "root": "lexar-048cff57",
+        "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L04/held_rows.safetensors",
+        "exists": true,
+        "sha256": "8e12d9921dea14a0e722aa2953508ddde2c18bf86708997270e26f4c87e2bc34",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 3.5
+      },
+      "tried": [
+        {
+          "root": "lexar-048cff57",
+          "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L04/held_rows.safetensors",
+          "exists": true,
+          "sha256": "8e12d9921dea14a0e722aa2953508ddde2c18bf86708997270e26f4c87e2bc34",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 3.5
+        }
+      ]
+    },
+    {
+      "layer": 5,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L05/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "68ce9faded7c413897c1cfa7e86a84a8c2b89f38f5f2ec7f957300b82a5f4ec5"
+      },
+      "chosen": {
+        "root": "lexar-048cff57",
+        "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L05/held_rows.safetensors",
+        "exists": true,
+        "sha256": "68ce9faded7c413897c1cfa7e86a84a8c2b89f38f5f2ec7f957300b82a5f4ec5",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 3.2
+      },
+      "tried": [
+        {
+          "root": "lexar-048cff57",
+          "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L05/held_rows.safetensors",
+          "exists": true,
+          "sha256": "68ce9faded7c413897c1cfa7e86a84a8c2b89f38f5f2ec7f957300b82a5f4ec5",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 3.2
+        }
+      ]
+    },
+    {
+      "layer": 6,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L06/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "990f43a4e0f01010e816827fb60393e67fadf6e3646ba0e8cde4fc7d7af594b9"
+      },
+      "chosen": {
+        "root": "lexar-048cff57",
+        "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L06/held_rows.safetensors",
+        "exists": true,
+        "sha256": "990f43a4e0f01010e816827fb60393e67fadf6e3646ba0e8cde4fc7d7af594b9",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 3.0
+      },
+      "tried": [
+        {
+          "root": "lexar-048cff57",
+          "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L06/held_rows.safetensors",
+          "exists": true,
+          "sha256": "990f43a4e0f01010e816827fb60393e67fadf6e3646ba0e8cde4fc7d7af594b9",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 3.0
+        }
+      ]
+    },
+    {
+      "layer": 7,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L07/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "a41c99b9f3586b15f79d42bcc2e986c7e421fd20eed9dee8c6bb195852c4c64f"
+      },
+      "chosen": {
+        "root": "lexar-048cff57",
+        "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L07/held_rows.safetensors",
+        "exists": true,
+        "sha256": "a41c99b9f3586b15f79d42bcc2e986c7e421fd20eed9dee8c6bb195852c4c64f",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 3.0
+      },
+      "tried": [
+        {
+          "root": "lexar-048cff57",
+          "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L07/held_rows.safetensors",
+          "exists": true,
+          "sha256": "a41c99b9f3586b15f79d42bcc2e986c7e421fd20eed9dee8c6bb195852c4c64f",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 3.0
+        }
+      ]
+    },
+    {
+      "layer": 8,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L08/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "3a9b3fe60b8439090380b47a4f272d62852769345c91b9057191d3f276205593"
+      },
+      "chosen": {
+        "root": "lexar-048cff57",
+        "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L08/held_rows.safetensors",
+        "exists": true,
+        "sha256": "3a9b3fe60b8439090380b47a4f272d62852769345c91b9057191d3f276205593",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 3.3
+      },
+      "tried": [
+        {
+          "root": "lexar-048cff57",
+          "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L08/held_rows.safetensors",
+          "exists": true,
+          "sha256": "3a9b3fe60b8439090380b47a4f272d62852769345c91b9057191d3f276205593",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 3.3
+        }
+      ]
+    },
+    {
+      "layer": 9,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L09/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "b4cfed74c792fc665d84931ba4c781ebad705807858ef877c190617fed2a1d3a"
+      },
+      "chosen": {
+        "root": "lexar-048cff57",
+        "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L09/held_rows.safetensors",
+        "exists": true,
+        "sha256": "b4cfed74c792fc665d84931ba4c781ebad705807858ef877c190617fed2a1d3a",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 3.4
+      },
+      "tried": [
+        {
+          "root": "lexar-048cff57",
+          "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L09/held_rows.safetensors",
+          "exists": true,
+          "sha256": "b4cfed74c792fc665d84931ba4c781ebad705807858ef877c190617fed2a1d3a",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 3.4
+        }
+      ]
+    },
+    {
+      "layer": 10,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L10/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "a8a0d7c88b1dd76cc5c4692938b7678a249ef12ea00a5262b362ddb02fda59d9"
+      },
+      "chosen": {
+        "root": "lexar-048cff57",
+        "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L10/held_rows.safetensors",
+        "exists": true,
+        "sha256": "a8a0d7c88b1dd76cc5c4692938b7678a249ef12ea00a5262b362ddb02fda59d9",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 3.7
+      },
+      "tried": [
+        {
+          "root": "lexar-048cff57",
+          "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L10/held_rows.safetensors",
+          "exists": true,
+          "sha256": "a8a0d7c88b1dd76cc5c4692938b7678a249ef12ea00a5262b362ddb02fda59d9",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 3.7
+        }
+      ]
+    },
+    {
+      "layer": 11,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L11/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "dd74c0b39a90160a6706a9c285f3a9a8c9c566472d9cb465a62a4eaeb4387eb0"
+      },
+      "chosen": {
+        "root": "lexar-048cff57",
+        "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L11/held_rows.safetensors",
+        "exists": true,
+        "sha256": "dd74c0b39a90160a6706a9c285f3a9a8c9c566472d9cb465a62a4eaeb4387eb0",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 3.6
+      },
+      "tried": [
+        {
+          "root": "lexar-048cff57",
+          "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L11/held_rows.safetensors",
+          "exists": true,
+          "sha256": "dd74c0b39a90160a6706a9c285f3a9a8c9c566472d9cb465a62a4eaeb4387eb0",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 3.6
+        }
+      ]
+    },
+    {
+      "layer": 12,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L12/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "1187560393648035acfe761a11c4bb76c1d9b6d83ae6a22d2ea3edffbf5a25b8"
+      },
+      "chosen": {
+        "root": "lexar-048cff57",
+        "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L12/held_rows.safetensors",
+        "exists": true,
+        "sha256": "1187560393648035acfe761a11c4bb76c1d9b6d83ae6a22d2ea3edffbf5a25b8",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 3.5
+      },
+      "tried": [
+        {
+          "root": "lexar-048cff57",
+          "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L12/held_rows.safetensors",
+          "exists": true,
+          "sha256": "1187560393648035acfe761a11c4bb76c1d9b6d83ae6a22d2ea3edffbf5a25b8",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 3.5
+        }
+      ]
+    },
+    {
+      "layer": 13,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L13/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "5ae2a9b65a8bd6d8c5fd4b6913a01372c518fd13c3085feeb05d92e91f0ffe4d"
+      },
+      "chosen": {
+        "root": "lexar-048cff57",
+        "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L13/held_rows.safetensors",
+        "exists": true,
+        "sha256": "5ae2a9b65a8bd6d8c5fd4b6913a01372c518fd13c3085feeb05d92e91f0ffe4d",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 3.6
+      },
+      "tried": [
+        {
+          "root": "lexar-048cff57",
+          "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L13/held_rows.safetensors",
+          "exists": true,
+          "sha256": "5ae2a9b65a8bd6d8c5fd4b6913a01372c518fd13c3085feeb05d92e91f0ffe4d",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 3.6
+        }
+      ]
+    },
+    {
+      "layer": 14,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L14/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "32ed5db09506a1217ecaa1e7d5ff94f61d2cd29fc83343e05ed7815ede46af49"
+      },
+      "chosen": {
+        "root": "lexar-048cff57",
+        "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L14/held_rows.safetensors",
+        "exists": true,
+        "sha256": "32ed5db09506a1217ecaa1e7d5ff94f61d2cd29fc83343e05ed7815ede46af49",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 3.2
+      },
+      "tried": [
+        {
+          "root": "lexar-048cff57",
+          "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L14/held_rows.safetensors",
+          "exists": true,
+          "sha256": "32ed5db09506a1217ecaa1e7d5ff94f61d2cd29fc83343e05ed7815ede46af49",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 3.2
+        }
+      ]
+    },
+    {
+      "layer": 15,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L15/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "d5c55f844400d2499e0c4dd3d3c35fbfe03f3ee05183698d00342c0de2d39f42"
+      },
+      "chosen": {
+        "root": "lexar-048cff57",
+        "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L15/held_rows.safetensors",
+        "exists": true,
+        "sha256": "d5c55f844400d2499e0c4dd3d3c35fbfe03f3ee05183698d00342c0de2d39f42",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 3.1
+      },
+      "tried": [
+        {
+          "root": "lexar-048cff57",
+          "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L15/held_rows.safetensors",
+          "exists": true,
+          "sha256": "d5c55f844400d2499e0c4dd3d3c35fbfe03f3ee05183698d00342c0de2d39f42",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 3.1
+        }
+      ]
+    },
+    {
+      "layer": 16,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L16/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "05833dc056740e1e49f31ef582c94184656b84fa708563757e11bf2110c68fa4"
+      },
+      "chosen": {
+        "root": "lexar-048cff57",
+        "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L16/held_rows.safetensors",
+        "exists": true,
+        "sha256": "05833dc056740e1e49f31ef582c94184656b84fa708563757e11bf2110c68fa4",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 3.1
+      },
+      "tried": [
+        {
+          "root": "lexar-048cff57",
+          "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L16/held_rows.safetensors",
+          "exists": true,
+          "sha256": "05833dc056740e1e49f31ef582c94184656b84fa708563757e11bf2110c68fa4",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 3.1
+        }
+      ]
+    },
+    {
+      "layer": 17,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L17/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "3ee4bf0d71f4abb1f13eaa64d49952b76bb768b06a226c08807ae7b080c29aae"
+      },
+      "chosen": {
+        "root": "lexar-048cff57",
+        "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L17/held_rows.safetensors",
+        "exists": true,
+        "sha256": "3ee4bf0d71f4abb1f13eaa64d49952b76bb768b06a226c08807ae7b080c29aae",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 3.0
+      },
+      "tried": [
+        {
+          "root": "lexar-048cff57",
+          "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L17/held_rows.safetensors",
+          "exists": true,
+          "sha256": "3ee4bf0d71f4abb1f13eaa64d49952b76bb768b06a226c08807ae7b080c29aae",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 3.0
+        }
+      ]
+    },
+    {
+      "layer": 18,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L18/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "0e135d147e20312870926b1259ed8bc725c876ba67bb528fc597055793b06305"
+      },
+      "chosen": {
+        "root": "lexar-048cff57",
+        "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L18/held_rows.safetensors",
+        "exists": true,
+        "sha256": "0e135d147e20312870926b1259ed8bc725c876ba67bb528fc597055793b06305",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 3.1
+      },
+      "tried": [
+        {
+          "root": "lexar-048cff57",
+          "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L18/held_rows.safetensors",
+          "exists": true,
+          "sha256": "0e135d147e20312870926b1259ed8bc725c876ba67bb528fc597055793b06305",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 3.1
+        }
+      ]
+    },
+    {
+      "layer": 19,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L19/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "44a55dd5e92626dc92d8f10577c8be7875621e76e604546e1977ba5011289ba3"
+      },
+      "chosen": {
+        "root": "lexar-048cff57",
+        "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L19/held_rows.safetensors",
+        "exists": true,
+        "sha256": "44a55dd5e92626dc92d8f10577c8be7875621e76e604546e1977ba5011289ba3",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 3.0
+      },
+      "tried": [
+        {
+          "root": "lexar-048cff57",
+          "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L19/held_rows.safetensors",
+          "exists": true,
+          "sha256": "44a55dd5e92626dc92d8f10577c8be7875621e76e604546e1977ba5011289ba3",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 3.0
+        }
+      ]
+    },
+    {
+      "layer": 20,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L20/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "e57ca74eadd04d66264c3d8b1d6f9c7506a4fb630919a7e3a88e64a02add7095"
+      },
+      "chosen": {
+        "root": "lexar-048cff57",
+        "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L20/held_rows.safetensors",
+        "exists": true,
+        "sha256": "e57ca74eadd04d66264c3d8b1d6f9c7506a4fb630919a7e3a88e64a02add7095",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 3.0
+      },
+      "tried": [
+        {
+          "root": "lexar-048cff57",
+          "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L20/held_rows.safetensors",
+          "exists": true,
+          "sha256": "e57ca74eadd04d66264c3d8b1d6f9c7506a4fb630919a7e3a88e64a02add7095",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 3.0
+        }
+      ]
+    },
+    {
+      "layer": 21,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L21/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "78c8e8c514de3d11f636484971ddcaff2458a3a70ad830cb49707ac64047f213"
+      },
+      "chosen": {
+        "root": "lexar-048cff57",
+        "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L21/held_rows.safetensors",
+        "exists": true,
+        "sha256": "78c8e8c514de3d11f636484971ddcaff2458a3a70ad830cb49707ac64047f213",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 3.0
+      },
+      "tried": [
+        {
+          "root": "lexar-048cff57",
+          "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L21/held_rows.safetensors",
+          "exists": true,
+          "sha256": "78c8e8c514de3d11f636484971ddcaff2458a3a70ad830cb49707ac64047f213",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 3.0
+        }
+      ]
+    },
+    {
+      "layer": 22,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L22/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "2319a29df85f18f368d516e3bd0eb86b1472ce9c199ca2f7b92c0b0d7859a44e"
+      },
+      "chosen": {
+        "root": "lexar-048cff57",
+        "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L22/held_rows.safetensors",
+        "exists": true,
+        "sha256": "2319a29df85f18f368d516e3bd0eb86b1472ce9c199ca2f7b92c0b0d7859a44e",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 3.0
+      },
+      "tried": [
+        {
+          "root": "lexar-048cff57",
+          "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L22/held_rows.safetensors",
+          "exists": true,
+          "sha256": "2319a29df85f18f368d516e3bd0eb86b1472ce9c199ca2f7b92c0b0d7859a44e",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 3.0
+        }
+      ]
+    },
+    {
+      "layer": 23,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L23/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "ef2a6c6bd602b3bf06ba18cfa9a9f7d98a9f2b2054e211fac9b735775371ba5c"
+      },
+      "chosen": {
+        "root": "lexar-048cff57",
+        "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L23/held_rows.safetensors",
+        "exists": true,
+        "sha256": "ef2a6c6bd602b3bf06ba18cfa9a9f7d98a9f2b2054e211fac9b735775371ba5c",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 3.0
+      },
+      "tried": [
+        {
+          "root": "lexar-048cff57",
+          "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L23/held_rows.safetensors",
+          "exists": true,
+          "sha256": "ef2a6c6bd602b3bf06ba18cfa9a9f7d98a9f2b2054e211fac9b735775371ba5c",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 3.0
+        }
+      ]
+    },
+    {
+      "layer": 24,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L24/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "0a49f6a834aa5c4ae31e7ab6cbdbd5d05156bb33870d3fc6565d569b7b38eaf6"
+      },
+      "chosen": {
+        "root": "lexar-048cff57",
+        "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L24/held_rows.safetensors",
+        "exists": true,
+        "sha256": "0a49f6a834aa5c4ae31e7ab6cbdbd5d05156bb33870d3fc6565d569b7b38eaf6",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 2.9
+      },
+      "tried": [
+        {
+          "root": "lexar-048cff57",
+          "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L24/held_rows.safetensors",
+          "exists": true,
+          "sha256": "0a49f6a834aa5c4ae31e7ab6cbdbd5d05156bb33870d3fc6565d569b7b38eaf6",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 2.9
+        }
+      ]
+    },
+    {
+      "layer": 25,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L25/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "1c6a0e6a2eaecf3d4924f33168bb03526772da65bc15ffc2c7fc4da02aba4c4b"
+      },
+      "chosen": {
+        "root": "lexar-048cff57",
+        "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L25/held_rows.safetensors",
+        "exists": true,
+        "sha256": "1c6a0e6a2eaecf3d4924f33168bb03526772da65bc15ffc2c7fc4da02aba4c4b",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 3.0
+      },
+      "tried": [
+        {
+          "root": "lexar-048cff57",
+          "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L25/held_rows.safetensors",
+          "exists": true,
+          "sha256": "1c6a0e6a2eaecf3d4924f33168bb03526772da65bc15ffc2c7fc4da02aba4c4b",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 3.0
+        }
+      ]
+    },
+    {
+      "layer": 26,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L26/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "052575cf51d9b0de1e31bb093abc53172247c96307a8cdc76fc72ccf5bb1bba7"
+      },
+      "chosen": {
+        "root": "lexar-048cff57",
+        "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L26/held_rows.safetensors",
+        "exists": true,
+        "sha256": "052575cf51d9b0de1e31bb093abc53172247c96307a8cdc76fc72ccf5bb1bba7",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 3.0
+      },
+      "tried": [
+        {
+          "root": "lexar-048cff57",
+          "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L26/held_rows.safetensors",
+          "exists": true,
+          "sha256": "052575cf51d9b0de1e31bb093abc53172247c96307a8cdc76fc72ccf5bb1bba7",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 3.0
+        }
+      ]
+    },
+    {
+      "layer": 27,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L27/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "6db1f6d2f5e855aa445ca7ac48e6cce2035b3065a7775186110a3d180ccb6991"
+      },
+      "chosen": {
+        "root": "lexar-048cff57",
+        "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L27/held_rows.safetensors",
+        "exists": true,
+        "sha256": "6db1f6d2f5e855aa445ca7ac48e6cce2035b3065a7775186110a3d180ccb6991",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 3.0
+      },
+      "tried": [
+        {
+          "root": "lexar-048cff57",
+          "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L27/held_rows.safetensors",
+          "exists": true,
+          "sha256": "6db1f6d2f5e855aa445ca7ac48e6cce2035b3065a7775186110a3d180ccb6991",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 3.0
+        }
+      ]
+    },
+    {
+      "layer": 28,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L28/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "7847e06f2c360f4b7bfef0e7b9708189bf85418d798e477816c1fc08b55213ff"
+      },
+      "chosen": {
+        "root": "lexar-048cff57",
+        "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L28/held_rows.safetensors",
+        "exists": true,
+        "sha256": "7847e06f2c360f4b7bfef0e7b9708189bf85418d798e477816c1fc08b55213ff",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 3.0
+      },
+      "tried": [
+        {
+          "root": "lexar-048cff57",
+          "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L28/held_rows.safetensors",
+          "exists": true,
+          "sha256": "7847e06f2c360f4b7bfef0e7b9708189bf85418d798e477816c1fc08b55213ff",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 3.0
+        }
+      ]
+    },
+    {
+      "layer": 29,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L29/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "4235b73635d9eb994234cdab65270944a64d41b4c77f39d981a3c277a53f0cb0"
+      },
+      "chosen": {
+        "root": "lexar-048cff57",
+        "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L29/held_rows.safetensors",
+        "exists": true,
+        "sha256": "4235b73635d9eb994234cdab65270944a64d41b4c77f39d981a3c277a53f0cb0",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 3.0
+      },
+      "tried": [
+        {
+          "root": "lexar-048cff57",
+          "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L29/held_rows.safetensors",
+          "exists": true,
+          "sha256": "4235b73635d9eb994234cdab65270944a64d41b4c77f39d981a3c277a53f0cb0",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 3.0
+        }
+      ]
+    },
+    {
+      "layer": 30,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L30/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "5f8d79a5bfc9711df34d21507ebe2ce1ecff216bdf159a2f5ba921ae46ffec6f"
+      },
+      "chosen": {
+        "root": "lexar-048cff57",
+        "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L30/held_rows.safetensors",
+        "exists": true,
+        "sha256": "5f8d79a5bfc9711df34d21507ebe2ce1ecff216bdf159a2f5ba921ae46ffec6f",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 3.1
+      },
+      "tried": [
+        {
+          "root": "lexar-048cff57",
+          "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L30/held_rows.safetensors",
+          "exists": true,
+          "sha256": "5f8d79a5bfc9711df34d21507ebe2ce1ecff216bdf159a2f5ba921ae46ffec6f",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 3.1
+        }
+      ]
+    },
+    {
+      "layer": 31,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L31/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "488dfdf957993838930906a7ada7d5151d49ec750476c2cfb896b0f574631b04"
+      },
+      "chosen": {
+        "root": "lexar-048cff57",
+        "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L31/held_rows.safetensors",
+        "exists": true,
+        "sha256": "488dfdf957993838930906a7ada7d5151d49ec750476c2cfb896b0f574631b04",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 3.0
+      },
+      "tried": [
+        {
+          "root": "lexar-048cff57",
+          "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L31/held_rows.safetensors",
+          "exists": true,
+          "sha256": "488dfdf957993838930906a7ada7d5151d49ec750476c2cfb896b0f574631b04",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 3.0
+        }
+      ]
+    },
+    {
+      "layer": 32,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L32/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "5d316fce1da41768a5f909f418b302043d2178d4b16108948f84e6d07807f9ff"
+      },
+      "chosen": {
+        "root": "lexar-048cff57",
+        "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L32/held_rows.safetensors",
+        "exists": true,
+        "sha256": "5d316fce1da41768a5f909f418b302043d2178d4b16108948f84e6d07807f9ff",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 3.1
+      },
+      "tried": [
+        {
+          "root": "lexar-048cff57",
+          "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L32/held_rows.safetensors",
+          "exists": true,
+          "sha256": "5d316fce1da41768a5f909f418b302043d2178d4b16108948f84e6d07807f9ff",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 3.1
+        }
+      ]
+    },
+    {
+      "layer": 33,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L33/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "d248007b4895e4c8694aa3ce989c2883736ac3eaba332c5e7e4854833ac74800"
+      },
+      "chosen": {
+        "root": "lexar-048cff57",
+        "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L33/held_rows.safetensors",
+        "exists": true,
+        "sha256": "d248007b4895e4c8694aa3ce989c2883736ac3eaba332c5e7e4854833ac74800",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 3.0
+      },
+      "tried": [
+        {
+          "root": "lexar-048cff57",
+          "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L33/held_rows.safetensors",
+          "exists": true,
+          "sha256": "d248007b4895e4c8694aa3ce989c2883736ac3eaba332c5e7e4854833ac74800",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 3.0
+        }
+      ]
+    },
+    {
+      "layer": 34,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L34/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "46a91360d5392c8335ade7c42f85d66ab3aed410987207b95d90a77295139a12"
+      },
+      "chosen": {
+        "root": "lexar-048cff57",
+        "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L34/held_rows.safetensors",
+        "exists": true,
+        "sha256": "46a91360d5392c8335ade7c42f85d66ab3aed410987207b95d90a77295139a12",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 3.0
+      },
+      "tried": [
+        {
+          "root": "lexar-048cff57",
+          "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L34/held_rows.safetensors",
+          "exists": true,
+          "sha256": "46a91360d5392c8335ade7c42f85d66ab3aed410987207b95d90a77295139a12",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 3.0
+        }
+      ]
+    },
+    {
+      "layer": 35,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L35/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "d094ed8b769460786f711b306d7a8baa17730f02aa43aac7dc53e94b7de49088"
+      },
+      "chosen": {
+        "root": "lexar-048cff57",
+        "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L35/held_rows.safetensors",
+        "exists": true,
+        "sha256": "d094ed8b769460786f711b306d7a8baa17730f02aa43aac7dc53e94b7de49088",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 3.0
+      },
+      "tried": [
+        {
+          "root": "lexar-048cff57",
+          "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L35/held_rows.safetensors",
+          "exists": true,
+          "sha256": "d094ed8b769460786f711b306d7a8baa17730f02aa43aac7dc53e94b7de49088",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 3.0
+        }
+      ]
+    },
+    {
+      "layer": 36,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L36/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "1f664f678f047a1642b61474f89f49e0826e90bbb3eaac52c51a9d15835d659c"
+      },
+      "chosen": {
+        "root": "lexar-048cff57",
+        "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L36/held_rows.safetensors",
+        "exists": true,
+        "sha256": "1f664f678f047a1642b61474f89f49e0826e90bbb3eaac52c51a9d15835d659c",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 2.9
+      },
+      "tried": [
+        {
+          "root": "lexar-048cff57",
+          "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold/resid/L36/held_rows.safetensors",
+          "exists": true,
+          "sha256": "1f664f678f047a1642b61474f89f49e0826e90bbb3eaac52c51a9d15835d659c",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 2.9
+        }
+      ]
+    },
+    {
+      "layer": 37,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L37/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "28fb96236414d9c79bc68f51dcd0e3223bb5e86c9cd7323c062601363e1469bf"
+      },
+      "chosen": {
+        "root": "nas-w37-48",
+        "path": "/mnt/ai_data/omni-campaign/k3-nas-window37-48-oct07-764524b1-96a9-4636-be74-942f9c54754c/model/fold/resid/L37/held_rows.safetensors",
+        "exists": true,
+        "sha256": "28fb96236414d9c79bc68f51dcd0e3223bb5e86c9cd7323c062601363e1469bf",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 26.3
+      },
+      "tried": [
+        {
+          "root": "nas-w37-48",
+          "path": "/mnt/ai_data/omni-campaign/k3-nas-window37-48-oct07-764524b1-96a9-4636-be74-942f9c54754c/model/fold/resid/L37/held_rows.safetensors",
+          "exists": true,
+          "sha256": "28fb96236414d9c79bc68f51dcd0e3223bb5e86c9cd7323c062601363e1469bf",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 26.3
+        }
+      ]
+    },
+    {
+      "layer": 38,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L38/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "9a0a14be57491fb99845ce39baf31ed5a9b09b1c046baf1666b4eaabd9a8e169"
+      },
+      "chosen": {
+        "root": "nas-w37-48",
+        "path": "/mnt/ai_data/omni-campaign/k3-nas-window37-48-oct07-764524b1-96a9-4636-be74-942f9c54754c/model/fold/resid/L38/held_rows.safetensors",
+        "exists": true,
+        "sha256": "9a0a14be57491fb99845ce39baf31ed5a9b09b1c046baf1666b4eaabd9a8e169",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 25.7
+      },
+      "tried": [
+        {
+          "root": "nas-w37-48",
+          "path": "/mnt/ai_data/omni-campaign/k3-nas-window37-48-oct07-764524b1-96a9-4636-be74-942f9c54754c/model/fold/resid/L38/held_rows.safetensors",
+          "exists": true,
+          "sha256": "9a0a14be57491fb99845ce39baf31ed5a9b09b1c046baf1666b4eaabd9a8e169",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 25.7
+        }
+      ]
+    },
+    {
+      "layer": 39,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L39/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "28e40c9363fae629a41154adb5451ef73ebe8e8119d0302be8166cf9f8c16349"
+      },
+      "chosen": {
+        "root": "nas-w37-48",
+        "path": "/mnt/ai_data/omni-campaign/k3-nas-window37-48-oct07-764524b1-96a9-4636-be74-942f9c54754c/model/fold/resid/L39/held_rows.safetensors",
+        "exists": true,
+        "sha256": "28e40c9363fae629a41154adb5451ef73ebe8e8119d0302be8166cf9f8c16349",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 25.7
+      },
+      "tried": [
+        {
+          "root": "nas-w37-48",
+          "path": "/mnt/ai_data/omni-campaign/k3-nas-window37-48-oct07-764524b1-96a9-4636-be74-942f9c54754c/model/fold/resid/L39/held_rows.safetensors",
+          "exists": true,
+          "sha256": "28e40c9363fae629a41154adb5451ef73ebe8e8119d0302be8166cf9f8c16349",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 25.7
+        }
+      ]
+    },
+    {
+      "layer": 40,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L40/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "9cec62231a4f8c9fadd91dc31277a41a88a642f54088ca8a3a840eedda994f0d"
+      },
+      "chosen": {
+        "root": "nas-w37-48",
+        "path": "/mnt/ai_data/omni-campaign/k3-nas-window37-48-oct07-764524b1-96a9-4636-be74-942f9c54754c/model/fold/resid/L40/held_rows.safetensors",
+        "exists": true,
+        "sha256": "9cec62231a4f8c9fadd91dc31277a41a88a642f54088ca8a3a840eedda994f0d",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 25.6
+      },
+      "tried": [
+        {
+          "root": "nas-w37-48",
+          "path": "/mnt/ai_data/omni-campaign/k3-nas-window37-48-oct07-764524b1-96a9-4636-be74-942f9c54754c/model/fold/resid/L40/held_rows.safetensors",
+          "exists": true,
+          "sha256": "9cec62231a4f8c9fadd91dc31277a41a88a642f54088ca8a3a840eedda994f0d",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 25.6
+        }
+      ]
+    },
+    {
+      "layer": 41,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L41/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "509b113acad5efc8daee8d4dbadc53c1ac5c61da299abc5a99425f19a338e43e"
+      },
+      "chosen": {
+        "root": "nas-w37-48",
+        "path": "/mnt/ai_data/omni-campaign/k3-nas-window37-48-oct07-764524b1-96a9-4636-be74-942f9c54754c/model/fold/resid/L41/held_rows.safetensors",
+        "exists": true,
+        "sha256": "509b113acad5efc8daee8d4dbadc53c1ac5c61da299abc5a99425f19a338e43e",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 25.6
+      },
+      "tried": [
+        {
+          "root": "nas-w37-48",
+          "path": "/mnt/ai_data/omni-campaign/k3-nas-window37-48-oct07-764524b1-96a9-4636-be74-942f9c54754c/model/fold/resid/L41/held_rows.safetensors",
+          "exists": true,
+          "sha256": "509b113acad5efc8daee8d4dbadc53c1ac5c61da299abc5a99425f19a338e43e",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 25.6
+        }
+      ]
+    },
+    {
+      "layer": 42,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L42/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "0aab139eb4cb3f04350a3b3aecdd9747bdc4c250a0d2b6314f5a3285e04197fa"
+      },
+      "chosen": {
+        "root": "nas-w37-48",
+        "path": "/mnt/ai_data/omni-campaign/k3-nas-window37-48-oct07-764524b1-96a9-4636-be74-942f9c54754c/model/fold/resid/L42/held_rows.safetensors",
+        "exists": true,
+        "sha256": "0aab139eb4cb3f04350a3b3aecdd9747bdc4c250a0d2b6314f5a3285e04197fa",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 25.6
+      },
+      "tried": [
+        {
+          "root": "nas-w37-48",
+          "path": "/mnt/ai_data/omni-campaign/k3-nas-window37-48-oct07-764524b1-96a9-4636-be74-942f9c54754c/model/fold/resid/L42/held_rows.safetensors",
+          "exists": true,
+          "sha256": "0aab139eb4cb3f04350a3b3aecdd9747bdc4c250a0d2b6314f5a3285e04197fa",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 25.6
+        }
+      ]
+    },
+    {
+      "layer": 43,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L43/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "10b10ae5f1cf102ae2245792c418188b64833d10a923cfdf7d0bdfe0e99899ab"
+      },
+      "chosen": {
+        "root": "nas-w37-48",
+        "path": "/mnt/ai_data/omni-campaign/k3-nas-window37-48-oct07-764524b1-96a9-4636-be74-942f9c54754c/model/fold/resid/L43/held_rows.safetensors",
+        "exists": true,
+        "sha256": "10b10ae5f1cf102ae2245792c418188b64833d10a923cfdf7d0bdfe0e99899ab",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 25.5
+      },
+      "tried": [
+        {
+          "root": "nas-w37-48",
+          "path": "/mnt/ai_data/omni-campaign/k3-nas-window37-48-oct07-764524b1-96a9-4636-be74-942f9c54754c/model/fold/resid/L43/held_rows.safetensors",
+          "exists": true,
+          "sha256": "10b10ae5f1cf102ae2245792c418188b64833d10a923cfdf7d0bdfe0e99899ab",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 25.5
+        }
+      ]
+    },
+    {
+      "layer": 44,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L44/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "79706be51f29187390ae1561a878e99546aa3612dceeb2ac8dafef59287d172c"
+      },
+      "chosen": {
+        "root": "nas-w37-48",
+        "path": "/mnt/ai_data/omni-campaign/k3-nas-window37-48-oct07-764524b1-96a9-4636-be74-942f9c54754c/model/fold/resid/L44/held_rows.safetensors",
+        "exists": true,
+        "sha256": "79706be51f29187390ae1561a878e99546aa3612dceeb2ac8dafef59287d172c",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 25.9
+      },
+      "tried": [
+        {
+          "root": "nas-w37-48",
+          "path": "/mnt/ai_data/omni-campaign/k3-nas-window37-48-oct07-764524b1-96a9-4636-be74-942f9c54754c/model/fold/resid/L44/held_rows.safetensors",
+          "exists": true,
+          "sha256": "79706be51f29187390ae1561a878e99546aa3612dceeb2ac8dafef59287d172c",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 25.9
+        }
+      ]
+    },
+    {
+      "layer": 45,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L45/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "98472b70be77dc775106feb9db105d7a14671201bfa805e8940ff017dc0f4655"
+      },
+      "chosen": {
+        "root": "nas-w37-48",
+        "path": "/mnt/ai_data/omni-campaign/k3-nas-window37-48-oct07-764524b1-96a9-4636-be74-942f9c54754c/model/fold/resid/L45/held_rows.safetensors",
+        "exists": true,
+        "sha256": "98472b70be77dc775106feb9db105d7a14671201bfa805e8940ff017dc0f4655",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 25.8
+      },
+      "tried": [
+        {
+          "root": "nas-w37-48",
+          "path": "/mnt/ai_data/omni-campaign/k3-nas-window37-48-oct07-764524b1-96a9-4636-be74-942f9c54754c/model/fold/resid/L45/held_rows.safetensors",
+          "exists": true,
+          "sha256": "98472b70be77dc775106feb9db105d7a14671201bfa805e8940ff017dc0f4655",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 25.8
+        }
+      ]
+    },
+    {
+      "layer": 46,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L46/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "797057f24c769a7089ebaf35393092d3914a10e7a1ea56b6d35dfe782d334116"
+      },
+      "chosen": {
+        "root": "nas-w37-48",
+        "path": "/mnt/ai_data/omni-campaign/k3-nas-window37-48-oct07-764524b1-96a9-4636-be74-942f9c54754c/model/fold/resid/L46/held_rows.safetensors",
+        "exists": true,
+        "sha256": "797057f24c769a7089ebaf35393092d3914a10e7a1ea56b6d35dfe782d334116",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 25.7
+      },
+      "tried": [
+        {
+          "root": "nas-w37-48",
+          "path": "/mnt/ai_data/omni-campaign/k3-nas-window37-48-oct07-764524b1-96a9-4636-be74-942f9c54754c/model/fold/resid/L46/held_rows.safetensors",
+          "exists": true,
+          "sha256": "797057f24c769a7089ebaf35393092d3914a10e7a1ea56b6d35dfe782d334116",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 25.7
+        }
+      ]
+    },
+    {
+      "layer": 47,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L47/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "d5367d26345cd75b0245e6fc68be176b1dad29eeb923f4afef72ebc21807dc2b"
+      },
+      "chosen": {
+        "root": "nas-w37-48",
+        "path": "/mnt/ai_data/omni-campaign/k3-nas-window37-48-oct07-764524b1-96a9-4636-be74-942f9c54754c/model/fold/resid/L47/held_rows.safetensors",
+        "exists": true,
+        "sha256": "d5367d26345cd75b0245e6fc68be176b1dad29eeb923f4afef72ebc21807dc2b",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 25.8
+      },
+      "tried": [
+        {
+          "root": "nas-w37-48",
+          "path": "/mnt/ai_data/omni-campaign/k3-nas-window37-48-oct07-764524b1-96a9-4636-be74-942f9c54754c/model/fold/resid/L47/held_rows.safetensors",
+          "exists": true,
+          "sha256": "d5367d26345cd75b0245e6fc68be176b1dad29eeb923f4afef72ebc21807dc2b",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 25.8
+        }
+      ]
+    },
+    {
+      "layer": 48,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L48/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "04699b126c8a6088130cf5d97f928e0397892b61341cae93f9e7c3d48880315b"
+      },
+      "chosen": {
+        "root": "nas-w37-48",
+        "path": "/mnt/ai_data/omni-campaign/k3-nas-window37-48-oct07-764524b1-96a9-4636-be74-942f9c54754c/model/fold/resid/L48/held_rows.safetensors",
+        "exists": true,
+        "sha256": "04699b126c8a6088130cf5d97f928e0397892b61341cae93f9e7c3d48880315b",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 25.6
+      },
+      "tried": [
+        {
+          "root": "nas-w37-48",
+          "path": "/mnt/ai_data/omni-campaign/k3-nas-window37-48-oct07-764524b1-96a9-4636-be74-942f9c54754c/model/fold/resid/L48/held_rows.safetensors",
+          "exists": true,
+          "sha256": "04699b126c8a6088130cf5d97f928e0397892b61341cae93f9e7c3d48880315b",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 25.6
+        }
+      ]
+    },
+    {
+      "layer": 49,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L49/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "83873b33fa4c1c6b31b66e111d66d2c0dd419d419cbf07e5b185abd25d5557ee"
+      },
+      "chosen": {
+        "root": "nas-w49-60",
+        "path": "/mnt/ai_data/omni-campaign/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139/model/fold/resid/L49/held_rows.safetensors",
+        "exists": true,
+        "sha256": "83873b33fa4c1c6b31b66e111d66d2c0dd419d419cbf07e5b185abd25d5557ee",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 25.6
+      },
+      "tried": [
+        {
+          "root": "nas-w49-60",
+          "path": "/mnt/ai_data/omni-campaign/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139/model/fold/resid/L49/held_rows.safetensors",
+          "exists": true,
+          "sha256": "83873b33fa4c1c6b31b66e111d66d2c0dd419d419cbf07e5b185abd25d5557ee",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 25.6
+        }
+      ]
+    },
+    {
+      "layer": 50,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L50/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "8727c16ae35690085c3ad9b5d0c2d81c6669e391686e5ef2c6f4c45eac1a6cfc"
+      },
+      "chosen": {
+        "root": "nas-w49-60",
+        "path": "/mnt/ai_data/omni-campaign/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139/model/fold/resid/L50/held_rows.safetensors",
+        "exists": true,
+        "sha256": "8727c16ae35690085c3ad9b5d0c2d81c6669e391686e5ef2c6f4c45eac1a6cfc",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 25.5
+      },
+      "tried": [
+        {
+          "root": "nas-w49-60",
+          "path": "/mnt/ai_data/omni-campaign/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139/model/fold/resid/L50/held_rows.safetensors",
+          "exists": true,
+          "sha256": "8727c16ae35690085c3ad9b5d0c2d81c6669e391686e5ef2c6f4c45eac1a6cfc",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 25.5
+        }
+      ]
+    },
+    {
+      "layer": 51,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L51/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "40bc53e1b52302dd28803d52ec2a0761a60e704905229dc3d99e6f1e2e185b43"
+      },
+      "chosen": {
+        "root": "nas-w49-60",
+        "path": "/mnt/ai_data/omni-campaign/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139/model/fold/resid/L51/held_rows.safetensors",
+        "exists": true,
+        "sha256": "40bc53e1b52302dd28803d52ec2a0761a60e704905229dc3d99e6f1e2e185b43",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 25.5
+      },
+      "tried": [
+        {
+          "root": "nas-w49-60",
+          "path": "/mnt/ai_data/omni-campaign/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139/model/fold/resid/L51/held_rows.safetensors",
+          "exists": true,
+          "sha256": "40bc53e1b52302dd28803d52ec2a0761a60e704905229dc3d99e6f1e2e185b43",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 25.5
+        }
+      ]
+    },
+    {
+      "layer": 52,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L52/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "5c5629985526c4379ce4cdb7b7b3531df085badfb688c5e735ef5883a83f9edf"
+      },
+      "chosen": {
+        "root": "nas-w49-60",
+        "path": "/mnt/ai_data/omni-campaign/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139/model/fold/resid/L52/held_rows.safetensors",
+        "exists": true,
+        "sha256": "5c5629985526c4379ce4cdb7b7b3531df085badfb688c5e735ef5883a83f9edf",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 25.5
+      },
+      "tried": [
+        {
+          "root": "nas-w49-60",
+          "path": "/mnt/ai_data/omni-campaign/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139/model/fold/resid/L52/held_rows.safetensors",
+          "exists": true,
+          "sha256": "5c5629985526c4379ce4cdb7b7b3531df085badfb688c5e735ef5883a83f9edf",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 25.5
+        }
+      ]
+    },
+    {
+      "layer": 53,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L53/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "7497f657c441ee252978d6aff1ca011ff6eed878cde2541211a950794ff14aa9"
+      },
+      "chosen": {
+        "root": "nas-w49-60",
+        "path": "/mnt/ai_data/omni-campaign/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139/model/fold/resid/L53/held_rows.safetensors",
+        "exists": true,
+        "sha256": "7497f657c441ee252978d6aff1ca011ff6eed878cde2541211a950794ff14aa9",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 25.8
+      },
+      "tried": [
+        {
+          "root": "nas-w49-60",
+          "path": "/mnt/ai_data/omni-campaign/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139/model/fold/resid/L53/held_rows.safetensors",
+          "exists": true,
+          "sha256": "7497f657c441ee252978d6aff1ca011ff6eed878cde2541211a950794ff14aa9",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 25.8
+        }
+      ]
+    },
+    {
+      "layer": 54,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L54/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "947bb4cf6e4bcde04de4842bdf0aa8588a26c4e9b7b99869c13d79f8f9c55188"
+      },
+      "chosen": {
+        "root": "nas-w49-60",
+        "path": "/mnt/ai_data/omni-campaign/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139/model/fold/resid/L54/held_rows.safetensors",
+        "exists": true,
+        "sha256": "947bb4cf6e4bcde04de4842bdf0aa8588a26c4e9b7b99869c13d79f8f9c55188",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 25.6
+      },
+      "tried": [
+        {
+          "root": "nas-w49-60",
+          "path": "/mnt/ai_data/omni-campaign/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139/model/fold/resid/L54/held_rows.safetensors",
+          "exists": true,
+          "sha256": "947bb4cf6e4bcde04de4842bdf0aa8588a26c4e9b7b99869c13d79f8f9c55188",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 25.6
+        }
+      ]
+    },
+    {
+      "layer": 55,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L55/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "526746c5e9f98e73e63c35b146b85331535424dd492e40990f20e58f45ad217a"
+      },
+      "chosen": {
+        "root": "nas-w49-60",
+        "path": "/mnt/ai_data/omni-campaign/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139/model/fold/resid/L55/held_rows.safetensors",
+        "exists": true,
+        "sha256": "526746c5e9f98e73e63c35b146b85331535424dd492e40990f20e58f45ad217a",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 25.6
+      },
+      "tried": [
+        {
+          "root": "nas-w49-60",
+          "path": "/mnt/ai_data/omni-campaign/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139/model/fold/resid/L55/held_rows.safetensors",
+          "exists": true,
+          "sha256": "526746c5e9f98e73e63c35b146b85331535424dd492e40990f20e58f45ad217a",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 25.6
+        }
+      ]
+    },
+    {
+      "layer": 56,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L56/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "57284a6b1289a701ee51a357c4bb62fb96a7ce77c6a1c0bcd02af64b33be2c55"
+      },
+      "chosen": {
+        "root": "nas-w49-60",
+        "path": "/mnt/ai_data/omni-campaign/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139/model/fold/resid/L56/held_rows.safetensors",
+        "exists": true,
+        "sha256": "57284a6b1289a701ee51a357c4bb62fb96a7ce77c6a1c0bcd02af64b33be2c55",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 25.9
+      },
+      "tried": [
+        {
+          "root": "nas-w49-60",
+          "path": "/mnt/ai_data/omni-campaign/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139/model/fold/resid/L56/held_rows.safetensors",
+          "exists": true,
+          "sha256": "57284a6b1289a701ee51a357c4bb62fb96a7ce77c6a1c0bcd02af64b33be2c55",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 25.9
+        }
+      ]
+    },
+    {
+      "layer": 57,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L57/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "3af3cca2ba3b4f127d6818e2823e0a0add76a085ed6a0faee7d234b65e0906bd"
+      },
+      "chosen": {
+        "root": "nas-w49-60",
+        "path": "/mnt/ai_data/omni-campaign/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139/model/fold/resid/L57/held_rows.safetensors",
+        "exists": true,
+        "sha256": "3af3cca2ba3b4f127d6818e2823e0a0add76a085ed6a0faee7d234b65e0906bd",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 25.6
+      },
+      "tried": [
+        {
+          "root": "nas-w49-60",
+          "path": "/mnt/ai_data/omni-campaign/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139/model/fold/resid/L57/held_rows.safetensors",
+          "exists": true,
+          "sha256": "3af3cca2ba3b4f127d6818e2823e0a0add76a085ed6a0faee7d234b65e0906bd",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 25.6
+        }
+      ]
+    },
+    {
+      "layer": 58,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L58/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "339375c4d8880d2c35503988402dcec9c127ee6b8bb05c220e05f7c94e8fecfd"
+      },
+      "chosen": {
+        "root": "nas-w49-60",
+        "path": "/mnt/ai_data/omni-campaign/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139/model/fold/resid/L58/held_rows.safetensors",
+        "exists": true,
+        "sha256": "339375c4d8880d2c35503988402dcec9c127ee6b8bb05c220e05f7c94e8fecfd",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 25.8
+      },
+      "tried": [
+        {
+          "root": "nas-w49-60",
+          "path": "/mnt/ai_data/omni-campaign/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139/model/fold/resid/L58/held_rows.safetensors",
+          "exists": true,
+          "sha256": "339375c4d8880d2c35503988402dcec9c127ee6b8bb05c220e05f7c94e8fecfd",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 25.8
+        }
+      ]
+    },
+    {
+      "layer": 59,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L59/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "6d1a57a8bdcc67bbf31669ecfdff3ee36d9fcab0788e003320c8a5a2349b2eaa"
+      },
+      "chosen": {
+        "root": "nas-w49-60",
+        "path": "/mnt/ai_data/omni-campaign/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139/model/fold/resid/L59/held_rows.safetensors",
+        "exists": true,
+        "sha256": "6d1a57a8bdcc67bbf31669ecfdff3ee36d9fcab0788e003320c8a5a2349b2eaa",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 25.6
+      },
+      "tried": [
+        {
+          "root": "nas-w49-60",
+          "path": "/mnt/ai_data/omni-campaign/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139/model/fold/resid/L59/held_rows.safetensors",
+          "exists": true,
+          "sha256": "6d1a57a8bdcc67bbf31669ecfdff3ee36d9fcab0788e003320c8a5a2349b2eaa",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 25.6
+        }
+      ]
+    },
+    {
+      "layer": 60,
+      "receipt_held_rows": {
+        "bytes": 664974952,
+        "path": "/run-output/fold/resid/L60/held_rows.safetensors",
+        "rows": 23186,
+        "sha256": "ec227722b2c8bd0970b2f93677dea804f9d2d4fa57c6ff12ab9c9e3ceeb8a2bf"
+      },
+      "chosen": {
+        "root": "nas-w49-60",
+        "path": "/mnt/ai_data/omni-campaign/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139/model/fold/resid/L60/held_rows.safetensors",
+        "exists": true,
+        "sha256": "ec227722b2c8bd0970b2f93677dea804f9d2d4fa57c6ff12ab9c9e3ceeb8a2bf",
+        "bytes": 664974952,
+        "matches_receipt": true,
+        "hash_seconds": 25.7
+      },
+      "tried": [
+        {
+          "root": "nas-w49-60",
+          "path": "/mnt/ai_data/omni-campaign/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139/model/fold/resid/L60/held_rows.safetensors",
+          "exists": true,
+          "sha256": "ec227722b2c8bd0970b2f93677dea804f9d2d4fa57c6ff12ab9c9e3ceeb8a2bf",
+          "bytes": 664974952,
+          "matches_receipt": true,
+          "hash_seconds": 25.7
+        }
+      ]
+    }
+  ],
+  "refused_layers": []
+}

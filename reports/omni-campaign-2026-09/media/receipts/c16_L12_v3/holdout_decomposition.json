@@ -1,0 +1,76 @@
+{
+  "schema": "chimera_omni.media_fold.receipt.v1",
+  "created_at_utc": "2026-09-02T14:52:28.989294+00:00",
+  "kind": "c16_holdout_decomposition",
+  "run": {
+    "path": "/home/cereal/omni-campaign/media/out/c16_L12_v3",
+    "receipt_sha256": "94811e003bbde472d5ed2f1be2b30a49473861d149390c972b4c6baa3bbf6695",
+    "child_sha256": "769bc2a3b7c2a0ccb6c097b679ff3b25a4573f58aa5ea46b6a94feff5dacb368"
+  },
+  "grouping": "clip",
+  "reported_holdout_scores": {
+    "rel_l2": 0.5537129992932392,
+    "cos": 0.85503192374428,
+    "cos_p05": 0.7951222389614411,
+    "r2": 0.653725567630077,
+    "rows": 927,
+    "width": 2048
+  },
+  "whole_holdout": {
+    "rel_l2": 0.5537129992904333,
+    "cos": 0.8550319237458766,
+    "cos_p05": 0.7951222389614411,
+    "r2": 0.6537255676335864,
+    "rows": 927,
+    "width": 2048
+  },
+  "holdout_leaked_rows": {},
+  "holdout_clean_rows": {
+    "rel_l2": 0.5537129992904333,
+    "cos": 0.8550319237458766,
+    "cos_p05": 0.7951222389614411,
+    "r2": 0.6537255676335864,
+    "rows": 927,
+    "width": 2048
+  },
+  "fit_rows_for_reference": {
+    "rel_l2": 0.22416749873476519,
+    "cos": 0.9671846607963233,
+    "cos_p05": 0.9387221339478029,
+    "r2": 0.9438027252089016,
+    "rows": 3589,
+    "width": 2048
+  },
+  "counts": {
+    "rows_used": 4516,
+    "holdout_rows": 927,
+    "leaked_rows": 0,
+    "clean_rows": 927,
+    "row_level_clean_rows_whose_receptive_field_still_touches_a_fit_clip": 927,
+    "clips_per_batch_row_max": 4
+  },
+  "reading": "leaked rows share a clip with the fit, so the refit has seen near-duplicates of them; a leaked score better than the clean score is the leak flattering the reported holdout, independent of what the aggregate number did. 'clean' here is ROW LEVEL: these rows' own latents come from held-out clips only. It does not mean their activations are independent of the fit -- the rows are mlp_in after several DiT layers whose attention receptive field is the whole batch row, so unless the window is clip-aligned (one clip per batch row) a clean row's activation is still a function of the fit clips beside it. The count row_level_clean_rows_whose_receptive_field_still_touches_a_fit_clip says how many.",
+  "runtime": {
+    "python": "3.12.3 (main, Jun 19 2026, 12:46:00) [GCC 13.3.0]",
+    "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39",
+    "cwd": "/home/cereal/omni-campaign/media",
+    "torch": "2.11.0+cu128",
+    "torch_cuda": "12.8",
+    "cuda_available": true,
+    "nvidia_smi": [
+      "0, NVIDIA GeForce RTX 3090, GPU-4ead7f3a-cc79-fa5b-de42-ef024e27f561, 26 MiB",
+      "1, Tesla P40, GPU-c95fb5b3-f97c-bfb2-9760-79fe107ffe6d, 7 MiB",
+      "2, Tesla P40, GPU-a92b0dfe-83f8-11ff-db0d-c65921f365b4, 7 MiB",
+      "3, Tesla P40, GPU-08b615f9-8dbe-3edd-d59f-f6ebe8212ca8, 7 MiB",
+      "4, NVIDIA GeForce RTX 3090, GPU-2ce6a95c-7b1f-644a-3808-d781732a0582, 18 MiB",
+      "5, Tesla P40, GPU-ce4a1da0-baa8-3d62-419c-a28f6565610f, 7 MiB",
+      "6, Quadro RTX 8000, GPU-f5a09535-fc85-a027-50f7-734b344747dd, 8 MiB"
+    ]
+  },
+  "argv": {
+    "run": "out/c16_L12_v3",
+    "grouping": "clip",
+    "out": "out/c16_L12_v3/holdout_decomposition.json",
+    "holdout_fraction": 0.2
+  }
+}

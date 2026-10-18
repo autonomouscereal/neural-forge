@@ -1,0 +1,149 @@
+{
+  "schema": "chimera_omni.media_fold.receipt.v1",
+  "created_at_utc": "2026-09-02T10:27:40.552879+00:00",
+  "kind": "c15_vae_probe",
+  "vae": "/opt/ComfyUI/models/vae/ace_1.5_vae.safetensors",
+  "vae_file_sha256": "6de92e3a862acd287e08b024ac90f0783a8635451b728721a33ff03565bcb2bb",
+  "vae_bytes": 337431732,
+  "expected_profile": {
+    "modality": "audio",
+    "class": "AudioOobleckVAE(strides=[2,4,4,6,10])",
+    "latent_channels": 64,
+    "channels": 2,
+    "sample_rate_hz": 48000,
+    "hop_samples": 1920,
+    "channel_in_latent": false,
+    "sd_py_lines": "651-674"
+  },
+  "geometry": {
+    "name": "ace_1.5_vae.safetensors",
+    "modality": "audio",
+    "latent_channels": 64,
+    "sample_rate_hz": 48000,
+    "hop_samples": 1920,
+    "channels": 2,
+    "channel_in_latent": false,
+    "spatial_stride": 0,
+    "temporal_stride": 0,
+    "frame_rate_hz": 25.0,
+    "notes": {
+      "kind": "comfy",
+      "path": "/opt/ComfyUI/models/vae/ace_1.5_vae.safetensors",
+      "comfy_kitchen_stubbed": true,
+      "forced_cpu": true,
+      "expected_class": "AudioOobleckVAE(strides=[2,4,4,6,10])",
+      "sd_py_lines": "651-674",
+      "latent_dim": 1,
+      "first_stage_class": "AudioOobleckVAE",
+      "vae_dtype": "torch.float32",
+      "device": "cpu",
+      "posterior": "mean",
+      "path_mode": "direct",
+      "crop_input": true,
+      "downscale_ratio": 1920,
+      "upscale_ratio": 1920
+    }
+  },
+  "load_seconds": 17.617,
+  "posterior": "mean",
+  "posterior_mean_available": true,
+  "measurement": {
+    "raw_shape": [
+      2,
+      2,
+      48000
+    ],
+    "requested_frames": 25,
+    "latent_shape": [
+      2,
+      64,
+      25
+    ],
+    "latent_dtype": "torch.float32",
+    "latent_mean": -0.015084344893693924,
+    "latent_std": 1.0047613382339478,
+    "latent_absmax": 7.065347194671631,
+    "reconstruction_shape": [
+      2,
+      2,
+      48000
+    ],
+    "encode_deterministic": true,
+    "encode_repeat_max_delta": 0.0,
+    "roundtrip_psnr_db": 34.48037098552263,
+    "roundtrip_si_sdr_db": 10.295080451906657,
+    "encode_seconds": 4.267,
+    "decode_seconds": 4.084,
+    "samples_per_latent_frame_measured": 1920.0,
+    "temporal_support": {
+      "frames": 12,
+      "hop_samples": 1920,
+      "latent_frames": 12,
+      "amplitude": 0.25,
+      "owner_per_frame": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11
+      ],
+      "owner_is_monotonic": true,
+      "influence_by_offset": {
+        "-6": 0.005722713483479897,
+        "-5": 0.017032990966024765,
+        "-4": 0.03811075904579912,
+        "-3": 0.08902912574780482,
+        "-2": 0.198724722874577,
+        "-1": 0.5255563525460367,
+        "0": 1.0,
+        "1": 0.5054704336315201,
+        "2": 0.1341101105515447,
+        "3": 0.058919167252092244,
+        "4": 0.027971590413921964,
+        "5": 0.014589237861856855,
+        "6": 0.006935879026555806
+      },
+      "support_threshold": 0.1,
+      "support_offsets": [
+        "-2",
+        "-1",
+        "0",
+        "1",
+        "2"
+      ],
+      "support_width": 5,
+      "meaning": "support_width 1 justifies context=0; a wider support is what a +/-K context row is for. Measured, not asserted."
+    }
+  },
+  "runs_h3_generation": false,
+  "runtime": {
+    "python": "3.10.12 (main, Sep 11 2024, 15:47:36) [GCC 11.4.0]",
+    "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.35",
+    "cwd": "/opt/ComfyUI",
+    "torch": "2.6.0+cu124",
+    "torch_cuda": "12.4",
+    "cuda_available": false,
+    "nvidia_smi": null
+  },
+  "argv": {
+    "vae": "/opt/ComfyUI/models/vae/ace_1.5_vae.safetensors",
+    "out": "/work/media/out/vae_probe_support",
+    "device": "cpu",
+    "clips": 2,
+    "seconds": 1.0,
+    "size": 64,
+    "frame_counts": "5,9,17,22",
+    "seed": 20260901,
+    "support_frames": 0,
+    "audio_support_frames": 12,
+    "posterior": "mean",
+    "path_mode": "direct"
+  }
+}

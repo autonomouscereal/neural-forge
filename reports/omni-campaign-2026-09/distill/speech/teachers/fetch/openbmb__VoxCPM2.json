@@ -1,0 +1,125 @@
+{
+ "schema": "omni-campaign.speech-fetch-receipt.v1",
+ "tool": "speech_fetch.py",
+ "tool_version": "1.0.0",
+ "tool_sha256": "b332b36f3808a05d29c1912553ca9b32e1f27c1aa366b0357f986eab82d96735",
+ "repo": "openbmb/VoxCPM2",
+ "revision": "32279effe8c19989596f05d353d1447f51d9e915",
+ "dest": "/mnt/lexar/models/openbmb/VoxCPM2",
+ "api_url": "https://huggingface.co/api/models/openbmb/VoxCPM2/revision/32279effe8c19989596f05d353d1447f51d9e915?blobs=true",
+ "api_sha256": "ebd0bbaf72e8a1e2a290652510ee2e7a6cbf417416133c26de7a917d19bf77a7",
+ "api_last_modified": "2026-08-18T07:37:17.000Z",
+ "api_created_at": "2026-04-03T05:25:50.000Z",
+ "gated": false,
+ "private": false,
+ "licence": {
+  "card_license": "apache-2.0",
+  "card_license_name": null,
+  "card_license_link": null,
+  "files": []
+ },
+ "pipeline_tag": "text-to-speech",
+ "library_name": "voxcpm",
+ "files": [
+  {
+   "path": ".gitattributes",
+   "size": 1519,
+   "sha256": "11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361",
+   "git_blob_sha1": "a6344aac8c09253b3b630fb776ae94478aa0275b",
+   "lfs": false,
+   "verified_against": "blobId",
+   "source": "download",
+   "seconds": 0.35
+  },
+  {
+   "path": "README.md",
+   "size": 7939,
+   "sha256": "c18d2ffbfb2f0aec770481c967842aee6c200cde65f6b033efd892a849986fda",
+   "git_blob_sha1": "14573f986536306e3d9d65f988a3fc4b863b895c",
+   "lfs": false,
+   "verified_against": "blobId",
+   "source": "download",
+   "seconds": 0.29
+  },
+  {
+   "path": "audiovae.pth",
+   "size": 376951122,
+   "sha256": "94b5d51e107e0507d4acc976cfdadb64edd6fd06d1f751dadbf2fd1594274bf1",
+   "git_blob_sha1": "cafe37c45d1aa5c6dd447963dfa69ef2c4f10c06",
+   "lfs": true,
+   "verified_against": "lfs.sha256",
+   "source": "download",
+   "seconds": 10.24
+  },
+  {
+   "path": "config.json",
+   "size": 4336,
+   "sha256": "405f0dcd92f7feba6011ed4eac5c8d4f74cba9712f07fd5cfa3063bbdd95402c",
+   "git_blob_sha1": "792f1c223ed607f9e508c0a0deb15dd9532483be",
+   "lfs": false,
+   "verified_against": "blobId",
+   "source": "download",
+   "seconds": 0.42
+  },
+  {
+   "path": "model.safetensors",
+   "size": 4580080592,
+   "sha256": "f7f964cfa9da23653baec6e6f7750719977ad944ed9f95fe52fe3a620506891d",
+   "git_blob_sha1": "adcca4f63ad3c9cfe7f357534b55bbe43c076668",
+   "lfs": true,
+   "verified_against": "lfs.sha256",
+   "source": "download",
+   "seconds": 69.84
+  },
+  {
+   "path": "special_tokens_map.json",
+   "size": 1632,
+   "sha256": "068594063e37662c02b21acf42ebb334ef6a74fb810e68a2368f88f08351de76",
+   "git_blob_sha1": "8619dda6f3eb6d60d0a1bb274820054e46f41699",
+   "lfs": false,
+   "verified_against": "blobId",
+   "source": "download",
+   "seconds": 0.33
+  },
+  {
+   "path": "tokenization_voxcpm2.py",
+   "size": 2895,
+   "sha256": "84489ea32b6ee0cae22ed5480cacb6df85c46624c3119be9a2021c3649a12729",
+   "git_blob_sha1": "e7d768677298d058fa6ef8b160e3ca4430997fad",
+   "lfs": false,
+   "verified_against": "blobId",
+   "source": "download",
+   "seconds": 0.35
+  },
+  {
+   "path": "tokenizer.json",
+   "size": 3676772,
+   "sha256": "f8984687e4a92a3503d521396d454b7d68e9fdaab2a0288eb3536c7c1aa4bc20",
+   "git_blob_sha1": "41a5c2a8dba4058dd1ad73fb898abf5e4f64f0f9",
+   "lfs": false,
+   "verified_against": "blobId",
+   "source": "download",
+   "seconds": 0.64
+  },
+  {
+   "path": "tokenizer_config.json",
+   "size": 5059,
+   "sha256": "e78a3ebb48a0b9437efd1823b6b726c823da89e49dd8bcc90c02419d9baa772b",
+   "git_blob_sha1": "fecf4cdae73b57053cac2ad34c67febbe4e4f08b",
+   "lfs": false,
+   "verified_against": "blobId",
+   "source": "download",
+   "seconds": 0.32
+  }
+ ],
+ "file_count": 9,
+ "total_bytes": 4960731866,
+ "downloaded_bytes": 4960731866,
+ "seed": null,
+ "started_utc": "2026-10-15T00:22:01Z",
+ "finished_utc": "2026-10-15T00:23:11Z",
+ "seconds": 70.1,
+ "download_mb_per_s": 70.73,
+ "errors": [],
+ "complete": true
+}

@@ -1,0 +1,928 @@
+{
+  "schema": "chimera_omni.media_fold.receipt.v1",
+  "created_at_utc": "2026-09-02T14:51:15.349190+00:00",
+  "kind": "c16_transplant",
+  "block": {
+    "source": "/home/cereal/comfyui/models/diffusion_models/acestep_v1.5_turbo.safetensors",
+    "prefix": "decoder.layers.12.",
+    "layer_type": "sliding_attention",
+    "consumed_tensors": 19,
+    "tensor_sha256": {
+      "cross_attn.k_norm.weight": "e103849f375dcd73fa55b23a1fb646103bf06cb1685fb51f67e5949adea10736",
+      "cross_attn.k_proj.weight": "5c1c5ab13a7f7fb36bcd9a281c26539f94c465a4a23d3e78de5b350bac19f17a",
+      "cross_attn.o_proj.weight": "9ac42e45c585fff864a95a5306fc603ac6250c71551023022b064abcbd51e146",
+      "cross_attn.q_norm.weight": "4c8c9a089106344efb58da9fa7e34e828203675cfb7ff1fe3db64f649647b005",
+      "cross_attn.q_proj.weight": "b2a615dd4685241651de527c75398e61bcb80dd70badea798dda3dde657b33b1",
+      "cross_attn.v_proj.weight": "2cc6145a42d7b5de0a29107bff43d7deb8fdf92d06aef581ff98cb261a3183b0",
+      "cross_attn_norm.weight": "c239704ede849986957b126b93ac7c52e054ebb1830754d00aaa9a69507c2d1d",
+      "mlp.down_proj.weight": "0c3404ae76e6ed4ab0f9c32b128b6eb42a491c880379ca6c2091a120b0f06087",
+      "mlp.gate_proj.weight": "81c0d943d22bc14e011267be6e82b5d3453cfbdd3df7b15162b83b2e9ef64b9f",
+      "mlp.up_proj.weight": "4e4dc1c4c6287f7d2ae99a41fcd618adb43b8aa894e4243683cbd231cec0475b",
+      "mlp_norm.weight": "58bc0ea443b389de69ffec6783e85f77a480b66d946123ac4175906aa13e0b66",
+      "scale_shift_table": "87b5673ff23d44eac6838ebcbb089a0683dcbe809ca57bf96c5d1566d29e66d7",
+      "self_attn.k_norm.weight": "d788c1e35ea6dcb34850198eff55455307b41c35371fa96bf059024d82ca8fdd",
+      "self_attn.k_proj.weight": "2c3706169795392678e4fbd89064afb8bcb1a98dea9dab82545942c5a11da5ad",
+      "self_attn.o_proj.weight": "0052ad07dcf158d15f1f9b1a794ee053e67d8d820322a5cd10800284a346ec76",
+      "self_attn.q_norm.weight": "10b49f2ef03247fd931bb49cfb7635c479fdacb4c692e14239a49a2ebbca1d2b",
+      "self_attn.q_proj.weight": "0d0ed188ebe06c428a89bd273031fb2d40bb57be954752d3d1f504b5262c724f",
+      "self_attn.v_proj.weight": "1268ce55406263c1e32c84058c272c7d8d8ce740fd48e4f9def9e3e75cb2558c",
+      "self_attn_norm.weight": "af951079d091d9840c6473a588b9da4a7ee40f8c34b77baf6f707c00f2067dc9"
+    },
+    "block_parameters": 62933504,
+    "mlp_parameters": 37748736
+  },
+  "capture": {
+    "mode": "prefix_shell",
+    "prefix_depth": 12,
+    "prefix_note": "layers 0..11 were run before block 12; identical to a full-stack forward for this block's input",
+    "shell": {
+      "source": "/home/cereal/comfyui/models/diffusion_models/acestep_v1.5_turbo.safetensors",
+      "prefix": "decoder.",
+      "depth": 12,
+      "consumed_tensors": 248,
+      "state_sha256": "d132f7729c2374413cff4f19be03eeaccbc592796f418f8053de4a112c842606",
+      "parameters": 820256832,
+      "config": {
+        "hidden_size": 2048,
+        "num_attention_heads": 16,
+        "num_key_value_heads": 8,
+        "head_dim": 128,
+        "intermediate_size": 6144,
+        "patch_size": 2,
+        "layer_types": [
+          "sliding_attention",
+          "full_attention",
+          "sliding_attention",
+          "full_attention",
+          "sliding_attention",
+          "full_attention",
+          "sliding_attention",
+          "full_attention",
+          "sliding_attention",
+          "full_attention",
+          "sliding_attention",
+          "full_attention",
+          "sliding_attention",
+          "full_attention",
+          "sliding_attention",
+          "full_attention",
+          "sliding_attention",
+          "full_attention",
+          "sliding_attention",
+          "full_attention",
+          "sliding_attention",
+          "full_attention",
+          "sliding_attention",
+          "full_attention"
+        ]
+      }
+    },
+    "stimulus": {
+      "rung": "latents",
+      "pairs_dir": "/home/cereal/omni-campaign/media/pairs/ace_s_ctx0_merged",
+      "pairs_geometry": {
+        "name": "ace_1.5_vae.safetensors",
+        "modality": "audio",
+        "latent_channels": 64,
+        "sample_rate_hz": 48000,
+        "hop_samples": 1920,
+        "channels": 2,
+        "channel_in_latent": false,
+        "spatial_stride": 0,
+        "temporal_stride": 0,
+        "frame_rate_hz": 25.0,
+        "notes": {
+          "kind": "comfy",
+          "path": "/opt/ComfyUI/models/vae/ace_1.5_vae.safetensors",
+          "comfy_kitchen_stubbed": true,
+          "forced_cpu": true,
+          "expected_class": "AudioOobleckVAE(strides=[2,4,4,6,10])",
+          "sd_py_lines": "651-674",
+          "latent_dim": 1,
+          "first_stage_class": "AudioOobleckVAE",
+          "vae_dtype": "torch.float32",
+          "device": "cpu",
+          "posterior": "mean",
+          "path_mode": "direct",
+          "crop_input": true,
+          "downscale_ratio": 1920,
+          "upscale_ratio": 1920
+        },
+        "pairing": "stacked",
+        "ambiguous_pairing": false,
+        "ambiguity": null,
+        "context": 0,
+        "d_raw": 3840,
+        "d_latent": 64,
+        "d_centre": 3840,
+        "centre_offset": 0,
+        "rows": 9600,
+        "clips": 96,
+        "chimera_segment": 1920,
+        "chimera_stride": 1920,
+        "chimera_tokens_per_frame": 2,
+        "merged_from": 6,
+        "merged_clip_totals": [
+          16,
+          16,
+          16,
+          16,
+          16,
+          16
+        ],
+        "declared_clips_sum": 96,
+        "merged_alignments": [
+          {
+            "pairing": "stacked",
+            "ambiguous_pairing": false,
+            "ambiguity": null
+          },
+          {
+            "pairing": "stacked",
+            "ambiguous_pairing": false,
+            "ambiguity": null
+          },
+          {
+            "pairing": "stacked",
+            "ambiguous_pairing": false,
+            "ambiguity": null
+          },
+          {
+            "pairing": "stacked",
+            "ambiguous_pairing": false,
+            "ambiguity": null
+          },
+          {
+            "pairing": "stacked",
+            "ambiguous_pairing": false,
+            "ambiguity": null
+          },
+          {
+            "pairing": "stacked",
+            "ambiguous_pairing": false,
+            "ambiguity": null
+          }
+        ]
+      },
+      "seed": 0,
+      "sigma": 0.5,
+      "row_offset": 109,
+      "row_offset_source": "seeded_random",
+      "clips_covered": 93,
+      "clip_span": [
+        1,
+        93
+      ],
+      "rows_per_clip_in_window": 100,
+      "clips_per_batch_row_min": 3,
+      "clips_per_batch_row_max": 4,
+      "batch_rows_are_single_clips": false,
+      "attention_receptive_field": "one DiT batch row (the full_attention layers are unrestricted), so a token's activation is a function of every latent row of its batch row. Batch rows here carry up to 4 clips, so a clip-grouped holdout removes row-level clip overlap but its activations still encode content from the other clips in the same batch row -- the holdout is NOT independent of the fit. Pin --row-offset to a clip boundary and set --length to the clip length for an independent window."
+    },
+    "tensors": {
+      "path": "out/c16_L12_v3/capture_L12.safetensors",
+      "bytes": 124453272,
+      "file_sha256": "5fa8e1714b145304ca8157b2f1f3ed4251ab291f70603c8a73db5d635fd3fbd2",
+      "state_sha256": "de68383da4e33e0b10cc7f47779c5e867f8d7d7fb61504104395fa4da4bf1917",
+      "parameters": 31113216,
+      "tensors": {
+        "context": {
+          "dtype": "torch.float32",
+          "shape": [
+            36,
+            32,
+            2048
+          ],
+          "sha256": "5ab7f66496b01b9a83dca01df3178830c9014ebc2b498d69b9127ccd52a1d868"
+        },
+        "mlp_in": {
+          "dtype": "torch.float32",
+          "shape": [
+            36,
+            128,
+            2048
+          ],
+          "sha256": "71234d3ea40472ac8ba7b0ef0d5fc8eb768950e5c764491aee6f5cc7ac288dda"
+        },
+        "temb": {
+          "dtype": "torch.float32",
+          "shape": [
+            36,
+            6,
+            2048
+          ],
+          "sha256": "f1bd33f2d498974d100c92d90df2da2003181618e98c9906c6ed0bbf642ed94e"
+        },
+        "x_in": {
+          "dtype": "torch.float32",
+          "shape": [
+            36,
+            128,
+            2048
+          ],
+          "sha256": "f636786775dcc8023c4debff32d36032af3f4d5624b94e0a447a14350e1cbbc1"
+        },
+        "x_out": {
+          "dtype": "torch.float32",
+          "shape": [
+            36,
+            128,
+            2048
+          ],
+          "sha256": "f7396bf25f6cf580c9e933e263497829cbd90a6cf9051cea5520f6ec4731d96f"
+        }
+      }
+    }
+  },
+  "host": {
+    "source": "chimera_proof_trunk",
+    "package": "/home/cereal/chimera-proof-c5a5c18-v4/src",
+    "layer": 3,
+    "hidden": 128,
+    "rows": 4352,
+    "site": "blocks[3].norm1 input",
+    "paired_rows": 4352,
+    "pairing": "index_aligned_different_corpora"
+  },
+  "charts": {
+    "ridge": {
+      "method": "ridge",
+      "parameters": 526464,
+      "in": {
+        "ridge_rel": 1.0,
+        "fit_bias": true,
+        "fit_rows": 2786,
+        "holdout_rows": 696,
+        "seed": 0,
+        "lambda_ladder": [
+          {
+            "ridge_rel": 1e-06,
+            "rel_l2": 0.9249597248109057
+          },
+          {
+            "ridge_rel": 1e-05,
+            "rel_l2": 0.9237483858302548
+          },
+          {
+            "ridge_rel": 0.0001,
+            "rel_l2": 0.9183879926262897
+          },
+          {
+            "ridge_rel": 0.001,
+            "rel_l2": 0.9109956506986769
+          },
+          {
+            "ridge_rel": 0.01,
+            "rel_l2": 0.9061185707845806
+          },
+          {
+            "ridge_rel": 0.1,
+            "rel_l2": 0.9029416799781314
+          },
+          {
+            "ridge_rel": 1.0,
+            "rel_l2": 0.9020161701185966
+          },
+          {
+            "ridge_rel": 10.0,
+            "rel_l2": 0.9057785782965289
+          },
+          {
+            "ridge_rel": 100.0,
+            "rel_l2": 0.9332026701048637
+          }
+        ]
+      },
+      "out": {
+        "ridge_rel": 0.1,
+        "fit_bias": true,
+        "fit_rows": 2786,
+        "holdout_rows": 696,
+        "seed": 0,
+        "lambda_ladder": [
+          {
+            "ridge_rel": 1e-06,
+            "rel_l2": 1.0251549046387385
+          },
+          {
+            "ridge_rel": 1e-05,
+            "rel_l2": 1.0037406475296045
+          },
+          {
+            "ridge_rel": 0.0001,
+            "rel_l2": 0.8842402413525059
+          },
+          {
+            "ridge_rel": 0.001,
+            "rel_l2": 0.6949560820928161
+          },
+          {
+            "ridge_rel": 0.01,
+            "rel_l2": 0.602868841675999
+          },
+          {
+            "ridge_rel": 0.1,
+            "rel_l2": 0.589530051095323
+          },
+          {
+            "ridge_rel": 1.0,
+            "rel_l2": 0.5911829309343891
+          },
+          {
+            "ridge_rel": 10.0,
+            "rel_l2": 0.6019778877833241
+          },
+          {
+            "ridge_rel": 100.0,
+            "rel_l2": 0.6620107202277447
+          }
+        ]
+      },
+      "roundtrip_scores": {
+        "rel_l2": 0.4896379947285037,
+        "cos": 0.8501123464391533,
+        "cos_p05": 0.23999081559930063,
+        "r2": 0.28367007686568935,
+        "rows": 870,
+        "width": 128
+      },
+      "forward_scores": {
+        "rel_l2": 0.9041092558159242,
+        "cos": 0.46908298435679413,
+        "cos_p05": 0.211342190040966,
+        "r2": -0.0060175236065178606,
+        "rows": 870,
+        "width": 2048
+      },
+      "in_sample_roundtrip_scores": {
+        "rel_l2": 0.48475766900775114,
+        "cos": 0.8560509699028209,
+        "cos_p05": 0.24078862164607145,
+        "r2": 0.2799575186835004,
+        "rows": 3482,
+        "width": 128
+      },
+      "in_sample_forward_scores": {
+        "rel_l2": 0.9014734085705931,
+        "cos": 0.478338344666028,
+        "cos_p05": 0.21298555930760202,
+        "r2": 0.0004823267533221598,
+        "rows": 3482,
+        "width": 2048
+      },
+      "split": {
+        "rows": 4352,
+        "fit_rows": 3482,
+        "holdout_rows": 870,
+        "scored_on": "holdout",
+        "split_by": "row"
+      }
+    },
+    "svd": {
+      "method": "svd",
+      "parameters": 526464,
+      "chart": {
+        "rank": 128,
+        "retained_energy": 0.9464090216242336
+      },
+      "roundtrip_scores": {
+        "rel_l2": 1.9741998652590904e-15,
+        "cos": 1.0,
+        "cos_p05": 0.9999999999999998,
+        "r2": 1.0,
+        "rows": 870,
+        "width": 128
+      },
+      "forward_scores": {
+        "rel_l2": 0.9998987926237662,
+        "cos": 0.06912450431293743,
+        "cos_p05": -0.0701171017866131,
+        "r2": -0.2304835239014562,
+        "rows": 870,
+        "width": 2048
+      },
+      "in_sample_roundtrip_scores": {
+        "rel_l2": 1.9746636705448526e-15,
+        "cos": 1.0,
+        "cos_p05": 0.9999999999999998,
+        "r2": 1.0,
+        "rows": 3482,
+        "width": 128
+      },
+      "in_sample_forward_scores": {
+        "rel_l2": 0.9998874490413333,
+        "cos": 0.07324826723457853,
+        "cos_p05": -0.06407987492148932,
+        "r2": -0.22966516604062992,
+        "rows": 3482,
+        "width": 2048
+      },
+      "split": {
+        "rows": 4352,
+        "fit_rows": 3482,
+        "holdout_rows": 870,
+        "scored_on": "holdout",
+        "split_by": "row"
+      }
+    },
+    "random": {
+      "method": "random",
+      "parameters": 526464,
+      "random": true,
+      "seed": 0,
+      "roundtrip_scores": {
+        "rel_l2": 1.3822788736815523,
+        "cos": 0.03021090478845734,
+        "cos_p05": -0.009422803205252905,
+        "r2": -4.708923360431424,
+        "rows": 870,
+        "width": 128
+      },
+      "forward_scores": {
+        "rel_l2": 0.9999072797889369,
+        "cos": 0.01707844182576962,
+        "cos_p05": -0.02124585349819169,
+        "r2": -0.2305044127380118,
+        "rows": 870,
+        "width": 2048
+      },
+      "in_sample_roundtrip_scores": {
+        "rel_l2": 1.3823082922341254,
+        "cos": 0.02757102484340759,
+        "cos_p05": -0.012074462001383311,
+        "r2": -4.854887699986884,
+        "rows": 3482,
+        "width": 128
+      },
+      "in_sample_forward_scores": {
+        "rel_l2": 0.9998954294248905,
+        "cos": 0.018489205774052542,
+        "cos_p05": -0.01820943419179559,
+        "r2": -0.2296847947274745,
+        "rows": 3482,
+        "width": 2048
+      },
+      "split": {
+        "rows": 4352,
+        "fit_rows": 3482,
+        "holdout_rows": 870,
+        "scored_on": "holdout",
+        "split_by": "row"
+      }
+    }
+  },
+  "primary_chart": "ridge",
+  "arms_parent_block": [
+    {
+      "arm": "replace",
+      "scores": {
+        "rel_l2": 0.057140499237147535,
+        "cos": 0.9987392490531193,
+        "cos_p05": 0.9984137595716025,
+        "r2": 0.990048350548199,
+        "rows": 4352,
+        "width": 128
+      },
+      "frozen_parameters": 63459968,
+      "delta_scale": 1.0,
+      "rope": true
+    },
+    {
+      "arm": "insert",
+      "scores": {
+        "rel_l2": 0.057140499237147535,
+        "cos": 0.9987392490531193,
+        "cos_p05": 0.9984137595716025,
+        "r2": 0.990048350548199,
+        "rows": 4352,
+        "width": 128
+      },
+      "frozen_parameters": 63459968,
+      "delta_scale": 1.0,
+      "rope": true,
+      "identical_forward_to": "replace"
+    },
+    {
+      "arm": "control",
+      "scores": {
+        "rel_l2": 0.04457408253950669,
+        "cos": 0.9991403584848522,
+        "cos_p05": 0.9986604465889467,
+        "r2": 0.9939441956666941,
+        "rows": 4352,
+        "width": 128
+      },
+      "frozen_parameters": 63459968,
+      "delta_scale": 10.131762504577637,
+      "rope": true
+    },
+    {
+      "arm": "identity",
+      "scores": {
+        "rel_l2": 0.48573324822154185,
+        "cos": 0.8548637915301576,
+        "cos_p05": 0.24056849562220947,
+        "r2": 0.28087783976059266,
+        "rows": 4352,
+        "width": 128
+      },
+      "frozen_parameters": 526464,
+      "delta_scale": 1.0,
+      "rope": false
+    },
+    {
+      "arm": "random_chart",
+      "scores": {
+        "rel_l2": 68.18391614182288,
+        "cos": 0.12233229384145164,
+        "cos_p05": 0.019861006275105116,
+        "r2": -14169.033962038366,
+        "rows": 4352,
+        "width": 128
+      },
+      "frozen_parameters": 63459968,
+      "delta_scale": 1.0,
+      "rope": true
+    }
+  ],
+  "arms_folded_block": [
+    {
+      "arm": "replace",
+      "scores": {
+        "rel_l2": 0.07104485764201601,
+        "cos": 0.9978759239573374,
+        "cos_p05": 0.9971185288682178,
+        "r2": 0.9846158925250845,
+        "rows": 4352,
+        "width": 128
+      },
+      "frozen_parameters": 35148416,
+      "delta_scale": 1.0,
+      "rope": true
+    },
+    {
+      "arm": "identity",
+      "scores": {
+        "rel_l2": 0.48573324822154185,
+        "cos": 0.8548637915301576,
+        "cos_p05": 0.24056849562220947,
+        "r2": 0.28087783976059266,
+        "rows": 4352,
+        "width": 128
+      },
+      "frozen_parameters": 526464,
+      "delta_scale": 1.0,
+      "rope": false
+    }
+  ],
+  "arm_metric_meaning": "each arm's rel_l2 is measured against the UNCHANGED host rows, so it is the relative size of the write the arm makes into the host residual stream (0 = the arm does nothing). It is not a fit error against a target. Every arm number is measured THROUGH the primary chart, so read it next to that chart's own forward_scores: when they are near zero the chart carries no correspondence and the arm table orders write strengths, nothing more.",
+  "arm_caveats": {
+    "insert_equals_replace": "at one transplanted block the insert and replace forward paths are the same expression; the rows are identical by construction, not two independent arms",
+    "control_is_norm_matched": "control keeps the parent RMSNorm gains (zeroing them makes a DEAD block) and its delta is rescaled to the parent's delta norm on the same rows"
+  },
+  "transplant_write_strength": {
+    "parent_delta_norm": 28023.682422124606,
+    "parent_in_norm": 202725.52590490418,
+    "parent_delta_over_input": 0.13823460216485092,
+    "transported_delta_norm": 21.117354021685546,
+    "host_row_norm": 378.45104382055183,
+    "relative_write": 0.05579943394659694,
+    "chart": "ridge",
+    "chart_forward_r2": -0.0060175236065178606,
+    "chart_forward_cos": 0.46908298435679413
+  },
+  "coreset": {
+    "keep": 1536,
+    "intermediate": 6144,
+    "selection_sha256": "01e679ca1952267f40ea17fb4526e194eba99134f8ef6bb0a383a7457d1e3c5b",
+    "selected_channels": "1536 channels (list omitted)",
+    "solve": {
+      "ridge_lambda": 0.026473787621264677,
+      "update_scale": 0.9614897365142904,
+      "ridge_rel": 1e-06,
+      "scores": {
+        "rel_l2": 0.22416749879911654,
+        "cos": 0.9671846607868411,
+        "cos_p05": 0.938722135239292,
+        "r2": 0.9438027251765861,
+        "rows": 3589,
+        "width": 2048
+      },
+      "ladder": [
+        {
+          "ridge_rel": 1e-06,
+          "rel_l2": 0.22416749879911654,
+          "update_scale": 0.9614897365142904,
+          "vetoed": false
+        },
+        {
+          "ridge_rel": 1e-05,
+          "rel_l2": 0.22416750216388232,
+          "update_scale": 0.9613034643522818,
+          "vetoed": false
+        },
+        {
+          "ridge_rel": 0.0001,
+          "rel_l2": 0.22416783640318796,
+          "update_scale": 0.9594489075427443,
+          "vetoed": false
+        },
+        {
+          "ridge_rel": 0.001,
+          "rel_l2": 0.2241991621864734,
+          "update_scale": 0.9416784631809098,
+          "vetoed": false
+        },
+        {
+          "ridge_rel": 0.01,
+          "rel_l2": 0.226073235312113,
+          "update_scale": 0.8151335553480931,
+          "vetoed": false
+        },
+        {
+          "ridge_rel": 0.1,
+          "rel_l2": 0.25179987418549404,
+          "update_scale": 0.4860356080283882,
+          "vetoed": false
+        },
+        {
+          "ridge_rel": 1.0,
+          "rel_l2": 0.3289255655529162,
+          "update_scale": 0.20554252562873399,
+          "vetoed": false
+        },
+        {
+          "ridge_rel": 10.0,
+          "rel_l2": 0.43200261435155823,
+          "update_scale": 0.06805463640270129,
+          "vetoed": false
+        },
+        {
+          "ridge_rel": 100.0,
+          "rel_l2": 0.5170161024290373,
+          "update_scale": 0.0167114839588438,
+          "vetoed": false
+        }
+      ]
+    },
+    "component": {
+      "component": "ace_dit_block.mlp",
+      "parent_parameters": 37748736,
+      "child_parameters": 9437184,
+      "compression_x": 4.0,
+      "meets_4x_component_floor": true
+    },
+    "whole_block": {
+      "component": "ace_dit_block",
+      "parent_parameters": 62933504,
+      "child_parameters": 34621952,
+      "compression_x": 1.8177341358453736,
+      "meets_4x_component_floor": false
+    },
+    "fit_scores": {
+      "rel_l2": 0.2241674987346561,
+      "cos": 0.967184660796365,
+      "cos_p05": 0.9387221339478029,
+      "r2": 0.9438027252089612,
+      "rows": 3589,
+      "width": 2048
+    },
+    "holdout_scores": {
+      "rel_l2": 0.5537129992932392,
+      "cos": 0.85503192374428,
+      "cos_p05": 0.7951222389614411,
+      "r2": 0.653725567630077,
+      "rows": 927,
+      "width": 2048
+    },
+    "rows": 4516,
+    "fit_rows": 3589,
+    "holdout_rows": 927,
+    "split_by": "clip (93 clips, 19 held out)",
+    "split_groups": {
+      "group_name": "clip",
+      "groups": 93,
+      "fit_groups": 74,
+      "holdout_groups": 19,
+      "membership_checked": true,
+      "membership_width": 2,
+      "fit_rows_drawing_on_a_held_out_group": 0
+    },
+    "split_guarantee": "row-level disjointness of the source material between fit and holdout (re-derived from row_membership, not from the group ids). This is NOT statistical independence of the two sets of activations: if the rows were produced by a model whose receptive field spans several groups, a held-out row's activation still encodes fit material. The caller's capture receipt is where the receptive field is recorded.",
+    "fit_rows_per_kept_channel": 2.3365885416666665,
+    "note": "per-COMPONENT compression is the >=4x claim; the whole-block ratio is coverage driven and reaches 4x only with the kv-head merge (rung 2)",
+    "clip_grouping": {
+      "grouped_by": "clip",
+      "groups": 93,
+      "boundary_tokens_dropped": 92,
+      "rows_before_drop": 4608,
+      "rows_used": 4516,
+      "note": "a token whose patch straddles a clip boundary carries rows from two clips and is dropped; filing it under either clip would put held-out content in the fit",
+      "guarantee": "row-level clip disjointness (no clip has rows on both sides), NOT independence of the fit and holdout activations -- read receptive_field",
+      "receptive_field": {
+        "clips_per_batch_row_min": 3,
+        "clips_per_batch_row_max": 4,
+        "batch_rows_are_single_clips": false,
+        "attention_receptive_field": "one DiT batch row (the full_attention layers are unrestricted), so a token's activation is a function of every latent row of its batch row. Batch rows here carry up to 4 clips, so a clip-grouped holdout removes row-level clip overlap but its activations still encode content from the other clips in the same batch row -- the holdout is NOT independent of the fit. Pin --row-offset to a clip boundary and set --length to the clip length for an independent window."
+      }
+    },
+    "reading": "holdout_scores are measured on rows held out by clip (93 clips, 19 held out); fit_scores on the rest. A holdout score is NOT PAIRED with one from another grouping or another window: the splits hold out different rows, so two runs' numbers move for two reasons at once (the leak that was removed, and a different holdout composition). Do not read a difference between two runs as the fold getting better or worse. holdout_decomposition.json beside this receipt re-scores THIS child on THIS holdout with its weights read off disk and nothing refitted, split into the rows that leaked and the rows that did not; that decomposition, not a difference between runs, is what says how much the leak was worth. holdout_leak_probe.json measures the leak of each grouping on this run's own window, at row level AND through the attention receptive field. This window is NOT clip-aligned: batch rows carry up to 4 clips and self-attention's receptive field is the whole batch row, so a held-out row's activation is still a function of the fit clips beside it. Zero row-level clip overlap is all that is established; this is not an unseen-content error. Re-run with --row-offset on a clip boundary and --length equal to the clip length for that. The number itself: rel_l2 0.5537129992932392, cos 0.85503192374428 on 927 rows, one window and one seed, error bar unswept."
+  },
+  "holdout_reading": "holdout_scores are measured on rows held out by clip (93 clips, 19 held out); fit_scores on the rest. A holdout score is NOT PAIRED with one from another grouping or another window: the splits hold out different rows, so two runs' numbers move for two reasons at once (the leak that was removed, and a different holdout composition). Do not read a difference between two runs as the fold getting better or worse. holdout_decomposition.json beside this receipt re-scores THIS child on THIS holdout with its weights read off disk and nothing refitted, split into the rows that leaked and the rows that did not; that decomposition, not a difference between runs, is what says how much the leak was worth. holdout_leak_probe.json measures the leak of each grouping on this run's own window, at row level AND through the attention receptive field. This window is NOT clip-aligned: batch rows carry up to 4 clips and self-attention's receptive field is the whole batch row, so a held-out row's activation is still a function of the fit clips beside it. Zero row-level clip overlap is all that is established; this is not an unseen-content error. Re-run with --row-offset on a clip boundary and --length equal to the clip length for that. The number itself: rel_l2 0.5537129992932392, cos 0.85503192374428 on 927 rows, one window and one seed, error bar unswept.",
+  "folded_block_tensors": {
+    "path": "out/c16_L12_v3/folded_block_L12_keep1536.safetensors",
+    "bytes": 138489592,
+    "file_sha256": "769bc2a3b7c2a0ccb6c097b679ff3b25a4573f58aa5ea46b6a94feff5dacb368",
+    "state_sha256": "31d9778434943c3046a416fcb9230579174111522d7d9126a75c1d3ce802031f",
+    "parameters": 34621952,
+    "tensors": {
+      "cross_attn.k_norm.weight": {
+        "dtype": "torch.float32",
+        "shape": [
+          128
+        ],
+        "sha256": "b73872e3e7fee397d3c151e517370fbe0d70f5d20175449a6ed7d70afd7fdc1b"
+      },
+      "cross_attn.k_proj.weight": {
+        "dtype": "torch.float32",
+        "shape": [
+          1024,
+          2048
+        ],
+        "sha256": "6afaecfaf0aea7efd92e9e359107e043e55e1d6a3b45e16b1e9f0b16d1293d7f"
+      },
+      "cross_attn.o_proj.weight": {
+        "dtype": "torch.float32",
+        "shape": [
+          2048,
+          2048
+        ],
+        "sha256": "5b301d3495d727eef9ad1dc1c9fbea688984b2f863c341e4c11067146357ca1e"
+      },
+      "cross_attn.q_norm.weight": {
+        "dtype": "torch.float32",
+        "shape": [
+          128
+        ],
+        "sha256": "68a5ab3cc534660c6eaacf749d8807c4908bb9c1de4821430bc2bb65de1121ac"
+      },
+      "cross_attn.q_proj.weight": {
+        "dtype": "torch.float32",
+        "shape": [
+          2048,
+          2048
+        ],
+        "sha256": "b3b841dca5259db821c8af408102c4d4e1bee7604bd2719dc07e75443b020f97"
+      },
+      "cross_attn.v_proj.weight": {
+        "dtype": "torch.float32",
+        "shape": [
+          1024,
+          2048
+        ],
+        "sha256": "7b2e1d158f585c093153b97c38ad2acc2a199b827c733c4efb850c982cfa71f4"
+      },
+      "cross_attn_norm.weight": {
+        "dtype": "torch.float32",
+        "shape": [
+          2048
+        ],
+        "sha256": "4eaf5676d41e9edc0fb88367a8961f36b610b068389a70398d8133610abb9dea"
+      },
+      "mlp.down_proj.weight": {
+        "dtype": "torch.float32",
+        "shape": [
+          2048,
+          1536
+        ],
+        "sha256": "d5716fbe8001a7b3f2e37578a61341ba9f978d2b40fa343dcff20f5370724bb4"
+      },
+      "mlp.gate_proj.weight": {
+        "dtype": "torch.float32",
+        "shape": [
+          1536,
+          2048
+        ],
+        "sha256": "54822b0754117493e75acc55cf125561397364628eeb194f4d5206c10ac0d769"
+      },
+      "mlp.up_proj.weight": {
+        "dtype": "torch.float32",
+        "shape": [
+          1536,
+          2048
+        ],
+        "sha256": "15a7a1591521af3ce97004941f80d75a6364900d308832f3a9b076730e56dc60"
+      },
+      "mlp_norm.weight": {
+        "dtype": "torch.float32",
+        "shape": [
+          2048
+        ],
+        "sha256": "05117be65539a97d7202cf688e9522e4e7a742e186c975a66621ac459997bc6b"
+      },
+      "scale_shift_table": {
+        "dtype": "torch.float32",
+        "shape": [
+          1,
+          6,
+          2048
+        ],
+        "sha256": "fe932be033f225064c6852d2cbf724a94fa0bcad0d925e93b600d06ed5d5be58"
+      },
+      "self_attn.k_norm.weight": {
+        "dtype": "torch.float32",
+        "shape": [
+          128
+        ],
+        "sha256": "23340709e171db187848b5da7f22d4a8e9df234b9e4b5330ab3f352d837d44e1"
+      },
+      "self_attn.k_proj.weight": {
+        "dtype": "torch.float32",
+        "shape": [
+          1024,
+          2048
+        ],
+        "sha256": "8a918b25343ec90988167f55570dd05d92d4dc914aa56219fa0121fb74596a42"
+      },
+      "self_attn.o_proj.weight": {
+        "dtype": "torch.float32",
+        "shape": [
+          2048,
+          2048
+        ],
+        "sha256": "e8f7a45f084b2301ae099c5a8ec397111b2084456fb9e49af33f0dfb319b302e"
+      },
+      "self_attn.q_norm.weight": {
+        "dtype": "torch.float32",
+        "shape": [
+          128
+        ],
+        "sha256": "d803d645b5d344e4fb495377d69d50ad0ce00dc9b140fc904878af5419fac660"
+      },
+      "self_attn.q_proj.weight": {
+        "dtype": "torch.float32",
+        "shape": [
+          2048,
+          2048
+        ],
+        "sha256": "2886b6d8d85e7fd185225d857ed5d3aabe3774db27cd28b66fb7cad14ae2fb92"
+      },
+      "self_attn.v_proj.weight": {
+        "dtype": "torch.float32",
+        "shape": [
+          1024,
+          2048
+        ],
+        "sha256": "927d489d87c48ae657c91f4fc10e10d95c40d74283b3f23f072a77557eb7826f"
+      },
+      "self_attn_norm.weight": {
+        "dtype": "torch.float32",
+        "shape": [
+          2048
+        ],
+        "sha256": "5a06513ab0254a4ebeffedc6914b7b59df13c603ffee43950cac158462adb368"
+      }
+    }
+  },
+  "diagnostic_only": "arm scores order attempts; the behavioural instrument is a blind score on decoded audio from a trunk carrying the transplant",
+  "runtime": {
+    "python": "3.12.3 (main, Jun 19 2026, 12:46:00) [GCC 13.3.0]",
+    "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39",
+    "cwd": "/home/cereal/omni-campaign/media",
+    "torch": "2.11.0+cu128",
+    "torch_cuda": "12.8",
+    "cuda_available": true,
+    "nvidia_smi": [
+      "0, NVIDIA GeForce RTX 3090, GPU-4ead7f3a-cc79-fa5b-de42-ef024e27f561, 26 MiB",
+      "1, Tesla P40, GPU-c95fb5b3-f97c-bfb2-9760-79fe107ffe6d, 7 MiB",
+      "2, Tesla P40, GPU-a92b0dfe-83f8-11ff-db0d-c65921f365b4, 7 MiB",
+      "3, Tesla P40, GPU-08b615f9-8dbe-3edd-d59f-f6ebe8212ca8, 7 MiB",
+      "4, NVIDIA GeForce RTX 3090, GPU-2ce6a95c-7b1f-644a-3808-d781732a0582, 18 MiB",
+      "5, Tesla P40, GPU-ce4a1da0-baa8-3d62-419c-a28f6565610f, 7 MiB",
+      "6, Quadro RTX 8000, GPU-f5a09535-fc85-a027-50f7-734b344747dd, 8 MiB"
+    ]
+  },
+  "argv": {
+    "out": "out/c16_L12_v3",
+    "weights": "/home/cereal/comfyui/models/diffusion_models/acestep_v1.5_turbo.safetensors",
+    "config": "/home/cereal/comfyui/models/ACE-Step/acestep-v15-turbo/config.json",
+    "block": 12,
+    "depth": 0,
+    "rung": "latents",
+    "pairs": "pairs/ace_s_ctx0_merged",
+    "batch": 36,
+    "length": 256,
+    "row_offset": null,
+    "host": "chimera",
+    "chimera_src": "/home/cereal/chimera-proof-c5a5c18-v4",
+    "host_layer": 3,
+    "host_batch": 128,
+    "keep": 1536,
+    "chart_methods": "ridge,svd,random",
+    "seed": 0,
+    "device": "cpu",
+    "dtype": "float32",
+    "prefix_shell": true,
+    "assert_shared_corpus": false
+  }
+}

@@ -1,0 +1,26 @@
+[
+ {
+  "id": "cosyvoice3-0",
+  "audio": "/home/cereal/omni-campaign/distill/speech/teachers/smoke-teacherfix-2026-10-15/tts/cosyvoice3-0.wav",
+  "reference": "The river rose overnight, so the ferry left an hour later than usual.",
+  "source": "smoke-tts:cosyvoice3"
+ },
+ {
+  "id": "cosyvoice3-1",
+  "audio": "/home/cereal/omni-campaign/distill/speech/teachers/smoke-teacherfix-2026-10-15/tts/cosyvoice3-1.wav",
+  "reference": "Please set the oven to two hundred degrees and wait ten more minutes.",
+  "source": "smoke-tts:cosyvoice3"
+ },
+ {
+  "id": "cosyvoice3-2",
+  "audio": "/home/cereal/omni-campaign/distill/speech/teachers/smoke-teacherfix-2026-10-15/tts/cosyvoice3-2.wav",
+  "reference": "She painted the old fence blue, then sat on the porch to watch it dry.",
+  "source": "smoke-tts:cosyvoice3"
+ },
+ {
+  "id": "cosyvoice3-3",
+  "audio": "/home/cereal/omni-campaign/distill/speech/teachers/smoke-teacherfix-2026-10-15/tts/cosyvoice3-3.wav",
+  "reference": "Our meeting moved to Thursday because the projector was broken again.",
+  "source": "smoke-tts:cosyvoice3"
+ }
+]

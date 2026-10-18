@@ -1,0 +1,66 @@
+{
+ "schema": "neural-forge-omni-distill-corpus-v1/verify",
+ "identity": {
+  "tool": "distill_corpus_build",
+  "version": "1.0.1",
+  "path": "/home/cereal/omni-campaign/distill/tools/distill_corpus_build.py",
+  "sha256": "696559136fb4698c6b92de47ed320c993aba5c3a065a13f18e78cd5c24a7ab94",
+  "host": "cereal-X10DRG",
+  "python": "3.12.3",
+  "built_at_utc": "2026-10-13T01:37:13Z"
+ },
+ "manifests": {
+  "/home/cereal/omni-campaign/distill/corpus/eval_split/manifest.json": {
+   "seal": "7bac93c19691105ab933b43dc8efdf94a6b852a0fd21beba6c41908ea4a2b8cb",
+   "recomputed_equal": true
+  },
+  "/home/cereal/omni-campaign/distill/corpus/k3/manifest.json": {
+   "seal": "eb35851b2496a628f1388bec9b3f429b258448897ce92bdd1ace39c8cf5c9380",
+   "recomputed_equal": true
+  },
+  "/home/cereal/omni-campaign/distill/corpus/long/manifest.json": {
+   "seal": "3634b8c882e514d3e57d1316fb710fd3f6f6aa0eb9f0fff0a245ab069cc3aa3b",
+   "recomputed_equal": true
+  },
+  "/home/cereal/omni-campaign/distill/corpus/media/manifest.json": {
+   "seal": "a51badc41d6e161c75f947f3e908d760770306e857677b760a4214554a64723d",
+   "recomputed_equal": true
+  },
+  "/home/cereal/omni-campaign/distill/corpus/selfgen/manifest.json": {
+   "seal": "3b4b99c96aeaa5937a4b3a8bb9f0fcb8a6c17cc2853ddba3b9893352d378343f",
+   "recomputed_equal": true
+  },
+  "/home/cereal/omni-campaign/distill/corpus/text/manifest.json": {
+   "seal": "c42e508afad99008da54909b7f1e140d4748e338f6acff3de0b9a10a521173ff",
+   "recomputed_equal": true
+  },
+  "/home/cereal/omni-campaign/distill/corpus/vision_in/manifest.json": {
+   "seal": "fa76c751d433fe708166c23c00760ca99d7a8fa2cd2ffb9db9e84022dc4b77c5",
+   "recomputed_equal": true
+  },
+  "/home/cereal/omni-campaign/distill/corpus/media/ace/manifest.json": {
+   "seal": "58eeb7c6eb3c5fce88a34f5b5852baee0bb031cdff1866c761ace11af02b3c08",
+   "recomputed_equal": true
+  },
+  "/home/cereal/omni-campaign/distill/corpus/media/h3/manifest.json": {
+   "seal": "f4d7d11223f212e9b2017c3bb6d2be09de6734934f9b7949dd0fc1e4d56135e0",
+   "recomputed_equal": true
+  },
+  "/home/cereal/omni-campaign/distill/corpus/media/hy3d/manifest.json": {
+   "seal": "7eae1621e2883839631c16d2d488052059c58a609ec214ccb222da1755325e87",
+   "recomputed_equal": true
+  },
+  "/home/cereal/omni-campaign/distill/corpus/media/qimg/manifest.json": {
+   "seal": "1c7468889718be51a3d5acef3580dfa0ae5a9164d4fba705e4606634ad8cf736",
+   "recomputed_equal": true
+  },
+  "/home/cereal/omni-campaign/distill/corpus/media/vit/manifest.json": {
+   "seal": "5d0dda35aa00f1e72ca174d1653a67d7f473d724dff1a556fe65101e6a360dea",
+   "recomputed_equal": true
+  }
+ },
+ "files_rehashed": 2107,
+ "mismatches": [],
+ "ok": true,
+ "receipt_sha256": "93a301e48c902dde633445106971feff7c6a4304083219bb6227e74b670cd045"
+}

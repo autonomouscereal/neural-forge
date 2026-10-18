@@ -1,0 +1,4415 @@
+{
+ "schema": "neural-forge-omni-distill-corpus-v1/text",
+ "identity": {
+  "tool": "distill_corpus_build",
+  "version": "1.0.1",
+  "path": "/home/cereal/omni-campaign/distill/tools/distill_corpus_build.py",
+  "sha256": "696559136fb4698c6b92de47ed320c993aba5c3a065a13f18e78cd5c24a7ab94",
+  "host": "cereal-X10DRG",
+  "python": "3.12.3",
+  "built_at_utc": "2026-10-13T00:58:00Z"
+ },
+ "set": "(a) text: Q-text teacher cache input, D1 (first 4M tokens) and D2 off-policy data",
+ "design": "DISTILL_DESIGN §3 Q-text '20M registry text', §4 D1 'First 4M tokens of the C registry text set, packed 4,096', D2 '18.85M registry off-policy + 1.15M'",
+ "sequence_length": 4096,
+ "rows": 4883,
+ "positions": 20000768,
+ "real_tokens": 20000768,
+ "shortfall_tokens": 0,
+ "documents": 35985,
+ "documents_cut_at_end": 1,
+ "documents_spanning_rows": 4627,
+ "tokens_by_route": {
+  "agentic_task": 46976,
+  "agentic_trace": 8884,
+  "arc_grid_reasoning": 1400,
+  "broad_domain": 45222,
+  "browser": 4943,
+  "chemistry": 496,
+  "chemistry_science": 7229,
+  "code": 2674285,
+  "code_and_metrics": 1205,
+  "finance": 466,
+  "finance_economics": 8474,
+  "grid": 1887,
+  "healthcare": 508,
+  "healthcare_workflow": 3800,
+  "long_context": 2335486,
+  "math": 1289760,
+  "reasoning": 834476,
+  "reasoning_algorithmic": 30218,
+  "science": 524,
+  "sql_text": 3225,
+  "structured_plan": 6570,
+  "table": 8913,
+  "terminal": 6975,
+  "text": 9667496,
+  "tool": 2789308,
+  "web_concept_reasoning": 76,
+  "web_domain_extraction": 20059,
+  "web_knowledge": 201907
+ },
+ "documents_by_route": {
+  "agentic_task": 132,
+  "agentic_trace": 63,
+  "arc_grid_reasoning": 11,
+  "broad_domain": 205,
+  "browser": 23,
+  "chemistry": 3,
+  "chemistry_science": 70,
+  "code": 4374,
+  "code_and_metrics": 17,
+  "finance": 3,
+  "finance_economics": 76,
+  "grid": 9,
+  "healthcare": 3,
+  "healthcare_workflow": 20,
+  "long_context": 2015,
+  "math": 2860,
+  "reasoning": 1873,
+  "reasoning_algorithmic": 106,
+  "science": 3,
+  "sql_text": 11,
+  "structured_plan": 30,
+  "table": 40,
+  "terminal": 54,
+  "text": 15412,
+  "tool": 7966,
+  "web_concept_reasoning": 3,
+  "web_domain_extraction": 77,
+  "web_knowledge": 526
+ },
+ "first_4m_tokens_by_route": {
+  "agentic_task": 9277,
+  "agentic_trace": 1774,
+  "arc_grid_reasoning": 274,
+  "broad_domain": 9044,
+  "browser": 1069,
+  "chemistry": 163,
+  "chemistry_science": 1414,
+  "code": 534940,
+  "code_and_metrics": 212,
+  "finance": 141,
+  "finance_economics": 1685,
+  "grid": 390,
+  "healthcare": 173,
+  "healthcare_workflow": 760,
+  "long_context": 468969,
+  "math": 257492,
+  "reasoning": 166544,
+  "reasoning_algorithmic": 5917,
+  "science": 158,
+  "sql_text": 588,
+  "structured_plan": 1268,
+  "table": 1712,
+  "terminal": 1305,
+  "text": 1932967,
+  "tool": 557375,
+  "web_domain_extraction": 3889,
+  "web_knowledge": 40500
+ },
+ "route_table": {
+  "agentic_task": 0,
+  "agentic_trace": 1,
+  "arc_grid_reasoning": 2,
+  "broad_domain": 3,
+  "browser": 4,
+  "chemistry": 5,
+  "chemistry_science": 6,
+  "code": 7,
+  "code_and_metrics": 8,
+  "data_pipeline_design": 9,
+  "defensive_runbook": 10,
+  "finance": 11,
+  "finance_economics": 12,
+  "grid": 13,
+  "healthcare": 14,
+  "healthcare_workflow": 15,
+  "knowledge_qa": 16,
+  "long_context": 17,
+  "math": 18,
+  "ops_instruction": 19,
+  "ops_runbook": 20,
+  "reasoning": 21,
+  "reasoning_algorithmic": 22,
+  "research_instruction": 23,
+  "science": 24,
+  "science_reasoning": 25,
+  "sql_text": 26,
+  "structured_plan": 27,
+  "synthesis": 28,
+  "table": 29,
+  "terminal": 30,
+  "test_design": 31,
+  "text": 32,
+  "tool": 33,
+  "web_concept_reasoning": 34,
+  "web_domain_extraction": 35,
+  "web_knowledge": 36
+ },
+ "render": "parent chat template, thinking OFF, [user: instruction, assistant: response]; rows lacking one side as plain text; each document closed by the separator <|endoftext|>",
+ "packing": "stream: documents concatenated in allocation order and cut every 4,096 positions (a document may continue into the next row; doc_index / documents.jsonl give exact spans for segment masks); route order interleaved by token deficit so every prefix carries each route at its pool share",
+ "tensors": {
+  "input_ids": "int32 [rows, 4096]",
+  "route_ids": "uint8 [rows, 4096] (255 pad)",
+  "doc_index": "int32 [rows, 4096] (-1 pad)",
+  "real_lengths": "int32 [rows]"
+ },
+ "all_ids_below": 248320,
+ "shards": [
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/text/text-00000.safetensors",
+   "sha256": "8cd4b663b599fd8852c71c6c29921392d0718f985ffc492090710da2993e63a8",
+   "rows": [
+    0,
+    256
+   ],
+   "tokens": 1048576
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/text/text-00001.safetensors",
+   "sha256": "10c919bdc2e361a9b375bcb2794e0fc88c79c8b6a3885df22f8c404376c77af5",
+   "rows": [
+    256,
+    512
+   ],
+   "tokens": 1048576
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/text/text-00002.safetensors",
+   "sha256": "46637de04f8509e87babbb4bde1c1144ae12c0f5ae707a64bde7e6d28200980a",
+   "rows": [
+    512,
+    768
+   ],
+   "tokens": 1048576
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/text/text-00003.safetensors",
+   "sha256": "e480ead3ee45a6d6eb08a098cc9180dd5ddeba3f49945e949f891cee70339d4e",
+   "rows": [
+    768,
+    1024
+   ],
+   "tokens": 1048576
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/text/text-00004.safetensors",
+   "sha256": "0adce45e7a6527e65ece92c2eb4d6d3965db8d3ae3263eb45d35db68910e01b8",
+   "rows": [
+    1024,
+    1280
+   ],
+   "tokens": 1048576
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/text/text-00005.safetensors",
+   "sha256": "c46829d70b17746d49c28dac7a53b6a2c57daea3189b8c89985a9618726ad640",
+   "rows": [
+    1280,
+    1536
+   ],
+   "tokens": 1048576
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/text/text-00006.safetensors",
+   "sha256": "16de41072ab0846ca9e17309f661c9a8c5d2f68f5875eca9dccb51f567ee1c69",
+   "rows": [
+    1536,
+    1792
+   ],
+   "tokens": 1048576
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/text/text-00007.safetensors",
+   "sha256": "b5b9c93921fbd0aa4911f7369b49d344f424b6c844eb9a49c5f4b2f4691d5211",
+   "rows": [
+    1792,
+    2048
+   ],
+   "tokens": 1048576
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/text/text-00008.safetensors",
+   "sha256": "7677012c44d4a3b05471f40461ef4653232a970ca2b7a903aa34967a563a4b43",
+   "rows": [
+    2048,
+    2304
+   ],
+   "tokens": 1048576
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/text/text-00009.safetensors",
+   "sha256": "85253ed8f56c2b1832821bcb4a80c9dbcca4014f4cb14627adea324be9b5d491",
+   "rows": [
+    2304,
+    2560
+   ],
+   "tokens": 1048576
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/text/text-00010.safetensors",
+   "sha256": "c1edc9eaf5f6f2d6a03cf9bf21dbfa6b6f94e8b3c08e22758cbc656cc1c1b3e9",
+   "rows": [
+    2560,
+    2816
+   ],
+   "tokens": 1048576
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/text/text-00011.safetensors",
+   "sha256": "77778d7e163a24d16d782961d54359aa20250c615f1727221e3830de06c6edc5",
+   "rows": [
+    2816,
+    3072
+   ],
+   "tokens": 1048576
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/text/text-00012.safetensors",
+   "sha256": "afcca87c30a4de38143f97e17005d0e69b5b85d19b75a040e9e830a59e84538f",
+   "rows": [
+    3072,
+    3328
+   ],
+   "tokens": 1048576
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/text/text-00013.safetensors",
+   "sha256": "e9781ee6d8e10ccccabc5d98ae6f7787b1eebaea4503daee4a29eb2f9281869f",
+   "rows": [
+    3328,
+    3584
+   ],
+   "tokens": 1048576
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/text/text-00014.safetensors",
+   "sha256": "ed41709263135e52288a52375c47c536e9c6d5dc1a3cc1874a7d1f1cf3c14728",
+   "rows": [
+    3584,
+    3840
+   ],
+   "tokens": 1048576
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/text/text-00015.safetensors",
+   "sha256": "ae2a253abd6c3e8fcd9c5923301c2ec4f6f78e1526d9c3477b656f01125706cf",
+   "rows": [
+    3840,
+    4096
+   ],
+   "tokens": 1048576
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/text/text-00016.safetensors",
+   "sha256": "a33d7453146679fd301dfd8d2b8f639667366ff0e72fa0da8f4ccee309eb0ead",
+   "rows": [
+    4096,
+    4352
+   ],
+   "tokens": 1048576
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/text/text-00017.safetensors",
+   "sha256": "7f56dd6bdc48c3da6002654a9e7ceb9934d382ed4ab818efcc94b6ee0aa9ca68",
+   "rows": [
+    4352,
+    4608
+   ],
+   "tokens": 1048576
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/text/text-00018.safetensors",
+   "sha256": "abaf7fd5f793fb68d03b4fa935196f123cda3bc3a2231455271693238c7ebf88",
+   "rows": [
+    4608,
+    4864
+   ],
+   "tokens": 1048576
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/text/text-00019.safetensors",
+   "sha256": "5c4a989dedd2da508642ff00ee69f3ecee34157e96f45647c010501f3186f1e8",
+   "rows": [
+    4864,
+    4883
+   ],
+   "tokens": 77824
+  }
+ ],
+ "documents_file": {
+  "path": "/home/cereal/omni-campaign/distill/corpus/text/documents.jsonl",
+  "sha256": "ce6ff058b175e7b0558917faaef737b7487b90e1854aa762571410fe43511fcf"
+ },
+ "tokenizer": {
+  "tokenizer_json": "/home/cereal/models/Qwen3.8-27B-Uncensored/tokenizer.json",
+  "sha256": "06b9509352d2af50381ab2247e083b80d32d5c0aba91c272ca9ff729b6a0e523",
+  "separator_id": 248044,
+  "separator_piece": "<|endoftext|>",
+  "chat_template_sha256": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041",
+  "chat_render": "apply_chat_template(enable_thinking=False); the template emits an empty <think></think> block in assistant turns",
+  "add_special_tokens": false
+ },
+ "post_pack_screen": {
+  "units_checked": 4883,
+  "units_hit": 0,
+  "hits": []
+ },
+ "inputs": {
+  "rows_sha256": "cf64d6f25b3b59dee2de8dacfbad65109ecce3bc7d293dc68137e0aeba25d1bd",
+  "carve_sha256": "7781ff6c47b89835b55cd161d8ff1d8fb313eb8699373dadb96f9759a60a0a14",
+  "allocation_sha256": "52e71b97453ec92c8ebc5a79ee8e7590fbe28e49d863ea2ef59176f131196a21",
+  "screen_sha256": "6ad8d85db331014db23732d58bbbed1d9af1db912308909e0f4ddfdcf604bf4b"
+ },
+ "provenance": {
+  "registry": "curated master shard registry (MASTER_SHARD_INDEX_POINTER.json, 631 entries / 94,318 rows / 640 shards, walked 2026-09-02)",
+  "registry_notes": "row-inspected curation May-Aug 2026; transforms of OpenThoughts3 (Apache-2.0), OpenCodeReasoning-2 / OpenMathReasoning (CC-BY-4.0), Nemotron-SFT-Agentic-v2, memory-trace rewrites (STAGE_D_FACTS); 'trained_*' states refer to the dead omnicoder -- every row is untrained for Chimera; licences cleared by Cyril 2026-10-12",
+  "by_dataset": {
+   "bounded_broad_domain_source_candidate_20260607T192759Z_append_current": {
+    "rows": 130,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "ODC-By-1.0; CommonCrawl Terms of Use apply": 130
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 130
+    },
+    "source_datasets": {
+     "FineWeb-Edu": 111,
+     "HuggingFaceFW/fineweb-edu": 19
+    }
+   },
+   "bounded_code_tool_agentic_reasoning_candidate_20260607T171827Z_append1723": {
+    "rows": 51,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 51
+    },
+    "license_tiers": {
+     "permissive": 51
+    },
+    "source_datasets": {
+     "bounded_code_tool_agentic_reasoning_2026": 51
+    }
+   },
+   "bounded_code_tool_agentic_terminal_browser_reasoning_math_candidate_20260607T205543Z_append_current": {
+    "rows": 63,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 63
+    },
+    "license_tiers": {
+     "permissive": 63
+    },
+    "source_datasets": {
+     "bounded_code_tool_agentic_terminal_browser_reasoning_math_2026": 63
+    }
+   },
+   "bounded_code_tool_agentic_terminal_browser_reasoning_math_pass10_candidate_20260607T235643Z_append_current": {
+    "rows": 78,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 78
+    },
+    "license_tiers": {
+     "permissive": 78
+    },
+    "source_datasets": {
+     "bounded_code_tool_agentic_terminal_browser_reasoning_math_pass10_2026": 78
+    }
+   },
+   "bounded_code_tool_agentic_terminal_browser_reasoning_math_pass2_candidate_20260607T211339Z_append_current": {
+    "rows": 84,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 84
+    },
+    "license_tiers": {
+     "permissive": 84
+    },
+    "source_datasets": {
+     "bounded_code_tool_agentic_terminal_browser_reasoning_math_pass2_2026": 84
+    }
+   },
+   "bounded_code_tool_agentic_terminal_browser_reasoning_math_pass3_candidate_20260607T212059Z_append_current": {
+    "rows": 52,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 52
+    },
+    "license_tiers": {
+     "permissive": 52
+    },
+    "source_datasets": {
+     "bounded_code_tool_agentic_terminal_browser_reasoning_math_pass3_2026": 52
+    }
+   },
+   "bounded_code_tool_agentic_terminal_browser_reasoning_math_pass4_candidate_20260607T212912Z_append_current": {
+    "rows": 52,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 52
+    },
+    "license_tiers": {
+     "permissive": 52
+    },
+    "source_datasets": {
+     "bounded_code_tool_agentic_terminal_browser_reasoning_math_pass4_2026": 52
+    }
+   },
+   "bounded_code_tool_agentic_terminal_browser_reasoning_math_pass5_candidate_20260607T214529Z_append_current": {
+    "rows": 70,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 70
+    },
+    "license_tiers": {
+     "permissive": 70
+    },
+    "source_datasets": {
+     "bounded_code_tool_agentic_terminal_browser_reasoning_math_pass5_2026": 70
+    }
+   },
+   "bounded_code_tool_agentic_terminal_browser_reasoning_math_pass6_candidate_20260607T215248Z_append_current": {
+    "rows": 49,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 49
+    },
+    "license_tiers": {
+     "permissive": 49
+    },
+    "source_datasets": {
+     "bounded_code_tool_agentic_terminal_browser_reasoning_math_pass6_2026": 49
+    }
+   },
+   "bounded_code_tool_agentic_terminal_browser_reasoning_math_pass7_candidate_20260607T222623Z_append_current": {
+    "rows": 71,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 71
+    },
+    "license_tiers": {
+     "permissive": 71
+    },
+    "source_datasets": {
+     "bounded_code_tool_agentic_terminal_browser_reasoning_math_pass7_2026": 71
+    }
+   },
+   "bounded_code_tool_agentic_terminal_browser_reasoning_math_pass8_candidate_20260607T225633Z_append_current": {
+    "rows": 66,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 66
+    },
+    "license_tiers": {
+     "permissive": 66
+    },
+    "source_datasets": {
+     "bounded_code_tool_agentic_terminal_browser_reasoning_math_pass8_2026": 66
+    }
+   },
+   "bounded_code_tool_agentic_terminal_browser_reasoning_math_pass9_candidate_20260607T232653Z_append_current": {
+    "rows": 61,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 61
+    },
+    "license_tiers": {
+     "permissive": 61
+    },
+    "source_datasets": {
+     "bounded_code_tool_agentic_terminal_browser_reasoning_math_pass9_2026": 61
+    }
+   },
+   "bounded_omnicoder_broad_domain_knowledge_candidate_20260607T183758Z_append_current": {
+    "rows": 77,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 77
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 77
+    },
+    "source_datasets": {
+     "Codex CC0 Bounded Omnicoder Broad Knowledge 2026": 77
+    }
+   },
+   "bounded_omnicoder_broad_text_reasoning_math_longctx_candidate_20260607T180510Z_append_current": {
+    "rows": 37,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 37
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 37
+    },
+    "source_datasets": {
+     "Codex CC0 Bounded Omnicoder Broad Reasoning 2026": 37
+    }
+   },
+   "bounded_omnicoder_candidate_20260607T182042Z_append_current": {
+    "rows": 81,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "bounded_omnicoder_code_tool_agentic_reasoning_browser_terminal_candidate_20260607T185504Z_append_current": {
+    "rows": 64,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "bounded_omnicoder_code_tool_agentic_reasoning_candidate_20260607T182251Z_append_current": {
+    "rows": 90,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "bounded_operator_broad_reasoning_domain_candidate_20260607T165100Z_append1704": {
+    "rows": 48,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 48
+    },
+    "license_tiers": {},
+    "source_datasets": {
+     "bounded_operator_broad_reasoning_domain_2026": 48
+    }
+   },
+   "broad_domain_knowledge_candidate_20260607T191002Z_append_current": {
+    "rows": 159,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC-BY-4.0": 118,
+     "CC-BY-SA-2.5-or-later": 26,
+     "US-PD": 15
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "candidate_omnicoder_tool_agentic_20260607T180024Z_append_current": {
+    "rows": 103,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "candidate_only_broad_domain_exact_20260607T203549Z_append_current": {
+    "rows": 193,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 114,
+     "ODC-By-1.0; CommonCrawl Terms of Use apply": 79
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 193
+    },
+    "source_datasets": {
+     "open-r1/OpenR1-Math-220k": 114,
+     "FineWeb-Edu": 79
+    }
+   },
+   "chandrasekhar_lowio_broad_reasoning_text_ready_150_185117": {
+    "rows": 101,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0/operator-authored": 101
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "cicero_cc0_broad_reasoning_code_ready_210_200104": {
+    "rows": 122,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "codex_bounded_broad_reasoning_20260607T162013Z_append1636": {
+    "rows": 120,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 120
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 120
+    },
+    "source_datasets": {
+     "Codex CC0 Bounded Broad Domain Reasoning 2026": 120
+    }
+   },
+   "codex_candidate_broad_domain_curated_20260607T162821Z_append1636": {
+    "rows": 129,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 129
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 129
+    },
+    "source_datasets": {
+     "Codex CC0 Candidate Broad Domain Curated 2026": 129
+    }
+   },
+   "curie_additional_broad_reasoning_ready_140_215846": {
+    "rows": 88,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 88
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_broad_reasoning_v22_ready_98_030526": {
+    "rows": 10,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 10
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_broad_reasoning_v23_ready_98_032456": {
+    "rows": 12,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 12
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_broad_reasoning_v24_ready_98_033704": {
+    "rows": 14,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 14
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_followup_lowio_broad_reasoning_ready_98_223739": {
+    "rows": 12,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 12
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_followup_lowio_broad_reasoning_v10_ready_98_003914": {
+    "rows": 13,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 13
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_followup_lowio_broad_reasoning_v11_ready_98_005415": {
+    "rows": 13,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 13
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_followup_lowio_broad_reasoning_v12_ready_98_010326": {
+    "rows": 13,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 13
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_followup_lowio_broad_reasoning_v13_ready_98_011044": {
+    "rows": 12,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 12
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_followup_lowio_broad_reasoning_v14_ready_98_011630": {
+    "rows": 10,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 10
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_followup_lowio_broad_reasoning_v15_ready_98_012700": {
+    "rows": 11,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 11
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_followup_lowio_broad_reasoning_v16_ready_98_013938": {
+    "rows": 10,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 10
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_followup_lowio_broad_reasoning_v17_ready_98_014815": {
+    "rows": 10,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 10
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_followup_lowio_broad_reasoning_v18_ready_98_020032": {
+    "rows": 11,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 11
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_followup_lowio_broad_reasoning_v19_ready_98_021912": {
+    "rows": 12,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 12
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_followup_lowio_broad_reasoning_v20_ready_98_023508": {
+    "rows": 10,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 10
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_followup_lowio_broad_reasoning_v21_ready_98_025259": {
+    "rows": 11,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 11
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_followup_lowio_broad_reasoning_v2_ready_98_225526": {
+    "rows": 12,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 12
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_followup_lowio_broad_reasoning_v3_ready_98_231613": {
+    "rows": 12,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 12
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_followup_lowio_broad_reasoning_v4_ready_98_232440": {
+    "rows": 9,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 9
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_followup_lowio_broad_reasoning_v5_ready_98_234115": {
+    "rows": 10,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 10
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_followup_lowio_broad_reasoning_v6_ready_98_235730": {
+    "rows": 14,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 14
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_followup_lowio_broad_reasoning_v7_ready_98_001514": {
+    "rows": 9,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 9
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_followup_lowio_broad_reasoning_v8_ready_98_002605": {
+    "rows": 12,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 12
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_followup_lowio_broad_reasoning_v9_ready_98_003340": {
+    "rows": 12,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 12
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_gated_broad_reasoning_ready_112_221908": {
+    "rows": 68,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 68
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_source_aware_broad_domain_ready_120_213639": {
+    "rows": 78,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 78
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v25_broad_reasoning_20260607T035414Z": {
+    "rows": 9,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 9
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v26_broad_reasoning_20260607T041852Z": {
+    "rows": 14,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 14
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v27_broad_reasoning_20260607T042816Z": {
+    "rows": 11,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 11
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v28_broad_reasoning_20260607T044650Z": {
+    "rows": 12,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 12
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v29_broad_reasoning_20260607T050000Z": {
+    "rows": 10,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 10
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v30_broad_reasoning_20260607T051915Z": {
+    "rows": 13,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 13
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v32_broad_reasoning_20260607T054755Z": {
+    "rows": 11,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 11
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v33_broad_reasoning_20260607T055624Z": {
+    "rows": 9,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 9
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v34_broad_reasoning_20260607T060643Z": {
+    "rows": 11,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 11
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v35_broad_reasoning_20260607T062040Z": {
+    "rows": 11,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 11
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v36_broad_reasoning_20260607T062946Z": {
+    "rows": 12,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 12
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v37_broad_reasoning_20260607T063957Z": {
+    "rows": 10,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 10
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v40_broad_reasoning_20260607T065912Z": {
+    "rows": 10,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 10
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v42_broad_reasoning_20260607T071805Z": {
+    "rows": 8,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 8
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v43_broad_reasoning_20260607T072637Z": {
+    "rows": 11,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 11
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v44_broad_reasoning_20260607T073723Z": {
+    "rows": 11,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 11
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v45_broad_reasoning_20260607T075501Z": {
+    "rows": 13,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 13
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v46_broad_reasoning_20260607T081309Z": {
+    "rows": 12,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 12
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v47_broad_reasoning_20260607T082816Z": {
+    "rows": 10,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 10
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v48_broad_reasoning_20260607T083723Z": {
+    "rows": 16,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 16
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v49_broad_reasoning_20260607T084559Z": {
+    "rows": 11,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 11
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v50_broad_reasoning_20260607T090011Z": {
+    "rows": 12,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 12
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v51_broad_reasoning_20260607T090941Z": {
+    "rows": 11,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 11
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v52_broad_reasoning_20260607T092210Z": {
+    "rows": 13,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 13
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v53_broad_reasoning_20260607T093532Z": {
+    "rows": 14,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 14
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v55_broad_reasoning_20260607T095042Z": {
+    "rows": 14,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 14
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v56_broad_reasoning_20260607T100634Z": {
+    "rows": 10,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 10
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v57_broad_reasoning_20260607T101346Z": {
+    "rows": 12,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 12
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v58_broad_reasoning_20260607T102415Z": {
+    "rows": 9,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 9
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v59_broad_reasoning_20260607T103430Z": {
+    "rows": 13,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 13
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v60_broad_reasoning_20260607T105503Z": {
+    "rows": 13,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 13
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v61_broad_reasoning_20260607T111740Z": {
+    "rows": 10,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 10
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v62_broad_reasoning_20260607T114541Z": {
+    "rows": 11,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 11
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v63_broad_reasoning_20260607T122200Z": {
+    "rows": 14,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 14
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v64_broad_reasoning_20260607T124418Z": {
+    "rows": 14,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 14
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v65_broad_reasoning_20260607T125315Z": {
+    "rows": 11,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 11
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v66_broad_reasoning_20260607T125941Z": {
+    "rows": 7,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 7
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v67_broad_reasoning_20260607T130535Z": {
+    "rows": 10,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 10
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v68_broad_reasoning_20260607T132340Z": {
+    "rows": 12,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 12
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v69_broad_reasoning_20260607T133237Z": {
+    "rows": 9,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 9
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v70_broad_reasoning_20260607T134009Z": {
+    "rows": 10,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 10
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v71_broad_reasoning_20260607T135106Z": {
+    "rows": 10,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 10
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "curie_v72_broad_reasoning_20260607T140305Z": {
+    "rows": 13,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 13
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "dirac_broad_domain_postreboot22_ready_191_030622": {
+    "rows": 48,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 48
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 48
+    },
+    "source_datasets": {
+     "LowIO CC0 Broad Domain Data Procedural Support 2026 Post-Reboot Pass 22": 48
+    }
+   },
+   "dirac_broad_domain_postreboot23_ready_191_032657": {
+    "rows": 33,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 33
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 33
+    },
+    "source_datasets": {
+     "LowIO CC0 Broad Domain Data Procedural Support 2026 Post-Reboot Pass 23": 33
+    }
+   },
+   "dirac_broad_domain_postreboot24_20260607T034616Z": {
+    "rows": 26,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 26
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 26
+    },
+    "source_datasets": {
+     "LowIO CC0 Broad Domain Data Procedural Support 2026 Post-Reboot Pass 24": 26
+    }
+   },
+   "dirac_broad_domain_postreboot25_20260607T042000Z": {
+    "rows": 36,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 36
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 36
+    },
+    "source_datasets": {
+     "LowIO CC0 Broad Domain Procedural Support 2026 Post-Reboot Pass 25 Accepted-Line Transform": 36
+    }
+   },
+   "dirac_broad_domain_postreboot26_20260607T043808Z": {
+    "rows": 34,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 34
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 34
+    },
+    "source_datasets": {
+     "LowIO CC0 Broad Domain Procedural Support 2026 Post-Reboot Pass 26 Accepted-Line Transform": 34
+    }
+   },
+   "dirac_broad_domain_postreboot27_20260607T044802Z": {
+    "rows": 24,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 24
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 24
+    },
+    "source_datasets": {
+     "LowIO CC0 Broad Domain Procedural Support 2026 Post-Reboot Pass 27 Accepted-Line Transform": 24
+    }
+   },
+   "dirac_broad_domain_postreboot28_20260607T062336Z": {
+    "rows": 21,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 21
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 21
+    },
+    "source_datasets": {
+     "Dirac LowIO CC0 Broad Domain Procedural Support 2026 Post-Reboot Pass 28 Accepted-Line Transform": 21
+    }
+   },
+   "dirac_broad_domain_postreboot29_20260607T063531Z_append1428": {
+    "rows": 36,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 36
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 36
+    },
+    "source_datasets": {
+     "Dirac LowIO CC0 Broad Domain Procedural Support 2026 Post-Reboot Pass 29 Accepted-Line Transform": 36
+    }
+   },
+   "dirac_broad_domain_postreboot30_20260607T151722Z_append1526": {
+    "rows": 27,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 27
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 27
+    },
+    "source_datasets": {
+     "Dirac LowIO CC0 Broad Domain Procedural Support 2026 Post-Reboot Pass 30 Accepted-Line Transform": 27
+    }
+   },
+   "dirac_broad_domain_postreboot31_20260607T153154Z_append1537": {
+    "rows": 33,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 33
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 33
+    },
+    "source_datasets": {
+     "Dirac LowIO CC0 Broad Domain Procedural Support 2026 Post-Reboot Pass 31 Accepted-Line Transform": 33
+    }
+   },
+   "dirac_lowio_broad_domain2_ready_194_222645": {
+    "rows": 30,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 30
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 30
+    },
+    "source_datasets": {
+     "LowIO CC0 Broad Domain Procedural Support 2026 Pass 2": 30
+    }
+   },
+   "dirac_lowio_broad_domain3_ready_196_224652": {
+    "rows": 36,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 36
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 36
+    },
+    "source_datasets": {
+     "LowIO CC0 Broad Domain Procedural Support 2026 Pass 3": 36
+    }
+   },
+   "dirac_lowio_broad_domain_data4_ready_196_230752": {
+    "rows": 97,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 97
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 97
+    },
+    "source_datasets": {
+     "LowIO CC0 Broad Domain Data Procedural Support 2026 Pass 4": 97
+    }
+   },
+   "dirac_lowio_broad_domain_data6_ready_191_232957": {
+    "rows": 49,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 49
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 49
+    },
+    "source_datasets": {
+     "LowIO CC0 Broad Domain Data Procedural Support 2026 Pass 6": 49
+    }
+   },
+   "dirac_lowio_broad_domain_data7_ready_191_234257": {
+    "rows": 37,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 37
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 37
+    },
+    "source_datasets": {
+     "LowIO CC0 Broad Domain Data Procedural Support 2026 Pass 7": 37
+    }
+   },
+   "dirac_lowio_broad_domain_data8_ready_191_235750": {
+    "rows": 27,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 27
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 27
+    },
+    "source_datasets": {
+     "LowIO CC0 Broad Domain Data Procedural Support 2026 Pass 8": 27
+    }
+   },
+   "dirac_lowio_broad_domain_data9_ready_191_001556": {
+    "rows": 27,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 27
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 27
+    },
+    "source_datasets": {
+     "LowIO CC0 Broad Domain Data Procedural Support 2026 Post-Reboot Pass 9": 27
+    }
+   },
+   "dirac_lowio_broad_domain_ready_191_004025": {
+    "rows": 23,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 23
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 23
+    },
+    "source_datasets": {
+     "LowIO CC0 Broad Domain Data Procedural Support 2026 Post-Reboot Pass 10": 23
+    }
+   },
+   "dirac_lowio_broad_domain_ready_191_005934": {
+    "rows": 26,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 26
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 26
+    },
+    "source_datasets": {
+     "LowIO CC0 Broad Domain Data Procedural Support 2026 Post-Reboot Pass 11": 26
+    }
+   },
+   "dirac_lowio_broad_domain_ready_191_011135": {
+    "rows": 28,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 28
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 28
+    },
+    "source_datasets": {
+     "LowIO CC0 Broad Domain Data Procedural Support 2026 Post-Reboot Pass 12": 28
+    }
+   },
+   "dirac_lowio_broad_domain_ready_191_011730": {
+    "rows": 21,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 21
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 21
+    },
+    "source_datasets": {
+     "LowIO CC0 Broad Domain Data Procedural Support 2026 Post-Reboot Pass 13": 21
+    }
+   },
+   "dirac_lowio_broad_domain_ready_191_012744": {
+    "rows": 22,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 22
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 22
+    },
+    "source_datasets": {
+     "LowIO CC0 Broad Domain Data Procedural Support 2026 Post-Reboot Pass 14": 22
+    }
+   },
+   "dirac_lowio_broad_domain_ready_191_013949": {
+    "rows": 19,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 19
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 19
+    },
+    "source_datasets": {
+     "LowIO CC0 Broad Domain Data Procedural Support 2026 Post-Reboot Pass 15": 19
+    }
+   },
+   "dirac_lowio_broad_domain_ready_191_014925": {
+    "rows": 28,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 28
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 28
+    },
+    "source_datasets": {
+     "LowIO CC0 Broad Domain Data Procedural Support 2026 Post-Reboot Pass 17": 28
+    }
+   },
+   "dirac_lowio_broad_domain_ready_191_020007": {
+    "rows": 25,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 25
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 25
+    },
+    "source_datasets": {
+     "LowIO CC0 Broad Domain Data Procedural Support 2026 Post-Reboot Pass 18": 25
+    }
+   },
+   "dirac_lowio_broad_domain_ready_191_022005": {
+    "rows": 28,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 28
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 28
+    },
+    "source_datasets": {
+     "LowIO CC0 Broad Domain Data Procedural Support 2026 Post-Reboot Pass 19": 28
+    }
+   },
+   "dirac_lowio_broad_domain_ready_191_023605": {
+    "rows": 24,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 24
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 24
+    },
+    "source_datasets": {
+     "LowIO CC0 Broad Domain Data Procedural Support 2026 Post-Reboot Pass 20": 24
+    }
+   },
+   "dirac_lowio_broad_domain_ready_191_025357": {
+    "rows": 27,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 27
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 27
+    },
+    "source_datasets": {
+     "LowIO CC0 Broad Domain Data Procedural Support 2026 Post-Reboot Pass 21": 27
+    }
+   },
+   "dirac_lowio_broad_domain_ready_192_181528": {
+    "rows": 51,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 51
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 51
+    },
+    "source_datasets": {
+     "LowIO CC0 Broad Domain Procedural Support 2026": 51
+    }
+   },
+   "erdos_broad_code_tool_20260607T035702Z": {
+    "rows": 23,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 23
+    },
+    "license_tiers": {
+     "permissive": 23
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_code_tool_20260607T042443Z": {
+    "rows": 21,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 21
+    },
+    "license_tiers": {
+     "permissive": 21
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_code_tool_20260607T043903Z": {
+    "rows": 23,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 23
+    },
+    "license_tiers": {
+     "permissive": 23
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_code_tool_20260607T050019Z": {
+    "rows": 27,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 27
+    },
+    "license_tiers": {
+     "permissive": 27
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_code_tool_20260607T051734Z": {
+    "rows": 21,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 21
+    },
+    "license_tiers": {
+     "permissive": 21
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_code_tool_20260607T054818Z": {
+    "rows": 24,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 24
+    },
+    "license_tiers": {
+     "permissive": 24
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_code_tool_20260607T055740Z": {
+    "rows": 18,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 18
+    },
+    "license_tiers": {
+     "permissive": 18
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_20260607T062930Z_revalidated": {
+    "rows": 5,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 5
+    },
+    "license_tiers": {
+     "permissive": 5
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_adjacent_20260607T081414Z": {
+    "rows": 4,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 4
+    },
+    "license_tiers": {
+     "permissive": 4
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_adjacent_20260607T084746Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 3
+    },
+    "license_tiers": {
+     "permissive": 3
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_adjacent_20260607T090211Z": {
+    "rows": 1,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 1
+    },
+    "license_tiers": {
+     "permissive": 1
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_adjacent_20260607T091149Z": {
+    "rows": 4,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 4
+    },
+    "license_tiers": {
+     "permissive": 4
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_adjacent_20260607T092358Z": {
+    "rows": 5,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 5
+    },
+    "license_tiers": {
+     "permissive": 5
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_adjacent_20260607T095130Z": {
+    "rows": 5,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 5
+    },
+    "license_tiers": {
+     "permissive": 5
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_adjacent_20260607T102418Z": {
+    "rows": 20,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 20
+    },
+    "license_tiers": {
+     "permissive": 20
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_adjacent_20260607T103440Z": {
+    "rows": 22,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 22
+    },
+    "license_tiers": {
+     "permissive": 22
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_adjacent_20260607T105511Z": {
+    "rows": 26,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 26
+    },
+    "license_tiers": {
+     "permissive": 26
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_adjacent_20260607T111745Z": {
+    "rows": 5,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 5
+    },
+    "license_tiers": {
+     "permissive": 5
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_adjacent_20260607T114554Z": {
+    "rows": 22,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 22
+    },
+    "license_tiers": {
+     "permissive": 22
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_adjacent_20260607T122333Z": {
+    "rows": 16,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 16
+    },
+    "license_tiers": {
+     "permissive": 16
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_adjacent_20260607T124426Z": {
+    "rows": 4,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 4
+    },
+    "license_tiers": {
+     "permissive": 4
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_adjacent_20260607T130539Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 3
+    },
+    "license_tiers": {
+     "permissive": 3
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_adjacent_20260607T133212Z": {
+    "rows": 4,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 4
+    },
+    "license_tiers": {
+     "permissive": 4
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_adjacent_20260607T134056Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 3
+    },
+    "license_tiers": {
+     "permissive": 3
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_adjacent_20260607T135145Z": {
+    "rows": 6,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 6
+    },
+    "license_tiers": {
+     "permissive": 6
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_adjacent_20260607T141348Z_append1530": {
+    "rows": 4,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 4
+    },
+    "license_tiers": {
+     "permissive": 4
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_adjacent_ready_300_142236": {
+    "rows": 105,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 105
+    },
+    "license_tiers": {
+     "permissive": 105
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_adjacent_ready_300_145034": {
+    "rows": 50,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 50
+    },
+    "license_tiers": {
+     "permissive": 50
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_adjacent_ready_300_151818": {
+    "rows": 115,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 115
+    },
+    "license_tiers": {
+     "permissive": 115
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_adjacent_ready_300_160104": {
+    "rows": 98,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 98
+    },
+    "license_tiers": {
+     "permissive": 98
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_adjacent_ready_360_011841": {
+    "rows": 110,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 110
+    },
+    "license_tiers": {
+     "permissive": 110
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_adjacent_ready_360_130855": {
+    "rows": 129,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 129
+    },
+    "license_tiers": {
+     "permissive": 129
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_adjacent_ready_360_133936": {
+    "rows": 93,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 93
+    },
+    "license_tiers": {
+     "permissive": 93
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_adjacent_ready_36_022215": {
+    "rows": 18,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 18
+    },
+    "license_tiers": {
+     "permissive": 18
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_adjacent_ready_36_024642": {
+    "rows": 23,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 23
+    },
+    "license_tiers": {
+     "permissive": 23
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_adjacent_ready_36_030802": {
+    "rows": 26,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 26
+    },
+    "license_tiers": {
+     "permissive": 26
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_adjacent_ready_36_032703": {
+    "rows": 22,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 22
+    },
+    "license_tiers": {
+     "permissive": 22
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_adjacent_ready_36_034027": {
+    "rows": 24,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 24
+    },
+    "license_tiers": {
+     "permissive": 24
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_adjacent_ready_540_003754": {
+    "rows": 80,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 80
+    },
+    "license_tiers": {
+     "permissive": 80
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_adjacent_ready_540_162945": {
+    "rows": 99,
+    "training_status": "trained_v37_complete",
+    "licenses": {
+     "Apache-2.0": 99
+    },
+    "license_tiers": {
+     "permissive": 99
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_adjacent_ready_540_170208": {
+    "rows": 86,
+    "training_status": "trained_v37_complete",
+    "licenses": {
+     "Apache-2.0": 86
+    },
+    "license_tiers": {
+     "permissive": 86
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_adjacent_ready_540_173412": {
+    "rows": 49,
+    "training_status": "trained_v37_complete",
+    "licenses": {
+     "Apache-2.0": 49
+    },
+    "license_tiers": {
+     "permissive": 49
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_adjacent_ready_540_180317": {
+    "rows": 110,
+    "training_status": "trained_v37_complete",
+    "licenses": {
+     "Apache-2.0": 110
+    },
+    "license_tiers": {
+     "permissive": 110
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_adjacent_ready_540_181258": {
+    "rows": 111,
+    "training_status": "trained_v37_complete",
+    "licenses": {
+     "Apache-2.0": 111
+    },
+    "license_tiers": {
+     "permissive": 111
+    },
+    "source_datasets": {}
+   },
+   "erdos_broad_domain_code_tool_adjacent_ready_550": {
+    "rows": 301,
+    "training_status": "trained_v37_complete",
+    "licenses": {
+     "Apache-2.0": 301
+    },
+    "license_tiers": {
+     "permissive": 301
+    },
+    "source_datasets": {}
+   },
+   "erdos_code_tools_agentic_ready_446": {
+    "rows": 149,
+    "training_status": "trained_v37_complete",
+    "licenses": {
+     "Apache-2.0": 149
+    },
+    "license_tiers": {
+     "permissive": 149
+    },
+    "source_datasets": {}
+   },
+   "erdos_code_tools_agentic_ready_480": {
+    "rows": 167,
+    "training_status": "trained_v37_complete",
+    "licenses": {
+     "Apache-2.0": 167
+    },
+    "license_tiers": {
+     "permissive": 167
+    },
+    "source_datasets": {}
+   },
+   "erdos_code_tools_agentic_ready_480_20260605T151526Z": {
+    "rows": 180,
+    "training_status": "trained_v37_complete",
+    "licenses": {
+     "Apache-2.0": 180
+    },
+    "license_tiers": {
+     "permissive": 180
+    },
+    "source_datasets": {}
+   },
+   "herschel_native_media_contracts_ready_200_203121": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 3
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "hilbert_broad_domain_reasoning_math_text_longcontext_ready_38_000050": {
+    "rows": 23,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 23
+    },
+    "license_tiers": {
+     "public_domain_dedication": 23
+    },
+    "source_datasets": {
+     "Omnicoder Original CC0 Broad Domain Support 2026": 18,
+     "Kepler CC0 Applied Math Reasoning 2026": 5
+    }
+   },
+   "hilbert_broad_domain_reasoning_math_text_longcontext_ready_38_223156": {
+    "rows": 10,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 10
+    },
+    "license_tiers": {
+     "public_domain_dedication": 10
+    },
+    "source_datasets": {
+     "Kepler CC0 Applied Math Support 2026": 7,
+     "Kepler CC0 Broad Domain Support 2026": 3
+    }
+   },
+   "hilbert_broad_domain_reasoning_math_text_longcontext_ready_38_224839": {
+    "rows": 10,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 10
+    },
+    "license_tiers": {
+     "public_domain_dedication": 10
+    },
+    "source_datasets": {
+     "Kepler CC0 Broad Domain Support 2026": 5,
+     "Kepler CC0 Applied Math Support 2026": 5
+    }
+   },
+   "hilbert_broad_domain_reasoning_math_text_longcontext_ready_38_230843": {
+    "rows": 11,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 11
+    },
+    "license_tiers": {
+     "public_domain_dedication": 11
+    },
+    "source_datasets": {
+     "Kepler CC0 Applied Math Support 2026": 7,
+     "Kepler CC0 Broad Domain Support 2026": 4
+    }
+   },
+   "hilbert_broad_domain_reasoning_math_text_longcontext_ready_38_232712": {
+    "rows": 11,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 11
+    },
+    "license_tiers": {
+     "public_domain_dedication": 11
+    },
+    "source_datasets": {
+     "Kepler CC0 Broad Domain Support 2026": 6,
+     "Kepler CC0 Applied Math Support 2026": 5
+    }
+   },
+   "hilbert_broad_domain_reasoning_math_text_longcontext_ready_38_234619": {
+    "rows": 26,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 26
+    },
+    "license_tiers": {
+     "public_domain_dedication": 26
+    },
+    "source_datasets": {
+     "Omnicoder Original CC0 Broad Domain Support 2026": 20,
+     "Kepler CC0 Applied Math Reasoning 2026": 6
+    }
+   },
+   "hilbert_broad_domain_reasoning_math_text_longcontext_ready_44_002204": {
+    "rows": 32,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 32
+    },
+    "license_tiers": {
+     "public_domain_dedication": 32
+    },
+    "source_datasets": {
+     "Omnicoder Original CC0 Broad Domain Support 2026": 26,
+     "Kepler CC0 Applied Math Reasoning 2026": 6
+    }
+   },
+   "hilbert_broad_domain_reasoning_math_text_longcontext_ready_49_003132": {
+    "rows": 33,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 33
+    },
+    "license_tiers": {
+     "public_domain_dedication": 33
+    },
+    "source_datasets": {
+     "Omnicoder Original CC0 Broad Domain Support 2026": 33
+    }
+   },
+   "hilbert_broad_domain_reasoning_math_text_longcontext_ready_49_004247": {
+    "rows": 33,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 33
+    },
+    "license_tiers": {
+     "public_domain_dedication": 33
+    },
+    "source_datasets": {
+     "Omnicoder Original CC0 Broad Domain Support 2026": 33
+    }
+   },
+   "hilbert_broad_domain_reasoning_math_text_longcontext_ready_49_010211": {
+    "rows": 26,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 26
+    },
+    "license_tiers": {
+     "public_domain_dedication": 26
+    },
+    "source_datasets": {
+     "Omnicoder Original CC0 Broad Domain Support 2026": 26
+    }
+   },
+   "hilbert_broad_domain_reasoning_math_text_longcontext_ready_49_011329": {
+    "rows": 33,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 33
+    },
+    "license_tiers": {
+     "public_domain_dedication": 33
+    },
+    "source_datasets": {
+     "Omnicoder Original CC0 Broad Domain Support 2026": 33
+    }
+   },
+   "hilbert_broad_domain_reasoning_math_text_longcontext_ready_49_012943": {
+    "rows": 29,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 29
+    },
+    "license_tiers": {
+     "public_domain_dedication": 29
+    },
+    "source_datasets": {
+     "Omnicoder Original CC0 Broad Domain Support 2026": 29
+    }
+   },
+   "hilbert_broad_domain_reasoning_math_text_longcontext_ready_49_014131": {
+    "rows": 33,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 33
+    },
+    "license_tiers": {
+     "public_domain_dedication": 33
+    },
+    "source_datasets": {
+     "Omnicoder Original CC0 Broad Domain Support 2026": 33
+    }
+   },
+   "hilbert_broad_domain_reasoning_math_text_longcontext_ready_49_015020": {
+    "rows": 31,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 31
+    },
+    "license_tiers": {
+     "public_domain_dedication": 31
+    },
+    "source_datasets": {
+     "Omnicoder Original CC0 Broad Domain Support 2026": 31
+    }
+   },
+   "hilbert_broad_domain_reasoning_math_text_longcontext_ready_49_020201": {
+    "rows": 33,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 33
+    },
+    "license_tiers": {
+     "public_domain_dedication": 33
+    },
+    "source_datasets": {
+     "Omnicoder Original CC0 Broad Domain Support 2026": 33
+    }
+   },
+   "hilbert_broad_domain_reasoning_math_text_longcontext_ready_49_022126": {
+    "rows": 36,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 36
+    },
+    "license_tiers": {
+     "public_domain_dedication": 36
+    },
+    "source_datasets": {
+     "Omnicoder Original CC0 Broad Domain Support 2026": 36
+    }
+   },
+   "hilbert_broad_domain_reasoning_math_text_longcontext_ready_49_024736": {
+    "rows": 38,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 38
+    },
+    "license_tiers": {
+     "public_domain_dedication": 38
+    },
+    "source_datasets": {
+     "Omnicoder Original CC0 Broad Domain Support 2026": 38
+    }
+   },
+   "hilbert_broad_domain_reasoning_math_text_longcontext_ready_49_031031": {
+    "rows": 28,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 28
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "hilbert_broad_domain_reasoning_math_text_longcontext_ready_49_032820": {
+    "rows": 17,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 17
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "hilbert_small_broad_reasoning_20260607T034752Z": {
+    "rows": 28,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 28
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "hilbert_small_broad_reasoning_20260607T041212Z": {
+    "rows": 38,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 38
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "hilbert_small_broad_reasoning_20260607T043039Z": {
+    "rows": 31,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 31
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "hilbert_small_broad_reasoning_math_text_longcontext_20260607T044916Z": {
+    "rows": 30,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 30
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "hilbert_small_broad_reasoning_math_text_longcontext_20260607T062413Z": {
+    "rows": 21,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 21
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "hilbert_small_broad_reasoning_math_text_longcontext_ready_38_174621": {
+    "rows": 16,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 16
+    },
+    "license_tiers": {
+     "public_domain_dedication": 16
+    },
+    "source_datasets": {
+     "Kepler CC0 Applied Math Support 2026": 9,
+     "Kepler CC0 Broad Domain Support 2026": 7
+    }
+   },
+   "huygens_native_mm_contracts_cc0_ready_220_210955": {
+    "rows": 5,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 5
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "kepler_broad_domain_knowledge10_ready_345": {
+    "rows": 246,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "ODC-By-1.0; CommonCrawl Terms of Use apply": 229,
+     "CC0-1.0": 17
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 246
+    },
+    "source_datasets": {
+     "FineWeb-Edu": 228,
+     "Omnicoder Original Applied Math Reasoning 2026": 17,
+     "HuggingFaceFW/fineweb-edu": 1
+    }
+   },
+   "kepler_broad_domain_knowledge11_ready_282_133138": {
+    "rows": 199,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "ODC-By-1.0; CommonCrawl Terms of Use apply": 172,
+     "CC0-1.0": 27
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 199
+    },
+    "source_datasets": {
+     "FineWeb-Edu": 171,
+     "Kepler CC0 Applied Math Reasoning 2026": 27,
+     "HuggingFaceFW/fineweb-edu": 1
+    }
+   },
+   "kepler_broad_domain_knowledge12_ready_289_141845": {
+    "rows": 186,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "ODC-By-1.0; CommonCrawl Terms of Use apply": 169,
+     "CC0-1.0": 17
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 186
+    },
+    "source_datasets": {
+     "FineWeb-Edu": 168,
+     "Kepler CC0 Applied Math Support 2026": 17,
+     "HuggingFaceFW/fineweb-edu": 1
+    }
+   },
+   "kepler_broad_domain_knowledge13_ready_313_144131": {
+    "rows": 187,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "ODC-By-1.0; CommonCrawl Terms of Use apply": 169,
+     "CC0-1.0": 18
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 187
+    },
+    "source_datasets": {
+     "FineWeb-Edu": 168,
+     "Kepler CC0 Applied Math Support 2026": 18,
+     "HuggingFaceFW/fineweb-edu": 1
+    }
+   },
+   "kepler_broad_domain_knowledge14_ready_309_151504": {
+    "rows": 184,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "ODC-By-1.0; CommonCrawl Terms of Use apply": 163,
+     "CC0-1.0": 21
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 184
+    },
+    "source_datasets": {
+     "FineWeb-Edu": 162,
+     "Kepler CC0 Applied Math Support 2026": 21,
+     "HuggingFaceFW/fineweb-edu": 1
+    }
+   },
+   "kepler_broad_domain_knowledge15_ready_313_155756": {
+    "rows": 169,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "ODC-By-1.0; CommonCrawl Terms of Use apply": 157,
+     "CC0-1.0": 12
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 169
+    },
+    "source_datasets": {
+     "FineWeb-Edu": 157,
+     "Kepler CC0 Applied Math Support 2026": 12
+    }
+   },
+   "kepler_broad_domain_knowledge27_lowio_20260607T075102Z": {
+    "rows": 30,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 30
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 30
+    },
+    "source_datasets": {
+     "Kepler CC0 Applied Math Support 2026": 17,
+     "Kepler CC0 Broad Domain Support 2026": 13
+    }
+   },
+   "kepler_broad_domain_knowledge28_20260607T080524Z": {
+    "rows": 33,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 33
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 33
+    },
+    "source_datasets": {
+     "Kepler CC0 Applied Math Support 2026": 18,
+     "Kepler CC0 Broad Domain Support 2026": 15
+    }
+   },
+   "kepler_broad_domain_knowledge2_ready_431": {
+    "rows": 255,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "ODC-By-1.0; CommonCrawl Terms of Use apply": 184,
+     "Apache-2.0": 71
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 255
+    },
+    "source_datasets": {
+     "FineWeb-Edu": 109,
+     "HuggingFaceFW/fineweb-edu": 75,
+     "open-r1/OpenR1-Math-220k": 71
+    }
+   },
+   "kepler_broad_domain_knowledge35_lowio_20260607T093414Z": {
+    "rows": 25,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 25
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 25
+    },
+    "source_datasets": {
+     "Kepler CC0 Applied Math Support 2026": 15,
+     "Kepler CC0 Broad Domain Support 2026": 10
+    }
+   },
+   "kepler_broad_domain_knowledge36_lowio_20260607T094939Z": {
+    "rows": 33,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 33
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 33
+    },
+    "source_datasets": {
+     "Kepler CC0 Applied Math Support 2026": 19,
+     "Kepler CC0 Broad Domain Support 2026": 14
+    }
+   },
+   "kepler_broad_domain_knowledge37_lowio_20260607T101304Z": {
+    "rows": 27,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 27
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 27
+    },
+    "source_datasets": {
+     "Kepler CC0 Applied Math Support 2026": 14,
+     "Kepler CC0 Broad Domain Support 2026": 13
+    }
+   },
+   "kepler_broad_domain_knowledge38_lowio_20260607T103344Z": {
+    "rows": 32,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 32
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 32
+    },
+    "source_datasets": {
+     "Kepler CC0 Applied Math Support 2026": 18,
+     "Kepler CC0 Broad Domain Support 2026": 14
+    }
+   },
+   "kepler_broad_domain_knowledge39_lowio_20260607T105410Z": {
+    "rows": 33,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 33
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 33
+    },
+    "source_datasets": {
+     "Kepler CC0 Applied Math Support 2026": 19,
+     "Kepler CC0 Broad Domain Support 2026": 14
+    }
+   },
+   "kepler_broad_domain_knowledge3_ready_427": {
+    "rows": 274,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "ODC-By-1.0; CommonCrawl Terms of Use apply": 204,
+     "Apache-2.0": 70
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 274
+    },
+    "source_datasets": {
+     "FineWeb-Edu": 145,
+     "open-r1/OpenR1-Math-220k": 70,
+     "HuggingFaceFW/fineweb-edu": 59
+    }
+   },
+   "kepler_broad_domain_knowledge40_lowio_20260607T111646Z": {
+    "rows": 28,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 28
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 28
+    },
+    "source_datasets": {
+     "Kepler CC0 Broad Domain Support 2026": 14,
+     "Kepler CC0 Applied Math Support 2026": 14
+    }
+   },
+   "kepler_broad_domain_knowledge42_lowio_20260607T121842Z": {
+    "rows": 33,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 33
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 33
+    },
+    "source_datasets": {
+     "Kepler CC0 Applied Math Support 2026": 17,
+     "Kepler CC0 Broad Domain Support 2026": 16
+    }
+   },
+   "kepler_broad_domain_knowledge49_lowio_direct_20260607T134120Z": {
+    "rows": 29,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 29
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 29
+    },
+    "source_datasets": {
+     "Kepler CC0 Applied Math Support 2026": 16,
+     "Kepler CC0 Broad Domain Support 2026": 13
+    }
+   },
+   "kepler_broad_domain_knowledge4_ready_422": {
+    "rows": 267,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "ODC-By-1.0; CommonCrawl Terms of Use apply": 189,
+     "Apache-2.0": 78
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 267
+    },
+    "source_datasets": {
+     "FineWeb-Edu": 146,
+     "open-r1/OpenR1-Math-220k": 78,
+     "HuggingFaceFW/fineweb-edu": 43
+    }
+   },
+   "kepler_broad_domain_knowledge50_lowio_direct_20260607T135036Z": {
+    "rows": 28,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 28
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 28
+    },
+    "source_datasets": {
+     "Kepler CC0 Applied Math Support 2026": 17,
+     "Kepler CC0 Broad Domain Support 2026": 11
+    }
+   },
+   "kepler_broad_domain_knowledge51_lowio_direct_20260607T140231Z": {
+    "rows": 27,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 27
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 27
+    },
+    "source_datasets": {
+     "Kepler CC0 Applied Math Support 2026": 15,
+     "Kepler CC0 Broad Domain Support 2026": 12
+    }
+   },
+   "kepler_broad_domain_knowledge52_lowio_direct_20260607T141303Z_append1530": {
+    "rows": 31,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 31
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 31
+    },
+    "source_datasets": {
+     "Kepler CC0 Applied Math Support 2026": 19,
+     "Kepler CC0 Broad Domain Support 2026": 12
+    }
+   },
+   "kepler_broad_domain_knowledge6_ready_394": {
+    "rows": 249,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "ODC-By-1.0; CommonCrawl Terms of Use apply": 199,
+     "Apache-2.0": 27,
+     "Apache-2.0 source": 22,
+     "MIT": 1
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 249
+    },
+    "source_datasets": {
+     "FineWeb-Edu": 199,
+     "OpenR1-Math-220k": 25,
+     "DAPO-Math-17k-Processed": 22,
+     "MathX-5M": 2,
+     "DeepMath-103K": 1
+    }
+   },
+   "kepler_broad_domain_knowledge_ready_439": {
+    "rows": 308,
+    "training_status": "trained_v37_complete",
+    "licenses": {
+     "ODC-By-1.0; CommonCrawl Terms of Use apply": 308
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 308
+    },
+    "source_datasets": {
+     "FineWeb-Edu": 213,
+     "HuggingFaceFW/fineweb-edu": 95
+    }
+   },
+   "kepler_broad_domain_strict_bounded_20260607T155640Z_append1603": {
+    "rows": 26,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 26
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 26
+    },
+    "source_datasets": {
+     "Kepler CC0 Applied Math Support 2026": 16,
+     "Kepler CC0 Broad Domain Support 2026": 10
+    }
+   },
+   "kepler_reasoning_math_text_longcontext_ready_834": {
+    "rows": 123,
+    "training_status": "trained_v37_complete",
+    "licenses": {
+     "internal_teacher_trace_provenance": 123
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 123
+    },
+    "source_datasets": {
+     "v10_qwen_trace_integrity_accepted_readonly": 123
+    }
+   },
+   "kepler_reasoning_math_text_longcontext_ready_922_20260605T151735Z": {
+    "rows": 219,
+    "training_status": "trained_v37_complete",
+    "licenses": {
+     "odc-by": 116,
+     "internal_teacher_trace_provenance": 103
+    },
+    "license_tiers": {
+     "explicit_allowlisted": 219
+    },
+    "source_datasets": {
+     "AllenAI olmOCR Mix 1025": 116,
+     "v10_qwen_trace_integrity_accepted_readonly": 103
+    }
+   },
+   "kierkegaard_cc0_operator_broad_ready_180_205437": {
+    "rows": 76,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 76
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "kuhn_cc0_operator_synth_ready_216_2116": {
+    "rows": 41,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 41
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "lagrange_v41_code_tool_agentic_ready_120_182906": {
+    "rows": 83,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 83
+    },
+    "license_tiers": {
+     "public_domain_dedication": 83
+    },
+    "source_datasets": {
+     "operator_authored_procedural_2026": 83
+    }
+   },
+   "manual_cleanup_20260627_math_code_reasoning_ready_489_append_current": {
+    "rows": 357,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "OpenMathReasoning": 132,
+     "OpenCodeReasoning-2-python": 114,
+     "OpenThoughts3-1.2M": 111
+    }
+   },
+   "manual_cleanup_batch_000137_math_code_reasoning_ready_15_append_current": {
+    "rows": 9,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "OpenMathReasoning": 4,
+     "OpenCodeReasoning-2-python": 3,
+     "OpenThoughts3-1.2M": 2
+    }
+   },
+   "manual_cleanup_batch_000138_math_code_reasoning_ready_15_append_current": {
+    "rows": 13,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "OpenThoughts3-1.2M": 5,
+     "OpenCodeReasoning-2-python": 4,
+     "OpenMathReasoning": 4
+    }
+   },
+   "manual_cleanup_batch_000139_math_code_reasoning_ready_15_append_current": {
+    "rows": 10,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "OpenMathReasoning": 4,
+     "OpenThoughts3-1.2M": 4,
+     "OpenCodeReasoning-2-python": 2
+    }
+   },
+   "manual_cleanup_batch_000140_math_code_reasoning_ready_15_append_current": {
+    "rows": 12,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "OpenCodeReasoning-2-python": 4,
+     "OpenMathReasoning": 4,
+     "OpenThoughts3-1.2M": 4
+    }
+   },
+   "manual_cleanup_batch_000141_math_code_reasoning_ready_12_append_current": {
+    "rows": 9,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "OpenThoughts3-1.2M": 4,
+     "OpenCodeReasoning-2-python": 3,
+     "OpenMathReasoning": 2
+    }
+   },
+   "manual_cleanup_batch_000142_math_code_reasoning_ready_10_append_current": {
+    "rows": 8,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "OpenCodeReasoning-2-python": 4,
+     "OpenThoughts3-1.2M": 2,
+     "OpenMathReasoning": 2
+    }
+   },
+   "manual_cleanup_batch_000143_math_code_reasoning_ready_13_append_current": {
+    "rows": 8,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "OpenThoughts3-1.2M": 3,
+     "OpenMathReasoning": 3,
+     "OpenCodeReasoning-2-python": 2
+    }
+   },
+   "manual_cleanup_batch_000144_math_code_reasoning_ready_13_append_current": {
+    "rows": 8,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "OpenCodeReasoning-2-python": 4,
+     "OpenThoughts3-1.2M": 2,
+     "OpenMathReasoning": 2
+    }
+   },
+   "manual_cleanup_batch_000145_math_code_reasoning_ready_9_append_current": {
+    "rows": 5,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "OpenCodeReasoning-2-python": 2,
+     "OpenThoughts3-1.2M": 2,
+     "OpenMathReasoning": 1
+    }
+   },
+   "manual_cleanup_batch_000146_downloaded_reasoning_agentic_ready_15_append_current": {
+    "rows": 12,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "OpenMathReasoning": 7,
+     "Nemotron-SFT-Agentic-v2": 3,
+     "OpenThoughts3-1.2M": 2
+    }
+   },
+   "manual_cleanup_batch_000152_code_tool_agentic_reasoning_math_ready_140_append_current": {
+    "rows": 111,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "bounded_omnicoder_code_tool_agentic_browser_terminal_reasoning_math_candidate_20260607T200641Z_candidateonly": 111
+    }
+   },
+   "manual_cleanup_batch_000156_v10_memory_harness_cleaned_ready_379_append_current": {
+    "rows": 267,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "v10_memory_harness_candidate_20260604T081147Z": 267
+    }
+   },
+   "manual_cleanup_batch_000157_rawls_audio_music_tts_speech_sound_broad_ready_49_append_current": {
+    "rows": 14,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "rawls_current_lowio_audio_music_tts_speech_sound_broad_candidate_20260607T141319Z": 14
+    }
+   },
+   "manual_cleanup_batch_000159_appworld_train_task_briefs_ready_90_append_current": {
+    "rows": 55,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "appworld_train_specs_sanitized_20260702": 55
+    }
+   },
+   "manual_cleanup_batch_000161_tau2_train_service_task_briefs_ready_178_append_current": {
+    "rows": 77,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "tau2_train_task_specs_sanitized_20260702": 77
+    }
+   },
+   "manual_cleanup_batch_000166_bfcl_v4_function_calls_ready_append_current": {
+    "rows": 761,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "bfcl_v4_active_function_call_2025_local_mirror": 761
+    }
+   },
+   "manual_cleanup_batch_000167_arc_agi_2_training_reasoning_ready_1000_append_current": {
+    "rows": 458,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "arc_agi_2_local_training_split_2026": 458
+    }
+   },
+   "manual_cleanup_batch_000168_deep_swe_coding_task_briefs_ready_68_append_current": {
+    "rows": 50,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "deep_swe_local_tasks_2026": 50
+    }
+   },
+   "manual_cleanup_batch_000169_terminal_bench_2_task_briefs_ready_20_append_current": {
+    "rows": 13,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "terminal_bench_2_local_tasks_2026": 13
+    }
+   },
+   "manual_cleanup_batch_000171_openthoughts_agent_abstract_rewrites_ready_6_append_current": {
+    "rows": 4,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "open-thoughts/OpenThoughts-Agent-SFT-100K": 4
+    }
+   },
+   "manual_cleanup_batch_000172_open_swe_trace_abstract_rewrites_ready_8_append_current": {
+    "rows": 6,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "nvidia/Open-SWE-Traces": 6
+    }
+   },
+   "manual_cleanup_batch_000173_nemotron_terminal_corrected_ml_training_designs_ready_4_append_current": {
+    "rows": 2,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "nvidia/Nemotron-Terminal-Corpus": 2
+    }
+   },
+   "manual_cleanup_batch_000174_nemotron_terminal_corrected_ml_training_workflows_ready_4_append_current": {
+    "rows": 2,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "nvidia/Nemotron-Terminal-Corpus": 2
+    }
+   },
+   "manual_cleanup_batch_000175_nemotron_terminal_corrected_optimizer_contracts_ready_4_append_current": {
+    "rows": 2,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "nvidia/Nemotron-Terminal-Corpus": 2
+    }
+   },
+   "manual_cleanup_batch_000176_nemotron_terminal_corrected_data_and_update_contracts_ready_4_append_current": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "nvidia/Nemotron-Terminal-Corpus": 3
+    }
+   },
+   "manual_cleanup_batch_000177_nemotron_terminal_corrected_schedule_data_resume_contracts_ready_4_append_current": {
+    "rows": 2,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "nvidia/Nemotron-Terminal-Corpus": 2
+    }
+   },
+   "manual_cleanup_batch_000178_corrected_training_evidence_accumulation_resume_contracts_ready_4_append_current": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "nvidia/Nemotron-Terminal-Corpus": 3
+    }
+   },
+   "manual_cleanup_batch_000179_corrected_data_dynamic_text_best_checkpoint_contracts_ready_4_append_current": {
+    "rows": 2,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "nvidia/Nemotron-Terminal-Corpus": 2
+    }
+   },
+   "manual_cleanup_batch_000180_corrected_warmup_text_resume_plateau_contracts_ready_4_append_current": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "nvidia/Nemotron-Terminal-Corpus": 3
+    }
+   },
+   "manual_cleanup_batch_000181_corrected_padding_warmup_preprocessing_checkpoint_contracts_ready_4_append_current": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "nvidia/Nemotron-Terminal-Corpus": 3
+    }
+   },
+   "manual_cleanup_batch_000182_corrected_update_support_warmup_scheduler_snapshot_contracts_ready_4_append_current": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "nvidia/Nemotron-Terminal-Corpus": 3
+    }
+   },
+   "manual_cleanup_batch_000183_corrected_import_preprocessing_focal_schema_contracts_ready_4_append_current": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "nvidia/Nemotron-Terminal-Corpus": 3
+    }
+   },
+   "manual_cleanup_batch_000184_corrected_accumulation_scheduler_metrics_logging_contracts_ready_4_append_current": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "nvidia/Nemotron-Terminal-Corpus": 3
+    }
+   },
+   "manual_cleanup_batch_000185_corrected_dynamic_batch_checkpoint_warmup_adaptive_scheduler_contracts_ready_4_append_current": {
+    "rows": 4,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "nvidia/Nemotron-Terminal-Corpus": 4
+    }
+   },
+   "manual_cleanup_batch_000186_corrected_masked_accumulation_token_warm_restart_plateau_contracts_ready_4_append_current": {
+    "rows": 4,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "nvidia/Nemotron-Terminal-Corpus": 4
+    }
+   },
+   "manual_cleanup_batch_000187_corrected_fixture_cardinality_generator_packed_lstm_contracts_ready_4_append_current": {
+    "rows": 4,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "nvidia/Nemotron-Terminal-Corpus": 4
+    }
+   },
+   "manual_cleanup_batch_000188_corrected_shared_target_cardinality_clipping_packed_resume_ready_4_append_current": {
+    "rows": 2,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "nvidia/Nemotron-Terminal-Corpus": 2
+    }
+   },
+   "manual_cleanup_batch_000189_corrected_horizon_tail_tiny_text_momentum_ready_4_append_current": {
+    "rows": 2,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "nvidia/Nemotron-Terminal-Corpus": 2
+    }
+   },
+   "manual_cleanup_batch_000190_corrected_cardinality_streaming_multiclass_padding_ready_4_append_current": {
+    "rows": 2,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "nvidia/Nemotron-Terminal-Corpus": 2
+    }
+   },
+   "manual_cleanup_batch_000191_corrected_fixture_randomlabel_epochcarry_updatehorizon_ready_4_append_current": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "nvidia/Nemotron-Terminal-Corpus": 3
+    }
+   },
+   "manual_cleanup_batch_000192_corrected_cycle_gradnorm_remainder_stratified_ready_4_append_current": {
+    "rows": 4,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "nvidia/Nemotron-Terminal-Corpus": 4
+    }
+   },
+   "manual_cleanup_batch_000193_corrected_importsafe_immutable_allrows_cardinality_ready_4_append_current": {
+    "rows": 2,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "nvidia/Nemotron-Terminal-Corpus": 2
+    }
+   },
+   "manual_cleanup_batch_000194_corrected_immutable_exactwindow_masked_fp32master_ready_4_append_current": {
+    "rows": 2,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "nvidia/Nemotron-Terminal-Corpus": 2
+    }
+   },
+   "manual_cleanup_batch_000195_corrected_exacttail_plateau_metricvalidity_ready_4_append_current": {
+    "rows": 2,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "nvidia/Nemotron-Terminal-Corpus": 2
+    }
+   },
+   "manual_cleanup_batch_000196_corrected_sampleexact_adaptive_tokenbudget_ready_4_append_current": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "nvidia/Nemotron-Terminal-Corpus": 3
+    }
+   },
+   "manual_cleanup_batch_000197_corrected_memoryaware_adaptiveclip_regression_bert_ready_4_append_current": {
+    "rows": 2,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "nvidia/Nemotron-Terminal-Corpus": 2
+    }
+   },
+   "manual_cleanup_batch_000198_corrected_importsafe_stepcount_tinydataset_ready_3_append_current": {
+    "rows": 2,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "nvidia/Nemotron-Terminal-Corpus": 2
+    }
+   },
+   "manual_cleanup_batch_000199_corrected_tiny_data_contracts_honest_evaluation_ready_4_append_current": {
+    "rows": 4,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "nvidia/Nemotron-Terminal-Corpus": 4
+    }
+   },
+   "manual_cleanup_batch_000200_nemotron_terminal_primary_rewrites_ready_39_append_current": {
+    "rows": 28,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "nvidia/Nemotron-Terminal-Corpus": 28
+    }
+   },
+   "memory_batch_000001_agentic_memory_ready_6_append_current": {
+    "rows": 5,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 5
+    }
+   },
+   "memory_batch_000002_agentic_memory_validation_ready_8_append_current": {
+    "rows": 5,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 5
+    }
+   },
+   "memory_batch_000003_hook_ml_ui_ready_8_append_current": {
+    "rows": 6,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 6
+    }
+   },
+   "memory_batch_000004_ops_harness_ready_8_append_current": {
+    "rows": 6,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 6
+    }
+   },
+   "memory_batch_000005_ops_media_platform_ready_6_append_current": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 3
+    }
+   },
+   "memory_batch_000006_tool_trace_workflows_ready_8_append_current": {
+    "rows": 5,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 5
+    }
+   },
+   "memory_batch_000007_neural_merge_workflows_ready_8_append_current": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 3
+    }
+   },
+   "memory_batch_000008_remote_append_ops_ready_8_append_current": {
+    "rows": 4,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 4
+    }
+   },
+   "memory_batch_000009_curation_control_loop_ready_8_append_current": {
+    "rows": 5,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 5
+    }
+   },
+   "memory_batch_000010_source_intake_ledger_ready_8_append_current": {
+    "rows": 5,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 5
+    }
+   },
+   "memory_batch_000011_neural_merge_validation_ready_8_append_current": {
+    "rows": 6,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 6
+    }
+   },
+   "memory_batch_000012_curation_validation_controls_ready_8_append_current": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 3
+    }
+   },
+   "memory_batch_000013_training_orchestration_ready_8_append_current": {
+    "rows": 5,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 5
+    }
+   },
+   "memory_batch_000014_neural_merge_curation_qa_ready_8_append_current": {
+    "rows": 6,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 6
+    }
+   },
+   "memory_batch_000015_neural_forge_validation_ready_8_append_current": {
+    "rows": 8,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 8
+    }
+   },
+   "memory_batch_000016_remote_experiment_ops_ready_8_append_current": {
+    "rows": 4,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 4
+    }
+   },
+   "memory_batch_000017_remote_code_review_ready_8_append_current": {
+    "rows": 7,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 7
+    }
+   },
+   "memory_batch_000018_remote_deploy_validation_ready_8_append_current": {
+    "rows": 6,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 6
+    }
+   },
+   "memory_batch_000019_attention_recovery_validation_ready_8_append_current": {
+    "rows": 7,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 7
+    }
+   },
+   "memory_batch_000020_neural_forge_validation_sync_ready_8_append_current": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 3
+    }
+   },
+   "memory_batch_000021_remote_queue_failure_recovery_ready_8_append_current": {
+    "rows": 5,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 5
+    }
+   },
+   "memory_batch_000022_neural_forge_manifest_validation_ready_8_append_current": {
+    "rows": 7,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 7
+    }
+   },
+   "memory_batch_000023_validation_builder_lifecycle_ready_8_append_current": {
+    "rows": 5,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 5
+    }
+   },
+   "memory_batch_000024_neural_forge_workflow_ready_8_append_current": {
+    "rows": 6,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 6
+    }
+   },
+   "memory_batch_000025_dataset_curation_workflow_ready_8_append_current": {
+    "rows": 5,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 5
+    }
+   },
+   "memory_batch_000026_multimodal_codec_trajectory_ready_8_append_current": {
+    "rows": 6,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 6
+    }
+   },
+   "memory_batch_000027_portable_checkpoint_recovery_ready_8_append_current": {
+    "rows": 6,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 6
+    }
+   },
+   "memory_batch_000028_game_audio_variation_ready_11_append_current": {
+    "rows": 6,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 6
+    }
+   },
+   "memory_batch_000029_solver_selection_cache_contracts_ready_6_append_current": {
+    "rows": 2,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 2
+    }
+   },
+   "memory_batch_000030_multidomain_trace_contracts_ready_8_append_current": {
+    "rows": 5,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 5
+    }
+   },
+   "memory_batch_000031_multidomain_memory_trace_contracts_ready_16_append_current": {
+    "rows": 10,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 10
+    }
+   },
+   "memory_batch_000201_archive_205791_coding_tool_math_ready_12_append_current": {
+    "rows": 9,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 9
+    }
+   },
+   "memory_batch_000202_neural_forge_fold_eval_ready_4_append_current": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 3
+    }
+   },
+   "memory_batch_000203_memory_eval_long_context_ready_6_append_current": {
+    "rows": 4,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 4
+    }
+   },
+   "memory_batch_000204_memory_compression_design_review_ready_4_append_current": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 3
+    }
+   },
+   "memory_batch_000205_ai_training_evaluation_and_coding_results_ready_4_append_current": {
+    "rows": 2,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 2
+    }
+   },
+   "memory_batch_000207_sol_scope_recovery_trace_ready_4_append_current": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 3
+    }
+   },
+   "memory_batch_000209_sol_full_chain_evidence_ready_13_append_current": {
+    "rows": 8,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 8
+    }
+   },
+   "memory_batch_000210_nemotron_terminal_corrected_training_workflows_ready_append_current": {
+    "rows": 99,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 99
+    }
+   },
+   "memory_batch_000211_sol_fable_bounded_trace_rewrites_ready_append_current": {
+    "rows": 5,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 5
+    }
+   },
+   "memory_batch_000212_batch_206_followup_rewrites_ready_append_current": {
+    "rows": 2,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 2
+    }
+   },
+   "memory_batch_000213_sol_neuron_merge_trace_rewrites_ready_append_current": {
+    "rows": 8,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 8
+    }
+   },
+   "memory_batch_000214_fable_mythos_multimodal_trace_rewrites_ready_append_current": {
+    "rows": 1,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 1
+    }
+   },
+   "memory_batch_000215_coding_math_agentic_trace_rewrites_ready_append_current": {
+    "rows": 6,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 6
+    }
+   },
+   "memory_batch_000216_long_context_multimodal_trace_rewrites_ready_append_current": {
+    "rows": 4,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 4
+    }
+   },
+   "memory_batch_000217_sol_long_context_tooling_trace_rewrites_ready_append_current": {
+    "rows": 11,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 11
+    }
+   },
+   "memory_batch_000218_sol_agentic_long_context_trace_rewrites_ready_append_current": {
+    "rows": 10,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 10
+    }
+   },
+   "memory_batch_000219_sol_fable_labelled_preflight_trace_rewrites_ready_append_current": {
+    "rows": 2,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 2
+    }
+   },
+   "memory_batch_000220_neural_forge_trace_rewrites_ready_append_current": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 3
+    }
+   },
+   "memory_batch_000221_cereal_human_review_trace_rewrites_v2_ready_append_current": {
+    "rows": 1,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 1
+    }
+   },
+   "memory_batch_000222_neuron_merge_trace_rewrites_ready_append_current": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 3
+    }
+   },
+   "memory_batch_000223_sol_model_surgery_trace_rewrites_ready_append_current": {
+    "rows": 4,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 4
+    }
+   },
+   "memory_batch_000224_neural_forge_matrix_trace_rewrites_ready_append_current": {
+    "rows": 108,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 108
+    }
+   },
+   "memory_batch_000225_fable_trace_rewrites_ready_append_current": {
+    "rows": 113,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 113
+    }
+   },
+   "memory_batch_000226_sol_model_surgery_trace_rewrites_ready_append_current": {
+    "rows": 51,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 51
+    }
+   },
+   "memory_batch_000227_sol_dynamic_workflow_trace_rewrites_ready_append_current": {
+    "rows": 52,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 52
+    }
+   },
+   "memory_batch_000228_sol_wave39_closing_trace_rewrites_ready_append_current": {
+    "rows": 42,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 42
+    }
+   },
+   "memory_batch_000229_sol_wave41_round3_trace_rewrites_ready_append_current": {
+    "rows": 46,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 46
+    }
+   },
+   "memory_batch_000230_sol_wave42_trace_rewrites_ready_append_current": {
+    "rows": 84,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 84
+    }
+   },
+   "memory_batch_000231_claude_chimera_h3_av_trace_rewrites_ready_append_current": {
+    "rows": 81,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 81
+    }
+   },
+   "memory_batch_000232_claude_family_ai_deployment_mobile_trace_rewrites_ready_append_current": {
+    "rows": 256,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 256
+    }
+   },
+   "memory_batch_000233_claude_ice_agent_game_development_trace_rewrites_ready_append_current": {
+    "rows": 2263,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 2263
+    }
+   },
+   "memory_batch_000234_claude_open_world_game_trace_rewrites_ready_append_current": {
+    "rows": 195,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 195
+    }
+   },
+   "memory_batch_000235_claude_model_surgery_trace_rewrites_ready_append_current": {
+    "rows": 394,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 394
+    }
+   },
+   "memory_batch_000236_claude_hobbit_sealed_trace_rewrites_ready_append_current": {
+    "rows": 110,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 110
+    }
+   },
+   "memory_batch_000237_claude_memory_reliability_trace_rewrites_ready_append_current": {
+    "rows": 44,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 44
+    }
+   },
+   "memory_batch_000238_claude_relay_desk_agentic_trace_rewrites_ready_append_current": {
+    "rows": 82,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 82
+    }
+   },
+   "memory_batch_000239_claude_chimera_first_hunt_builder_trace_rewrites_ready_append_current": {
+    "rows": 18,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 18
+    }
+   },
+   "memory_batch_000240_claude_robits_robotics_design_trace_rewrites_ready_append_current": {
+    "rows": 232,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 232
+    }
+   },
+   "memory_batch_000241_claude_relay_harness_trace_rewrites_ready_append_current": {
+    "rows": 37,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 37
+    }
+   },
+   "memory_batch_000242_claudecode_relay_implementation_trace_rewrites_ready_append_current": {
+    "rows": 53,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 53
+    }
+   },
+   "memory_batch_000243_claudecode_relay_implementation_trace_rewrites_ready_append_current": {
+    "rows": 22,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {
+     "PostgreSQL Agent Memory Trace Distillation": 22
+    }
+   },
+   "mendel_cc0_operator_domain_tool_ready_180_194359": {
+    "rows": 128,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "omnicoder_bounded_strict_broad_domain_repair_20260607T202133Z_append_current": {
+    "rows": 61,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "source-grounded-transform-summary-2026": 61
+    },
+    "license_tiers": {},
+    "source_datasets": {
+     "omnicoder_bounded_strict_broad_domain_repair_20260607": 61
+    }
+   },
+   "omnicoder_broad_text_reasoning_small2_ready_untrained_20260607T153134Z_append1552": {
+    "rows": 11,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 11
+    },
+    "license_tiers": {
+     "permissive": 11
+    },
+    "source_datasets": {}
+   },
+   "omnicoder_code_tool_agentic_rawpg_harness_review_candidate_20260607T162954Z_append1636": {
+    "rows": 61,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "omnicoder_code_tool_agentic_reasoning_lowio_20260607T160626Z_append1611": {
+    "rows": 48,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "parfit_cc0_operator_domain_reasoning_ready_216_201305": {
+    "rows": 150,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "popper_media_contracts_cc0_ready_180_201825": {
+    "rows": 9,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "ramanujan_native_media_contracts_cc0_ready_200_205427": {
+    "rows": 11,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 11
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "rawls_current_audio_music_tts_speech_sound_broad_20260607T103425Z": {
+    "rows": 14,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "https://creativecommons.org/licenses/by/4.0/": 14
+    },
+    "license_tiers": {
+     "attribution": 14
+    },
+    "source_datasets": {
+     "operator/broad-domain-code-raw-postgresql-2026": 5,
+     "operator/broad-domain-science-2026": 4,
+     "operator/broad-domain-math-2026": 3,
+     "operator/broad-domain-agentic-2026": 2
+    }
+   },
+   "rawls_current_audio_music_tts_speech_sound_broad_20260607T105435Z": {
+    "rows": 16,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "https://creativecommons.org/licenses/by/4.0/": 16
+    },
+    "license_tiers": {
+     "attribution": 16
+    },
+    "source_datasets": {
+     "operator/broad-domain-agentic-2026": 5,
+     "operator/broad-domain-science-2026": 4,
+     "operator/broad-domain-code-raw-postgresql-2026": 4,
+     "operator/broad-domain-math-2026": 3
+    }
+   },
+   "rawls_current_audio_music_tts_speech_sound_broad_20260607T111815Z": {
+    "rows": 15,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "https://creativecommons.org/licenses/by/4.0/": 15
+    },
+    "license_tiers": {
+     "attribution": 15
+    },
+    "source_datasets": {
+     "operator/broad-domain-agentic-2026": 5,
+     "operator/broad-domain-code-raw-postgresql-2026": 5,
+     "operator/broad-domain-math-2026": 4,
+     "operator/broad-domain-science-2026": 1
+    }
+   },
+   "rawls_current_audio_music_tts_speech_sound_broad_20260607T114534Z": {
+    "rows": 18,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "https://creativecommons.org/licenses/by/4.0/": 18
+    },
+    "license_tiers": {
+     "attribution": 18
+    },
+    "source_datasets": {
+     "operator/broad-domain-agentic-2026": 6,
+     "operator/broad-domain-code-raw-postgresql-2026": 5,
+     "operator/broad-domain-math-2026": 4,
+     "operator/broad-domain-science-2026": 3
+    }
+   },
+   "rawls_current_audio_music_tts_speech_sound_broad_20260607T121950Z": {
+    "rows": 13,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "https://creativecommons.org/licenses/by/4.0/": 13
+    },
+    "license_tiers": {
+     "attribution": 13
+    },
+    "source_datasets": {
+     "operator/broad-domain-code-raw-postgresql-2026": 4,
+     "operator/broad-domain-math-2026": 4,
+     "operator/broad-domain-agentic-2026": 3,
+     "operator/broad-domain-science-2026": 2
+    }
+   },
+   "rawls_current_audio_music_tts_speech_sound_broad_20260607T124315Z": {
+    "rows": 17,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "https://creativecommons.org/licenses/by/4.0/": 17
+    },
+    "license_tiers": {
+     "attribution": 17
+    },
+    "source_datasets": {
+     "operator/broad-domain-code-raw-postgresql-2026": 5,
+     "operator/broad-domain-math-2026": 4,
+     "operator/broad-domain-science-2026": 4,
+     "operator/broad-domain-agentic-2026": 4
+    }
+   },
+   "rawls_current_audio_music_tts_speech_sound_broad_20260607T125238Z": {
+    "rows": 13,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "https://creativecommons.org/licenses/by/4.0/": 13
+    },
+    "license_tiers": {
+     "attribution": 13
+    },
+    "source_datasets": {
+     "operator/broad-domain-code-raw-postgresql-2026": 6,
+     "operator/broad-domain-agentic-2026": 3,
+     "operator/broad-domain-science-2026": 2,
+     "operator/broad-domain-math-2026": 2
+    }
+   },
+   "rawls_current_audio_music_tts_speech_sound_broad_20260607T125853Z": {
+    "rows": 13,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "https://creativecommons.org/licenses/by/4.0/": 13
+    },
+    "license_tiers": {
+     "attribution": 13
+    },
+    "source_datasets": {
+     "operator/broad-domain-math-2026": 4,
+     "operator/broad-domain-science-2026": 4,
+     "operator/broad-domain-code-raw-postgresql-2026": 3,
+     "operator/broad-domain-agentic-2026": 2
+    }
+   },
+   "rawls_current_audio_music_tts_speech_sound_broad_20260607T130504Z": {
+    "rows": 16,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "https://creativecommons.org/licenses/by/4.0/": 16
+    },
+    "license_tiers": {
+     "attribution": 16
+    },
+    "source_datasets": {
+     "operator/broad-domain-agentic-2026": 5,
+     "operator/broad-domain-code-raw-postgresql-2026": 5,
+     "operator/broad-domain-math-2026": 3,
+     "operator/broad-domain-science-2026": 3
+    }
+   },
+   "rawls_current_audio_music_tts_speech_sound_broad_20260607T132251Z": {
+    "rows": 15,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "https://creativecommons.org/licenses/by/4.0/": 15
+    },
+    "license_tiers": {
+     "attribution": 15
+    },
+    "source_datasets": {
+     "operator/broad-domain-code-raw-postgresql-2026": 5,
+     "operator/broad-domain-agentic-2026": 4,
+     "operator/broad-domain-science-2026": 3,
+     "operator/broad-domain-math-2026": 3
+    }
+   },
+   "rawls_current_audio_music_tts_speech_sound_broad_20260607T133111Z": {
+    "rows": 14,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "https://creativecommons.org/licenses/by/4.0/": 14
+    },
+    "license_tiers": {
+     "attribution": 14
+    },
+    "source_datasets": {
+     "operator/broad-domain-math-2026": 4,
+     "operator/broad-domain-code-raw-postgresql-2026": 4,
+     "operator/broad-domain-agentic-2026": 3,
+     "operator/broad-domain-science-2026": 3
+    }
+   },
+   "rawls_current_audio_music_tts_speech_sound_broad_20260607T133954Z": {
+    "rows": 14,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "https://creativecommons.org/licenses/by/4.0/": 14
+    },
+    "license_tiers": {
+     "attribution": 14
+    },
+    "source_datasets": {
+     "operator/broad-domain-code-raw-postgresql-2026": 5,
+     "operator/broad-domain-science-2026": 4,
+     "operator/broad-domain-math-2026": 3,
+     "operator/broad-domain-agentic-2026": 2
+    }
+   },
+   "rawls_current_audio_music_tts_speech_sound_broad_20260607T135101Z": {
+    "rows": 13,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "https://creativecommons.org/licenses/by/4.0/": 13
+    },
+    "license_tiers": {
+     "attribution": 13
+    },
+    "source_datasets": {
+     "operator/broad-domain-science-2026": 4,
+     "operator/broad-domain-math-2026": 3,
+     "operator/broad-domain-code-raw-postgresql-2026": 3,
+     "operator/broad-domain-agentic-2026": 3
+    }
+   },
+   "schrodinger_lowio_ops_tool_text_ready_180_193427": {
+    "rows": 48,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 48
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "socrates_lowio_code_tool_reasoning_ready_177_20260606": {
+    "rows": 67,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "v9_base_validated_28025": {
+    "rows": 17290,
+    "training_status": "trained_base",
+    "licenses": {
+     "internal_distillation_training_2026": 2186,
+     "Apache-2.0": 111,
+     "Apache-2.0 source": 47,
+     "ODC-BY-1.0": 16,
+     "MIT": 6
+    },
+    "license_tiers": {
+     "attribution": 169,
+     "permissive": 164
+    },
+    "source_datasets": {
+     "v9_qwen_materialized_strict": 2186,
+     "FineWeb-Edu": 169,
+     "DAPO-Math-17k-Processed": 47,
+     "OpenR1-Math-220k": 40,
+     "Aureth Agent SFT Curriculum": 39,
+     "AFM CodeAgent SFT Dataset": 22
+    }
+   },
+   "volta_broad_text_reasoning_small_ready_untrained_20260607T151535Z_append1520": {
+    "rows": 11,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "Apache-2.0": 11
+    },
+    "license_tiers": {
+     "permissive": 11
+    },
+    "source_datasets": {}
+   },
+   "wegener_cc0_text_contracts_ready_216_192919": {
+    "rows": 52,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 52
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "zeno_cc0_broad_reasoning_ready_200_203516": {
+    "rows": 141,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "CC0-1.0": 141
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   }
+  }
+ },
+ "wall_seconds": 133.81,
+ "manifest_sha256": "c42e508afad99008da54909b7f1e140d4748e338f6acff3de0b9a10a521173ff"
+}

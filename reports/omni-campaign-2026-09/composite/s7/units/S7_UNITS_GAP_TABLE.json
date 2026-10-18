@@ -1,0 +1,452 @@
+{
+  "schema": "omni-campaign.s7_units_gap_table.v1",
+  "author": "Claude lane E4, 2026-10-09",
+  "scope": "Media units in the c16_install_media 1.1.0 container format (COMPOSITE_S6_INPUT_FORMATS.md section 3), proven on a TINY synthetic trunk only. Nothing is installed into the S3 trunk; no capability claim.",
+  "tools": {
+    "s7_unit_build.py": {
+      "version": "1.2.0",
+      "sha256": "a427bd1b89df52756c64d2787f0a04061cbe291b90158f9021611b9918010a15",
+      "note": "h3/qimg/hy3d/qvl rebuilt by 1.2.0 on 2026-10-10 (lane M3); ace unchanged (1.0.0 build)"
+    },
+    "s7_dryrun.py": {
+      "sha256": "7a044575366b8361121fb0464a6292af1ab79e36570023c1f693caf3cc937c83"
+    },
+    "s7_dryrun_check.py": {
+      "sha256": "3420ba2a1c177d2c4396b30db0e4bd5ade76e8f54e562c6f7035558a71956bbc"
+    },
+    "c16_install_media.py": {
+      "version": "1.2.0",
+      "sha256": "5353a27b67330cc521adf080ae723ae33832801670ac92d8b7977ecb8b608832",
+      "modified": true,
+      "change": "h3_curve6 time_reference gated; H3_FP32_PARAMETERS kept F32 under --charted-dtype match; blend refuses h3_curve6; adaln6/none byte-identical to 1.1.0 (test_c16_h3_curve6.py)",
+      "backup_1_1_0": "/home/cereal/omni-campaign/composite/tools/.bak-m3-20261010/c16_install_media.py"
+    },
+    "chimera_tree": "/home/cereal/omni-campaign/import/rq27b/tree_ef1ffb9 (COMMIT ef1ffb9c; the tree of the S3 native bundle; has h3_curve6)",
+    "m3_qimg_time_reference_fp32.py": {
+      "sha256": "470ebf44f3723969721db942c01821216ffaf438947977da0f0b7e35c8040bbb"
+    },
+    "m3_c11_qvl_capture.py": {
+      "sha256": "7dc7cef4273e8276abb9314d3219ddae57cb69e80d011035aee9a2e3e24c6c58"
+    },
+    "m3_c11_qvl_rows.py": {
+      "sha256": "c0964ceb5913a2cccf18b145691a1189c8a0e0379e5fcf8da34f0312f6d9753b"
+    },
+    "test_c16_h3_curve6.py": {
+      "sha256": "4019cbb73918612ba3ed1775f1159f991c41191a76cfac62e5380908538b60a2"
+    },
+    "test_s7_unit_build.py": {
+      "sha256": "07d44ca5b6e6b620e7d8225943b4bd3ae854bb6ba89d7dc4b499ff3edc189bdc"
+    },
+    "test_m3_c11_qvl_rows.py": {
+      "sha256": "ad9aaa7df2aeed3a96cc29d57754af3d8a7ea33849964780245295c6b9d48616"
+    }
+  },
+  "dry_run": {
+    "trunk": "c16_media_fixtures.write_child: hidden 128, 8 layers kda,kda,kda,gated_gqa, residual none, 566,544 params (NOT the 15B S3 trunk)",
+    "charts": "synthetic seeded paired rows (512 x [128 | width]) fitted by c16 --tap-rows ridge; plus the ACE run's own 128-wide ridge chart as an overlay arm",
+    "runs": {
+      "D": {
+        "units": "ACE x2 (synthetic + host128 chart), H3, HY3D, QIMG, QVL32",
+        "flags": "--charted-dtype fp32 --time-reference-rel-tol 5e-3",
+        "c16_exit": 0,
+        "load_check": "loaded 537,627,481 params, charted layers [4..9], text hidden bit-identical, logits finite",
+        "manifest_sha256": "64709b2defd97d0ecdd910f9f168219fc51d3fe0f3524eec3bd0a34a8f904e37"
+      },
+      "E": {
+        "units": "ACE x2, HY3D, QIMG, QVL32 (no H3)",
+        "flags": "--charted-dtype match --time-reference-rel-tol 5e-3",
+        "c16_exit": 0,
+        "load_check": "loaded 323,412,289 params, charted layers [4..8], text hidden bit-identical, logits finite",
+        "manifest_sha256": "0ef04bfb06c800f78533c8684307a59690764ec6eeb95510bda2bc52d5dc5a23"
+      },
+      "A/B/C": {
+        "c16_exit": 0,
+        "load_check": "REFUSED by tree_ef1ffb9 load_chimera_checkpoint: 'H3 source coefficient blocks.6.charted.attn.rope_inv_freq must be stored in FP32, got BF16' (c16 --charted-dtype match narrows H3_FP32_PARAMETERS)"
+      },
+      "N": {
+        "units": "QIMG alone at default --time-reference-rel-tol 1e-5",
+        "c16_exit": 3,
+        "refusal": "time path rel_l2 2.039e-03 > 1.0e-05 (BF16 capture reference) - negative control, gate works"
+      }
+    }
+  },
+  "budget_at_hidden_5120": {
+    "source": "c10 projection child = S3 native 14,864,623,104 + 983,040 x k3_channels (reader facts c10:1849); parent PARENT-Q38-27BU 27,781,427,952 (ledger)",
+    "k3_channels_12288_headroom": 837209328,
+    "five_units_installed_parameters": 591437129,
+    "headroom_after_five_units_at_12288": 245772199,
+    "max_k3_channels_with_five_units": 12538,
+    "h3_joint50_all_blocks_installed_parameters": 13394458800,
+    "h3_joint50_fits": false
+  },
+  "units": [
+    {
+      "source": "ACE",
+      "unit": "ace/ace_dit_L12",
+      "from": "$OC/media/out/c16_L12_v4 (c16_receipt.json) via c16.convert_ace_run",
+      "installed_parameters_at_5120": 102811904,
+      "mlp": "37,748,736 -> 9,437,184 (0.25)",
+      "meets_4x_component": true,
+      "time_gate": "adaln6, rel_l2 1.18e-07 (fp32 capture) - passes 1e-5",
+      "charts_5120": "PRESENT at hidden 5120 (lane M1, 2026-10-10); fitted on S3-trunk host rows under the latent interface set",
+      "status": "installable now except charts",
+      "owner_next": "Claude",
+      "smallest_next_step": "paired 5120-wide host rows for ACE frames (C15 bridge -> S3 layer insert_after) -> --tap-rows"
+    },
+    {
+      "source": "H3",
+      "unit": "h3/h3_dit_L25_curve6",
+      "from": "Codex $OC/composite/media/h3-native-curve6-sep07 (symlinked, declared tensor sha256 verified)",
+      "installed_parameters_at_5120": 267889176,
+      "mlp": "231,211,008 -> 57,802,752 (0.25)",
+      "meets_4x_component": true,
+      "time_gate": "h3_curve6 [8,3,6,5376], rel_l2 1.32e-07, gated by c16 1.2.0 itself at 1e-5 (time_reference.safetensors, canonical name)",
+      "charts_5120": "PRESENT at hidden 5120 (lane M1, 2026-10-10); fitted on S3-trunk host rows under the latent interface set",
+      "status": "installable with --charted-dtype match or fp32 (c16 1.2.0 keeps the H3 FP32 coefficients wide and gates the reference); charts: PRESENT at hidden 5120 (lane M1, 2026-10-10); fitted on S3-trunk host rows under the latent interface set",
+      "owner_next": "Claude (charts; S7 driver must supply h3_thw_v1 source positions)",
+      "smallest_next_step": "5120-wide paired rows incl. the text rows H3 reads (R2-H3/R3), then --tap-rows",
+      "not_used": "Codex h3-joint50-fixed3584 (all 50 blocks, 10.64 B params at width 5376, 23 GB) - over budget at trunk 27B; per-block containers would need 50 x 427 MB materialisation",
+      "blocker_m3": "FIXED: c16 1.2.0 (FP32 coefficients under match; h3_curve6 time reference accepted and gated); unit rebuilt by s7_unit_build 1.2.0",
+      "unit_dir_backup": "/home/cereal/omni-campaign/composite/s7/units/h3/.bak-m3-20261010-h3_dit_L25_curve6"
+    },
+    {
+      "source": "QIMG",
+      "unit": "qimg/qimg_mmdit_L30_img",
+      "from": "Codex qimg-ownerpolicy-v4-ee1a6166 fold candidate (image stream; F8_E4M3 widened exactly to BF16)",
+      "installed_parameters_at_5120": 154985727,
+      "mlp": "75,512,832 -> 18,874,367 (0.2499)",
+      "meets_4x_component": true,
+      "time_gate": "adaln6, rel_l2 1.17e-07 vs an FP32 PARENT reference (ComfyUI 0.37 QwenTimestepProjEmbeddings + block-30 img_mod in FP32 from qwen_image_fp8_e4m3fn widened exactly) at the 4 capture sigmas; passes c16's default 1e-5. BF16-capture comparison kept as a diagnostic (2.04e-03)",
+      "charts_5120": "PRESENT at hidden 5120 (lane M1, 2026-10-10); fitted on S3-trunk host rows under the latent interface set",
+      "status": "installable at default tolerance; text stream dropped; charts: PRESENT at hidden 5120 (lane M1, 2026-10-10); fitted on S3-trunk host rows under the latent interface set",
+      "owner_next": "Claude (charts)",
+      "smallest_next_step": "5120-wide paired rows (R2-QIMG reuse of the broad capture, R3), then --tap-rows",
+      "time_reference_fp32": {
+        "file": "/home/cereal/omni-campaign/composite/s7/m3/qimg_time_ref_fp32/time_reference.safetensors",
+        "sha256": "d1ef99406661806b2ee9c70d5ac702b380458b8cbe3f9c2c478cfdfa7b2c816e",
+        "receipt": "/home/cereal/omni-campaign/composite/s7/m3/qimg_time_ref_fp32/time_reference_receipt.json",
+        "receipt_sha256": "c642e9fc6351e7243cb1909b2c82972e805cf5e195f08d6625d7e9648eace22c",
+        "computed_on": "CPU FP32 inside comfyui:claude-qwen-image-2.1-comfy037-torch210cu130-sm75sm86-20260920 (no GPU needed)"
+      },
+      "blocker_m3": "FIXED (Claude-side; Codex FP32 reference never arrived): FP32 reference produced from the parent's own code; unit rebuilt",
+      "unit_dir_backup": "/home/cereal/omni-campaign/composite/s7/units/qimg/.bak-m3-20261010-qimg_mmdit_L30_img"
+    },
+    {
+      "source": "HY3D",
+      "unit": "hy3d/hy3d_dit_L10",
+      "from": "parent hunyuan_3d_v2.1.safetensors block 10 + Codex dense child (dense-child-block-10)",
+      "installed_parameters_at_5120": 46156031,
+      "mlp": "33,564,672 -> 8,388,607 (0.2499)",
+      "meets_4x_component": true,
+      "time_gate": "none (HY3D has no adaLN); the time TOKEN is restored as runtime row 0 of the volume segment (owned type-7 row)",
+      "charts_5120": "PRESENT at hidden 5120 (lane PREP-B 2026-10-11, 2026-10-10); fitted on S3-trunk host rows under the latent interface set; time rows 4 x weight 4096 (runtime_requirements.hy3d_time_token_row)",
+      "status": "installable; charts refitted WITH the time-token row (PREP-B 2026-10-11): pairs carry the parent block-10 input row 0, host rows emit the type-7 time row first in each volume segment, the charts fit it; cross-attention dropped (D3 design, S7_DECISIONS_2026-10-10.md)",
+      "owner_next": "Claude (S7 step 5: recapture host rows on the S5 prefix WITH the time row, then refit at weight 4096)",
+      "smallest_next_step": "S7 step 5 on the S5 child: s7_host_rows.py >= 1.2.0 (emits the time row) + s7_chart_fit.py >= 1.2.0 (default time-row weight 4096); the S7 driver must emit the time row per volume segment",
+      "time_token": {
+        "charted_block_effect": "an owned type-7 row like the latent rows: chart_in reads it, the block attends to it, and the block delta is written back to it (as the parent updates row 0)",
+        "installer_check": "none: c16 1.2.0 loads modulation-none containers without a time gate; this row is a runtime layout contract (R3 host rows + the S7 driver must emit it)",
+        "layout": "each volume segment = [1 time-token row | latent rows], all type_id 7, contiguous, time row FIRST",
+        "pairing": "R3 pairs the time row trunk state with the parent block-10 INPUT row 0 (the evolved time token), not with t_embedder(t); the block-0 token is shipped only as a reference",
+        "reference": "FP32 t_embedder(sigma) at sigma 0.00..1.00 step 0.05 = the block-0 time row; the block-10 row has evolved",
+        "reference_file": "hy3d_time_token_reference.safetensors",
+        "reference_tensor_sha256": {
+          "sigma": "67593671031424807e6a890361d58516beb0467f1bb8c63d6f3e1aa2b05e324d",
+          "time_token": "a5820bd69062019680649362d1bb1fd1bc22bc176e921db1bfb9b5e8e9934047"
+        },
+        "reference_weights": {
+          "dtype": "torch.float16",
+          "model.t_embedder.mlp.0.weight": [
+            8192,
+            2048
+          ],
+          "model.t_embedder.mlp.2.weight": [
+            2048,
+            8192
+          ]
+        },
+        "time_row_feature": "all zeros over native_feature_dim (no latent content)",
+        "time_row_noise_level": "the segment sigma in [0, 1] (the same value as its latent rows): the bridge noise_proj is then the only content-bearing input of that row",
+        "time_row_position": "thwr_v1 [-1, -1, -1, -1] (reserved: no latent row uses a negative coordinate)",
+        "what": "the parent time token: HunYuanDiTPlain prepends t_embedder(t) as sequence row 0 (x = cat([t, x_embedder(latents)], dim=1)); every block self-attends over it and updates it"
+      },
+      "structural_limitation_owner_decision": {
+        "decision_needed_from": "Cyril",
+        "options": [
+          "accept the drop (conditioning reaches the volume rows only through the trunk context)",
+          "extend the charted kind with a conditioning chart (new model code in chimera-omni + c16; context rows would come from trunk text/image rows through a second [1024 x 5120] chart)"
+        ],
+        "what": "cross-attention attn2 to the DINO image conditioner (1370 x 1024 context rows) is dropped",
+        "why": "the charted block kind (chimera-omni modeling/charted.py) carries no conditioning input: a block reads only the trunk rows it owns (plus H3 text rows through the same chart); attn2.to_k/to_v expect 1024-wide DINO features, not trunk rows"
+      },
+      "blocker_m3": "time token: FIXED as a runtime row (source math: Hunyuan3D-2.1 x = cat([t_embedder(t), x_embedder(z)]); chimera-omni codex/work/codex/native-qimg-hy3d-integration modeling/hy3d.py); cross-attention: structural limitation, Cyril decision",
+      "unit_dir_backup": "/home/cereal/omni-campaign/composite/s7/units/hy3d/.bak-m3-20261010-hy3d_dit_L10",
+      "blocker_prepb": "FIXED 2026-10-11: s7_pairs_parent 1.1.0 keeps block_input[:, 0:] (row 0 = time token, time_row=True); s7_host_rows 1.2.0 emits the time row (zero features, position [-1,-1,-1,-1], segment sigma, first in each forward) and refuses a unit that requires it when it is absent; s7_chart_fit 1.2.0 refuses time-row-less rows for a unit that declares hy3d_time_token_row",
+      "unit_dir_pre_timerow": "/home/cereal/omni-campaign/composite/s7/units/hy3d/hy3d_dit_L10.pre-timerow",
+      "prepb": {
+        "unit_json_sha256": "6eff2077c759a87605ba058dbb7146967ef59deff16da407fd3696d1f2e33d79",
+        "charted_block_safetensors_sha256": "58574fe6255d924a651d910ed941115da1d1aabaf5f1c4f8afba1e81e8b5d817",
+        "charted_block_safetensors_identical_to_pre_timerow": true,
+        "charts_sha256": "5209e8343562193140684f719c860c23b28c67cb0785f87dfcdda357c5dd4b5b",
+        "chart_receipt_sha256": "72b1d36186c2a28a5ea7e570fe94c01300abe5ee497094f29b1ed4fb5717c2d1",
+        "pre_timerow_charts_sha256": "af2c6b7f0be690c2493da4fc4312040d5b47851a14c8c6c251f9bb9d4d6a0138",
+        "pairs": {
+          "file": "/home/cereal/omni-campaign/composite/s7/pairs/hy3d_dit_L10/parent_capture.safetensors",
+          "sha256": "d0493c597d89501d1bfd48b3ec18232a242dcc78456abc244195fbd68aa83db9",
+          "rows": 16388,
+          "rows_time": 4,
+          "tool": {
+            "name": "s7_pairs_parent",
+            "sha256": "4339b1952d6c84c112e311afc25a36a505f66888d833aa0fcd0924d5986d6ca6",
+            "version": "1.1.0"
+          }
+        },
+        "host_rows": {
+          "file": "/home/cereal/omni-campaign/composite/s7/tap_rows_s3/hy3d_dit_L10/paired_rows.safetensors",
+          "sha256": "cefe8634d19ba65e2994d83a2a4cd1f92decbd3d96d3f3f716ecbbe919326719",
+          "rows": 16388,
+          "rows_time": 4,
+          "tool": {
+            "engine": {
+              "class": "StreamedChimera",
+              "module": "/home/cereal/omni-campaign/composite/tools/run_omni_frozen_review.py",
+              "sha256": "f42cc50f52f5e99ebea35319930946c41b75792c1da904c4a8b72879d1c3e023"
+            },
+            "name": "s7_host_rows",
+            "sha256": "c2f00dbfbe8b2a3a401a8fef8d4fc94982540e08fab65ed67f36a9683b1675a0",
+            "version": "1.2.0"
+          },
+          "trunk": "S3 native prefix 0..31 (GPU4, 937 s)"
+        },
+        "time_row_weight": {
+          "used": 4096,
+          "sweep": "/home/cereal/omni-campaign/composite/s7/prep_b/time_row_weight_sweep.json",
+          "sweep_sha256": "f547ef46b5366fc8c6478409b9f8430557eed45e04824681586ca2eab081f26a",
+          "chosen": 4096,
+          "rule": "DESIGN (fixed before the sweep ran): the weight with the lowest held time-row forward relL2 (4 d.p.) among weights whose held content-row forward relL2 is within +1% of the weight-1 value; ties -> the smaller weight"
+        },
+        "diagnostics_not_gates": {
+          "held_forward_all": {
+            "cos": 0.40517134538355787,
+            "cos_p05": 0.2887103561829107,
+            "r2": 0.011627095444899704,
+            "rel_l2": 0.928295716137986,
+            "rows": 8194
+          },
+          "held_roundtrip_all": {
+            "cos": 0.9641313154994424,
+            "cos_p05": 0.9297952152422588,
+            "r2": 0.694121994043883,
+            "rel_l2": 0.2819364336770953,
+            "rows": 8194
+          },
+          "held_forward_time_rows": {
+            "cos": 0.9844909838785647,
+            "rel_l2": 0.1755840147283184,
+            "rows": 2
+          },
+          "held_forward_content_rows": {
+            "cos": 0.4050299099249409,
+            "rel_l2": 0.9288352801845636,
+            "rows": 8192
+          }
+        }
+      }
+    },
+    {
+      "source": "QVL32",
+      "unit": "qvl32/qvl32_vit_L13",
+      "from": "Codex qvl32-1075-cpu-01a10f94-2b148ef9 native_component (diagnostic_fit split, root-owned, read only)",
+      "installed_parameters_at_5120": 19594291,
+      "mlp": "9,921,872 -> 2,479,027 (0.2499; parent intermediate 4304 READ from qwen3vl_32b_minimax_h3_bf16 header, all 27 blocks)",
+      "meets_4x_component": true,
+      "time_gate": "none (ViT)",
+      "charts_5120": "PRESENT at hidden 5120 (lane M1, 2026-10-10); fitted on S3-trunk host rows under the latent interface set",
+      "status": "installable (type 6 ocr only); C11 rows built (two arms); charts: PRESENT at hidden 5120 (lane M1, 2026-10-10); fitted on S3-trunk host rows under the latent interface set",
+      "owner_next": "Claude (charts) / Cyril (which C11 arm is of record; ocr band f[640,2176) e[384,385) is the R0 proposal)",
+      "smallest_next_step": "R2-QVL32 block-13 rows are already captured (composite/s7/m3/c11_captures/*/img*.safetensors: block13_in) -> R3 host rows -> --tap-rows",
+      "parent_intermediate_source": {
+        "depth": 27,
+        "fc1_shape_all_blocks": [
+          4304,
+          1152
+        ],
+        "fc2_shape_block": [
+          1152,
+          4304
+        ],
+        "hidden_size": 1152,
+        "intermediate_size": 4304,
+        "parent": "/home/cereal/comfyui/models/text_encoders/qwen3vl_32b_minimax_h3_bf16.safetensors",
+        "prefix": "visual.",
+        "read_from": "safetensors header (linear_fc1/linear_fc2 shapes of every visual block)"
+      },
+      "type_ids": [
+        6
+      ],
+      "c11_rows": {
+        "of_record": {
+          "dir": "/home/cereal/omni-campaign/composite/s7/c11/qvl32_patch_merger",
+          "companions_sha256": "bf9de17f59661796e04120b91da04c86158bae0350fb18013be5e5db56708b60",
+          "construction": "feature_proj = A M P; type_embed_delta = A (M b + c/4) + a/4",
+          "band": [
+            [
+              640,
+              2176
+            ],
+            [
+              384,
+              385
+            ]
+          ],
+          "merger_fit_held": {
+            "cos_mean": 0.5736298265375459,
+            "cos_p05": 0.37997294108870555,
+            "mean_predictor_rel_l2": 0.8674450406963966,
+            "rel_l2": 0.857042624768149,
+            "rows": 3724
+          },
+          "alignment_held": {
+            "cos_mean": 0.2815499431062594,
+            "cos_p05": 0.21241559060648338,
+            "mean_predictor_rel_l2": 0.9953066565173281,
+            "rel_l2": 0.9580852766408362,
+            "rows": 13158
+          },
+          "bridge_scale": 0.020758256123566927
+        },
+        "second_arm_q38u_own_visual": {
+          "dir": "/home/cereal/omni-campaign/composite/s7/c11/q38u_own_visual",
+          "companions_sha256": "9aa0c587c593385a5842a7a759186880ed14fedb5e6311508fac2640f4c1515d",
+          "construction": "feature_proj = M P; type_embed_delta = (M b + c/4)",
+          "merger_fit_held": {
+            "cos_mean": 0.9017551193160195,
+            "cos_p05": 0.8261553530014946,
+            "mean_predictor_rel_l2": 0.6426775956788243,
+            "rel_l2": 0.5991023755239143,
+            "rows": 3724
+          },
+          "bridge_scale": 0.17094140700867355
+        },
+        "structural_check": "both sets load through c16.load_interface_set against the real S3 native config (hidden 5120, F 6144, 8 types): sha verified, bands disjoint",
+        "diagnostics_only": "fit numbers are diagnostics (owner policy); see c11_rows_receipt.json"
+      },
+      "blocker_m3": "FIXED (Claude-side; Codex C11 rows never arrived): parent width read, type ids [6], C11 rows built from parent captures (P40 GPU1, FP32)",
+      "unit_dir_backup": "/home/cereal/omni-campaign/composite/s7/units/qvl32/.bak-m3-20261010-qvl32_vit_L13"
+    },
+    {
+      "source": "C15 interface rows / C18 band",
+      "unit": null,
+      "status": "not built (no companions.json at hidden 5120, no [65,536 x 5,120] band table)",
+      "owner_next": "Claude",
+      "smallest_next_step": "c15_absorb_run.py --hidden 5120 for ACE/H3 audio+video; C18 from the ACE LM",
+      "c11_note_m3": "C11 (QVL32 ocr) rows built by lane M3: composite/s7/c11/{qvl32_patch_merger,q38u_own_visual}"
+    }
+  ],
+  "m3_update": {
+    "author": "Claude lane M3, 2026-10-10",
+    "scope": "unit blockers H3 / QIMG / HY3D / QVL32 (Claude-side fixes, recorded); charts are lane M1's",
+    "previous_table_sha256": "4ac704cc8b8b9e7bc49767c3bf825b5205bb6f157ce70680ff3bc980df9ff7da",
+    "dry_run": {
+      "run": "M1w (s7_dryrun.py --hidden 5120 --rows 1024, tiny 8-layer child at hidden 5120, NOT the S3 trunk)",
+      "flags": "--charted-dtype match, default --time-reference-rel-tol 1e-5, tree_ef1ffb9, c16 1.2.0",
+      "c16_exit": 0,
+      "load_check": "loaded 639,572,441 params, charted layers [4..8], text hidden bit-identical, logits finite",
+      "time_gates": {
+        "ace": 1.1816756995131072e-07,
+        "h3": 1.3166969381472882e-07,
+        "qimg": 1.1680489109267e-07
+      },
+      "h3_fp32_kept": [
+        "attn.rope_inv_freq",
+        "h3_time.curve_table",
+        "h3_time.proj.bias",
+        "h3_time.proj.weight"
+      ],
+      "charts": "ace + hy3d: lane M1's real 5120 charts (container); h3 / qimg / qvl32: synthetic seeded rows (contract only)",
+      "manifest_sha256": "574a25b267da0a96fdd79503e760e27ae044c1fe43eed4d3933e4955c3098b9a",
+      "negative_control": "the pre-M3 QIMG unit (BF16 capture reference, backup dir) at 1e-5: c16 exit 3"
+    },
+    "charts_5120_snapshot": "per-unit charts_5120 copied from each unit s7_unit.charts_status at M3 close (M1 adds charts concurrently)"
+  },
+  "prepb_update": {
+    "author": "Claude PREP-B, 2026-10-10/11",
+    "previous_table_sha256": "793159f75f693d6b2d92ee367c9d98f9f8783560ca1b7d0cdadaa4a973d45d78",
+    "scope": "HY3D time-token row (S7 readiness 1/D3): pairs, host rows, chart refit, unit rebuild, dry run",
+    "tools": {
+      "s7_pairs_parent.py": {
+        "sha256": "4339b1952d6c84c112e311afc25a36a505f66888d833aa0fcd0924d5986d6ca6"
+      },
+      "s7_host_rows.py": {
+        "sha256": "c2f00dbfbe8b2a3a401a8fef8d4fc94982540e08fab65ed67f36a9683b1675a0"
+      },
+      "s7_chart_fit.py": {
+        "sha256": "5abc3676f45c4dffd55a4d964d10e85b53a4210c32d6687dd69d73b1681017ab"
+      },
+      "s7_unit_build.py": {
+        "sha256": "36df14de22b363e665d130fc5d6619ceb40e5c57ba98ec4c5ac22cfd72624c49"
+      },
+      "s7_hy3d_timerow_check.py": {
+        "sha256": "6d90152275119f8bac23e6b25f005d897d957850c560b35e25f0f1ba970deb59"
+      },
+      "test_s7_media_charts.py": {
+        "sha256": "605e077b544e52463cbef7f9822f6821e99cb2e8e9682fdba3eaa3a4f504ba9b"
+      },
+      "test_s7_unit_build.py": {
+        "sha256": "21ced26332082c580f2b8aed8204e5386d303326d0de8ff7ce1bf2e93d3339a7"
+      }
+    },
+    "dry_run": {
+      "run": "PBT: s7_dryrun.py --hidden 5120 --rows 1024 --build-child --charted-dtype match (tiny synthetic child at hidden 5120, NOT the S3 trunk), unit hy3d_dit_L10 only, real charts",
+      "check": {
+        "loaded_tensors": 164,
+        "parameters": 94291343,
+        "child_parameters": 48135312,
+        "charted_layers": [
+          4
+        ],
+        "text_hidden_bit_identical": true,
+        "text_logits_finite": true
+      },
+      "manifest_sha256": "78ef4ff9edf436edb3676ce885f8816fe466e26a745c2b522f097fa70aad3ad3",
+      "timerow_check": {
+        "report": "/home/cereal/omni-campaign/composite/s7/prep_b/timerow_check.json",
+        "sha256": "e5a2fae84ac78c720b152f9893f737f4f8de264ef6223c415f3b517481f6becc",
+        "structural_verdict": "PASS: the time row is routed to, attended by and written by the hy3d block",
+        "part_a_diagnostics": {
+          "final_hidden_latent_rows_rel_change_with_vs_without_time_row_in_sequence": 0.04803921654820442,
+          "latent_write_rel_change_time_row_owned_vs_unowned": 0.0005579871940426528,
+          "latent_write_rel_change_time_row_state_sigma_0.2_vs_0.8": 8.478496602037922e-05,
+          "note": "synthetic trunk: magnitudes say nothing about the real child; the end-to-end number mixes the trunk's own causal attention to the extra row with the block's",
+          "time_row_trunk_state_rel_change_sigma_0.2_vs_0.8": 0.12599238753318787
+        },
+        "part_b_real_rows": {
+          "chart_in_time_row_vs_parent_row0": {
+            "cos": 0.9999973773956299,
+            "mapped_norm": 318.3830261230469,
+            "parent_row0_norm": 318.6072082519531,
+            "rel_l2": 0.0024555244017392397
+          },
+          "charts_sha256": "5209e8343562193140684f719c860c23b28c67cb0785f87dfcdda357c5dd4b5b",
+          "held_forward": 2,
+          "latent_write_norm": 97.83941650390625,
+          "latent_write_rel_change_time_row_owned_vs_unowned": 8.522674033883959e-05,
+          "paired_rows_sha256": "cefe8634d19ba65e2994d83a2a4cd1f92decbd3d96d3f3f716ecbbe919326719",
+          "rows": 4097,
+          "seconds": 6.553361415863037,
+          "source_space_reference": {
+            "capture": "/mnt/lexar/omni-campaign/hy3d-native-4983c53b-7eee-4f49-980f-ab3788f5db69/dense-child-blocks/dense-child-block-10-1c1709d9-8afb-47f0-931f-35e01f90f125/capture-block10/block-10/capture.safetensors",
+            "checked": true,
+            "latent_delta_rel_change_with_vs_without_row0": 8.483977580908686e-05,
+            "note": "the unit's own source block (4x MLP, no cross-attention) on the parent's block-10 input rows: how much the parent's time token moves the latent rows' block delta in source space",
+            "sample": 2
+          },
+          "time_row_write_norm": 1.4507088661193848,
+          "unit_json_sha256": "6eff2077c759a87605ba058dbb7146967ef59deff16da407fd3696d1f2e33d79"
+        }
+      }
+    },
+    "policy": "owner 2026-10-06: every fit / change magnitude above is a diagnostic; structural checks refuse",
+    "updated_at_utc": "2026-10-11T05:19:27Z"
+  }
+}

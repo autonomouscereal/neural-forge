@@ -1,0 +1,128 @@
+{
+  "alignment": null,
+  "argv": [
+    "m3_c11_qvl_rows.py",
+    "--captures",
+    "/home/cereal/omni-campaign/composite/s7/m3/c11_captures/q38u",
+    "--parent",
+    "/home/cereal/models/Qwen3.8-27B-Uncensored",
+    "--prefix",
+    "model.visual.",
+    "--arm",
+    "q38u",
+    "--trunk-native",
+    "/mnt/lexar/omni-campaign/s3-native-v2-3a25a459-4347-416d-a58a-2cb3c8e738fd/actual/native-s3-text-stage/native",
+    "--out",
+    "/home/cereal/omni-campaign/composite/s7/c11/q38u_own_visual"
+  ],
+  "arm": "q38u",
+  "bands": {
+    "emission": "OCR is input-only: one zero emission row and a zero type_affine shift (c16 needs b < e)",
+    "source": "R0 proposal of the media-chart-pairing design (ocr/6 f[640,2176) e[384,385)); owner decision"
+  },
+  "bridge_scale_diagnostic": {
+    "note": "c16 ADDS the delta to the random S0 type_embed row; before the bridge RMSNorm the written row is this ratio of that random vector (diagnostic; the bridge's position/noise terms are not counted)",
+    "ratio_written_to_s0_type_embed_median": 0.17094140700867355,
+    "row_norm_median_feature_term": 7.949042234696126,
+    "s0_type_embed_row_norm": 72.30784154655757,
+    "type_embed_delta_norm": 19.989392107819594
+  },
+  "captures": {
+    "config": {
+      "depth": 27,
+      "hidden_size": 1152,
+      "in_channels": 3,
+      "intermediate_size": 4304,
+      "num_heads": 16,
+      "num_position_embeddings": 2304,
+      "out_hidden_size": 5120,
+      "patch_size": 16,
+      "spatial_merge_size": 2,
+      "temporal_patch_size": 2
+    },
+    "dir": "/home/cereal/omni-campaign/composite/s7/m3/c11_captures/q38u",
+    "images": 96,
+    "merged_rows": 18816,
+    "parent": "/parent",
+    "receipt_sha256": "6497cff25787a1c70be322dfea2d7f88f12acb2dfbafcb7ce4e93e923ab2a908",
+    "rows": 75264
+  },
+  "construction": "feature_proj = M P; type_embed_delta = (M b + c/4)",
+  "diagnostics_policy": "every fit number here is a diagnostic (owner policy 2026-10-06); structural checks: shapes, finiteness, band fit",
+  "entry": {
+    "companion_decoder": false,
+    "emission_band": [
+      384,
+      385
+    ],
+    "feature_band": [
+      640,
+      2176
+    ],
+    "name": "q38u_own_visual_patch_merger",
+    "psnr_absorbed_db": null,
+    "psnr_parent_roundtrip_db": null,
+    "rows": "q38u_own_visual_patch_merger/linear/composed_interface.safetensors",
+    "rung": "linear",
+    "source": "Q38-27BU-visual",
+    "tensor_sha256": {
+      "bridge.feature_proj.weight": "98f1f37c1f371df6ff6cba7f9afe1b34f63c3d44a68e2564cb4174553adf4be8",
+      "bridge.type_embed_delta": "671005af7464fce1536fb116f17e6c83be4f2d6ce215a30a714edb427e6dd1a8",
+      "head.out.weight": "96925977722fa67299bb8205082d2657a78d7d380a19c4d6ee305266dab22b34",
+      "head.type_affine_shift": "246132225d13cff01ebab02cf09d2e35721d40e9dfbb9a27a9e07897c1c90a99"
+    },
+    "type_id": 6
+  },
+  "group_sum_consistency_rel_l2": 1.0437145137185637e-07,
+  "merger_fit": {
+    "control_unshared_concat_held": {
+      "cos_mean": 0.8996014458433701,
+      "cos_p05": 0.8242762399393825,
+      "mean_predictor_rel_l2": 0.6426775956788243,
+      "rel_l2": 0.603146655552597,
+      "rows": 3724
+    },
+    "fit": {
+      "cos_mean": 0.9032480727995644,
+      "cos_p05": 0.8295089255470511,
+      "mean_predictor_rel_l2": 0.6440723706947084,
+      "rel_l2": 0.5839638995699603,
+      "rows": 15092
+    },
+    "held": {
+      "cos_mean": 0.9017551193160195,
+      "cos_p05": 0.8261553530014946,
+      "mean_predictor_rel_l2": 0.6426775956788243,
+      "rel_l2": 0.5991023755239143,
+      "rows": 3724
+    },
+    "lambda_ladder_inner_rel_l2": {
+      "0.0001": 0.6048663073728304,
+      "0.001": 0.5996548859005512,
+      "0.01": 0.59061456468442,
+      "0.1": 0.5838813366128317,
+      "1.0": 0.5823370661131021,
+      "1e-06": 0.6181562561866958,
+      "1e-08": 0.640925945860062
+    },
+    "lambda_rel": 1.0,
+    "split": "by image: 19 held images (index % 5 == 4), inner lambda split by image"
+  },
+  "not_carried": [
+    "the learned interpolated pos_embed (position-dependent; trunk positions instead)",
+    "the 2-D vision RoPE and all 27 ViT blocks (folded into the fitted M as a linear stand-in)",
+    "DeepStack mergers (Qwen3-VL-32B blocks 8/16/24 -> LM layers)"
+  ],
+  "patch_embed": {
+    "exactness_rel_l2_vs_capture": 2.7850787767772726e-07,
+    "file": "/home/cereal/models/Qwen3.8-27B-Uncensored/model-00012-of-00012.safetensors",
+    "shape": [
+      1152,
+      1536
+    ]
+  },
+  "tool": "m3_c11_qvl_rows",
+  "tool_sha256": "c0964ceb5913a2cccf18b145691a1189c8a0e0379e5fcf8da34f0312f6d9753b",
+  "tool_version": "1.0.0",
+  "wall_seconds": 66.79967379570007
+}

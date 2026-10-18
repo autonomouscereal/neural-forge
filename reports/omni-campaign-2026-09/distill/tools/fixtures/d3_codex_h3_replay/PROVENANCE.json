@@ -1,0 +1,18 @@
+{
+ "schema": "omni-campaign.test-fixture-provenance.v1",
+ "what": "3 genuine Codex H3 joint-AV guided-velocity native batches (route joint_av, source item 0) + their native_flow_cache.v1 receipts; reference tensors for the d3_hybrid_module 1.1.0 velocity-loss parity arm and the authentic receipt-join regression",
+ "source_archive": "C:\\Users\\cereal\\Documents\\ai training\\reviews\\2026-10-13-folding\\recovery-preparation\\speech-replay-final-v1\\collection-v3.tar.gz",
+ "source_archive_sha256": "1570f2b9b26222d5193086ee444a398bf21c7a4b08a4c485ca800a2f64fe34e2",
+ "archive_manifest": "C:\\Users\\cereal\\Documents\\ai training\\reviews\\2026-10-13-folding\\recovery-preparation\\speech-replay-final-v1\\collection-v3.tar.json",
+ "producer": "Codex codex-h3-native-modality-v3 (H3 manifest ba5ac505..., proof b8f2812a..., per RECOVERY_STATUS_2026-10-13)",
+ "extracted_utc": "2026-10-14",
+ "edited": false,
+ "files": {
+  "codex-h3-native-modality-v3/native-h3-v1/h3-native-00000000.json": "d04b4e22cc08ff566170a89d412948b5f43ed5a68cdd561798d99381b80240a3",
+  "codex-h3-native-modality-v3/native-h3-v1/h3-native-00000000.safetensors": "a199a9b81667e44ee3d4698581155c192d1718c693e21fee43a316efccc4271c",
+  "codex-h3-native-modality-v3/native-h3-v1/h3-native-00000001.json": "00fde2dcf9412e5bb88075a1572eefeb538f7fc1c8c77a1848b3e2f40dcb1f24",
+  "codex-h3-native-modality-v3/native-h3-v1/h3-native-00000001.safetensors": "6b52aa6be92601453c8fe0e2adcdc843105cb8cb689c9a3120b8e19e693cf5b2",
+  "codex-h3-native-modality-v3/native-h3-v1/h3-native-00000002.json": "753731037fc50d83112e98790c88a5dfc61527f1ab1e89d2179b5452b8f04664",
+  "codex-h3-native-modality-v3/native-h3-v1/h3-native-00000002.safetensors": "6bbc8057c28943f597585baff2db28c0e4559a7ecc6b0dd1c37f524f85b15399"
+ }
+}

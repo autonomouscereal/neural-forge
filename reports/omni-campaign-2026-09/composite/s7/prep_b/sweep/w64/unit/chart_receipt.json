@@ -1,0 +1,536 @@
+{
+ "arms_notes": {
+  "ridge": {
+   "regime": {
+    "backward": "overdetermined",
+    "forward": "overdetermined",
+    "ladder_backward": "overdetermined",
+    "ladder_forward": "overdetermined"
+   },
+   "ridge_lambda_in": 2195.5413006734507,
+   "ridge_lambda_out": 8429.85924757731
+  }
+ },
+ "charted_block_json": {
+  "file": "/home/cereal/omni-campaign/composite/s7/prep_b/sweep/w64/unit/charted_block.json",
+  "pre_m1_backup": "/home/cereal/omni-campaign/composite/s7/prep_b/sweep/w64/unit/charted_block.json.pre-m1",
+  "pre_m1_sha256": "c461702c5f2937e5c2c732a8e2b4af132b37ca080618129e2ec35d13a6470e3e",
+  "sha256": "1c25ec662373fdd33317c4898ba5ecc48db676d4404f05a84c37dfb63483b159"
+ },
+ "charts": {
+  "arms": [
+   "ridge"
+  ],
+  "chart_out_bias": "not written (c16 never installs it)",
+  "diagnostics_held": {
+   "forward": {
+    "cos": 0.4019131093625689,
+    "cos_p05": 0.28411409262035014,
+    "r2": 0.0017596700056734527,
+    "rel_l2": 0.9329180303417481,
+    "rows": 8194
+   },
+   "roundtrip": {
+    "cos": 0.9624707027622627,
+    "cos_p05": 0.9262577327631574,
+    "r2": 0.6782786006576224,
+    "rel_l2": 0.28914590846125754,
+    "rows": 8194
+   }
+  },
+  "file": "charts.safetensors",
+  "hidden": 5120,
+  "method": "ridge (mediafold.linalg.fit_ridge_linear, fp64) refitted on every paired row at the lambdas chosen by the c17 fit-split ladder",
+  "pairs": {
+   "holdout": "group split (see the pair receipt)",
+   "host_site": "block 31 OUTPUT (the residual the charted block inserted after layer 31 reads)",
+   "interface": [
+    "/home/cereal/omni-campaign/composite/s7/interface_latent/companions.json"
+   ],
+   "paired_rows": "/home/cereal/omni-campaign/composite/s7/tap_rows_s3/hy3d_dit_L10/paired_rows.safetensors",
+   "paired_rows_sha256": "cefe8634d19ba65e2994d83a2a4cd1f92decbd3d96d3f3f716ecbbe919326719",
+   "parent_pairs": "/home/cereal/omni-campaign/composite/s7/pairs/hy3d_dit_L10/parent_capture.safetensors",
+   "rows": 16388,
+   "rows_held": 8194,
+   "trunk": "/mnt/lexar/omni-campaign/s3-native-v2-3a25a459-4347-416d-a58a-2cb3c8e738fd/actual/native-s3-text-stage/native"
+  },
+  "policy": "owner 2026-10-06: these numbers are diagnostics, never gates",
+  "producer": {
+   "lane": "M1 2026-10-10",
+   "sha256": "269acf33be0436863b0b3f058ebb9463511200786555e3d9f807b41668d2bc09",
+   "tool": "s7_chart_fit",
+   "version": "1.1.0"
+  },
+  "ridge_rel": {
+   "chart_in": 0.1,
+   "chart_out": 0.1
+  },
+  "sha256": "d71df4eab8624aadd1290297ef7491267a71ae62c84e4fb9fe4b58215d7b9e7e",
+  "shapes": {
+   "chart_in.bias": [
+    2048
+   ],
+   "chart_in.weight": [
+    2048,
+    5120
+   ],
+   "chart_out.weight": [
+    5120,
+    2048
+   ]
+  },
+  "time_rows": {
+   "held_forward_content": {
+    "cos": 0.4017710408022169,
+    "cos_p05": 0.28411409262035014,
+    "r2": 0.00043320015914039,
+    "rel_l2": 0.9334595514187061,
+    "row_cos": [
+     0.29360539440508443,
+     0.4085324980394365,
+     0.41755943000263634,
+     0.40306843006695703,
+     0.36031353885689077,
+     0.41257605427246147,
+     0.37934407157582883,
+     0.3563169694612781
+    ],
+    "row_rel_l2": [
+     1.0467475820637753,
+     0.9526822182845688,
+     0.9431386309834133,
+     0.9254813101064926,
+     0.9505973150510544,
+     0.9368129896652541,
+     0.9457151249602656,
+     0.9752656214209628
+    ],
+    "rows": 8192,
+    "width": 2048
+   },
+   "held_forward_time": {
+    "cos": 0.9838259325644217,
+    "cos_p05": 0.9836207735831712,
+    "r2": -1.3867784512442674,
+    "rel_l2": 0.17963041342362898,
+    "row_cos": [
+     0.9840310915456725,
+     0.9836207735831712
+    ],
+    "row_rel_l2": [
+     0.17900638637441332,
+     0.180276223623889
+    ],
+    "rows": 2,
+    "width": 2048
+   },
+   "how": "the time rows are ordinary rows of both charts; each is replicated `weight` times in the fit design (split fit: fit time rows only; record: every time row)",
+   "requirement": "hy3d_time_token_row",
+   "rows": 4,
+   "rows_held": 2,
+   "weight": 64
+  },
+  "valid_only_with": "the latent interface rows these host rows were captured under (s7/interface_latent) and the S3 trunk prefix 0..31; S5 (C10 rewrites FFNs 0-31) needs a recapture"
+ },
+ "created_at_utc": "2026-10-10T22:58:10Z",
+ "diagnostics": {
+  "bridge_row_predicts_x31": {
+   "cos_bridge_vs_x31_median": 0.47280266969147733,
+   "design_width": 5121,
+   "held_scores_bridge_row_to_x31": {
+    "cos": 0.959249186976362,
+    "cos_p05": 0.916926278292962,
+    "r2": 0.6340502402123785,
+    "rel_l2": 0.30804224147503817,
+    "rows": 819,
+    "width": 5120
+   },
+   "reading": "how much of the trunk's x_31 at a media row is a linear function of the bridge row alone (row-split, small sample)",
+   "regime": "underdetermined",
+   "ridge_rel": 0.001,
+   "rows": 4096
+  },
+  "per_type_held_forward": null,
+  "procrustes_control_held": null,
+  "record_in_sample": {
+   "backward": {
+    "cos": 0.956098870025445,
+    "cos_p05": 0.9148139142258286,
+    "r2": 0.6284011566495478,
+    "rel_l2": 0.310637954318245,
+    "rows": 16388,
+    "width": 5120
+   },
+   "forward": {
+    "cos": 0.6507856221712394,
+    "cos_p05": 0.5535532622924754,
+    "r2": 0.34126565087015204,
+    "rel_l2": 0.7592620245103421,
+    "rows": 16388,
+    "width": 2048
+   },
+   "label": "IN-SAMPLE (every row fitted); the held numbers of the split ridge arm are the honest ones",
+   "roundtrip": {
+    "cos": 0.9613899833003781,
+    "cos_p05": 0.9204186612420416,
+    "r2": 0.6716379505453828,
+    "rel_l2": 0.29200737457410847,
+    "rows": 16388,
+    "width": 5120
+   }
+  },
+  "ridge_split_fit": {
+   "backward": {
+    "cos": 0.9615449278010392,
+    "cos_p05": 0.9257090125382473,
+    "r2": 0.6745718875521339,
+    "rel_l2": 0.29143405144358375,
+    "rows": 8320
+   },
+   "forward": {
+    "cos": 0.7187297891840405,
+    "cos_p05": 0.6286344250374425,
+    "r2": 0.47326301130903203,
+    "rel_l2": 0.6756000313987688,
+    "rows": 8320
+   },
+   "roundtrip": {
+    "cos": 0.9661647482857841,
+    "cos_p05": 0.9303980543642835,
+    "r2": 0.7124514157738662,
+    "rel_l2": 0.2739481531997349,
+    "rows": 8320
+   }
+  },
+  "ridge_split_held": {
+   "backward": {
+    "cos": 0.9110722855240216,
+    "cos_p05": 0.8450106735423539,
+    "r2": 0.189453123564435,
+    "rel_l2": 0.45895081453871955,
+    "rows": 8194
+   },
+   "forward": {
+    "cos": 0.4019131093625689,
+    "cos_p05": 0.28411409262035014,
+    "r2": 0.0017596700056734527,
+    "rel_l2": 0.9329180303417481,
+    "rows": 8194
+   },
+   "roundtrip": {
+    "cos": 0.9624707027622627,
+    "cos_p05": 0.9262577327631574,
+    "r2": 0.6782786006576224,
+    "rel_l2": 0.28914590846125754,
+    "rows": 8194
+   }
+  },
+  "svd_control_held": null,
+  "time_rows": {
+   "label": "diagnostics only; 'time' = the parent's evolved time token rows, 'content' = latent rows",
+   "norms": {
+    "host_content_median": 113.79012770470527,
+    "host_time": [
+     93.8151706198966,
+     93.71120777429674,
+     94.94832176950253,
+     93.62756298770738
+    ],
+    "parent_content_median": 138.9173309015758,
+    "parent_time": [
+     313.5507372183634,
+     318.62335654952756,
+     318.60720838534036,
+     312.63482429441535
+    ]
+   },
+   "record_in_sample_forward": {
+    "content": {
+     "cos": 0.6507006774227062,
+     "cos_p05": 0.5535532622924754,
+     "r2": 0.3403554820319975,
+     "rel_l2": 0.7597255049324758,
+     "row_cos": [
+      0.7771204802813707,
+      0.8523558017084739,
+      0.8322482077715017,
+      0.6245991382546768,
+      0.5897860539680384,
+      0.6491684654535638,
+      0.8806197977324197,
+      0.6760571305719862
+     ],
+     "row_rel_l2": [
+      0.643876382147046,
+      0.5683197746635544,
+      0.5590146619199848,
+      0.783774057617224,
+      0.80818460279056,
+      0.7635973703806603,
+      0.550065081294188,
+      0.7403603013497602
+     ],
+     "rows": 16384,
+     "width": 2048
+    },
+    "time": {
+     "cos": 0.998719312162467,
+     "cos_p05": 0.9984077326107115,
+     "r2": 0.8221624390069351,
+     "rel_l2": 0.05371222158137346,
+     "row_cos": [
+      0.9987507846192013,
+      0.9989850837620406,
+      0.9984077326107116,
+      0.9987336476579152
+     ],
+     "row_rel_l2": [
+      0.05059424804475973,
+      0.052132509460955885,
+      0.06002997707410505,
+      0.05137600849792154
+     ],
+     "rows": 4,
+     "width": 2048
+    }
+   },
+   "rows": 4,
+   "rows_held": 2,
+   "split_ridge_fit_forward_time": {
+    "cos": 0.9997035945541074,
+    "cos_p05": 0.9996989507511117,
+    "r2": 0.9226701081128188,
+    "rel_l2": 0.028338722579607796,
+    "row_cos": [
+     0.9997082383571032,
+     0.9996989507511116
+    ],
+    "row_rel_l2": [
+     0.025233961869120355,
+     0.03105091981001387
+    ],
+    "rows": 2,
+    "width": 2048
+   },
+   "split_ridge_held_backward": {
+    "content": {
+     "cos": 0.9110575944253009,
+     "cos_p05": 0.8450106735423539,
+     "r2": 0.18923239302219752,
+     "rel_l2": 0.45897591990450626,
+     "row_cos": [
+      0.7886632148057335,
+      0.7522769284049847,
+      0.7398042199987678,
+      0.8109135675970859,
+      0.8601350801771377,
+      0.7426060344589536,
+      0.8540119212038869,
+      0.657598333293841
+     ],
+     "row_rel_l2": [
+      0.6541635601070647,
+      0.6597557457956131,
+      0.727542357359036,
+      0.6174431665549064,
+      0.53683323593095,
+      0.7274147242335802,
+      0.5341235802526535,
+      0.8288555274417739
+     ],
+     "rows": 8192,
+     "width": 5120
+    },
+    "time": {
+     "cos": 0.9712470258842528,
+     "cos_p05": 0.9585687960193277,
+     "r2": -6.358053150351546,
+     "rel_l2": 0.2513608072124057,
+     "row_cos": [
+      0.983925255749178,
+      0.9585687960193277
+     ],
+     "row_rel_l2": [
+      0.17858318075332952,
+      0.30880670215631084
+     ],
+     "rows": 2,
+     "width": 5120
+    }
+   },
+   "split_ridge_held_forward": {
+    "content": {
+     "cos": 0.4017710408022169,
+     "cos_p05": 0.28411409262035014,
+     "r2": 0.00043320015914039,
+     "rel_l2": 0.9334595514187061,
+     "row_cos": [
+      0.29360539440508443,
+      0.4085324980394365,
+      0.41755943000263634,
+      0.40306843006695703,
+      0.36031353885689077,
+      0.41257605427246147,
+      0.37934407157582883,
+      0.3563169694612781
+     ],
+     "row_rel_l2": [
+      1.0467475820637753,
+      0.9526822182845688,
+      0.9431386309834133,
+      0.9254813101064926,
+      0.9505973150510544,
+      0.9368129896652541,
+      0.9457151249602656,
+      0.9752656214209628
+     ],
+     "rows": 8192,
+     "width": 2048
+    },
+    "time": {
+     "cos": 0.9838259325644217,
+     "cos_p05": 0.9836207735831712,
+     "r2": -1.3867784512442674,
+     "rel_l2": 0.17963041342362898,
+     "row_cos": [
+      0.9840310915456725,
+      0.9836207735831712
+     ],
+     "row_rel_l2": [
+      0.17900638637441332,
+      0.180276223623889
+     ],
+     "rows": 2,
+     "width": 2048
+    }
+   },
+   "weight": 64
+  }
+ },
+ "ridge_notes": {
+  "in": {
+   "design_width": 5121,
+   "fit_bias": true,
+   "fit_rows": 8320,
+   "holdout_rows": 0,
+   "ladder_inner_fit_rows": 6656,
+   "ladder_regime": "overdetermined",
+   "ladder_rows": 8320,
+   "lambda_ladder": [
+    {
+     "rel_l2": 1.5572648821265345,
+     "ridge_rel": 1e-06
+    },
+    {
+     "rel_l2": 1.5359573084407676,
+     "ridge_rel": 1e-05
+    },
+    {
+     "rel_l2": 1.3919845510756612,
+     "ridge_rel": 0.0001
+    },
+    {
+     "rel_l2": 1.0561101385718326,
+     "ridge_rel": 0.001
+    },
+    {
+     "rel_l2": 0.8279796727396973,
+     "ridge_rel": 0.01
+    },
+    {
+     "rel_l2": 0.7694626248546548,
+     "ridge_rel": 0.1
+    },
+    {
+     "rel_l2": 0.7798616233901785,
+     "ridge_rel": 1.0
+    },
+    {
+     "rel_l2": 0.819097876359731,
+     "ridge_rel": 10.0
+    },
+    {
+     "rel_l2": 0.8984231864819998,
+     "ridge_rel": 100.0
+    }
+   ],
+   "refit_fit_rows": 8320,
+   "refit_regime": "overdetermined",
+   "ridge_rel": 0.1,
+   "ridge_rel_selected": 0.1,
+   "seed": 0
+  },
+  "out": {
+   "design_width": 2049,
+   "fit_bias": true,
+   "fit_rows": 8320,
+   "holdout_rows": 0,
+   "ladder_inner_fit_rows": 6656,
+   "ladder_regime": "overdetermined",
+   "ladder_rows": 8320,
+   "lambda_ladder": [
+    {
+     "rel_l2": 0.3843873641340067,
+     "ridge_rel": 1e-06
+    },
+    {
+     "rel_l2": 0.38438136836319053,
+     "ridge_rel": 1e-05
+    },
+    {
+     "rel_l2": 0.38427757760439946,
+     "ridge_rel": 0.0001
+    },
+    {
+     "rel_l2": 0.38110304653207866,
+     "ridge_rel": 0.001
+    },
+    {
+     "rel_l2": 0.3637992380351935,
+     "ridge_rel": 0.01
+    },
+    {
+     "rel_l2": 0.3432283429616005,
+     "ridge_rel": 0.1
+    },
+    {
+     "rel_l2": 0.3668455455881907,
+     "ridge_rel": 1.0
+    },
+    {
+     "rel_l2": 0.4473251553051328,
+     "ridge_rel": 10.0
+    },
+    {
+     "rel_l2": 0.5532931778043017,
+     "ridge_rel": 100.0
+    }
+   ],
+   "refit_fit_rows": 8320,
+   "refit_regime": "overdetermined",
+   "ridge_rel": 0.1,
+   "ridge_rel_selected": 0.1,
+   "seed": 0
+  }
+ },
+ "schema": "omni-campaign.s7_chart_receipt.v1",
+ "seconds": 1182.0288972854614,
+ "split_ridge_file": {
+  "file": "/home/cereal/omni-campaign/composite/s7/prep_b/sweep/w64/unit/charts_split_ridge.diagnostic.safetensors",
+  "note": "fit-split ridge chart, diagnostic only",
+  "sha256": "94aab693f963796334651a2cb2633d1a768342abf23a6c4bff890eb883485377"
+ },
+ "tensor_sha256": {
+  "chart_in.bias": "27e8f67e5004fee3396cd1f9f77885af51d7a074589fa2270681fe49afd3ef53",
+  "chart_in.weight": "5814aced8210a4dc77626a84ca6d85a7d816ea43245809c4ad316f8e32826303",
+  "chart_out.weight": "098549484cb3c027a62d3c601dc150d918c0fbd792985e86b5880704dc308a96"
+ },
+ "tool": {
+  "c17_chart_fit_sha256": "a60220946e41ffbffff0f06118ee0aeb592cf3e46495c33ec482c286f1cb6e3c",
+  "name": "s7_chart_fit",
+  "sha256": "269acf33be0436863b0b3f058ebb9463511200786555e3d9f807b41668d2bc09",
+  "version": "1.1.0"
+ },
+ "unit": "hy3d_dit_L10",
+ "unit_dir": "/home/cereal/omni-campaign/composite/s7/prep_b/sweep/w64/unit"
+}

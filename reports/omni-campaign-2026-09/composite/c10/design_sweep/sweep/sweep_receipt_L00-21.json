@@ -1,0 +1,1844 @@
+{
+ "alignment": {
+  "form": "c17 table",
+  "schema": "chimera_omni.composite.c17_alignment.v1",
+  "sha256": "4006c1796946202f377356a61278bf270bd9a6a0e5a6a4d3c67801a1e0618f8c",
+  "source": "/home/cereal/omni-campaign/composite/c17/charts/alignment.json",
+  "summary": {
+   "covered_exactly_once": true,
+   "dense_layer0": "skip",
+   "k3_layers_covered": 92,
+   "k3_moe_layers": 92,
+   "rule": "trunk k <- K3 MoE layers [1 + floor(M k / N), 1 + floor(M (k+1) / N)); dense layer 0 -> nowhere",
+   "trunk_layers": 64,
+   "trunk_layers_with_one_moe_layer": 36,
+   "trunk_layers_with_other_counts": 0,
+   "trunk_layers_with_two_moe_layers": 28
+  },
+  "trunk_layers_with_none": 0,
+  "trunk_layers_with_two_or_more": 28,
+  "trunk_to_k3": {
+   "0": [
+    1
+   ],
+   "1": [
+    2
+   ],
+   "10": [
+    15
+   ],
+   "11": [
+    16,
+    17
+   ],
+   "12": [
+    18
+   ],
+   "13": [
+    19,
+    20
+   ],
+   "14": [
+    21
+   ],
+   "15": [
+    22,
+    23
+   ],
+   "16": [
+    24
+   ],
+   "17": [
+    25
+   ],
+   "18": [
+    26,
+    27
+   ],
+   "19": [
+    28
+   ],
+   "2": [
+    3,
+    4
+   ],
+   "20": [
+    29,
+    30
+   ],
+   "21": [
+    31
+   ],
+   "22": [
+    32,
+    33
+   ],
+   "23": [
+    34
+   ],
+   "24": [
+    35
+   ],
+   "25": [
+    36,
+    37
+   ],
+   "26": [
+    38
+   ],
+   "27": [
+    39,
+    40
+   ],
+   "28": [
+    41
+   ],
+   "29": [
+    42,
+    43
+   ],
+   "3": [
+    5
+   ],
+   "30": [
+    44
+   ],
+   "31": [
+    45,
+    46
+   ],
+   "32": [
+    47
+   ],
+   "33": [
+    48
+   ],
+   "34": [
+    49,
+    50
+   ],
+   "35": [
+    51
+   ],
+   "36": [
+    52,
+    53
+   ],
+   "37": [
+    54
+   ],
+   "38": [
+    55,
+    56
+   ],
+   "39": [
+    57
+   ],
+   "4": [
+    6,
+    7
+   ],
+   "40": [
+    58
+   ],
+   "41": [
+    59,
+    60
+   ],
+   "42": [
+    61
+   ],
+   "43": [
+    62,
+    63
+   ],
+   "44": [
+    64
+   ],
+   "45": [
+    65,
+    66
+   ],
+   "46": [
+    67
+   ],
+   "47": [
+    68,
+    69
+   ],
+   "48": [
+    70
+   ],
+   "49": [
+    71
+   ],
+   "5": [
+    8
+   ],
+   "50": [
+    72,
+    73
+   ],
+   "51": [
+    74
+   ],
+   "52": [
+    75,
+    76
+   ],
+   "53": [
+    77
+   ],
+   "54": [
+    78,
+    79
+   ],
+   "55": [
+    80
+   ],
+   "56": [
+    81
+   ],
+   "57": [
+    82,
+    83
+   ],
+   "58": [
+    84
+   ],
+   "59": [
+    85,
+    86
+   ],
+   "6": [
+    9,
+    10
+   ],
+   "60": [
+    87
+   ],
+   "61": [
+    88,
+    89
+   ],
+   "62": [
+    90
+   ],
+   "63": [
+    91,
+    92
+   ],
+   "7": [
+    11
+   ],
+   "8": [
+    12
+   ],
+   "9": [
+    13,
+    14
+   ]
+  }
+ },
+ "argv": [
+  "--trunk",
+  "/mnt/lexar/omni-campaign/s3-native-v2-3a25a459-4347-416d-a58a-2cb3c8e738fd/actual/native-s3-text-stage/native",
+  "--parent-trunk",
+  "/mnt/ai_data/omni-campaign/s0-probe-sep04",
+  "--k3-dense",
+  "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92",
+  "--k3-form",
+  "E",
+  "--k3-layers",
+  "1-92",
+  "--k3-config",
+  "/mnt/lexar/models/moonshotai/Kimi-K3/config.json",
+  "--charts",
+  "/home/cereal/omni-campaign/composite/c17/charts",
+  "--chart-arm",
+  "ridge",
+  "--chart-bias-ceiling",
+  "0",
+  "--evidence",
+  "/home/cereal/omni-campaign/qwen-fold/evidence/omni-evidence-27bu-v1.json",
+  "--k3-channels",
+  "12288",
+  "--parent-parameter-count",
+  "27781427952",
+  "--device",
+  "cuda:0",
+  "--selection-device",
+  "cuda:0",
+  "--solve-device",
+  "cuda:0",
+  "--engine",
+  "streamed",
+  "--group-size",
+  "3",
+  "--chunk",
+  "8192",
+  "--gram-block",
+  "16384",
+  "--out",
+  "/home/cereal/omni-campaign/composite/c10/design_sweep/sweep",
+  "--sweep-targets",
+  "legacy=parent/additive:1;a0=trunk/additive:0;a003=trunk/additive:0.03;a01=trunk/additive:0.1;a03=trunk/additive:0.3;b01=trunk/convex:0.1;b025=trunk/convex:0.25;b05=trunk/convex:0.5;g01=trunk/rms:0.1;g03=trunk/rms:0.3",
+  "--open-loop",
+  "--trunk-layers",
+  "0-21",
+  "--min-free-gib",
+  "62",
+  "--heavy-lock",
+  "/home/cereal/omni-campaign/composite/c10/design_sweep/sweep.heavy.lock"
+ ],
+ "charts": {
+  "alignment_json_sha256": "4006c1796946202f377356a61278bf270bd9a6a0e5a6a4d3c67801a1e0618f8c",
+  "arm": "ridge",
+  "bias_ceiling": 0.0,
+  "dir": "/home/cereal/omni-campaign/composite/c17/charts",
+  "layers": {
+   "0": {
+    "arm": "ridge",
+    "convention": "c17: trunk_to_k3 = C_out^T (+ C_out_bias), k3_to_trunk = C_in^T (+ C_in_bias)",
+    "fit_trunk_rows_key": "normed",
+    "input_bias_norm": 4.924121379852295,
+    "k3_to_trunk_shape": [
+     5120,
+     7168
+    ],
+    "layer_json_sha256": "557abd44cd8e10d9790a91382aa76cd721cfdeea49c720e677830c830987e7f0",
+    "output_bias_norm": 1.7720099687576294,
+    "path": "/home/cereal/omni-campaign/composite/c17/charts/L00/ridge.safetensors",
+    "sha256": "daab43dfc39b0560b249525afa1e2af474175acac3647530d4e1244182d7a702",
+    "trunk_to_k3_shape": [
+     7168,
+     5120
+    ]
+   },
+   "1": {
+    "arm": "ridge",
+    "convention": "c17: trunk_to_k3 = C_out^T (+ C_out_bias), k3_to_trunk = C_in^T (+ C_in_bias)",
+    "fit_trunk_rows_key": "normed",
+    "input_bias_norm": 5.628026962280273,
+    "k3_to_trunk_shape": [
+     5120,
+     7168
+    ],
+    "layer_json_sha256": "9ab052831af38330782530fb4cb11933e3fb061d5f73f8bb88e6e537733c724b",
+    "output_bias_norm": 1.9441590309143066,
+    "path": "/home/cereal/omni-campaign/composite/c17/charts/L01/ridge.safetensors",
+    "sha256": "52136e91aacd39b608e0e9cbaf152cc17cbbd7aa01bd491b6fdd1b5314491309",
+    "trunk_to_k3_shape": [
+     7168,
+     5120
+    ]
+   },
+   "10": {
+    "arm": "ridge",
+    "convention": "c17: trunk_to_k3 = C_out^T (+ C_out_bias), k3_to_trunk = C_in^T (+ C_in_bias)",
+    "fit_trunk_rows_key": "normed",
+    "input_bias_norm": 1.1535816192626953,
+    "k3_to_trunk_shape": [
+     5120,
+     7168
+    ],
+    "layer_json_sha256": "73b2af611b1a71f369302f14b10e220b91c5183e102edd136747b17ad6047fcc",
+    "output_bias_norm": 2.308082342147827,
+    "path": "/home/cereal/omni-campaign/composite/c17/charts/L10/ridge.safetensors",
+    "sha256": "01ac139eff3b5124edb146724e6eb6ca6d6331d2558a1dd5f38a825b2ea5b442",
+    "trunk_to_k3_shape": [
+     7168,
+     5120
+    ]
+   },
+   "11": {
+    "arm": "ridge",
+    "convention": "c17: trunk_to_k3 = C_out^T (+ C_out_bias), k3_to_trunk = C_in^T (+ C_in_bias)",
+    "fit_trunk_rows_key": "normed",
+    "input_bias_norm": 0.1476217806339264,
+    "k3_to_trunk_shape": [
+     5120,
+     7168
+    ],
+    "layer_json_sha256": "c9ac0680ccfb7603eb89c5471d8a355d21a65e47b77cc8c1391db92c93d51a25",
+    "output_bias_norm": 5.507545471191406,
+    "path": "/home/cereal/omni-campaign/composite/c17/charts/L11/ridge.safetensors",
+    "sha256": "fdd589655363f6a416133ce59365f04e936e1522941cb52fa075e8dae50a9ad1",
+    "trunk_to_k3_shape": [
+     7168,
+     5120
+    ]
+   },
+   "12": {
+    "arm": "ridge",
+    "convention": "c17: trunk_to_k3 = C_out^T (+ C_out_bias), k3_to_trunk = C_in^T (+ C_in_bias)",
+    "fit_trunk_rows_key": "normed",
+    "input_bias_norm": 0.23837462067604065,
+    "k3_to_trunk_shape": [
+     5120,
+     7168
+    ],
+    "layer_json_sha256": "3c7e224d6098a45c7f36da62dc770613acc6e3c01b0b12ae2cc714f3461c286b",
+    "output_bias_norm": 1.9049817323684692,
+    "path": "/home/cereal/omni-campaign/composite/c17/charts/L12/ridge.safetensors",
+    "sha256": "39a87f0a9c3dffad7cc5652e1c21cf491f5a2f3d784076c237ed54dfb2a7d05d",
+    "trunk_to_k3_shape": [
+     7168,
+     5120
+    ]
+   },
+   "13": {
+    "arm": "ridge",
+    "convention": "c17: trunk_to_k3 = C_out^T (+ C_out_bias), k3_to_trunk = C_in^T (+ C_in_bias)",
+    "fit_trunk_rows_key": "normed",
+    "input_bias_norm": 0.268148809671402,
+    "k3_to_trunk_shape": [
+     5120,
+     7168
+    ],
+    "layer_json_sha256": "9ded0c2c60a340920001749789c639be644aac02028deb947dc0ec528b15d104",
+    "output_bias_norm": 4.434698581695557,
+    "path": "/home/cereal/omni-campaign/composite/c17/charts/L13/ridge.safetensors",
+    "sha256": "4a6b91b45bba8b664199b9c1f3eea123f09dcd9b94a3ac024738c1a4301585b5",
+    "trunk_to_k3_shape": [
+     7168,
+     5120
+    ]
+   },
+   "14": {
+    "arm": "ridge",
+    "convention": "c17: trunk_to_k3 = C_out^T (+ C_out_bias), k3_to_trunk = C_in^T (+ C_in_bias)",
+    "fit_trunk_rows_key": "normed",
+    "input_bias_norm": 0.4464212954044342,
+    "k3_to_trunk_shape": [
+     5120,
+     7168
+    ],
+    "layer_json_sha256": "2a0158439845b142d814f07adc77e6760327391258814913845eed589aeef94b",
+    "output_bias_norm": 1.3145513534545898,
+    "path": "/home/cereal/omni-campaign/composite/c17/charts/L14/ridge.safetensors",
+    "sha256": "a1e9bcbd8794bd800ea09369cfd28ddfd075a6615ccd1e2b08685ed2e96c3442",
+    "trunk_to_k3_shape": [
+     7168,
+     5120
+    ]
+   },
+   "15": {
+    "arm": "ridge",
+    "convention": "c17: trunk_to_k3 = C_out^T (+ C_out_bias), k3_to_trunk = C_in^T (+ C_in_bias)",
+    "fit_trunk_rows_key": "normed",
+    "input_bias_norm": 0.19308830797672272,
+    "k3_to_trunk_shape": [
+     5120,
+     7168
+    ],
+    "layer_json_sha256": "aedeebf7ea751d10fbb945089ac4f151750ba299cb73da95396ac0d3991b1bd4",
+    "output_bias_norm": 4.545692443847656,
+    "path": "/home/cereal/omni-campaign/composite/c17/charts/L15/ridge.safetensors",
+    "sha256": "053ec9306ec3a7843d3df1866f5f3003084235fdbcdca5d4792fe2141bc16a3d",
+    "trunk_to_k3_shape": [
+     7168,
+     5120
+    ]
+   },
+   "16": {
+    "arm": "ridge",
+    "convention": "c17: trunk_to_k3 = C_out^T (+ C_out_bias), k3_to_trunk = C_in^T (+ C_in_bias)",
+    "fit_trunk_rows_key": "normed",
+    "input_bias_norm": 0.01563979685306549,
+    "k3_to_trunk_shape": [
+     5120,
+     7168
+    ],
+    "layer_json_sha256": "0a1247f425f082be64c61589439eefcb6975159e0bda3e073007335f106b4d69",
+    "output_bias_norm": 7.898592948913574,
+    "path": "/home/cereal/omni-campaign/composite/c17/charts/L16/ridge.safetensors",
+    "sha256": "e2118d4af2845d5b758a1f7c41d512f156c4a3083a4a9c72b3ce8ccf10f67847",
+    "trunk_to_k3_shape": [
+     7168,
+     5120
+    ]
+   },
+   "17": {
+    "arm": "ridge",
+    "convention": "c17: trunk_to_k3 = C_out^T (+ C_out_bias), k3_to_trunk = C_in^T (+ C_in_bias)",
+    "fit_trunk_rows_key": "normed",
+    "input_bias_norm": 0.020995670929551125,
+    "k3_to_trunk_shape": [
+     5120,
+     7168
+    ],
+    "layer_json_sha256": "084cf369817f6da49d1fc144f18ea76a516d8ed4b1236194abc93f85f5e60cc6",
+    "output_bias_norm": 8.055363655090332,
+    "path": "/home/cereal/omni-campaign/composite/c17/charts/L17/ridge.safetensors",
+    "sha256": "537e01c289a906d0c2593aba9607c47f02775b4266186957a6350eb8b87164f7",
+    "trunk_to_k3_shape": [
+     7168,
+     5120
+    ]
+   },
+   "18": {
+    "arm": "ridge",
+    "convention": "c17: trunk_to_k3 = C_out^T (+ C_out_bias), k3_to_trunk = C_in^T (+ C_in_bias)",
+    "fit_trunk_rows_key": "normed",
+    "input_bias_norm": 0.01534214150160551,
+    "k3_to_trunk_shape": [
+     5120,
+     7168
+    ],
+    "layer_json_sha256": "e8c3683ee1b9ec54bd4ecc0fa1635503a91d2fb7295b6b5a36c49073c5055d88",
+    "output_bias_norm": 12.463920593261719,
+    "path": "/home/cereal/omni-campaign/composite/c17/charts/L18/ridge.safetensors",
+    "sha256": "10f4b1d205d05d792aed7fcb4ebf980b4aee4653229d9ff1f9ad188e8b8e7f27",
+    "trunk_to_k3_shape": [
+     7168,
+     5120
+    ]
+   },
+   "19": {
+    "arm": "ridge",
+    "convention": "c17: trunk_to_k3 = C_out^T (+ C_out_bias), k3_to_trunk = C_in^T (+ C_in_bias)",
+    "fit_trunk_rows_key": "normed",
+    "input_bias_norm": 0.011539195664227009,
+    "k3_to_trunk_shape": [
+     5120,
+     7168
+    ],
+    "layer_json_sha256": "6a301e3142dbf26658d3e0ffc6c16f7f5cc530c8a7d871c9b3153ac86ea4c4d8",
+    "output_bias_norm": 10.697555541992188,
+    "path": "/home/cereal/omni-campaign/composite/c17/charts/L19/ridge.safetensors",
+    "sha256": "956b52a73e8aeadd472e19d0ec9458b32ba7eec42c9c8869a1326a963fecc1ec",
+    "trunk_to_k3_shape": [
+     7168,
+     5120
+    ]
+   },
+   "2": {
+    "arm": "ridge",
+    "convention": "c17: trunk_to_k3 = C_out^T (+ C_out_bias), k3_to_trunk = C_in^T (+ C_in_bias)",
+    "fit_trunk_rows_key": "normed",
+    "input_bias_norm": 1.1847429275512695,
+    "k3_to_trunk_shape": [
+     5120,
+     7168
+    ],
+    "layer_json_sha256": "6d4887b87e23d4cff0fed970b75cbf447af86e4d8a751658359d358e6bf69f19",
+    "output_bias_norm": 2.7736165523529053,
+    "path": "/home/cereal/omni-campaign/composite/c17/charts/L02/ridge.safetensors",
+    "sha256": "493fb8fe1697053139fb3301dbe3d4b2a34c1284d7db22eb4725c21068acd71b",
+    "trunk_to_k3_shape": [
+     7168,
+     5120
+    ]
+   },
+   "20": {
+    "arm": "ridge",
+    "convention": "c17: trunk_to_k3 = C_out^T (+ C_out_bias), k3_to_trunk = C_in^T (+ C_in_bias)",
+    "fit_trunk_rows_key": "normed",
+    "input_bias_norm": 0.0211175624281168,
+    "k3_to_trunk_shape": [
+     5120,
+     7168
+    ],
+    "layer_json_sha256": "b0fc983125455fd9f341c770fec65f4a019d136807af62891455c125ba659394",
+    "output_bias_norm": 12.85090446472168,
+    "path": "/home/cereal/omni-campaign/composite/c17/charts/L20/ridge.safetensors",
+    "sha256": "7be1c2dbe8b1c939cf0a2209e7c15eef73538ca97cb9e221121c0da26a44ef65",
+    "trunk_to_k3_shape": [
+     7168,
+     5120
+    ]
+   },
+   "21": {
+    "arm": "ridge",
+    "convention": "c17: trunk_to_k3 = C_out^T (+ C_out_bias), k3_to_trunk = C_in^T (+ C_in_bias)",
+    "fit_trunk_rows_key": "normed",
+    "input_bias_norm": 0.045859068632125854,
+    "k3_to_trunk_shape": [
+     5120,
+     7168
+    ],
+    "layer_json_sha256": "1e70c3d32e448c9743666efc4b4c1e1d8d6a3ace6d6ac81c6457d47c2649be07",
+    "output_bias_norm": 4.649155139923096,
+    "path": "/home/cereal/omni-campaign/composite/c17/charts/L21/ridge.safetensors",
+    "sha256": "85523955dd1da67eaad9b25408b86676e13c70d28280528ae1a9fd629d455178",
+    "trunk_to_k3_shape": [
+     7168,
+     5120
+    ]
+   },
+   "3": {
+    "arm": "ridge",
+    "convention": "c17: trunk_to_k3 = C_out^T (+ C_out_bias), k3_to_trunk = C_in^T (+ C_in_bias)",
+    "fit_trunk_rows_key": "normed",
+    "input_bias_norm": 3.297652244567871,
+    "k3_to_trunk_shape": [
+     5120,
+     7168
+    ],
+    "layer_json_sha256": "b593f4d634c1cf845f94731378750bf75fb5732358e6092596dbae84aab7db37",
+    "output_bias_norm": 1.0835193395614624,
+    "path": "/home/cereal/omni-campaign/composite/c17/charts/L03/ridge.safetensors",
+    "sha256": "af05d2427fc35dd3e2e279f5a49a73dc95f3e0b80384ce56e3cf00d545852204",
+    "trunk_to_k3_shape": [
+     7168,
+     5120
+    ]
+   },
+   "4": {
+    "arm": "ridge",
+    "convention": "c17: trunk_to_k3 = C_out^T (+ C_out_bias), k3_to_trunk = C_in^T (+ C_in_bias)",
+    "fit_trunk_rows_key": "normed",
+    "input_bias_norm": 3.4234578609466553,
+    "k3_to_trunk_shape": [
+     5120,
+     7168
+    ],
+    "layer_json_sha256": "8c8892d950fbb6f8e97a08894b2b7769e9f6919764acd150e7e7a034788cfc7a",
+    "output_bias_norm": 2.074326276779175,
+    "path": "/home/cereal/omni-campaign/composite/c17/charts/L04/ridge.safetensors",
+    "sha256": "d862a95625d278374177f862400ab7eb87c3ebe14d3d65a9a26a5d604ab2c5fb",
+    "trunk_to_k3_shape": [
+     7168,
+     5120
+    ]
+   },
+   "5": {
+    "arm": "ridge",
+    "convention": "c17: trunk_to_k3 = C_out^T (+ C_out_bias), k3_to_trunk = C_in^T (+ C_in_bias)",
+    "fit_trunk_rows_key": "normed",
+    "input_bias_norm": 4.492641925811768,
+    "k3_to_trunk_shape": [
+     5120,
+     7168
+    ],
+    "layer_json_sha256": "98be236dc9aaf04e1bfd65507defd9bd445e83def5ac57133f552038361919b9",
+    "output_bias_norm": 2.021772861480713,
+    "path": "/home/cereal/omni-campaign/composite/c17/charts/L05/ridge.safetensors",
+    "sha256": "1f0ee4d3a54fc8c9880995592dcf456fcc88ff52dced5f74739a58bc43a09e01",
+    "trunk_to_k3_shape": [
+     7168,
+     5120
+    ]
+   },
+   "6": {
+    "arm": "ridge",
+    "convention": "c17: trunk_to_k3 = C_out^T (+ C_out_bias), k3_to_trunk = C_in^T (+ C_in_bias)",
+    "fit_trunk_rows_key": "normed",
+    "input_bias_norm": 0.22505806386470795,
+    "k3_to_trunk_shape": [
+     5120,
+     7168
+    ],
+    "layer_json_sha256": "7d9c7245c8c9ae5d9e53483c009aa39b687ed7e2e7f5727dc97d8aa3869eecdc",
+    "output_bias_norm": 4.676669597625732,
+    "path": "/home/cereal/omni-campaign/composite/c17/charts/L06/ridge.safetensors",
+    "sha256": "fc87dc9017555dfa5fbf006b0a29afd603fad761095cc580029d9f4ab0f21085",
+    "trunk_to_k3_shape": [
+     7168,
+     5120
+    ]
+   },
+   "7": {
+    "arm": "ridge",
+    "convention": "c17: trunk_to_k3 = C_out^T (+ C_out_bias), k3_to_trunk = C_in^T (+ C_in_bias)",
+    "fit_trunk_rows_key": "normed",
+    "input_bias_norm": 3.446791648864746,
+    "k3_to_trunk_shape": [
+     5120,
+     7168
+    ],
+    "layer_json_sha256": "842be0bc682ff1016286f840eb7b68e3f0e0d6315dab062e944adc9c862099b2",
+    "output_bias_norm": 0.47348102927207947,
+    "path": "/home/cereal/omni-campaign/composite/c17/charts/L07/ridge.safetensors",
+    "sha256": "98aaccc972c0b3975a99caae62cc0f6a734d5079fbcef9bad54c6c337345e448",
+    "trunk_to_k3_shape": [
+     7168,
+     5120
+    ]
+   },
+   "8": {
+    "arm": "ridge",
+    "convention": "c17: trunk_to_k3 = C_out^T (+ C_out_bias), k3_to_trunk = C_in^T (+ C_in_bias)",
+    "fit_trunk_rows_key": "normed",
+    "input_bias_norm": 0.854318380355835,
+    "k3_to_trunk_shape": [
+     5120,
+     7168
+    ],
+    "layer_json_sha256": "8decbbdd1897c5614fee5392ccd993ab52e2fc602f51c59a6f81f14c5ad0474d",
+    "output_bias_norm": 10.574012756347656,
+    "path": "/home/cereal/omni-campaign/composite/c17/charts/L08/ridge.safetensors",
+    "sha256": "b6e8f9e3a973dcaab2367ce39f8bcbafe558b8c4cc48b4760de4d0b7bc55cdcd",
+    "trunk_to_k3_shape": [
+     7168,
+     5120
+    ]
+   },
+   "9": {
+    "arm": "ridge",
+    "convention": "c17: trunk_to_k3 = C_out^T (+ C_out_bias), k3_to_trunk = C_in^T (+ C_in_bias)",
+    "fit_trunk_rows_key": "normed",
+    "input_bias_norm": 1.294640302658081,
+    "k3_to_trunk_shape": [
+     5120,
+     7168
+    ],
+    "layer_json_sha256": "ce52abd9e6f029726817a44cf032c18f388454c9fb6bdee0d69b834076c70a01",
+    "output_bias_norm": 4.027944564819336,
+    "path": "/home/cereal/omni-campaign/composite/c17/charts/L09/ridge.safetensors",
+    "sha256": "1ae7fae8c19249f31fb0b30c2568a199a9ea3d62cf6c5666f48abfa26f021270",
+    "trunk_to_k3_shape": [
+     7168,
+     5120
+    ]
+   }
+  }
+ },
+ "device": "cuda:0",
+ "engine": "streamed",
+ "evidence": {
+  "check_rows": 24576,
+  "file_sha256": "a0a7f0da58e1d1b2ea19bc30e5187139c3618cff678ddabf44c27791b36dd124",
+  "fit_batches": [
+   0,
+   1,
+   2,
+   4,
+   5,
+   6,
+   8,
+   9,
+   10,
+   12,
+   13,
+   14,
+   16,
+   17,
+   18,
+   20,
+   21,
+   22
+  ],
+  "held_batches": [
+   3,
+   7,
+   11,
+   15,
+   19,
+   23
+  ],
+  "manifest_sha256": "8a3422d89d245b79a152ffb1de44d077d39ec5574dc063bf4e8482a5107b4870",
+  "path": "/home/cereal/omni-campaign/qwen-fold/evidence/omni-evidence-27bu-v1.json",
+  "sequence_length": 4096
+ },
+ "extra_blocks": [],
+ "group_size": 3,
+ "intermediate_size": 16640,
+ "k3": {
+  "config": {
+   "activation_situ_beta": 4.0,
+   "activation_situ_linear_beta": 25.0,
+   "rms_norm_eps": 1e-05,
+   "sha256": "9710e121a58d03ac92c8d6da287a19541994319afbbe6d6202af001ffd379213",
+   "source": "/mnt/lexar/models/moonshotai/Kimi-K3/config.json"
+  },
+  "files": {
+   "L01": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L01/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L02": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L02/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L03": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L03/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L04": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L04/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L05": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L05/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L06": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L06/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L07": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L07/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L08": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L08/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L09": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L09/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L10": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L10/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L11": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L11/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L12": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L12/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L13": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L13/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L14": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L14/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L15": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L15/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L16": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L16/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L17": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L17/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L18": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L18/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L19": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L19/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L20": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L20/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L21": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L21/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L22": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L22/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L23": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L23/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L24": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L24/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L25": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L25/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L26": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L26/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L27": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L27/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L28": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L28/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L29": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L29/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L30": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L30/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L31": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L31/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L32": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L32/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L33": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L33/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L34": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L34/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L35": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L35/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L36": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L36/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L37": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L37/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L38": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L38/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L39": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L39/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L40": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L40/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L41": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L41/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L42": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L42/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L43": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L43/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L44": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L44/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L45": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L45/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L46": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L46/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L47": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L47/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L48": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L48/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L49": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L49/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L50": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L50/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L51": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L51/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L52": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L52/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L53": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L53/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L54": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L54/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L55": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L55/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L56": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L56/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L57": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L57/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L58": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L58/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L59": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L59/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L60": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L60/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L61": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L61/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L62": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L62/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L63": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L63/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L64": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L64/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L65": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L65/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L66": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L66/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L67": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L67/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L68": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L68/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L69": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L69/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L70": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L70/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L71": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L71/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L72": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L72/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L73": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L73/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L74": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L74/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L75": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L75/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L76": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L76/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L77": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L77/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L78": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L78/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L79": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L79/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L80": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L80/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L81": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L81/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L82": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L82/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L83": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L83/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L84": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L84/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L85": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L85/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L86": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L86/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L87": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L87/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L88": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L88/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L89": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L89/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L90": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L90/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L91": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L91/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   },
+   "L92": {
+    "dense_width": 0,
+    "kind": "form_E",
+    "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92/L92/ffn.safetensors",
+    "routed_width": 17408,
+    "shared_width": 6144
+   }
+  },
+  "hidden": 7168,
+  "layers": [
+   1,
+   2,
+   3,
+   4,
+   5,
+   6,
+   7,
+   8,
+   9,
+   10,
+   11,
+   12,
+   13,
+   14,
+   15,
+   16,
+   17,
+   18,
+   19,
+   20,
+   21,
+   22,
+   23,
+   24,
+   25,
+   26,
+   27,
+   28,
+   29,
+   30,
+   31,
+   32,
+   33,
+   34,
+   35,
+   36,
+   37,
+   38,
+   39,
+   40,
+   41,
+   42,
+   43,
+   44,
+   45,
+   46,
+   47,
+   48,
+   49,
+   50,
+   51,
+   52,
+   53,
+   54,
+   55,
+   56,
+   57,
+   58,
+   59,
+   60,
+   61,
+   62,
+   63,
+   64,
+   65,
+   66,
+   67,
+   68,
+   69,
+   70,
+   71,
+   72,
+   73,
+   74,
+   75,
+   76,
+   77,
+   78,
+   79,
+   80,
+   81,
+   82,
+   83,
+   84,
+   85,
+   86,
+   87,
+   88,
+   89,
+   90,
+   91,
+   92
+  ],
+  "loading": "lazy: alignment[k] per trunk layer, released after the install",
+  "path": "/home/cereal/omni-campaign/composite/c10/design_sweep/k3_dense_1_92"
+ },
+ "k3_channels": 12288,
+ "k3_form": "E",
+ "lanes": {
+  "chimera_src": "/home/cereal/omni-campaign/import/rq27b/tree_ef1ffb9/src",
+  "k3": "/home/cereal/omni-campaign/k3/harness",
+  "ledger": "/home/cereal/omni-campaign/ledger",
+  "qwen_fold": "/home/cereal/omni-campaign/qwen-fold"
+ },
+ "layers": [
+  {
+   "layer": 8,
+   "seconds": 704.56,
+   "variants": {
+    "a0": "saved",
+    "a003": "saved",
+    "a01": "saved",
+    "a03": "saved",
+    "b01": "saved",
+    "b025": "saved",
+    "b05": "saved",
+    "g01": "saved",
+    "g03": "saved",
+    "legacy": "saved"
+   }
+  },
+  {
+   "layer": 9,
+   "seconds": 1129.54,
+   "variants": {
+    "a0": "saved",
+    "a003": "saved",
+    "a01": "saved",
+    "a03": "saved",
+    "b01": "saved",
+    "b025": "saved",
+    "b05": "saved",
+    "g01": "saved",
+    "g03": "saved",
+    "legacy": "saved"
+   }
+  },
+  {
+   "layer": 10,
+   "seconds": 808.01,
+   "variants": {
+    "a0": "saved",
+    "a003": "saved",
+    "a01": "saved",
+    "a03": "saved",
+    "b01": "saved",
+    "b025": "saved",
+    "b05": "saved",
+    "g01": "saved",
+    "g03": "saved",
+    "legacy": "saved"
+   }
+  },
+  {
+   "layer": 11,
+   "seconds": 1426.18,
+   "variants": {
+    "a0": "saved",
+    "a003": "saved",
+    "a01": "saved",
+    "a03": "saved",
+    "b01": "saved",
+    "b025": "saved",
+    "b05": "saved",
+    "g01": "saved",
+    "g03": "saved",
+    "legacy": "saved"
+   }
+  },
+  {
+   "layer": 12,
+   "seconds": 851.13,
+   "variants": {
+    "a0": "saved",
+    "a003": "saved",
+    "a01": "saved",
+    "a03": "saved",
+    "b01": "saved",
+    "b025": "saved",
+    "b05": "saved",
+    "g01": "saved",
+    "g03": "saved",
+    "legacy": "saved"
+   }
+  },
+  {
+   "layer": 13,
+   "seconds": 1151.2,
+   "variants": {
+    "a0": "saved",
+    "a003": "saved",
+    "a01": "saved",
+    "a03": "saved",
+    "b01": "saved",
+    "b025": "saved",
+    "b05": "saved",
+    "g01": "saved",
+    "g03": "saved",
+    "legacy": "saved"
+   }
+  },
+  {
+   "layer": 14,
+   "seconds": 866.79,
+   "variants": {
+    "a0": "saved",
+    "a003": "saved",
+    "a01": "saved",
+    "a03": "saved",
+    "b01": "saved",
+    "b025": "saved",
+    "b05": "saved",
+    "g01": "saved",
+    "g03": "saved",
+    "legacy": "saved"
+   }
+  },
+  {
+   "layer": 15,
+   "seconds": 1099.57,
+   "variants": {
+    "a0": "saved",
+    "a003": "saved",
+    "a01": "saved",
+    "a03": "saved",
+    "b01": "saved",
+    "b025": "saved",
+    "b05": "saved",
+    "g01": "saved",
+    "g03": "saved",
+    "legacy": "saved"
+   }
+  },
+  {
+   "layer": 16,
+   "seconds": 855.6,
+   "variants": {
+    "a0": "saved",
+    "a003": "saved",
+    "a01": "saved",
+    "a03": "saved",
+    "b01": "saved",
+    "b025": "saved",
+    "b05": "saved",
+    "g01": "saved",
+    "g03": "saved",
+    "legacy": "saved"
+   }
+  },
+  {
+   "layer": 17,
+   "seconds": 1367.85,
+   "variants": {
+    "a0": "saved",
+    "a003": "saved",
+    "a01": "saved",
+    "a03": "saved",
+    "b01": "saved",
+    "b025": "saved",
+    "b05": "saved",
+    "g01": "saved",
+    "g03": "saved",
+    "legacy": "saved"
+   }
+  },
+  {
+   "layer": 18,
+   "seconds": 1213.49,
+   "variants": {
+    "a0": "saved",
+    "a003": "saved",
+    "a01": "saved",
+    "a03": "saved",
+    "b01": "saved",
+    "b025": "saved",
+    "b05": "saved",
+    "g01": "saved",
+    "g03": "saved",
+    "legacy": "saved"
+   }
+  },
+  {
+   "layer": 19,
+   "seconds": 1075.79,
+   "variants": {
+    "a0": "saved",
+    "a003": "saved",
+    "a01": "saved",
+    "a03": "saved",
+    "b01": "saved",
+    "b025": "saved",
+    "b05": "saved",
+    "g01": "saved",
+    "g03": "saved",
+    "legacy": "saved"
+   }
+  },
+  {
+   "layer": 20,
+   "seconds": 1161.53,
+   "variants": {
+    "a0": "saved",
+    "a003": "saved",
+    "a01": "saved",
+    "a03": "saved",
+    "b01": "saved",
+    "b025": "saved",
+    "b05": "saved",
+    "g01": "saved",
+    "g03": "saved",
+    "legacy": "saved"
+   }
+  },
+  {
+   "layer": 21,
+   "seconds": 859.73,
+   "variants": {
+    "a0": "saved",
+    "a003": "saved",
+    "a01": "saved",
+    "a03": "saved",
+    "b01": "saved",
+    "b025": "saved",
+    "b05": "saved",
+    "g01": "saved",
+    "g03": "saved",
+    "legacy": "saved"
+   }
+  }
+ ],
+ "mode": "design sweep (open loop, no child)",
+ "parent_parameter_count": 27781427952,
+ "parent_parameter_count_source": {
+  "source": "--parent-parameter-count"
+ },
+ "parent_trunk": {
+  "activation_kind": "silu",
+  "files": {
+   "config.json": "2152fc5c3a768ef77fe3f8c48805f804d80d59e1a7bc1f1b91f5b98a628f36b7",
+   "model-00001-of-00014.safetensors": "449a73a4874b8a85e3e3f277612db330176c3245243dcf7ada5dbd281d452d17",
+   "model-00002-of-00014.safetensors": "9e5feca2879c5a0a4cff745590b1f9cf0aa04cb1e6b9ccb63038462166baeb18",
+   "model-00003-of-00014.safetensors": "5349241a54c301d8034c2a8eee3ed71d937ca4aa3627eb693e57a508d4498e02",
+   "model-00004-of-00014.safetensors": "36e940d0049208d6e104e3be3183c81477f989a423c42146f7b40ba977e0f869",
+   "model-00005-of-00014.safetensors": "e68aada902f958082a60965d3874d0acb015efd5941d78c85435e3104322279f",
+   "model-00006-of-00014.safetensors": "f856ae902dc636b26a5db429f0ca7e7c916cd2a382b64862caa39213e17d04a2",
+   "model-00007-of-00014.safetensors": "14db143d2e87b7e4269a3df82e38695e6bb3cf5671558db107b8c240486b2c63",
+   "model-00008-of-00014.safetensors": "ae85a9f29afc54943d73693bcf4a6112099fcdf5739114e46fb7227dc05f6c42",
+   "model-00009-of-00014.safetensors": "f1c4c8b25343cbb3f71b9144cb3f79d961ec386550cecf0ed8daa8917728596a",
+   "model-00010-of-00014.safetensors": "9f1363c1c7466523dacc8d44f897342021e5c704b6a989aca5969a9ca57b26b3",
+   "model-00011-of-00014.safetensors": "f74e5aaff05ec7b48009b2bbec950bfea913b7ec4909074e663e05e01a737430",
+   "model-00012-of-00014.safetensors": "073e09d01f4a95136037dc6d2ed359bec89df6ba5c80925216b471c049ebe119",
+   "model-00013-of-00014.safetensors": "16d931bd160471a52fa2fca96b38cb688beaf4e89930650ea65bd51f0f92a5c4",
+   "model-00014-of-00014.safetensors": "a0cf5dae7997133ae57b4bf23422d5231f5c8150ad46e497fa7f90e608ee55ce",
+   "model.safetensors.index.json": "ffb8cf6f33289c49cb203703c74469b497d46060977a9abba0bfa3edb032c351"
+  },
+  "intermediate_size": 17408,
+  "path": "/mnt/ai_data/omni-campaign/s0-probe-sep04"
+ },
+ "peak_rss_gigabytes": 90.783,
+ "schedule": "groups of --group-size trunk layers: one capture pass per group against the LIVE model, which already carries every previous group's union FFN (qf_mlp ordering law)",
+ "schema": "neural-forge-c10-design-sweep-v1",
+ "seconds": 19678.16,
+ "selection_device": "cuda:0",
+ "size_gate": {
+  "projected_child_header_parameters": 26944218624,
+  "rule": "child < parent record parameter_count"
+ },
+ "solve_device": "cuda:0",
+ "stopped": false,
+ "targets": [
+  {
+   "name": "legacy",
+   "spec": "parent/additive:1"
+  },
+  {
+   "name": "a0",
+   "spec": "trunk/additive:0"
+  },
+  {
+   "name": "a003",
+   "spec": "trunk/additive:0.03"
+  },
+  {
+   "name": "a01",
+   "spec": "trunk/additive:0.1"
+  },
+  {
+   "name": "a03",
+   "spec": "trunk/additive:0.3"
+  },
+  {
+   "name": "b01",
+   "spec": "trunk/convex:0.1"
+  },
+  {
+   "name": "b025",
+   "spec": "trunk/convex:0.25"
+  },
+  {
+   "name": "b05",
+   "spec": "trunk/convex:0.5"
+  },
+  {
+   "name": "g01",
+   "spec": "trunk/rms:0.1"
+  },
+  {
+   "name": "g03",
+   "spec": "trunk/rms:0.3"
+  }
+ ],
+ "tool": "c10_union_install",
+ "tool_sha256": "c5abf8dd7aa38fc95cea8edc4890a555a925da9e5f29d9038c5aa3cf172903ff",
+ "tool_version": "1.5.0",
+ "torch": "2.11.0+cu128",
+ "trunk": {
+  "chimera_commit": "ef1ffb9c3c1abd9ea79f1d4d5707ac5486dab9ab",
+  "files": {
+   "config.json": "e2cdb6979a01deca3f09e762482e16b86543a9375d8ff6b13305035c598fa18b",
+   "model-00001-of-00008.safetensors": "ec631cd81e44de0add88ebf7140aa5660076c08b37434f3910301e5eff528b4f",
+   "model-00002-of-00008.safetensors": "4bfef4cdd4690c562489a1a8065ce06c6476689216a00ad5c06c81a9667c539a",
+   "model-00003-of-00008.safetensors": "ce29d6aa2ff307b6ebc9ede7390e37f7a0e3990942663827d5ec43f33c3bffe1",
+   "model-00004-of-00008.safetensors": "5357de82f12e1ac5b99f805e0ee5f1d7c79034b725d3ba2a19436f5fa0dd8d6b",
+   "model-00005-of-00008.safetensors": "d95c091f80db83ea181ce70ea1247c2bfae8b960ac9a508a3bed1eef16408dec",
+   "model-00006-of-00008.safetensors": "46d0d151896029a97b41212a31b9c741694abaab465a4986be4c3d3e021ba708",
+   "model-00007-of-00008.safetensors": "9991362286a02be70b95641c8d3afa582758fe05b9aa2fb287757143342d7614",
+   "model-00008-of-00008.safetensors": "149c71c4dfd65d2582dc6d26194ecb5e8f7a52d8e3d8d2888cc7d3f5f1cb90d5",
+   "model.safetensors.index.json": "6298233adb6141d72e2f90172b6c4e0d68df0a24b62db52dccea06d6ff8968a1"
+  },
+  "header_parameters": 14864623104,
+  "hidden_size": 5120,
+  "intermediate_size": 4352,
+  "load": {
+   "dtype": "bfloat16",
+   "dtypes_on_disk": [
+    "BF16"
+   ],
+   "engine": "streamed",
+   "residual_cache_bytes": 1006632960,
+   "rope_tables": "fp32: the constructor's inv_freq kept across the dtype move (1.1.1)",
+   "rule": "host residual in the model dtype; one block resident on --device; capture with the group's TRUNK FFNs from the group boundary, then advance through the group's NEW FFNs"
+  },
+  "num_layers": 64,
+  "path": "/mnt/lexar/omni-campaign/s3-native-v2-3a25a459-4347-416d-a58a-2cb3c8e738fd/actual/native-s3-text-stage/native",
+  "views": "lazy (headers; tensors read per block)"
+ },
+ "trunk_layers": [
+  0,
+  21
+ ]
+}

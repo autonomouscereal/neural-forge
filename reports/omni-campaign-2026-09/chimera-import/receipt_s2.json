@@ -1,0 +1,102 @@
+{
+  "schema": "chimera_omni.behaviour_receipt.s2",
+  "label": "claude-omni-import-S2-59a5e6d",
+  "torch_version": "2.11.0+cu128",
+  "python": "3.12.3",
+  "device": "cpu",
+  "qwen_attention_transcription": {
+    "bit_equal": false,
+    "max_abs_diff": 1.1920928955078125e-07,
+    "mean_abs_diff": 1.53509933653595e-08,
+    "max_rel_diff": 0.03426124155521393,
+    "expected_rms": 0.08564454317092896,
+    "geometry": {
+      "hidden_size": 1024,
+      "num_heads": 8,
+      "num_kv_heads": 2,
+      "head_dim": 256,
+      "rope_dim": 64,
+      "rope_theta": 10000000.0,
+      "sequence": 24
+    }
+  },
+  "rope_global_shift_invariance": {
+    "1": {
+      "bit_equal": false,
+      "max_abs_diff": 1.1920928955078125e-07,
+      "mean_abs_diff": 1.4024436723047984e-08,
+      "max_rel_diff": 0.006097560748457909,
+      "expected_rms": 0.08699799329042435
+    },
+    "16": {
+      "bit_equal": false,
+      "max_abs_diff": 1.043081283569336e-07,
+      "mean_abs_diff": 1.4391207336927891e-08,
+      "max_rel_diff": 0.018292682245373726,
+      "expected_rms": 0.08699799329042435
+    },
+    "256": {
+      "bit_equal": false,
+      "max_abs_diff": 2.8312206268310547e-07,
+      "mean_abs_diff": 3.07037133495669e-08,
+      "max_rel_diff": 0.04878048598766327,
+      "expected_rms": 0.08699799329042435
+    },
+    "4096": {
+      "bit_equal": false,
+      "max_abs_diff": 2.771615982055664e-06,
+      "mean_abs_diff": 3.6525156588140817e-07,
+      "max_rel_diff": 0.4085365831851959,
+      "expected_rms": 0.08699799329042435
+    },
+    "262144": {
+      "bit_equal": false,
+      "max_abs_diff": 0.00018727779388427734,
+      "mean_abs_diff": 2.2854457711218856e-05,
+      "max_rel_diff": 82.68902587890625,
+      "expected_rms": 0.08699799329042435
+    }
+  },
+  "no_rope_local_attention_equivalence": {
+    "num_kv_heads=2": {
+      "bit_equal": true,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "max_rel_diff": 0.0,
+      "expected_rms": 0.1332412213087082
+    },
+    "num_kv_heads=8": {
+      "bit_equal": true,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "max_rel_diff": 0.0,
+      "expected_rms": 0.1376255750656128
+    }
+  },
+  "per_layer_feed_forward": {
+    "uniform_list_matches_scalar": {
+      "bit_equal": true,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "max_rel_diff": 0.0,
+      "expected_rms": 0.5754825472831726
+    },
+    "scalar_intermediate_size": 384,
+    "scalar_parameter_count": 2797335,
+    "per_layer_widths": [
+      384,
+      192,
+      384,
+      192,
+      384
+    ],
+    "per_layer_parameter_count": 2649879,
+    "per_layer_ffn_up_out_features": [
+      768,
+      384,
+      768,
+      384,
+      768
+    ]
+  }
+}

@@ -1,0 +1,396 @@
+{
+ "capability_claim": "none; interface rows a chart pairing needs, not a fitted absorption",
+ "created_at_utc": "2026-10-10T08:45:18Z",
+ "decision_record": "R0(a) latent-rung bands; B15 = PCA-to-PCA isometry x gain (design choice, nothing pairs at layer 0); QVL32 as C11 type 6 with one zero emission row",
+ "hidden": 5120,
+ "native_feature_dim": 6144,
+ "s3_type_embed": {
+  "checkpoint": "/mnt/lexar/omni-campaign/s3-native-v2-3a25a459-4347-416d-a58a-2cb3c8e738fd/actual/native-s3-text-stage/native",
+  "norms": [
+   70.58995781524168,
+   71.96533113872367,
+   71.02770130641093,
+   72.67156148553522,
+   72.69270798039804,
+   70.48987219092285,
+   72.30784154655757,
+   70.802030613544
+  ]
+ },
+ "schema": "omni-campaign.s7_interface_latent.v1",
+ "sets": {
+  "c11": {
+   "path": "/home/cereal/omni-campaign/composite/s7/interface_latent/c11/companions.json",
+   "sha256": "1181a1bd1567ad9e6a200819c4e9b58003a9d5895db2b6a93f5e4e528a4ace44"
+  },
+  "c15": {
+   "path": "/home/cereal/omni-campaign/composite/s7/interface_latent/companions.json",
+   "sha256": "929083f864be12a25c160632575900fc5dadfe74e46dd6c18e20744651b6d60d"
+  }
+ },
+ "tool": {
+  "name": "s7_interface_latent",
+  "sha256": "b963451a5328a535baa705bdc56d660afe88f120f63b499611c42f91a05cf291",
+  "version": "1.0.0"
+ },
+ "trunk_pca": {
+  "file": "/home/cereal/omni-campaign/composite/c17/trunk_taps/s3native-c2k4352-held-all/L00/ffn_input_rows.safetensors",
+  "file_sha256": "6150fb13e175982d61339d2fdd1f375512dee71fbff674fcf65dfc87042c171a",
+  "key": "prenorm",
+  "mean_norm": 14.080497534487872,
+  "rank": 5120,
+  "retained_energy": 1.0,
+  "rows": 24576,
+  "width": 5120
+ },
+ "units": {
+  "ace_dit_L12": {
+   "b15_file": "/home/cereal/omni-campaign/composite/s7/interface_latent/b15/ace_dit_L12.safetensors",
+   "b15_sha256": "86e507f3cd31b8669fa383c684cd6b62d6fc8751d5a794cbf8623ad54d5c1daa",
+   "content_norm_median_before_gain": 66.04702583351784,
+   "entries": [
+    {
+     "emission": "P_out @ B_out (stand-in pseudo-inverse chart; refit after assembly = C15b)",
+     "name": "music_ace",
+     "norms": {
+      "bridge.feature_proj.weight": 72.47503662109375,
+      "bridge.type_embed_delta": 5.279660224914551,
+      "head.out.weight": 18.555362701416016,
+      "head.type_affine_shift": 0.43877333402633667
+     },
+     "notes": {
+      "formula": "feature_proj = B_in P_src; type_embed_delta = B_in p_src_bias; head.out = P_out B_out; shift = p_out_bias",
+      "parameters": 2626688,
+      "shapes": {
+       "bridge.feature_proj.weight": [
+        5120,
+        384
+       ],
+       "bridge.type_embed_delta": [
+        5120
+       ],
+       "head.out.weight": [
+        128,
+        5120
+       ],
+       "head.type_affine_shift": [
+        128
+       ]
+      }
+     },
+     "p_out": [
+      "decoder.proj_out.1.weight",
+      "decoder.proj_out.1.bias"
+     ],
+     "p_src": [
+      "decoder.proj_in.1.weight",
+      "decoder.proj_in.1.bias"
+     ],
+     "rows_file": "/home/cereal/omni-campaign/composite/s7/interface_latent/music_ace/composed_interface.safetensors",
+     "rows_sha256": "e70b833f3124fe4b331cb6d20ab920f834cfa8cc431557eec6f47c504ee017ed",
+     "type_id": 4
+    }
+   ],
+   "gain": 1.1006204603918384,
+   "gain_rule": "median |B (P_src f + b)| == |type_embed[type]| of the S3 bridge",
+   "pairs_file": "/home/cereal/omni-campaign/composite/s7/pairs/ace_dit_L12/parent_capture.safetensors",
+   "pairs_sha256": "408b5ce9f5ad07e60f0d5d4ba33e80eafe15a22ba0048ff31e2f405e711d3066",
+   "parent_pca": {
+    "mean_norm": 43.7253839538814,
+    "rank": 2048,
+    "retained_energy": 1.0,
+    "rows": 30800,
+    "width": 2048
+   },
+   "parent_width": 2048,
+   "rank": 2048,
+   "type_embed_norm": 72.69270798039804
+  },
+  "h3_dit_L25_curve6": {
+   "b15_file": "/home/cereal/omni-campaign/composite/s7/interface_latent/b15/h3_dit_L25_curve6.safetensors",
+   "b15_sha256": "135e8c645e6ac34c988b58f2da8e7b0f17cc90f2b31521e9d122f7c109c3c3e7",
+   "content_norm_median_before_gain": 69.57636461801252,
+   "entries": [
+    {
+     "emission": "P_out @ B_out (stand-in pseudo-inverse chart; refit after assembly = C15b)",
+     "name": "video_h3",
+     "norms": {
+      "bridge.feature_proj.weight": 161.77618408203125,
+      "bridge.type_embed_delta": 7.209354877471924,
+      "head.out.weight": 55.0560302734375,
+      "head.type_affine_shift": 0.5147290229797363
+     },
+     "notes": {
+      "formula": "feature_proj = B_in P_src; type_embed_delta = B_in p_src_bias; head.out = P_out B_out; shift = p_out_bias",
+      "parameters": 988256,
+      "shapes": {
+       "bridge.feature_proj.weight": [
+        5120,
+        96
+       ],
+       "bridge.type_embed_delta": [
+        5120
+       ],
+       "head.out.weight": [
+        96,
+        5120
+       ],
+       "head.type_affine_shift": [
+        96
+       ]
+      }
+     },
+     "p_out": [
+      "final_layer.video_out.weight",
+      "final_layer.video_out.bias"
+     ],
+     "p_src": [
+      "video_patch_proj.weight",
+      "video_patch_proj.bias"
+     ],
+     "rows_file": "/home/cereal/omni-campaign/composite/s7/interface_latent/video_h3/composed_interface.safetensors",
+     "rows_sha256": "f6bdcfc241a00d24a0f19a6f07981d0884400017008de8979e74afb8f9c866fb",
+     "type_id": 2
+    },
+    {
+     "emission": "P_out @ B_out (stand-in pseudo-inverse chart; refit after assembly = C15b)",
+     "name": "audio_h3",
+     "norms": {
+      "bridge.feature_proj.weight": 83.96929931640625,
+      "bridge.type_embed_delta": 6.4842209815979,
+      "head.out.weight": 28.340179443359375,
+      "head.type_affine_shift": 0.06953149288892746
+     },
+     "notes": {
+      "formula": "feature_proj = B_in P_src; type_embed_delta = B_in p_src_bias; head.out = P_out B_out; shift = p_out_bias",
+      "parameters": 332832,
+      "shapes": {
+       "bridge.feature_proj.weight": [
+        5120,
+        32
+       ],
+       "bridge.type_embed_delta": [
+        5120
+       ],
+       "head.out.weight": [
+        32,
+        5120
+       ],
+       "head.type_affine_shift": [
+        32
+       ]
+      }
+     },
+     "p_out": [
+      "final_layer.audio_out.weight",
+      "final_layer.audio_out.bias"
+     ],
+     "p_src": [
+      "audio_patch_proj.weight",
+      "audio_patch_proj.bias"
+     ],
+     "rows_file": "/home/cereal/omni-campaign/composite/s7/interface_latent/audio_h3/composed_interface.safetensors",
+     "rows_sha256": "ca883fa1f7e22a29d3899af6f2a4220716c26bd4357afb7c8c7f245ec056dc23",
+     "type_id": 3
+    }
+   ],
+   "gain": 1.0208596223209783,
+   "gain_rule": "median |B (P_src f + b)| == |type_embed[type]| of the S3 bridge",
+   "pairs_file": "/home/cereal/omni-campaign/composite/s7/pairs/h3_dit_L25_curve6/parent_capture.safetensors",
+   "pairs_sha256": "1cdfb65303c636a29bb615710043a9da1adad65c832e19b1be688767126a3947",
+   "parent_pca": {
+    "mean_norm": 13.606635003292965,
+    "rank": 5120,
+    "retained_energy": 1.0,
+    "rows": 23040,
+    "width": 5376
+   },
+   "parent_width": 5376,
+   "rank": 5120,
+   "type_embed_norm": 71.02770130641093
+  },
+  "hy3d_dit_L10": {
+   "b15_file": "/home/cereal/omni-campaign/composite/s7/interface_latent/b15/hy3d_dit_L10.safetensors",
+   "b15_sha256": "6adf1f9baa69878f3446c6b0404da72f893c99957252576608c43e30c290ecc8",
+   "content_norm_median_before_gain": 22.31113745179794,
+   "entries": [
+    {
+     "emission": "P_out @ B_out (stand-in pseudo-inverse chart; refit after assembly = C15b)",
+     "name": "volume_hy3d",
+     "norms": {
+      "bridge.feature_proj.weight": 135.08448791503906,
+      "bridge.type_embed_delta": 10.704787254333496,
+      "head.out.weight": 4.230799198150635,
+      "head.type_affine_shift": 0.08259553462266922
+     },
+     "notes": {
+      "formula": "feature_proj = B_in P_src; type_embed_delta = B_in p_src_bias; head.out = P_out B_out; shift = p_out_bias",
+      "parameters": 660544,
+      "shapes": {
+       "bridge.feature_proj.weight": [
+        5120,
+        64
+       ],
+       "bridge.type_embed_delta": [
+        5120
+       ],
+       "head.out.weight": [
+        64,
+        5120
+       ],
+       "head.type_affine_shift": [
+        64
+       ]
+      }
+     },
+     "p_out": [
+      "model.final_layer.linear.weight",
+      "model.final_layer.linear.bias"
+     ],
+     "p_src": [
+      "model.x_embedder.weight",
+      "model.x_embedder.bias"
+     ],
+     "rows_file": "/home/cereal/omni-campaign/composite/s7/interface_latent/volume_hy3d/composed_interface.safetensors",
+     "rows_sha256": "2a9026fb93afcc130f3d0cc53b942c476b76a95f23647961b82b1cc2b06cbe1b",
+     "type_id": 7
+    }
+   ],
+   "gain": 3.1733940399277327,
+   "gain_rule": "median |B (P_src f + b)| == |type_embed[type]| of the S3 bridge",
+   "pairs_file": "/home/cereal/omni-campaign/composite/s7/pairs/hy3d_dit_L10/parent_capture.safetensors",
+   "pairs_sha256": "bbdec281a1ae8e20ad0365f5c5236e84bd77c4634de40b79db38c817c26bd278",
+   "parent_pca": {
+    "mean_norm": 3.6322528633659403,
+    "rank": 2048,
+    "retained_energy": 1.0,
+    "rows": 8192,
+    "width": 2048
+   },
+   "parent_width": 2048,
+   "rank": 2048,
+   "type_embed_norm": 70.802030613544
+  },
+  "qimg_mmdit_L30_img": {
+   "b15_file": "/home/cereal/omni-campaign/composite/s7/interface_latent/b15/qimg_mmdit_L30_img.safetensors",
+   "b15_sha256": "1c4d734b06ae6d89803ae00412940630b0b9a5c3013cbf2654673b4ba94cbb81",
+   "content_norm_median_before_gain": 61.78389098556771,
+   "entries": [
+    {
+     "emission": "P_out @ B_out (stand-in pseudo-inverse chart; refit after assembly = C15b)",
+     "name": "image_qimg",
+     "norms": {
+      "bridge.feature_proj.weight": 92.14200592041016,
+      "bridge.type_embed_delta": 17.6494197845459,
+      "head.out.weight": 1.649165391921997,
+      "head.type_affine_shift": 0.8230655193328857
+     },
+     "notes": {
+      "formula": "feature_proj = B_in P_src; type_embed_delta = B_in p_src_bias; head.out = P_out B_out; shift = p_out_bias",
+      "parameters": 660544,
+      "shapes": {
+       "bridge.feature_proj.weight": [
+        5120,
+        64
+       ],
+       "bridge.type_embed_delta": [
+        5120
+       ],
+       "head.out.weight": [
+        64,
+        5120
+       ],
+       "head.type_affine_shift": [
+        64
+       ]
+      }
+     },
+     "p_out": [
+      "proj_out.weight",
+      "proj_out.bias"
+     ],
+     "p_src": [
+      "img_in.weight",
+      "img_in.bias"
+     ],
+     "rows_file": "/home/cereal/omni-campaign/composite/s7/interface_latent/image_qimg/composed_interface.safetensors",
+     "rows_sha256": "6a8de68b300264aa49db13279ef0e9485ee61d03c35014e6c0edbfe21879a8df",
+     "type_id": 1
+    }
+   ],
+   "gain": 1.164791177615121,
+   "gain_rule": "median |B (P_src f + b)| == |type_embed[type]| of the S3 bridge",
+   "pairs_file": "/home/cereal/omni-campaign/composite/s7/pairs/qimg_mmdit_L30_img/parent_capture.safetensors",
+   "pairs_sha256": "18ffac3b18b8ed1efcf6e811d4253628dcc3c65e653f1558fb2a68e469f606bc",
+   "parent_pca": {
+    "mean_norm": 25.780001336195713,
+    "rank": 3072,
+    "retained_energy": 1.0,
+    "rows": 49152,
+    "width": 3072
+   },
+   "parent_width": 3072,
+   "rank": 3072,
+   "type_embed_norm": 71.96533113872367
+  },
+  "qvl32_vit_L13": {
+   "b15_file": "/home/cereal/omni-campaign/composite/s7/interface_latent/b15/qvl32_vit_L13.safetensors",
+   "b15_sha256": "1f57261bd97e4d7bbb798ca01a198da42e7063a3736564fa60a928534cdb14d7",
+   "content_norm_median_before_gain": 12.697567374638348,
+   "entries": [
+    {
+     "emission": "encoder-only (C11): one ZERO emission row; nothing is emitted for this type",
+     "name": "ocr_qvl32",
+     "norms": {
+      "bridge.feature_proj.weight": 54.98257827758789,
+      "bridge.type_embed_delta": 62.99295425415039,
+      "head.out.weight": 0.0,
+      "head.type_affine_shift": 0.0
+     },
+     "notes": {
+      "formula": "feature_proj = B_in P_src; type_embed_delta = B_in p_src_bias; head.out = P_out B_out; shift = p_out_bias",
+      "parameters": 7874561,
+      "shapes": {
+       "bridge.feature_proj.weight": [
+        5120,
+        1536
+       ],
+       "bridge.type_embed_delta": [
+        5120
+       ],
+       "head.out.weight": [
+        1,
+        5120
+       ],
+       "head.type_affine_shift": [
+        1
+       ]
+      }
+     },
+     "p_out": null,
+     "p_src": [
+      "visual.patch_embed.proj.weight",
+      "visual.patch_embed.proj.bias"
+     ],
+     "rows_file": "/home/cereal/omni-campaign/composite/s7/interface_latent/ocr_qvl32/composed_interface.safetensors",
+     "rows_sha256": "b4cfaf0308079d643c99d6193a59400c96bf8e542282bf599b537342b6c55312",
+     "type_id": 6
+    }
+   ],
+   "gain": 5.694621608465145,
+   "gain_rule": "median |B (P_src f + b)| == |type_embed[type]| of the S3 bridge",
+   "pairs_file": "/home/cereal/omni-campaign/composite/s7/pairs/qvl32_vit_L13/parent_capture.safetensors",
+   "pairs_sha256": "32ed96e283b1a3c8eeb74c788f91b5f70f5587529278e0297289a619df05d888",
+   "parent_pca": {
+    "mean_norm": 11.37709904749758,
+    "rank": 1152,
+    "retained_energy": 1.0,
+    "rows": 47008,
+    "width": 1152
+   },
+   "parent_width": 1152,
+   "rank": 1152,
+   "type_embed_norm": 72.30784154655757
+  }
+ }
+}

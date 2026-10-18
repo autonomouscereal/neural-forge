@@ -1,0 +1,252 @@
+{
+  "schema": "chimera_omni.media_fold.receipt.v1",
+  "created_at_utc": "2026-09-02T09:16:39.835835+00:00",
+  "kind": "c15_absorption_ladder",
+  "proposed_decision_line_D_d2": "absorbed <=> PSNR(D.E) >= PSNR(parent round-trip) - 3.0 dB on held-out clips. This is a PROPOSAL for Cyril, not a gate this harness enforces; below the line the trunk keeps a companion VAE decoder for that band (D5b).",
+  "ladder": [
+    {
+      "vae": "h3_video_group4",
+      "rung": "linear",
+      "d_raw": 3072,
+      "d_latent": 24,
+      "holdout_rows": 2400,
+      "psnr_absorbed_db": 14.949340474982014,
+      "psnr_parent_roundtrip_db": 9.909719341591522,
+      "psnr_gap_db": 5.039621133390492,
+      "si_sdr_absorbed_db": null,
+      "si_sdr_parent_roundtrip_db": null,
+      "encoder_cos": 0.983626142430054,
+      "encoder_rel_l2": 0.18793386647555882,
+      "linear_rank_bound_psnr_db": 23.671229429154966,
+      "absorbed_vs_linear_bound_db": -8.721888954172952,
+      "map_parameters": 150552,
+      "meets_proposed_absorption_line": true
+    },
+    {
+      "vae": "h3_video_group4",
+      "rung": "nonlinear",
+      "d_raw": 3072,
+      "d_latent": 24,
+      "holdout_rows": 2400,
+      "psnr_absorbed_db": 18.063559612218402,
+      "psnr_parent_roundtrip_db": 9.909719341591522,
+      "psnr_gap_db": 8.15384027062688,
+      "si_sdr_absorbed_db": null,
+      "si_sdr_parent_roundtrip_db": null,
+      "encoder_cos": 0.9881634839334652,
+      "encoder_rel_l2": 0.15991441791403213,
+      "linear_rank_bound_psnr_db": 23.671229429154966,
+      "absorbed_vs_linear_bound_db": -5.607669816936564,
+      "map_parameters": 3321880,
+      "meets_proposed_absorption_line": true
+    }
+  ],
+  "records": [
+    {
+      "name": "h3_video_group4",
+      "pairs_dir": "/home/cereal/omni-campaign/media/pairs/h3v_g4_64_merged",
+      "geometry": {
+        "name": "minimax_h3_video_vae_fp16.safetensors",
+        "modality": "video",
+        "latent_channels": 24,
+        "sample_rate_hz": 44100,
+        "hop_samples": 0,
+        "channels": 3,
+        "channel_in_latent": false,
+        "spatial_stride": 16,
+        "temporal_stride": 4,
+        "frame_rate_hz": 0.0,
+        "notes": {
+          "kind": "comfy",
+          "path": "/opt/ComfyUI/models/vae/minimax_h3_video_vae_fp16.safetensors",
+          "comfy_kitchen_stubbed": false,
+          "forced_cpu": false,
+          "expected_class": "comfy.ldm.minimax.vae.MiniMaxH3VideoVAE",
+          "sd_py_lines": "942-964",
+          "latent_dim": 3,
+          "first_stage_class": "MiniMaxH3VideoVAE",
+          "vae_dtype": "torch.float16",
+          "device": "cuda:0",
+          "posterior": "mean",
+          "path_mode": "direct",
+          "crop_input": true,
+          "downscale_ratio": [
+            "callable",
+            16,
+            16
+          ],
+          "upscale_ratio": [
+            "callable",
+            16,
+            16
+          ]
+        },
+        "pairing": "measured_group4_latent1",
+        "latent_group": 1,
+        "temporal_group_size": 4,
+        "selected_latent_frames": [
+          1,
+          2,
+          3,
+          4,
+          6
+        ],
+        "skipped_latent_frames": [
+          0,
+          5
+        ],
+        "measured_group_sizes": [
+          1,
+          4
+        ],
+        "measured_uniform": false,
+        "context": 0,
+        "d_raw": 3072,
+        "d_latent": 24,
+        "d_centre": 3072,
+        "centre_offset": 0,
+        "rows": 9600,
+        "clips": 120,
+        "chimera_patch": 16,
+        "chimera_tubelet": 4,
+        "chimera_native_feature_dim": 3072,
+        "alignment": "measured per-frame ownership (perturbation probe)",
+        "merged_from": 2,
+        "merged_clip_totals": [
+          60,
+          60
+        ],
+        "declared_clips_sum": 120
+      },
+      "rows": 9600,
+      "fit_rows": 7200,
+      "holdout_rows": 2400,
+      "rungs": {
+        "linear": {
+          "map_parameters": 150552,
+          "fit_seconds": 35.927,
+          "holdout": {
+            "rows": 2400,
+            "psnr_absorbed_db": 14.949340474982014,
+            "psnr_parent_roundtrip_db": 9.909719341591522,
+            "psnr_gap_db": 5.039621133390492,
+            "linear_rank_bound": {
+              "rank": 24,
+              "psnr_db": 23.671229429154966,
+              "retained_energy": 0.9667616447870545,
+              "absorbed_vs_bound_db": -8.721888954172952,
+              "bound_vs_parent_db": 13.761510087563444,
+              "meaning": "PCA of the raw rows at the parent's latent width -- the best possible linear round-trip. A fitted map at this number is at the linear ceiling; a bound far below the parent's round-trip means the band needs a nonlinear decoder (companion VAE decoder, D5b) or a wider native feature width."
+            },
+            "meets_proposed_absorption_line": true
+          },
+          "encoder_holdout_scores": {
+            "rel_l2": 0.18793386647555882,
+            "cos": 0.983626142430054,
+            "cos_p05": 0.9634307410098317,
+            "r2": 0.6575847817314247,
+            "rows": 2400,
+            "width": 24
+          },
+          "decoder_holdout_scores": {
+            "rel_l2": 0.3699130319618607,
+            "cos": 0.9325593201753698,
+            "cos_p05": 0.8446260745954264,
+            "r2": 0.6218298319839004,
+            "rows": 2400,
+            "width": 3072
+          },
+          "composed_holdout_scores": {
+            "rel_l2": 0.32828137894230397,
+            "cos": 0.947517444198737,
+            "cos_p05": 0.891499294803039,
+            "r2": 0.7021617296431959,
+            "rows": 2400,
+            "width": 3072
+          },
+          "receipt": "out/c15_video/h3_video_group4/linear/absorption_receipt.json"
+        },
+        "nonlinear": {
+          "map_parameters": 3321880,
+          "fit_seconds": 36.688,
+          "holdout": {
+            "rows": 2400,
+            "psnr_absorbed_db": 18.063559612218402,
+            "psnr_parent_roundtrip_db": 9.909719341591522,
+            "psnr_gap_db": 8.15384027062688,
+            "linear_rank_bound": {
+              "rank": 24,
+              "psnr_db": 23.671229429154966,
+              "retained_energy": 0.9667616447870545,
+              "absorbed_vs_bound_db": -5.607669816936564,
+              "bound_vs_parent_db": 13.761510087563444,
+              "meaning": "PCA of the raw rows at the parent's latent width -- the best possible linear round-trip. A fitted map at this number is at the linear ceiling; a bound far below the parent's round-trip means the band needs a nonlinear decoder (companion VAE decoder, D5b) or a wider native feature width."
+            },
+            "meets_proposed_absorption_line": true
+          },
+          "encoder_holdout_scores": {
+            "rel_l2": 0.15991441791403213,
+            "cos": 0.9881634839334652,
+            "cos_p05": 0.9725795653818484,
+            "r2": 0.7520762092468216,
+            "rows": 2400,
+            "width": 24
+          },
+          "decoder_holdout_scores": {
+            "rel_l2": 0.20122438215320024,
+            "cos": 0.9818773942621578,
+            "cos_p05": 0.9487608735603721,
+            "r2": 0.8880950729886662,
+            "rows": 2400,
+            "width": 3072
+          },
+          "composed_holdout_scores": {
+            "rel_l2": 0.22936930156190924,
+            "cos": 0.9806544238644473,
+            "cos_p05": 0.9235306940166021,
+            "r2": 0.8546019482034897,
+            "rows": 2400,
+            "width": 3072
+          },
+          "receipt": "out/c15_video/h3_video_group4/nonlinear/absorption_receipt.json"
+        }
+      }
+    }
+  ],
+  "source_sha256": {
+    "/home/cereal/omni-campaign/media/c15_absorb_run.py": "05b1ac025819464015d70dd2c667bd215e760d1873613e52eed1e3aedce7628a",
+    "/home/cereal/omni-campaign/media/mediafold/c15_fit.py": "a7a0daba2a7b6eb50c6d496ce3fd45ce028f6b060d2db2e2a0fbd92ade0a0935",
+    "/home/cereal/omni-campaign/media/mediafold/c15_pairs.py": "973ab4068c8f97daf13ede9dbb31218f9c0b862643369aafd147ae7c482eda9c",
+    "/home/cereal/omni-campaign/media/mediafold/c15_video_groups.py": "94c9bfbdd38ef9f0943e5fdb86727f4afada186c8d1c086b05e3402bdc3be57e",
+    "/home/cereal/omni-campaign/media/mediafold/linalg.py": "f956a60e7a9256de6a1b427d38a9f08b3b168a13dadbba45ee1d9c84e24e3f69"
+  },
+  "runtime": {
+    "python": "3.12.3 (main, Jun 19 2026, 12:46:00) [GCC 13.3.0]",
+    "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39",
+    "cwd": "/home/cereal/omni-campaign/media",
+    "torch": "2.11.0+cu128",
+    "torch_cuda": "12.8",
+    "cuda_available": true,
+    "nvidia_smi": [
+      "0, NVIDIA GeForce RTX 3090, GPU-4ead7f3a-cc79-fa5b-de42-ef024e27f561, 26 MiB",
+      "1, Tesla P40, GPU-c95fb5b3-f97c-bfb2-9760-79fe107ffe6d, 21405 MiB",
+      "2, Tesla P40, GPU-a92b0dfe-83f8-11ff-db0d-c65921f365b4, 7 MiB",
+      "3, Tesla P40, GPU-08b615f9-8dbe-3edd-d59f-f6ebe8212ca8, 7 MiB",
+      "4, NVIDIA GeForce RTX 3090, GPU-2ce6a95c-7b1f-644a-3808-d781732a0582, 18 MiB",
+      "5, Tesla P40, GPU-ce4a1da0-baa8-3d62-419c-a28f6565610f, 7 MiB",
+      "6, Quadro RTX 8000, GPU-f5a09535-fc85-a027-50f7-734b344747dd, 8 MiB"
+    ]
+  },
+  "argv": {
+    "pairs": [
+      "h3_video_group4=pairs/h3v_g4_64_merged"
+    ],
+    "out": "out/c15_video",
+    "rungs": "linear,nonlinear",
+    "hidden": 5120,
+    "lift_features": 512,
+    "lift_kind": "rff",
+    "seed": 0
+  },
+  "runs_h3_generation": false
+}

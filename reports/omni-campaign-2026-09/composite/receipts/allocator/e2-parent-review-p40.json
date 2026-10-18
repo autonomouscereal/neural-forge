@@ -1,0 +1,26 @@
+{
+ "ended_utc": "2026-10-10T02:02:08Z",
+ "gpu_uuids": [
+  "GPU-c95fb5b3-f97c-bfb2-9760-79fe107ffe6d",
+  "GPU-a92b0dfe-83f8-11ff-db0d-c65921f365b4",
+  "GPU-08b615f9-8dbe-3edd-d59f-f6ebe8212ca8"
+ ],
+ "gpus": [
+  1,
+  2,
+  3
+ ],
+ "kind": "host-venv",
+ "launcher": "/home/cereal/omni-campaign/composite/s0/review/control/launch_review.sh full",
+ "launcher_sha256": "4f1cd06f5179fc1170c4fc5416cc4a5e44d24a25b4b2f82d927d2e8d626aa506",
+ "log": "/home/cereal/omni-campaign/composite/logs/e2_parent_review_full.log",
+ "name": "e2-parent-review-p40",
+ "outcome": "exit 0; dossier composite/s0/review/oc-dossier-PARENT-Q38-27BU-NATIVE-NOTHINK.json sha256 6b40227a...; 0 non-finite segments",
+ "owner": "claude",
+ "pid": 926992,
+ "purpose": "PARENT-Q38-27BU native review band, bank v1 thinking-off, fp16, host-staged cross-card moves",
+ "python": "/home/cereal/model-surgery-lab/venv-pascal-cu118-torch260/bin/python",
+ "server": "ai",
+ "started_utc": "2026-10-09T21:20:54Z",
+ "state": "released (process exited)"
+}

@@ -1,0 +1,163 @@
+{
+  "alignment": {
+    "held": {
+      "cos_mean": 0.2815499431062594,
+      "cos_p05": 0.21241559060648338,
+      "mean_predictor_rel_l2": 0.9953066565173281,
+      "rel_l2": 0.9580852766408362,
+      "rows": 13158
+    },
+    "held_merged_norm_median_trunk_space": 6.002733829388621,
+    "held_rows": 13158,
+    "lambda_ladder_inner_rel_l2": {
+      "0.0001": 0.9761396817341753,
+      "0.001": 0.9757608984490058,
+      "0.01": 0.9727727259691501,
+      "0.1": 0.9644691686906026,
+      "1.0": 0.9586244533379535,
+      "1e-06": 0.976182469466688,
+      "1e-08": 0.9761828984960562
+    },
+    "lambda_rel": 1.0,
+    "matched_token_strings": 131586,
+    "merged_tokens_in_trunk_space_note": "held merged-token predictions mapped through A (no trunk-space target exists)",
+    "qvl_vocab": 151643,
+    "source_files": {
+      "qvl_vocab": "/home/cereal/omni-campaign/composite/s7/m3/qwen25_tokenizer_vocab.json",
+      "qvl_vocab_sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
+      "trunk_embed_shard": "/mnt/lexar/omni-campaign/s3-native-v2-3a25a459-4347-416d-a58a-2cb3c8e738fd/actual/native-s3-text-stage/native/model-00007-of-00008.safetensors",
+      "trunk_tokenizer": "/home/cereal/models/Qwen3.8-27B-Uncensored/tokenizer.json",
+      "trunk_tokenizer_sha256": "06b9509352d2af50381ab2247e083b80d32d5c0aba91c272ca9ff729b6a0e523"
+    },
+    "trunk_vocab": 248044
+  },
+  "argv": [
+    "m3_c11_qvl_rows.py",
+    "--captures",
+    "/home/cereal/omni-campaign/composite/s7/m3/c11_captures/qvl32",
+    "--parent",
+    "/home/cereal/comfyui/models/text_encoders/qwen3vl_32b_minimax_h3_bf16.safetensors",
+    "--prefix",
+    "visual.",
+    "--arm",
+    "qvl32",
+    "--align-vocab",
+    "/home/cereal/omni-campaign/composite/s7/m3/qwen25_tokenizer_vocab.json",
+    "--trunk-tokenizer",
+    "/home/cereal/models/Qwen3.8-27B-Uncensored/tokenizer.json",
+    "--trunk-native",
+    "/mnt/lexar/omni-campaign/s3-native-v2-3a25a459-4347-416d-a58a-2cb3c8e738fd/actual/native-s3-text-stage/native",
+    "--out",
+    "/home/cereal/omni-campaign/composite/s7/c11/qvl32_patch_merger"
+  ],
+  "arm": "qvl32",
+  "bands": {
+    "emission": "OCR is input-only: one zero emission row and a zero type_affine shift (c16 needs b < e)",
+    "source": "R0 proposal of the media-chart-pairing design (ocr/6 f[640,2176) e[384,385)); owner decision"
+  },
+  "bridge_scale_diagnostic": {
+    "note": "c16 ADDS the delta to the random S0 type_embed row; before the bridge RMSNorm the written row is this ratio of that random vector (diagnostic; the bridge's position/noise terms are not counted)",
+    "ratio_written_to_s0_type_embed_median": 0.020758256123566927,
+    "row_norm_median_feature_term": 0.6435827580269085,
+    "s0_type_embed_row_norm": 72.30784154655757,
+    "type_embed_delta_norm": 1.7412636490708717
+  },
+  "captures": {
+    "config": {
+      "depth": 27,
+      "hidden_size": 1152,
+      "in_channels": 3,
+      "intermediate_size": 4304,
+      "num_heads": 16,
+      "num_position_embeddings": 2304,
+      "out_hidden_size": 5120,
+      "patch_size": 16,
+      "spatial_merge_size": 2,
+      "temporal_patch_size": 2
+    },
+    "dir": "/home/cereal/omni-campaign/composite/s7/m3/c11_captures/qvl32",
+    "images": 96,
+    "merged_rows": 18816,
+    "parent": "/parent/qwen3vl_32b_minimax_h3_bf16.safetensors",
+    "receipt_sha256": "61a1b678fbc65ad4cafb9cc5cc1c15dcf9277dde48a860487ad0ea7c2260ce45",
+    "rows": 75264
+  },
+  "construction": "feature_proj = A M P; type_embed_delta = A (M b + c/4) + a/4",
+  "diagnostics_policy": "every fit number here is a diagnostic (owner policy 2026-10-06); structural checks: shapes, finiteness, band fit",
+  "entry": {
+    "companion_decoder": false,
+    "emission_band": [
+      384,
+      385
+    ],
+    "feature_band": [
+      640,
+      2176
+    ],
+    "name": "qvl32_patch_merger",
+    "psnr_absorbed_db": null,
+    "psnr_parent_roundtrip_db": null,
+    "rows": "qvl32_patch_merger/linear/composed_interface.safetensors",
+    "rung": "linear",
+    "source": "QVL32",
+    "tensor_sha256": {
+      "bridge.feature_proj.weight": "44f5d319ab13443aab1b503a04fada5f32a373d56b60f2d63654bf292848c217",
+      "bridge.type_embed_delta": "e19fa21563196951aac291401c0259d36a98bb78b83b0c3c75a2494ebf00635b",
+      "head.out.weight": "96925977722fa67299bb8205082d2657a78d7d380a19c4d6ee305266dab22b34",
+      "head.type_affine_shift": "246132225d13cff01ebab02cf09d2e35721d40e9dfbb9a27a9e07897c1c90a99"
+    },
+    "type_id": 6
+  },
+  "group_sum_consistency_rel_l2": 2.882884900493706e-07,
+  "merger_fit": {
+    "control_unshared_concat_held": {
+      "cos_mean": 0.5685661213084081,
+      "cos_p05": 0.37090842978162336,
+      "mean_predictor_rel_l2": 0.8674450406963966,
+      "rel_l2": 0.8600214145888682,
+      "rows": 3724
+    },
+    "fit": {
+      "cos_mean": 0.584039746291714,
+      "cos_p05": 0.3942724422475539,
+      "mean_predictor_rel_l2": 0.8674956127436096,
+      "rel_l2": 0.8484922511765605,
+      "rows": 15092
+    },
+    "held": {
+      "cos_mean": 0.5736298265375459,
+      "cos_p05": 0.37997294108870555,
+      "mean_predictor_rel_l2": 0.8674450406963966,
+      "rel_l2": 0.857042624768149,
+      "rows": 3724
+    },
+    "lambda_ladder_inner_rel_l2": {
+      "0.0001": 0.8757437096941264,
+      "0.001": 0.8718717465162485,
+      "0.01": 0.8645769941421659,
+      "0.1": 0.8591674749744959,
+      "1.0": 0.8568803431918354,
+      "1e-06": 0.8843503857882065,
+      "1e-08": 0.9012583551684099
+    },
+    "lambda_rel": 1.0,
+    "split": "by image: 19 held images (index % 5 == 4), inner lambda split by image"
+  },
+  "not_carried": [
+    "the learned interpolated pos_embed (position-dependent; trunk positions instead)",
+    "the 2-D vision RoPE and all 27 ViT blocks (folded into the fitted M as a linear stand-in)",
+    "DeepStack mergers (Qwen3-VL-32B blocks 8/16/24 -> LM layers)"
+  ],
+  "patch_embed": {
+    "exactness_rel_l2_vs_capture": 2.8124142334622596e-07,
+    "file": "/home/cereal/comfyui/models/text_encoders/qwen3vl_32b_minimax_h3_bf16.safetensors",
+    "shape": [
+      1152,
+      1536
+    ]
+  },
+  "tool": "m3_c11_qvl_rows",
+  "tool_sha256": "c0964ceb5913a2cccf18b145691a1189c8a0e0379e5fcf8da34f0312f6d9753b",
+  "tool_version": "1.0.0",
+  "wall_seconds": 592.4171707630157
+}

@@ -1,0 +1,65 @@
+{
+ "argv": {
+  "latent_rows": 64,
+  "out": "/home/cereal/omni-campaign/composite/s7/m3/scratch_dryrun5120/out_M1w",
+  "paired_rows": null,
+  "parent_capture": null,
+  "prompt_tokens": 8,
+  "report": "/home/cereal/omni-campaign/composite/s7/prep_b/debug/partA_smoke_M1w.json",
+  "seed": 0,
+  "sigma": 0.5,
+  "unit": "/home/cereal/omni-campaign/composite/s7/units/hy3d/hy3d_dit_L10.pre-timerow"
+ },
+ "chimera_omni_src": "/home/cereal/omni-campaign/import/rq27b/tree_ef1ffb9",
+ "created_at_utc": "2026-10-10T22:58:22Z",
+ "part_a_synthetic_5120": {
+  "child": {
+   "charted_layer": 6,
+   "hidden": 5120,
+   "layers": 13,
+   "loaded_tensors": 252,
+   "manifest_sha256": "574a25b267da0a96fdd79503e760e27ae044c1fe43eed4d3933e4955c3098b9a",
+   "out": "/home/cereal/omni-campaign/composite/s7/m3/scratch_dryrun5120/out_M1w",
+   "spec_type_ids": [
+    7
+   ]
+  },
+  "diagnostics": {
+   "final_hidden_latent_rows_rel_change_with_vs_without_time_row_in_sequence": 0.1006157398223877,
+   "latent_write_rel_change_time_row_owned_vs_unowned": 0.0026782832574099302,
+   "latent_write_rel_change_time_row_state_sigma_0.2_vs_0.8": 0.00041518249781802297,
+   "note": "synthetic trunk: magnitudes say nothing about the real child; the end-to-end number mixes the trunk's own causal attention to the extra row with the block's",
+   "time_row_trunk_state_rel_change_sigma_0.2_vs_0.8": 0.12599246203899384
+  },
+  "layout": {
+   "latent_rows": 64,
+   "prompt_tokens": 8,
+   "sigma": 0.5,
+   "target_kind": "velocity (per-row sigma -> bridge noise_proj)",
+   "time_row_position": [
+    -1.0,
+    -1.0,
+    -1.0,
+    -1.0
+   ],
+   "time_row_sequence_position": 8
+  },
+  "seconds": 4.5637242794036865,
+  "structural_checks": {
+   "latent_write_norm": 6.188736438751221,
+   "rows_owned_by_block": 65,
+   "rows_owned_expected": 65,
+   "time_row_sigma_at_block": 0.5,
+   "time_row_type_at_its_position": 7,
+   "time_row_write_norm": 0.7624901533126831,
+   "verdict": "PASS: the time row is routed to, attended by and written by the hy3d block"
+  }
+ },
+ "policy": "structural checks refuse; every magnitude is a diagnostic (owner 2026-10-06)",
+ "schema": "omni-campaign.s7_hy3d_timerow_check.v1",
+ "tool": {
+  "name": "s7_hy3d_timerow_check",
+  "sha256": "6d90152275119f8bac23e6b25f005d897d957850c560b35e25f0f1ba970deb59",
+  "version": "1.0.0"
+ }
+}

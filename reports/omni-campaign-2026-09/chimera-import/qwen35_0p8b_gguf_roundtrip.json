@@ -1,0 +1,6899 @@
+{
+  "export_receipt": {
+    "architecture": "qwen35",
+    "bytes": 1525255104,
+    "chimera_commit": "c474128771da60691fcf1fb2c9de67780e0c8a35",
+    "config": {
+      "activation_kind": "silu",
+      "architecture": "dense_decoder_native_omnimodal_encoder_free",
+      "attention_head_dim": 256,
+      "attnres_block_size": 12,
+      "attnres_init": "zero",
+      "aux_heads": [
+        "flow",
+        "grounding",
+        "sync"
+      ],
+      "block_pattern": [
+        "kda",
+        "kda",
+        "kda",
+        "gated_gqa"
+      ],
+      "csa_compress_stride": 64,
+      "dropout": 0.0,
+      "feed_forward_kind": "dense",
+      "force_final_gated_mla": false,
+      "gqa_output_gate": true,
+      "gqa_qk_norm": true,
+      "gqa_rope_dim": 64,
+      "gqa_rope_theta": 10000000.0,
+      "hca_compress_stride": 1024,
+      "hidden_size": 1024,
+      "intermediate_size": 3584,
+      "intermediate_sizes": [],
+      "kda_conv_bias": false,
+      "kda_decay_kind": "gdn",
+      "kda_decay_rank": 0,
+      "kda_gate_lower_bound": -5.0,
+      "kda_head_dim": 128,
+      "kda_num_heads": 16,
+      "kda_num_key_heads": 16,
+      "kda_output_gate": "silu",
+      "kda_qk_norm_eps": 1e-06,
+      "kda_qk_norm_kind": "fla",
+      "kda_query_scale": "inv_sqrt_key_dim",
+      "kda_short_conv_kernel_size": 4,
+      "kda_value_head_dim": 128,
+      "ledger_bands": [
+        [
+          "control",
+          512
+        ],
+        [
+          "media",
+          2048
+        ],
+        [
+          "grounding",
+          1024
+        ],
+        [
+          "sync",
+          128
+        ],
+        [
+          "tool",
+          384
+        ]
+      ],
+      "ledger_base_vocab_size": 248320,
+      "ledger_kind": "fixed_band",
+      "local_window": 256,
+      "max_sequence_length": 262144,
+      "metadata": {
+        "attention_output_gate": "sigmoid",
+        "dropped_source_mtp_layers": "1",
+        "import_source": "qwen3_5",
+        "rope_mrope_interleaved": "true",
+        "rope_mrope_section": "11,11,10",
+        "rope_type": "default",
+        "source_config_scope": "config_json",
+        "source_config_sha256": "7755fa7f94c366b1bc8db482e9a3c56721093ece9ed6a8234560e443b13168d1"
+      },
+      "mla_extra_head_dim": 0,
+      "mla_key_head_dim": 0,
+      "mla_latent_norm_eps": 0.0,
+      "mla_latent_size": 0,
+      "mla_query_latent_size": 0,
+      "mla_value_head_dim": 0,
+      "mtp_heads": 0,
+      "native_bidirectional_block_kinds": [
+        "gated_mla"
+      ],
+      "native_bidirectional_refinement": false,
+      "native_coordinate_frequencies": 8,
+      "native_feature_dim": 6144,
+      "native_loss_reduction": "type_balanced",
+      "native_position_dim": 4,
+      "native_type_count": 8,
+      "num_heads": 8,
+      "num_kv_heads": 2,
+      "num_layers": 24,
+      "residual_mode": "none",
+      "rms_norm_eps": 1e-06,
+      "scale_policy": "explicit_config_no_baked_target_size",
+      "schema": "chimera_omni.config.v1",
+      "situ_gate_beta": 4.0,
+      "situ_up_beta": 25.0,
+      "tie_word_embeddings": true,
+      "vocab_size": 252416
+    },
+    "file_type": "f16",
+    "float16_cast": {
+      "elements_narrowed": 756088832,
+      "file_type": "f16",
+      "flushed_to_zero": 15889,
+      "note": "counted against the fp32 values handed to the writer; a bf16 source widens to fp32 exactly, so these are the only values the file changed",
+      "subnormal": 3023581,
+      "tensors_narrowed": 187,
+      "tensors_with_loss": [
+        {
+          "elements": 258473984,
+          "flushed_to_zero": 309,
+          "name": "token_embd.weight",
+          "subnormal": 650896
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 5,
+          "name": "blk.0.ffn_gate.weight",
+          "subnormal": 15268
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 16,
+          "name": "blk.0.ffn_up.weight",
+          "subnormal": 21435
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 6,
+          "name": "blk.0.ffn_down.weight",
+          "subnormal": 22294
+        },
+        {
+          "elements": 6291456,
+          "flushed_to_zero": 14345,
+          "name": "blk.0.attn_qkv.weight",
+          "subnormal": 21576
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 4,
+          "name": "blk.0.attn_gate.weight",
+          "subnormal": 6626
+        },
+        {
+          "elements": 16384,
+          "flushed_to_zero": 0,
+          "name": "blk.0.ssm_beta.weight",
+          "subnormal": 58
+        },
+        {
+          "elements": 16384,
+          "flushed_to_zero": 0,
+          "name": "blk.0.ssm_alpha.weight",
+          "subnormal": 17
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 5,
+          "name": "blk.0.ssm_out.weight",
+          "subnormal": 10010
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 12,
+          "name": "blk.1.ffn_gate.weight",
+          "subnormal": 13847
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 14,
+          "name": "blk.1.ffn_up.weight",
+          "subnormal": 21577
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 15,
+          "name": "blk.1.ffn_down.weight",
+          "subnormal": 22556
+        },
+        {
+          "elements": 6291456,
+          "flushed_to_zero": 14,
+          "name": "blk.1.attn_qkv.weight",
+          "subnormal": 20670
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 1,
+          "name": "blk.1.attn_gate.weight",
+          "subnormal": 6327
+        },
+        {
+          "elements": 16384,
+          "flushed_to_zero": 0,
+          "name": "blk.1.ssm_beta.weight",
+          "subnormal": 57
+        },
+        {
+          "elements": 16384,
+          "flushed_to_zero": 0,
+          "name": "blk.1.ssm_alpha.weight",
+          "subnormal": 24
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 7,
+          "name": "blk.1.ssm_out.weight",
+          "subnormal": 9716
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 10,
+          "name": "blk.2.ffn_gate.weight",
+          "subnormal": 11864
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 12,
+          "name": "blk.2.ffn_up.weight",
+          "subnormal": 22673
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 12,
+          "name": "blk.2.ffn_down.weight",
+          "subnormal": 24067
+        },
+        {
+          "elements": 6291456,
+          "flushed_to_zero": 15,
+          "name": "blk.2.attn_qkv.weight",
+          "subnormal": 20244
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 3,
+          "name": "blk.2.attn_gate.weight",
+          "subnormal": 6180
+        },
+        {
+          "elements": 16384,
+          "flushed_to_zero": 0,
+          "name": "blk.2.ssm_beta.weight",
+          "subnormal": 55
+        },
+        {
+          "elements": 16384,
+          "flushed_to_zero": 0,
+          "name": "blk.2.ssm_alpha.weight",
+          "subnormal": 36
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 6,
+          "name": "blk.2.ssm_out.weight",
+          "subnormal": 10598
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 7,
+          "name": "blk.3.ffn_gate.weight",
+          "subnormal": 12236
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 20,
+          "name": "blk.3.ffn_up.weight",
+          "subnormal": 23371
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 11,
+          "name": "blk.3.ffn_down.weight",
+          "subnormal": 25636
+        },
+        {
+          "elements": 4194304,
+          "flushed_to_zero": 3,
+          "name": "blk.3.attn_q.weight",
+          "subnormal": 13574
+        },
+        {
+          "elements": 524288,
+          "flushed_to_zero": 2,
+          "name": "blk.3.attn_k.weight",
+          "subnormal": 2383
+        },
+        {
+          "elements": 524288,
+          "flushed_to_zero": 3,
+          "name": "blk.3.attn_v.weight",
+          "subnormal": 2435
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 7,
+          "name": "blk.3.attn_output.weight",
+          "subnormal": 10824
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 7,
+          "name": "blk.4.ffn_gate.weight",
+          "subnormal": 12685
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 11,
+          "name": "blk.4.ffn_up.weight",
+          "subnormal": 23320
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 18,
+          "name": "blk.4.ffn_down.weight",
+          "subnormal": 25829
+        },
+        {
+          "elements": 6291456,
+          "flushed_to_zero": 8,
+          "name": "blk.4.attn_qkv.weight",
+          "subnormal": 19327
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 3,
+          "name": "blk.4.attn_gate.weight",
+          "subnormal": 7626
+        },
+        {
+          "elements": 16384,
+          "flushed_to_zero": 0,
+          "name": "blk.4.ssm_beta.weight",
+          "subnormal": 70
+        },
+        {
+          "elements": 16384,
+          "flushed_to_zero": 0,
+          "name": "blk.4.ssm_alpha.weight",
+          "subnormal": 34
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 5,
+          "name": "blk.4.ssm_out.weight",
+          "subnormal": 11872
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 3,
+          "name": "blk.5.ffn_gate.weight",
+          "subnormal": 13813
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 17,
+          "name": "blk.5.ffn_up.weight",
+          "subnormal": 23016
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 7,
+          "name": "blk.5.ffn_down.weight",
+          "subnormal": 25650
+        },
+        {
+          "elements": 6291456,
+          "flushed_to_zero": 11,
+          "name": "blk.5.attn_qkv.weight",
+          "subnormal": 20372
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 4,
+          "name": "blk.5.attn_gate.weight",
+          "subnormal": 7414
+        },
+        {
+          "elements": 16384,
+          "flushed_to_zero": 0,
+          "name": "blk.5.ssm_beta.weight",
+          "subnormal": 58
+        },
+        {
+          "elements": 16384,
+          "flushed_to_zero": 0,
+          "name": "blk.5.ssm_alpha.weight",
+          "subnormal": 23
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 5,
+          "name": "blk.5.ssm_out.weight",
+          "subnormal": 11731
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 9,
+          "name": "blk.6.ffn_gate.weight",
+          "subnormal": 15519
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 9,
+          "name": "blk.6.ffn_up.weight",
+          "subnormal": 23124
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 10,
+          "name": "blk.6.ffn_down.weight",
+          "subnormal": 26534
+        },
+        {
+          "elements": 6291456,
+          "flushed_to_zero": 13,
+          "name": "blk.6.attn_qkv.weight",
+          "subnormal": 21012
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 4,
+          "name": "blk.6.attn_gate.weight",
+          "subnormal": 7740
+        },
+        {
+          "elements": 16384,
+          "flushed_to_zero": 1,
+          "name": "blk.6.ssm_beta.weight",
+          "subnormal": 58
+        },
+        {
+          "elements": 16384,
+          "flushed_to_zero": 0,
+          "name": "blk.6.ssm_alpha.weight",
+          "subnormal": 34
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 6,
+          "name": "blk.6.ssm_out.weight",
+          "subnormal": 11530
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 8,
+          "name": "blk.7.ffn_gate.weight",
+          "subnormal": 16230
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 6,
+          "name": "blk.7.ffn_up.weight",
+          "subnormal": 22774
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 12,
+          "name": "blk.7.ffn_down.weight",
+          "subnormal": 26950
+        },
+        {
+          "elements": 4194304,
+          "flushed_to_zero": 14,
+          "name": "blk.7.attn_q.weight",
+          "subnormal": 17074
+        },
+        {
+          "elements": 524288,
+          "flushed_to_zero": 2,
+          "name": "blk.7.attn_k.weight",
+          "subnormal": 2792
+        },
+        {
+          "elements": 524288,
+          "flushed_to_zero": 2,
+          "name": "blk.7.attn_v.weight",
+          "subnormal": 2792
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 7,
+          "name": "blk.7.attn_output.weight",
+          "subnormal": 12755
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 8,
+          "name": "blk.8.ffn_gate.weight",
+          "subnormal": 17861
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 11,
+          "name": "blk.8.ffn_up.weight",
+          "subnormal": 23173
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 14,
+          "name": "blk.8.ffn_down.weight",
+          "subnormal": 27073
+        },
+        {
+          "elements": 6291456,
+          "flushed_to_zero": 11,
+          "name": "blk.8.attn_qkv.weight",
+          "subnormal": 21579
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 7,
+          "name": "blk.8.attn_gate.weight",
+          "subnormal": 8403
+        },
+        {
+          "elements": 16384,
+          "flushed_to_zero": 0,
+          "name": "blk.8.ssm_beta.weight",
+          "subnormal": 73
+        },
+        {
+          "elements": 16384,
+          "flushed_to_zero": 0,
+          "name": "blk.8.ssm_alpha.weight",
+          "subnormal": 39
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 12,
+          "name": "blk.8.ssm_out.weight",
+          "subnormal": 12636
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 6,
+          "name": "blk.9.ffn_gate.weight",
+          "subnormal": 19234
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 12,
+          "name": "blk.9.ffn_up.weight",
+          "subnormal": 23332
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 24,
+          "name": "blk.9.ffn_down.weight",
+          "subnormal": 27728
+        },
+        {
+          "elements": 6291456,
+          "flushed_to_zero": 13,
+          "name": "blk.9.attn_qkv.weight",
+          "subnormal": 22583
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 7,
+          "name": "blk.9.attn_gate.weight",
+          "subnormal": 8770
+        },
+        {
+          "elements": 16384,
+          "flushed_to_zero": 1,
+          "name": "blk.9.ssm_beta.weight",
+          "subnormal": 37
+        },
+        {
+          "elements": 16384,
+          "flushed_to_zero": 0,
+          "name": "blk.9.ssm_alpha.weight",
+          "subnormal": 38
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 7,
+          "name": "blk.9.ssm_out.weight",
+          "subnormal": 13324
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 13,
+          "name": "blk.10.ffn_gate.weight",
+          "subnormal": 20141
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 14,
+          "name": "blk.10.ffn_up.weight",
+          "subnormal": 23765
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 9,
+          "name": "blk.10.ffn_down.weight",
+          "subnormal": 27185
+        },
+        {
+          "elements": 6291456,
+          "flushed_to_zero": 10,
+          "name": "blk.10.attn_qkv.weight",
+          "subnormal": 23306
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 5,
+          "name": "blk.10.attn_gate.weight",
+          "subnormal": 8487
+        },
+        {
+          "elements": 16384,
+          "flushed_to_zero": 0,
+          "name": "blk.10.ssm_beta.weight",
+          "subnormal": 62
+        },
+        {
+          "elements": 16384,
+          "flushed_to_zero": 0,
+          "name": "blk.10.ssm_alpha.weight",
+          "subnormal": 46
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 6,
+          "name": "blk.10.ssm_out.weight",
+          "subnormal": 12214
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 9,
+          "name": "blk.11.ffn_gate.weight",
+          "subnormal": 19928
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 11,
+          "name": "blk.11.ffn_up.weight",
+          "subnormal": 23311
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 17,
+          "name": "blk.11.ffn_down.weight",
+          "subnormal": 27587
+        },
+        {
+          "elements": 4194304,
+          "flushed_to_zero": 8,
+          "name": "blk.11.attn_q.weight",
+          "subnormal": 17551
+        },
+        {
+          "elements": 524288,
+          "flushed_to_zero": 1,
+          "name": "blk.11.attn_k.weight",
+          "subnormal": 2889
+        },
+        {
+          "elements": 524288,
+          "flushed_to_zero": 0,
+          "name": "blk.11.attn_v.weight",
+          "subnormal": 2100
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 4,
+          "name": "blk.11.attn_output.weight",
+          "subnormal": 12351
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 12,
+          "name": "blk.12.ffn_gate.weight",
+          "subnormal": 18637
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 14,
+          "name": "blk.12.ffn_up.weight",
+          "subnormal": 23496
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 15,
+          "name": "blk.12.ffn_down.weight",
+          "subnormal": 27427
+        },
+        {
+          "elements": 6291456,
+          "flushed_to_zero": 8,
+          "name": "blk.12.attn_qkv.weight",
+          "subnormal": 21100
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 2,
+          "name": "blk.12.attn_gate.weight",
+          "subnormal": 8766
+        },
+        {
+          "elements": 16384,
+          "flushed_to_zero": 0,
+          "name": "blk.12.ssm_beta.weight",
+          "subnormal": 52
+        },
+        {
+          "elements": 16384,
+          "flushed_to_zero": 0,
+          "name": "blk.12.ssm_alpha.weight",
+          "subnormal": 37
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 10,
+          "name": "blk.12.ssm_out.weight",
+          "subnormal": 12904
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 10,
+          "name": "blk.13.ffn_gate.weight",
+          "subnormal": 18144
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 9,
+          "name": "blk.13.ffn_up.weight",
+          "subnormal": 23338
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 11,
+          "name": "blk.13.ffn_down.weight",
+          "subnormal": 27077
+        },
+        {
+          "elements": 6291456,
+          "flushed_to_zero": 13,
+          "name": "blk.13.attn_qkv.weight",
+          "subnormal": 21903
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 6,
+          "name": "blk.13.attn_gate.weight",
+          "subnormal": 8270
+        },
+        {
+          "elements": 16384,
+          "flushed_to_zero": 0,
+          "name": "blk.13.ssm_beta.weight",
+          "subnormal": 60
+        },
+        {
+          "elements": 16384,
+          "flushed_to_zero": 0,
+          "name": "blk.13.ssm_alpha.weight",
+          "subnormal": 37
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 7,
+          "name": "blk.13.ssm_out.weight",
+          "subnormal": 11903
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 10,
+          "name": "blk.14.ffn_gate.weight",
+          "subnormal": 18747
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 12,
+          "name": "blk.14.ffn_up.weight",
+          "subnormal": 23622
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 8,
+          "name": "blk.14.ffn_down.weight",
+          "subnormal": 26600
+        },
+        {
+          "elements": 6291456,
+          "flushed_to_zero": 10,
+          "name": "blk.14.attn_qkv.weight",
+          "subnormal": 22397
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 7,
+          "name": "blk.14.attn_gate.weight",
+          "subnormal": 8486
+        },
+        {
+          "elements": 16384,
+          "flushed_to_zero": 0,
+          "name": "blk.14.ssm_beta.weight",
+          "subnormal": 63
+        },
+        {
+          "elements": 16384,
+          "flushed_to_zero": 0,
+          "name": "blk.14.ssm_alpha.weight",
+          "subnormal": 38
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 5,
+          "name": "blk.14.ssm_out.weight",
+          "subnormal": 12227
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 5,
+          "name": "blk.15.ffn_gate.weight",
+          "subnormal": 16306
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 13,
+          "name": "blk.15.ffn_up.weight",
+          "subnormal": 22673
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 16,
+          "name": "blk.15.ffn_down.weight",
+          "subnormal": 23655
+        },
+        {
+          "elements": 4194304,
+          "flushed_to_zero": 9,
+          "name": "blk.15.attn_q.weight",
+          "subnormal": 16491
+        },
+        {
+          "elements": 524288,
+          "flushed_to_zero": 1,
+          "name": "blk.15.attn_k.weight",
+          "subnormal": 2957
+        },
+        {
+          "elements": 524288,
+          "flushed_to_zero": 0,
+          "name": "blk.15.attn_v.weight",
+          "subnormal": 2099
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 4,
+          "name": "blk.15.attn_output.weight",
+          "subnormal": 9542
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 7,
+          "name": "blk.16.ffn_gate.weight",
+          "subnormal": 14262
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 11,
+          "name": "blk.16.ffn_up.weight",
+          "subnormal": 21312
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 5,
+          "name": "blk.16.ffn_down.weight",
+          "subnormal": 23178
+        },
+        {
+          "elements": 6291456,
+          "flushed_to_zero": 12,
+          "name": "blk.16.attn_qkv.weight",
+          "subnormal": 18487
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 3,
+          "name": "blk.16.attn_gate.weight",
+          "subnormal": 8739
+        },
+        {
+          "elements": 16384,
+          "flushed_to_zero": 0,
+          "name": "blk.16.ssm_beta.weight",
+          "subnormal": 56
+        },
+        {
+          "elements": 16384,
+          "flushed_to_zero": 0,
+          "name": "blk.16.ssm_alpha.weight",
+          "subnormal": 34
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 9,
+          "name": "blk.16.ssm_out.weight",
+          "subnormal": 12040
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 4,
+          "name": "blk.17.ffn_gate.weight",
+          "subnormal": 12535
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 8,
+          "name": "blk.17.ffn_up.weight",
+          "subnormal": 21236
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 21,
+          "name": "blk.17.ffn_down.weight",
+          "subnormal": 23187
+        },
+        {
+          "elements": 6291456,
+          "flushed_to_zero": 11,
+          "name": "blk.17.attn_qkv.weight",
+          "subnormal": 16181
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 1,
+          "name": "blk.17.attn_gate.weight",
+          "subnormal": 7975
+        },
+        {
+          "elements": 16384,
+          "flushed_to_zero": 0,
+          "name": "blk.17.ssm_beta.weight",
+          "subnormal": 62
+        },
+        {
+          "elements": 16384,
+          "flushed_to_zero": 0,
+          "name": "blk.17.ssm_alpha.weight",
+          "subnormal": 33
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 4,
+          "name": "blk.17.ssm_out.weight",
+          "subnormal": 12678
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 5,
+          "name": "blk.18.ffn_gate.weight",
+          "subnormal": 11663
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 22,
+          "name": "blk.18.ffn_up.weight",
+          "subnormal": 20749
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 12,
+          "name": "blk.18.ffn_down.weight",
+          "subnormal": 22988
+        },
+        {
+          "elements": 6291456,
+          "flushed_to_zero": 8,
+          "name": "blk.18.attn_qkv.weight",
+          "subnormal": 16155
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 6,
+          "name": "blk.18.attn_gate.weight",
+          "subnormal": 8178
+        },
+        {
+          "elements": 16384,
+          "flushed_to_zero": 0,
+          "name": "blk.18.ssm_beta.weight",
+          "subnormal": 66
+        },
+        {
+          "elements": 16384,
+          "flushed_to_zero": 0,
+          "name": "blk.18.ssm_alpha.weight",
+          "subnormal": 27
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 9,
+          "name": "blk.18.ssm_out.weight",
+          "subnormal": 12922
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 5,
+          "name": "blk.19.ffn_gate.weight",
+          "subnormal": 12052
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 11,
+          "name": "blk.19.ffn_up.weight",
+          "subnormal": 19892
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 10,
+          "name": "blk.19.ffn_down.weight",
+          "subnormal": 21286
+        },
+        {
+          "elements": 4194304,
+          "flushed_to_zero": 7,
+          "name": "blk.19.attn_q.weight",
+          "subnormal": 16558
+        },
+        {
+          "elements": 524288,
+          "flushed_to_zero": 2,
+          "name": "blk.19.attn_k.weight",
+          "subnormal": 2983
+        },
+        {
+          "elements": 524288,
+          "flushed_to_zero": 1,
+          "name": "blk.19.attn_v.weight",
+          "subnormal": 1813
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 1,
+          "name": "blk.19.attn_output.weight",
+          "subnormal": 7131
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 4,
+          "name": "blk.20.ffn_gate.weight",
+          "subnormal": 11889
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 9,
+          "name": "blk.20.ffn_up.weight",
+          "subnormal": 19264
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 10,
+          "name": "blk.20.ffn_down.weight",
+          "subnormal": 20319
+        },
+        {
+          "elements": 6291456,
+          "flushed_to_zero": 7,
+          "name": "blk.20.attn_qkv.weight",
+          "subnormal": 15565
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 4,
+          "name": "blk.20.attn_gate.weight",
+          "subnormal": 8218
+        },
+        {
+          "elements": 16384,
+          "flushed_to_zero": 0,
+          "name": "blk.20.ssm_beta.weight",
+          "subnormal": 56
+        },
+        {
+          "elements": 16384,
+          "flushed_to_zero": 0,
+          "name": "blk.20.ssm_alpha.weight",
+          "subnormal": 26
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 6,
+          "name": "blk.20.ssm_out.weight",
+          "subnormal": 12003
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 9,
+          "name": "blk.21.ffn_gate.weight",
+          "subnormal": 11772
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 8,
+          "name": "blk.21.ffn_up.weight",
+          "subnormal": 18649
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 5,
+          "name": "blk.21.ffn_down.weight",
+          "subnormal": 20464
+        },
+        {
+          "elements": 6291456,
+          "flushed_to_zero": 14,
+          "name": "blk.21.attn_qkv.weight",
+          "subnormal": 15942
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 7,
+          "name": "blk.21.attn_gate.weight",
+          "subnormal": 7292
+        },
+        {
+          "elements": 16384,
+          "flushed_to_zero": 0,
+          "name": "blk.21.ssm_beta.weight",
+          "subnormal": 52
+        },
+        {
+          "elements": 16384,
+          "flushed_to_zero": 0,
+          "name": "blk.21.ssm_alpha.weight",
+          "subnormal": 31
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 8,
+          "name": "blk.21.ssm_out.weight",
+          "subnormal": 10681
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 4,
+          "name": "blk.22.ffn_gate.weight",
+          "subnormal": 11886
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 12,
+          "name": "blk.22.ffn_up.weight",
+          "subnormal": 18840
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 10,
+          "name": "blk.22.ffn_down.weight",
+          "subnormal": 20940
+        },
+        {
+          "elements": 6291456,
+          "flushed_to_zero": 15,
+          "name": "blk.22.attn_qkv.weight",
+          "subnormal": 18425
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 5,
+          "name": "blk.22.attn_gate.weight",
+          "subnormal": 6934
+        },
+        {
+          "elements": 16384,
+          "flushed_to_zero": 0,
+          "name": "blk.22.ssm_beta.weight",
+          "subnormal": 54
+        },
+        {
+          "elements": 16384,
+          "flushed_to_zero": 0,
+          "name": "blk.22.ssm_alpha.weight",
+          "subnormal": 27
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 0,
+          "name": "blk.22.ssm_out.weight",
+          "subnormal": 9849
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 3,
+          "name": "blk.23.ffn_gate.weight",
+          "subnormal": 10635
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 3,
+          "name": "blk.23.ffn_up.weight",
+          "subnormal": 17325
+        },
+        {
+          "elements": 3670016,
+          "flushed_to_zero": 10,
+          "name": "blk.23.ffn_down.weight",
+          "subnormal": 23528
+        },
+        {
+          "elements": 4194304,
+          "flushed_to_zero": 13,
+          "name": "blk.23.attn_q.weight",
+          "subnormal": 16595
+        },
+        {
+          "elements": 524288,
+          "flushed_to_zero": 0,
+          "name": "blk.23.attn_k.weight",
+          "subnormal": 3397
+        },
+        {
+          "elements": 524288,
+          "flushed_to_zero": 2,
+          "name": "blk.23.attn_v.weight",
+          "subnormal": 1814
+        },
+        {
+          "elements": 2097152,
+          "flushed_to_zero": 3,
+          "name": "blk.23.attn_output.weight",
+          "subnormal": 9903
+        }
+      ]
+    },
+    "generated_utc": "2026-09-02T12:13:43Z",
+    "gguf_package_verified": "0.19.0",
+    "gguf_version": "0.19.0",
+    "kv": {
+      "attention.head_count": 8,
+      "attention.head_count_kv": 2,
+      "attention.key_length": 256,
+      "attention.layer_norm_rms_epsilon": 1e-06,
+      "attention.value_length": 256,
+      "block_count": 24,
+      "context_length": 262144,
+      "embedding_length": 1024,
+      "feed_forward_length": 3584,
+      "full_attention_interval": 4,
+      "general.architecture": "qwen35",
+      "rope.dimension_count": 64,
+      "rope.dimension_sections": [
+        11,
+        11,
+        10,
+        0
+      ],
+      "rope.freq_base": 10000000.0,
+      "ssm.conv_kernel": 4,
+      "ssm.group_count": 16,
+      "ssm.inner_size": 2048,
+      "ssm.state_size": 128,
+      "ssm.time_step_rank": 16,
+      "vocab_size": 252416
+    },
+    "llama_cpp_constants": "llama.cpp master, gguf-py constants read 2026-09-01 (spec D4 section 0.4)",
+    "llama_cpp_runtime": "ghcr.io/ggml-org/llama.cpp:server-cuda b10068 (571d0d540)",
+    "model_state_sha256_float32": "03d88620140214a9fdd937acb8cfc1e38a619e1d94c3f01602af9bd26f8795e9",
+    "notes": [
+      "the source tokenizer declares no bos token, so no tokenizer.ggml.bos_token_id is written and llama.cpp falls back to its own default id; add_bos_token is written False, so generation is unaffected unless a client opts into add_bos",
+      "norm weights are written verbatim: a Qwen-derived child already stores 1 + w, so llama.cpp's converter-side +1 must not be applied again",
+      "ssm_a is -exp(decay_log_scale); the parameter itself is the log scale",
+      "rank>=2 tensors take the file type, norms and per-head scalars stay float32, matching llama.cpp's own converters"
+    ],
+    "omitted": [
+      {
+        "name": "lm_head.weight",
+        "reason": "tied to embed.weight; llama.cpp reuses token_embd when output is absent"
+      },
+      {
+        "name": "native_media_bridge.feature_proj.weight",
+        "reason": "native-media interface; llama.cpp qwen35 has no tensor for it. Belongs in the companion chimera-media GGUF (spec 1.14)."
+      },
+      {
+        "name": "native_media_bridge.type_embed.weight",
+        "reason": "native-media interface; llama.cpp qwen35 has no tensor for it. Belongs in the companion chimera-media GGUF (spec 1.14)."
+      },
+      {
+        "name": "native_media_bridge.type_feature_scale.weight",
+        "reason": "native-media interface; llama.cpp qwen35 has no tensor for it. Belongs in the companion chimera-media GGUF (spec 1.14)."
+      },
+      {
+        "name": "native_media_bridge.type_affine.weight",
+        "reason": "native-media interface; llama.cpp qwen35 has no tensor for it. Belongs in the companion chimera-media GGUF (spec 1.14)."
+      },
+      {
+        "name": "native_media_bridge.position_proj.weight",
+        "reason": "native-media interface; llama.cpp qwen35 has no tensor for it. Belongs in the companion chimera-media GGUF (spec 1.14)."
+      },
+      {
+        "name": "native_media_bridge.position_fourier_proj.weight",
+        "reason": "native-media interface; llama.cpp qwen35 has no tensor for it. Belongs in the companion chimera-media GGUF (spec 1.14)."
+      },
+      {
+        "name": "native_media_bridge.noise_proj.0.weight",
+        "reason": "native-media interface; llama.cpp qwen35 has no tensor for it. Belongs in the companion chimera-media GGUF (spec 1.14)."
+      },
+      {
+        "name": "native_media_bridge.noise_proj.0.bias",
+        "reason": "native-media interface; llama.cpp qwen35 has no tensor for it. Belongs in the companion chimera-media GGUF (spec 1.14)."
+      },
+      {
+        "name": "native_media_bridge.noise_proj.2.weight",
+        "reason": "native-media interface; llama.cpp qwen35 has no tensor for it. Belongs in the companion chimera-media GGUF (spec 1.14)."
+      },
+      {
+        "name": "native_media_bridge.norm.weight",
+        "reason": "native-media interface; llama.cpp qwen35 has no tensor for it. Belongs in the companion chimera-media GGUF (spec 1.14)."
+      },
+      {
+        "name": "native_media_head.norm.weight",
+        "reason": "native-media interface; llama.cpp qwen35 has no tensor for it. Belongs in the companion chimera-media GGUF (spec 1.14)."
+      },
+      {
+        "name": "native_media_head.type_affine.weight",
+        "reason": "native-media interface; llama.cpp qwen35 has no tensor for it. Belongs in the companion chimera-media GGUF (spec 1.14)."
+      },
+      {
+        "name": "native_media_head.out.weight",
+        "reason": "native-media interface; llama.cpp qwen35 has no tensor for it. Belongs in the companion chimera-media GGUF (spec 1.14)."
+      },
+      {
+        "name": "flow_head.weight",
+        "reason": "auxiliary flow head; llama.cpp qwen35 has no tensor for it (companion chimera-media GGUF)"
+      },
+      {
+        "name": "grounding_head.weight",
+        "reason": "auxiliary grounding head; llama.cpp qwen35 has no tensor for it (companion chimera-media GGUF)"
+      },
+      {
+        "name": "sync_head.weight",
+        "reason": "auxiliary sync head; llama.cpp qwen35 has no tensor for it (companion chimera-media GGUF)"
+      }
+    ],
+    "parameters_read_more_than_once": [],
+    "parameters_read_once": 374,
+    "path": "/home/cereal/omni-campaign/import-lane/s5/out/qwen35-0p8b-chimera-f16-s5fix.gguf",
+    "schema": "chimera_omni.export.gguf.v1",
+    "sha256": "fcb61be2db105b7f89ece090173dbbacdf75a1dbc4ffaaf02157b23d6d9657ef",
+    "source_checkpoint": {
+      "directory": "/home/cereal/omni-campaign/import-lane/s4-fix/qwen35_0p8b_chimera_bf16",
+      "dtypes_on_disk": {
+        "BF16": 390
+      },
+      "load_dtype": "torch.float32",
+      "load_seconds": 29.06,
+      "note": "safetensors dtype names counted from the shard headers; the widen to torch.float32 is exact, so the file type cast rounds once, from the value the import produced",
+      "state_sha256": "03d88620140214a9fdd937acb8cfc1e38a619e1d94c3f01602af9bd26f8795e9",
+      "tied_weights": {
+        "lm_head.weight": "embed.weight"
+      }
+    },
+    "tensor_count": 320,
+    "tensors": [
+      {
+        "dtype": "float16",
+        "elements": 258473984,
+        "float16_flushed_to_zero": 309,
+        "float16_subnormal": 650896,
+        "name": "token_embd.weight",
+        "note": "",
+        "shape": [
+          252416,
+          1024
+        ],
+        "sources": [
+          "embed.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "output_norm.weight",
+        "note": "already 1 + w_qwen; the converter's +1 is NOT re-applied",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "norm.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.0.attn_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.0.norm1.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.0.post_attention_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.0.norm2.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 5,
+        "float16_subnormal": 15268,
+        "name": "blk.0.ffn_gate.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.0.ffn.up.weight"
+        ],
+        "transform": "rows[:intermediate]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 16,
+        "float16_subnormal": 21435,
+        "name": "blk.0.ffn_up.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.0.ffn.up.weight"
+        ],
+        "transform": "rows[intermediate:]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 6,
+        "float16_subnormal": 22294,
+        "name": "blk.0.ffn_down.weight",
+        "note": "",
+        "shape": [
+          1024,
+          3584
+        ],
+        "sources": [
+          "blocks.0.ffn.down.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 6291456,
+        "float16_flushed_to_zero": 14345,
+        "float16_subnormal": 21576,
+        "name": "blk.0.attn_qkv.weight",
+        "note": "",
+        "shape": [
+          6144,
+          1024
+        ],
+        "sources": [
+          "blocks.0.mixer.q_proj.weight",
+          "blocks.0.mixer.k_proj.weight",
+          "blocks.0.mixer.v_proj.weight"
+        ],
+        "transform": "concat_rows(q, k, reorder_v(v))"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 4,
+        "float16_subnormal": 6626,
+        "name": "blk.0.attn_gate.weight",
+        "note": "",
+        "shape": [
+          2048,
+          1024
+        ],
+        "sources": [
+          "blocks.0.mixer.output_gate.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 24576,
+        "name": "blk.0.ssm_conv1d.weight",
+        "note": "",
+        "shape": [
+          6144,
+          4
+        ],
+        "sources": [
+          "blocks.0.mixer.q_conv.conv.weight",
+          "blocks.0.mixer.k_conv.conv.weight",
+          "blocks.0.mixer.v_conv.conv.weight"
+        ],
+        "transform": "concat_rows(q, k, reorder_v(v)).squeeze(1)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 16,
+        "name": "blk.0.ssm_a",
+        "note": "",
+        "shape": [
+          16
+        ],
+        "sources": [
+          "blocks.0.mixer.decay_log_scale"
+        ],
+        "transform": "reorder_v(-exp(A_log))"
+      },
+      {
+        "dtype": "float32",
+        "elements": 16,
+        "name": "blk.0.ssm_dt.bias",
+        "note": "",
+        "shape": [
+          16
+        ],
+        "sources": [
+          "blocks.0.mixer.decay_bias"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 16384,
+        "float16_subnormal": 58,
+        "name": "blk.0.ssm_beta.weight",
+        "note": "",
+        "shape": [
+          16,
+          1024
+        ],
+        "sources": [
+          "blocks.0.mixer.write_strength.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 16384,
+        "float16_subnormal": 17,
+        "name": "blk.0.ssm_alpha.weight",
+        "note": "",
+        "shape": [
+          16,
+          1024
+        ],
+        "sources": [
+          "blocks.0.mixer.decay_down.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 128,
+        "name": "blk.0.ssm_norm.weight",
+        "note": "the one norm llama.cpp does not add 1 to; Chimera stores it plain too",
+        "shape": [
+          128
+        ],
+        "sources": [
+          "blocks.0.mixer.output_norm.weight"
+        ],
+        "transform": "row0_after_asserting_rows_equal"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 5,
+        "float16_subnormal": 10010,
+        "name": "blk.0.ssm_out.weight",
+        "note": "",
+        "shape": [
+          1024,
+          2048
+        ],
+        "sources": [
+          "blocks.0.mixer.out.weight"
+        ],
+        "transform": "reorder_v(columns)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.1.attn_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.1.norm1.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.1.post_attention_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.1.norm2.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 12,
+        "float16_subnormal": 13847,
+        "name": "blk.1.ffn_gate.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.1.ffn.up.weight"
+        ],
+        "transform": "rows[:intermediate]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 14,
+        "float16_subnormal": 21577,
+        "name": "blk.1.ffn_up.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.1.ffn.up.weight"
+        ],
+        "transform": "rows[intermediate:]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 15,
+        "float16_subnormal": 22556,
+        "name": "blk.1.ffn_down.weight",
+        "note": "",
+        "shape": [
+          1024,
+          3584
+        ],
+        "sources": [
+          "blocks.1.ffn.down.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 6291456,
+        "float16_flushed_to_zero": 14,
+        "float16_subnormal": 20670,
+        "name": "blk.1.attn_qkv.weight",
+        "note": "",
+        "shape": [
+          6144,
+          1024
+        ],
+        "sources": [
+          "blocks.1.mixer.q_proj.weight",
+          "blocks.1.mixer.k_proj.weight",
+          "blocks.1.mixer.v_proj.weight"
+        ],
+        "transform": "concat_rows(q, k, reorder_v(v))"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 1,
+        "float16_subnormal": 6327,
+        "name": "blk.1.attn_gate.weight",
+        "note": "",
+        "shape": [
+          2048,
+          1024
+        ],
+        "sources": [
+          "blocks.1.mixer.output_gate.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 24576,
+        "name": "blk.1.ssm_conv1d.weight",
+        "note": "",
+        "shape": [
+          6144,
+          4
+        ],
+        "sources": [
+          "blocks.1.mixer.q_conv.conv.weight",
+          "blocks.1.mixer.k_conv.conv.weight",
+          "blocks.1.mixer.v_conv.conv.weight"
+        ],
+        "transform": "concat_rows(q, k, reorder_v(v)).squeeze(1)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 16,
+        "name": "blk.1.ssm_a",
+        "note": "",
+        "shape": [
+          16
+        ],
+        "sources": [
+          "blocks.1.mixer.decay_log_scale"
+        ],
+        "transform": "reorder_v(-exp(A_log))"
+      },
+      {
+        "dtype": "float32",
+        "elements": 16,
+        "name": "blk.1.ssm_dt.bias",
+        "note": "",
+        "shape": [
+          16
+        ],
+        "sources": [
+          "blocks.1.mixer.decay_bias"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 16384,
+        "float16_subnormal": 57,
+        "name": "blk.1.ssm_beta.weight",
+        "note": "",
+        "shape": [
+          16,
+          1024
+        ],
+        "sources": [
+          "blocks.1.mixer.write_strength.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 16384,
+        "float16_subnormal": 24,
+        "name": "blk.1.ssm_alpha.weight",
+        "note": "",
+        "shape": [
+          16,
+          1024
+        ],
+        "sources": [
+          "blocks.1.mixer.decay_down.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 128,
+        "name": "blk.1.ssm_norm.weight",
+        "note": "the one norm llama.cpp does not add 1 to; Chimera stores it plain too",
+        "shape": [
+          128
+        ],
+        "sources": [
+          "blocks.1.mixer.output_norm.weight"
+        ],
+        "transform": "row0_after_asserting_rows_equal"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 7,
+        "float16_subnormal": 9716,
+        "name": "blk.1.ssm_out.weight",
+        "note": "",
+        "shape": [
+          1024,
+          2048
+        ],
+        "sources": [
+          "blocks.1.mixer.out.weight"
+        ],
+        "transform": "reorder_v(columns)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.2.attn_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.2.norm1.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.2.post_attention_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.2.norm2.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 10,
+        "float16_subnormal": 11864,
+        "name": "blk.2.ffn_gate.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.2.ffn.up.weight"
+        ],
+        "transform": "rows[:intermediate]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 12,
+        "float16_subnormal": 22673,
+        "name": "blk.2.ffn_up.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.2.ffn.up.weight"
+        ],
+        "transform": "rows[intermediate:]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 12,
+        "float16_subnormal": 24067,
+        "name": "blk.2.ffn_down.weight",
+        "note": "",
+        "shape": [
+          1024,
+          3584
+        ],
+        "sources": [
+          "blocks.2.ffn.down.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 6291456,
+        "float16_flushed_to_zero": 15,
+        "float16_subnormal": 20244,
+        "name": "blk.2.attn_qkv.weight",
+        "note": "",
+        "shape": [
+          6144,
+          1024
+        ],
+        "sources": [
+          "blocks.2.mixer.q_proj.weight",
+          "blocks.2.mixer.k_proj.weight",
+          "blocks.2.mixer.v_proj.weight"
+        ],
+        "transform": "concat_rows(q, k, reorder_v(v))"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 3,
+        "float16_subnormal": 6180,
+        "name": "blk.2.attn_gate.weight",
+        "note": "",
+        "shape": [
+          2048,
+          1024
+        ],
+        "sources": [
+          "blocks.2.mixer.output_gate.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 24576,
+        "name": "blk.2.ssm_conv1d.weight",
+        "note": "",
+        "shape": [
+          6144,
+          4
+        ],
+        "sources": [
+          "blocks.2.mixer.q_conv.conv.weight",
+          "blocks.2.mixer.k_conv.conv.weight",
+          "blocks.2.mixer.v_conv.conv.weight"
+        ],
+        "transform": "concat_rows(q, k, reorder_v(v)).squeeze(1)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 16,
+        "name": "blk.2.ssm_a",
+        "note": "",
+        "shape": [
+          16
+        ],
+        "sources": [
+          "blocks.2.mixer.decay_log_scale"
+        ],
+        "transform": "reorder_v(-exp(A_log))"
+      },
+      {
+        "dtype": "float32",
+        "elements": 16,
+        "name": "blk.2.ssm_dt.bias",
+        "note": "",
+        "shape": [
+          16
+        ],
+        "sources": [
+          "blocks.2.mixer.decay_bias"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 16384,
+        "float16_subnormal": 55,
+        "name": "blk.2.ssm_beta.weight",
+        "note": "",
+        "shape": [
+          16,
+          1024
+        ],
+        "sources": [
+          "blocks.2.mixer.write_strength.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 16384,
+        "float16_subnormal": 36,
+        "name": "blk.2.ssm_alpha.weight",
+        "note": "",
+        "shape": [
+          16,
+          1024
+        ],
+        "sources": [
+          "blocks.2.mixer.decay_down.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 128,
+        "name": "blk.2.ssm_norm.weight",
+        "note": "the one norm llama.cpp does not add 1 to; Chimera stores it plain too",
+        "shape": [
+          128
+        ],
+        "sources": [
+          "blocks.2.mixer.output_norm.weight"
+        ],
+        "transform": "row0_after_asserting_rows_equal"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 6,
+        "float16_subnormal": 10598,
+        "name": "blk.2.ssm_out.weight",
+        "note": "",
+        "shape": [
+          1024,
+          2048
+        ],
+        "sources": [
+          "blocks.2.mixer.out.weight"
+        ],
+        "transform": "reorder_v(columns)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.3.attn_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.3.norm1.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.3.post_attention_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.3.norm2.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 7,
+        "float16_subnormal": 12236,
+        "name": "blk.3.ffn_gate.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.3.ffn.up.weight"
+        ],
+        "transform": "rows[:intermediate]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 20,
+        "float16_subnormal": 23371,
+        "name": "blk.3.ffn_up.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.3.ffn.up.weight"
+        ],
+        "transform": "rows[intermediate:]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 11,
+        "float16_subnormal": 25636,
+        "name": "blk.3.ffn_down.weight",
+        "note": "",
+        "shape": [
+          1024,
+          3584
+        ],
+        "sources": [
+          "blocks.3.ffn.down.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 4194304,
+        "float16_flushed_to_zero": 3,
+        "float16_subnormal": 13574,
+        "name": "blk.3.attn_q.weight",
+        "note": "per-head [q|gate]; llama.cpp splits it at runtime",
+        "shape": [
+          4096,
+          1024
+        ],
+        "sources": [
+          "blocks.3.mixer.q_proj.weight",
+          "blocks.3.mixer.gate_proj.weight"
+        ],
+        "transform": "interleave_q_gate(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 524288,
+        "float16_flushed_to_zero": 2,
+        "float16_subnormal": 2383,
+        "name": "blk.3.attn_k.weight",
+        "note": "",
+        "shape": [
+          512,
+          1024
+        ],
+        "sources": [
+          "blocks.3.mixer.k_proj.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 524288,
+        "float16_flushed_to_zero": 3,
+        "float16_subnormal": 2435,
+        "name": "blk.3.attn_v.weight",
+        "note": "",
+        "shape": [
+          512,
+          1024
+        ],
+        "sources": [
+          "blocks.3.mixer.v_proj.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 7,
+        "float16_subnormal": 10824,
+        "name": "blk.3.attn_output.weight",
+        "note": "",
+        "shape": [
+          1024,
+          2048
+        ],
+        "sources": [
+          "blocks.3.mixer.out.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 256,
+        "name": "blk.3.attn_q_norm.weight",
+        "note": "already 1 + w_qwen",
+        "shape": [
+          256
+        ],
+        "sources": [
+          "blocks.3.mixer.q_norm.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 256,
+        "name": "blk.3.attn_k_norm.weight",
+        "note": "already 1 + w_qwen",
+        "shape": [
+          256
+        ],
+        "sources": [
+          "blocks.3.mixer.k_norm.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.4.attn_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.4.norm1.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.4.post_attention_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.4.norm2.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 7,
+        "float16_subnormal": 12685,
+        "name": "blk.4.ffn_gate.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.4.ffn.up.weight"
+        ],
+        "transform": "rows[:intermediate]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 11,
+        "float16_subnormal": 23320,
+        "name": "blk.4.ffn_up.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.4.ffn.up.weight"
+        ],
+        "transform": "rows[intermediate:]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 18,
+        "float16_subnormal": 25829,
+        "name": "blk.4.ffn_down.weight",
+        "note": "",
+        "shape": [
+          1024,
+          3584
+        ],
+        "sources": [
+          "blocks.4.ffn.down.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 6291456,
+        "float16_flushed_to_zero": 8,
+        "float16_subnormal": 19327,
+        "name": "blk.4.attn_qkv.weight",
+        "note": "",
+        "shape": [
+          6144,
+          1024
+        ],
+        "sources": [
+          "blocks.4.mixer.q_proj.weight",
+          "blocks.4.mixer.k_proj.weight",
+          "blocks.4.mixer.v_proj.weight"
+        ],
+        "transform": "concat_rows(q, k, reorder_v(v))"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 3,
+        "float16_subnormal": 7626,
+        "name": "blk.4.attn_gate.weight",
+        "note": "",
+        "shape": [
+          2048,
+          1024
+        ],
+        "sources": [
+          "blocks.4.mixer.output_gate.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 24576,
+        "name": "blk.4.ssm_conv1d.weight",
+        "note": "",
+        "shape": [
+          6144,
+          4
+        ],
+        "sources": [
+          "blocks.4.mixer.q_conv.conv.weight",
+          "blocks.4.mixer.k_conv.conv.weight",
+          "blocks.4.mixer.v_conv.conv.weight"
+        ],
+        "transform": "concat_rows(q, k, reorder_v(v)).squeeze(1)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 16,
+        "name": "blk.4.ssm_a",
+        "note": "",
+        "shape": [
+          16
+        ],
+        "sources": [
+          "blocks.4.mixer.decay_log_scale"
+        ],
+        "transform": "reorder_v(-exp(A_log))"
+      },
+      {
+        "dtype": "float32",
+        "elements": 16,
+        "name": "blk.4.ssm_dt.bias",
+        "note": "",
+        "shape": [
+          16
+        ],
+        "sources": [
+          "blocks.4.mixer.decay_bias"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 16384,
+        "float16_subnormal": 70,
+        "name": "blk.4.ssm_beta.weight",
+        "note": "",
+        "shape": [
+          16,
+          1024
+        ],
+        "sources": [
+          "blocks.4.mixer.write_strength.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 16384,
+        "float16_subnormal": 34,
+        "name": "blk.4.ssm_alpha.weight",
+        "note": "",
+        "shape": [
+          16,
+          1024
+        ],
+        "sources": [
+          "blocks.4.mixer.decay_down.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 128,
+        "name": "blk.4.ssm_norm.weight",
+        "note": "the one norm llama.cpp does not add 1 to; Chimera stores it plain too",
+        "shape": [
+          128
+        ],
+        "sources": [
+          "blocks.4.mixer.output_norm.weight"
+        ],
+        "transform": "row0_after_asserting_rows_equal"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 5,
+        "float16_subnormal": 11872,
+        "name": "blk.4.ssm_out.weight",
+        "note": "",
+        "shape": [
+          1024,
+          2048
+        ],
+        "sources": [
+          "blocks.4.mixer.out.weight"
+        ],
+        "transform": "reorder_v(columns)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.5.attn_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.5.norm1.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.5.post_attention_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.5.norm2.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 3,
+        "float16_subnormal": 13813,
+        "name": "blk.5.ffn_gate.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.5.ffn.up.weight"
+        ],
+        "transform": "rows[:intermediate]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 17,
+        "float16_subnormal": 23016,
+        "name": "blk.5.ffn_up.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.5.ffn.up.weight"
+        ],
+        "transform": "rows[intermediate:]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 7,
+        "float16_subnormal": 25650,
+        "name": "blk.5.ffn_down.weight",
+        "note": "",
+        "shape": [
+          1024,
+          3584
+        ],
+        "sources": [
+          "blocks.5.ffn.down.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 6291456,
+        "float16_flushed_to_zero": 11,
+        "float16_subnormal": 20372,
+        "name": "blk.5.attn_qkv.weight",
+        "note": "",
+        "shape": [
+          6144,
+          1024
+        ],
+        "sources": [
+          "blocks.5.mixer.q_proj.weight",
+          "blocks.5.mixer.k_proj.weight",
+          "blocks.5.mixer.v_proj.weight"
+        ],
+        "transform": "concat_rows(q, k, reorder_v(v))"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 4,
+        "float16_subnormal": 7414,
+        "name": "blk.5.attn_gate.weight",
+        "note": "",
+        "shape": [
+          2048,
+          1024
+        ],
+        "sources": [
+          "blocks.5.mixer.output_gate.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 24576,
+        "name": "blk.5.ssm_conv1d.weight",
+        "note": "",
+        "shape": [
+          6144,
+          4
+        ],
+        "sources": [
+          "blocks.5.mixer.q_conv.conv.weight",
+          "blocks.5.mixer.k_conv.conv.weight",
+          "blocks.5.mixer.v_conv.conv.weight"
+        ],
+        "transform": "concat_rows(q, k, reorder_v(v)).squeeze(1)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 16,
+        "name": "blk.5.ssm_a",
+        "note": "",
+        "shape": [
+          16
+        ],
+        "sources": [
+          "blocks.5.mixer.decay_log_scale"
+        ],
+        "transform": "reorder_v(-exp(A_log))"
+      },
+      {
+        "dtype": "float32",
+        "elements": 16,
+        "name": "blk.5.ssm_dt.bias",
+        "note": "",
+        "shape": [
+          16
+        ],
+        "sources": [
+          "blocks.5.mixer.decay_bias"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 16384,
+        "float16_subnormal": 58,
+        "name": "blk.5.ssm_beta.weight",
+        "note": "",
+        "shape": [
+          16,
+          1024
+        ],
+        "sources": [
+          "blocks.5.mixer.write_strength.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 16384,
+        "float16_subnormal": 23,
+        "name": "blk.5.ssm_alpha.weight",
+        "note": "",
+        "shape": [
+          16,
+          1024
+        ],
+        "sources": [
+          "blocks.5.mixer.decay_down.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 128,
+        "name": "blk.5.ssm_norm.weight",
+        "note": "the one norm llama.cpp does not add 1 to; Chimera stores it plain too",
+        "shape": [
+          128
+        ],
+        "sources": [
+          "blocks.5.mixer.output_norm.weight"
+        ],
+        "transform": "row0_after_asserting_rows_equal"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 5,
+        "float16_subnormal": 11731,
+        "name": "blk.5.ssm_out.weight",
+        "note": "",
+        "shape": [
+          1024,
+          2048
+        ],
+        "sources": [
+          "blocks.5.mixer.out.weight"
+        ],
+        "transform": "reorder_v(columns)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.6.attn_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.6.norm1.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.6.post_attention_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.6.norm2.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 9,
+        "float16_subnormal": 15519,
+        "name": "blk.6.ffn_gate.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.6.ffn.up.weight"
+        ],
+        "transform": "rows[:intermediate]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 9,
+        "float16_subnormal": 23124,
+        "name": "blk.6.ffn_up.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.6.ffn.up.weight"
+        ],
+        "transform": "rows[intermediate:]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 10,
+        "float16_subnormal": 26534,
+        "name": "blk.6.ffn_down.weight",
+        "note": "",
+        "shape": [
+          1024,
+          3584
+        ],
+        "sources": [
+          "blocks.6.ffn.down.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 6291456,
+        "float16_flushed_to_zero": 13,
+        "float16_subnormal": 21012,
+        "name": "blk.6.attn_qkv.weight",
+        "note": "",
+        "shape": [
+          6144,
+          1024
+        ],
+        "sources": [
+          "blocks.6.mixer.q_proj.weight",
+          "blocks.6.mixer.k_proj.weight",
+          "blocks.6.mixer.v_proj.weight"
+        ],
+        "transform": "concat_rows(q, k, reorder_v(v))"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 4,
+        "float16_subnormal": 7740,
+        "name": "blk.6.attn_gate.weight",
+        "note": "",
+        "shape": [
+          2048,
+          1024
+        ],
+        "sources": [
+          "blocks.6.mixer.output_gate.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 24576,
+        "name": "blk.6.ssm_conv1d.weight",
+        "note": "",
+        "shape": [
+          6144,
+          4
+        ],
+        "sources": [
+          "blocks.6.mixer.q_conv.conv.weight",
+          "blocks.6.mixer.k_conv.conv.weight",
+          "blocks.6.mixer.v_conv.conv.weight"
+        ],
+        "transform": "concat_rows(q, k, reorder_v(v)).squeeze(1)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 16,
+        "name": "blk.6.ssm_a",
+        "note": "",
+        "shape": [
+          16
+        ],
+        "sources": [
+          "blocks.6.mixer.decay_log_scale"
+        ],
+        "transform": "reorder_v(-exp(A_log))"
+      },
+      {
+        "dtype": "float32",
+        "elements": 16,
+        "name": "blk.6.ssm_dt.bias",
+        "note": "",
+        "shape": [
+          16
+        ],
+        "sources": [
+          "blocks.6.mixer.decay_bias"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 16384,
+        "float16_flushed_to_zero": 1,
+        "float16_subnormal": 58,
+        "name": "blk.6.ssm_beta.weight",
+        "note": "",
+        "shape": [
+          16,
+          1024
+        ],
+        "sources": [
+          "blocks.6.mixer.write_strength.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 16384,
+        "float16_subnormal": 34,
+        "name": "blk.6.ssm_alpha.weight",
+        "note": "",
+        "shape": [
+          16,
+          1024
+        ],
+        "sources": [
+          "blocks.6.mixer.decay_down.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 128,
+        "name": "blk.6.ssm_norm.weight",
+        "note": "the one norm llama.cpp does not add 1 to; Chimera stores it plain too",
+        "shape": [
+          128
+        ],
+        "sources": [
+          "blocks.6.mixer.output_norm.weight"
+        ],
+        "transform": "row0_after_asserting_rows_equal"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 6,
+        "float16_subnormal": 11530,
+        "name": "blk.6.ssm_out.weight",
+        "note": "",
+        "shape": [
+          1024,
+          2048
+        ],
+        "sources": [
+          "blocks.6.mixer.out.weight"
+        ],
+        "transform": "reorder_v(columns)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.7.attn_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.7.norm1.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.7.post_attention_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.7.norm2.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 8,
+        "float16_subnormal": 16230,
+        "name": "blk.7.ffn_gate.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.7.ffn.up.weight"
+        ],
+        "transform": "rows[:intermediate]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 6,
+        "float16_subnormal": 22774,
+        "name": "blk.7.ffn_up.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.7.ffn.up.weight"
+        ],
+        "transform": "rows[intermediate:]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 12,
+        "float16_subnormal": 26950,
+        "name": "blk.7.ffn_down.weight",
+        "note": "",
+        "shape": [
+          1024,
+          3584
+        ],
+        "sources": [
+          "blocks.7.ffn.down.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 4194304,
+        "float16_flushed_to_zero": 14,
+        "float16_subnormal": 17074,
+        "name": "blk.7.attn_q.weight",
+        "note": "per-head [q|gate]; llama.cpp splits it at runtime",
+        "shape": [
+          4096,
+          1024
+        ],
+        "sources": [
+          "blocks.7.mixer.q_proj.weight",
+          "blocks.7.mixer.gate_proj.weight"
+        ],
+        "transform": "interleave_q_gate(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 524288,
+        "float16_flushed_to_zero": 2,
+        "float16_subnormal": 2792,
+        "name": "blk.7.attn_k.weight",
+        "note": "",
+        "shape": [
+          512,
+          1024
+        ],
+        "sources": [
+          "blocks.7.mixer.k_proj.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 524288,
+        "float16_flushed_to_zero": 2,
+        "float16_subnormal": 2792,
+        "name": "blk.7.attn_v.weight",
+        "note": "",
+        "shape": [
+          512,
+          1024
+        ],
+        "sources": [
+          "blocks.7.mixer.v_proj.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 7,
+        "float16_subnormal": 12755,
+        "name": "blk.7.attn_output.weight",
+        "note": "",
+        "shape": [
+          1024,
+          2048
+        ],
+        "sources": [
+          "blocks.7.mixer.out.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 256,
+        "name": "blk.7.attn_q_norm.weight",
+        "note": "already 1 + w_qwen",
+        "shape": [
+          256
+        ],
+        "sources": [
+          "blocks.7.mixer.q_norm.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 256,
+        "name": "blk.7.attn_k_norm.weight",
+        "note": "already 1 + w_qwen",
+        "shape": [
+          256
+        ],
+        "sources": [
+          "blocks.7.mixer.k_norm.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.8.attn_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.8.norm1.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.8.post_attention_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.8.norm2.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 8,
+        "float16_subnormal": 17861,
+        "name": "blk.8.ffn_gate.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.8.ffn.up.weight"
+        ],
+        "transform": "rows[:intermediate]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 11,
+        "float16_subnormal": 23173,
+        "name": "blk.8.ffn_up.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.8.ffn.up.weight"
+        ],
+        "transform": "rows[intermediate:]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 14,
+        "float16_subnormal": 27073,
+        "name": "blk.8.ffn_down.weight",
+        "note": "",
+        "shape": [
+          1024,
+          3584
+        ],
+        "sources": [
+          "blocks.8.ffn.down.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 6291456,
+        "float16_flushed_to_zero": 11,
+        "float16_subnormal": 21579,
+        "name": "blk.8.attn_qkv.weight",
+        "note": "",
+        "shape": [
+          6144,
+          1024
+        ],
+        "sources": [
+          "blocks.8.mixer.q_proj.weight",
+          "blocks.8.mixer.k_proj.weight",
+          "blocks.8.mixer.v_proj.weight"
+        ],
+        "transform": "concat_rows(q, k, reorder_v(v))"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 7,
+        "float16_subnormal": 8403,
+        "name": "blk.8.attn_gate.weight",
+        "note": "",
+        "shape": [
+          2048,
+          1024
+        ],
+        "sources": [
+          "blocks.8.mixer.output_gate.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 24576,
+        "name": "blk.8.ssm_conv1d.weight",
+        "note": "",
+        "shape": [
+          6144,
+          4
+        ],
+        "sources": [
+          "blocks.8.mixer.q_conv.conv.weight",
+          "blocks.8.mixer.k_conv.conv.weight",
+          "blocks.8.mixer.v_conv.conv.weight"
+        ],
+        "transform": "concat_rows(q, k, reorder_v(v)).squeeze(1)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 16,
+        "name": "blk.8.ssm_a",
+        "note": "",
+        "shape": [
+          16
+        ],
+        "sources": [
+          "blocks.8.mixer.decay_log_scale"
+        ],
+        "transform": "reorder_v(-exp(A_log))"
+      },
+      {
+        "dtype": "float32",
+        "elements": 16,
+        "name": "blk.8.ssm_dt.bias",
+        "note": "",
+        "shape": [
+          16
+        ],
+        "sources": [
+          "blocks.8.mixer.decay_bias"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 16384,
+        "float16_subnormal": 73,
+        "name": "blk.8.ssm_beta.weight",
+        "note": "",
+        "shape": [
+          16,
+          1024
+        ],
+        "sources": [
+          "blocks.8.mixer.write_strength.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 16384,
+        "float16_subnormal": 39,
+        "name": "blk.8.ssm_alpha.weight",
+        "note": "",
+        "shape": [
+          16,
+          1024
+        ],
+        "sources": [
+          "blocks.8.mixer.decay_down.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 128,
+        "name": "blk.8.ssm_norm.weight",
+        "note": "the one norm llama.cpp does not add 1 to; Chimera stores it plain too",
+        "shape": [
+          128
+        ],
+        "sources": [
+          "blocks.8.mixer.output_norm.weight"
+        ],
+        "transform": "row0_after_asserting_rows_equal"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 12,
+        "float16_subnormal": 12636,
+        "name": "blk.8.ssm_out.weight",
+        "note": "",
+        "shape": [
+          1024,
+          2048
+        ],
+        "sources": [
+          "blocks.8.mixer.out.weight"
+        ],
+        "transform": "reorder_v(columns)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.9.attn_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.9.norm1.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.9.post_attention_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.9.norm2.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 6,
+        "float16_subnormal": 19234,
+        "name": "blk.9.ffn_gate.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.9.ffn.up.weight"
+        ],
+        "transform": "rows[:intermediate]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 12,
+        "float16_subnormal": 23332,
+        "name": "blk.9.ffn_up.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.9.ffn.up.weight"
+        ],
+        "transform": "rows[intermediate:]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 24,
+        "float16_subnormal": 27728,
+        "name": "blk.9.ffn_down.weight",
+        "note": "",
+        "shape": [
+          1024,
+          3584
+        ],
+        "sources": [
+          "blocks.9.ffn.down.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 6291456,
+        "float16_flushed_to_zero": 13,
+        "float16_subnormal": 22583,
+        "name": "blk.9.attn_qkv.weight",
+        "note": "",
+        "shape": [
+          6144,
+          1024
+        ],
+        "sources": [
+          "blocks.9.mixer.q_proj.weight",
+          "blocks.9.mixer.k_proj.weight",
+          "blocks.9.mixer.v_proj.weight"
+        ],
+        "transform": "concat_rows(q, k, reorder_v(v))"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 7,
+        "float16_subnormal": 8770,
+        "name": "blk.9.attn_gate.weight",
+        "note": "",
+        "shape": [
+          2048,
+          1024
+        ],
+        "sources": [
+          "blocks.9.mixer.output_gate.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 24576,
+        "name": "blk.9.ssm_conv1d.weight",
+        "note": "",
+        "shape": [
+          6144,
+          4
+        ],
+        "sources": [
+          "blocks.9.mixer.q_conv.conv.weight",
+          "blocks.9.mixer.k_conv.conv.weight",
+          "blocks.9.mixer.v_conv.conv.weight"
+        ],
+        "transform": "concat_rows(q, k, reorder_v(v)).squeeze(1)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 16,
+        "name": "blk.9.ssm_a",
+        "note": "",
+        "shape": [
+          16
+        ],
+        "sources": [
+          "blocks.9.mixer.decay_log_scale"
+        ],
+        "transform": "reorder_v(-exp(A_log))"
+      },
+      {
+        "dtype": "float32",
+        "elements": 16,
+        "name": "blk.9.ssm_dt.bias",
+        "note": "",
+        "shape": [
+          16
+        ],
+        "sources": [
+          "blocks.9.mixer.decay_bias"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 16384,
+        "float16_flushed_to_zero": 1,
+        "float16_subnormal": 37,
+        "name": "blk.9.ssm_beta.weight",
+        "note": "",
+        "shape": [
+          16,
+          1024
+        ],
+        "sources": [
+          "blocks.9.mixer.write_strength.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 16384,
+        "float16_subnormal": 38,
+        "name": "blk.9.ssm_alpha.weight",
+        "note": "",
+        "shape": [
+          16,
+          1024
+        ],
+        "sources": [
+          "blocks.9.mixer.decay_down.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 128,
+        "name": "blk.9.ssm_norm.weight",
+        "note": "the one norm llama.cpp does not add 1 to; Chimera stores it plain too",
+        "shape": [
+          128
+        ],
+        "sources": [
+          "blocks.9.mixer.output_norm.weight"
+        ],
+        "transform": "row0_after_asserting_rows_equal"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 7,
+        "float16_subnormal": 13324,
+        "name": "blk.9.ssm_out.weight",
+        "note": "",
+        "shape": [
+          1024,
+          2048
+        ],
+        "sources": [
+          "blocks.9.mixer.out.weight"
+        ],
+        "transform": "reorder_v(columns)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.10.attn_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.10.norm1.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.10.post_attention_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.10.norm2.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 13,
+        "float16_subnormal": 20141,
+        "name": "blk.10.ffn_gate.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.10.ffn.up.weight"
+        ],
+        "transform": "rows[:intermediate]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 14,
+        "float16_subnormal": 23765,
+        "name": "blk.10.ffn_up.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.10.ffn.up.weight"
+        ],
+        "transform": "rows[intermediate:]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 9,
+        "float16_subnormal": 27185,
+        "name": "blk.10.ffn_down.weight",
+        "note": "",
+        "shape": [
+          1024,
+          3584
+        ],
+        "sources": [
+          "blocks.10.ffn.down.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 6291456,
+        "float16_flushed_to_zero": 10,
+        "float16_subnormal": 23306,
+        "name": "blk.10.attn_qkv.weight",
+        "note": "",
+        "shape": [
+          6144,
+          1024
+        ],
+        "sources": [
+          "blocks.10.mixer.q_proj.weight",
+          "blocks.10.mixer.k_proj.weight",
+          "blocks.10.mixer.v_proj.weight"
+        ],
+        "transform": "concat_rows(q, k, reorder_v(v))"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 5,
+        "float16_subnormal": 8487,
+        "name": "blk.10.attn_gate.weight",
+        "note": "",
+        "shape": [
+          2048,
+          1024
+        ],
+        "sources": [
+          "blocks.10.mixer.output_gate.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 24576,
+        "name": "blk.10.ssm_conv1d.weight",
+        "note": "",
+        "shape": [
+          6144,
+          4
+        ],
+        "sources": [
+          "blocks.10.mixer.q_conv.conv.weight",
+          "blocks.10.mixer.k_conv.conv.weight",
+          "blocks.10.mixer.v_conv.conv.weight"
+        ],
+        "transform": "concat_rows(q, k, reorder_v(v)).squeeze(1)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 16,
+        "name": "blk.10.ssm_a",
+        "note": "",
+        "shape": [
+          16
+        ],
+        "sources": [
+          "blocks.10.mixer.decay_log_scale"
+        ],
+        "transform": "reorder_v(-exp(A_log))"
+      },
+      {
+        "dtype": "float32",
+        "elements": 16,
+        "name": "blk.10.ssm_dt.bias",
+        "note": "",
+        "shape": [
+          16
+        ],
+        "sources": [
+          "blocks.10.mixer.decay_bias"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 16384,
+        "float16_subnormal": 62,
+        "name": "blk.10.ssm_beta.weight",
+        "note": "",
+        "shape": [
+          16,
+          1024
+        ],
+        "sources": [
+          "blocks.10.mixer.write_strength.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 16384,
+        "float16_subnormal": 46,
+        "name": "blk.10.ssm_alpha.weight",
+        "note": "",
+        "shape": [
+          16,
+          1024
+        ],
+        "sources": [
+          "blocks.10.mixer.decay_down.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 128,
+        "name": "blk.10.ssm_norm.weight",
+        "note": "the one norm llama.cpp does not add 1 to; Chimera stores it plain too",
+        "shape": [
+          128
+        ],
+        "sources": [
+          "blocks.10.mixer.output_norm.weight"
+        ],
+        "transform": "row0_after_asserting_rows_equal"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 6,
+        "float16_subnormal": 12214,
+        "name": "blk.10.ssm_out.weight",
+        "note": "",
+        "shape": [
+          1024,
+          2048
+        ],
+        "sources": [
+          "blocks.10.mixer.out.weight"
+        ],
+        "transform": "reorder_v(columns)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.11.attn_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.11.norm1.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.11.post_attention_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.11.norm2.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 9,
+        "float16_subnormal": 19928,
+        "name": "blk.11.ffn_gate.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.11.ffn.up.weight"
+        ],
+        "transform": "rows[:intermediate]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 11,
+        "float16_subnormal": 23311,
+        "name": "blk.11.ffn_up.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.11.ffn.up.weight"
+        ],
+        "transform": "rows[intermediate:]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 17,
+        "float16_subnormal": 27587,
+        "name": "blk.11.ffn_down.weight",
+        "note": "",
+        "shape": [
+          1024,
+          3584
+        ],
+        "sources": [
+          "blocks.11.ffn.down.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 4194304,
+        "float16_flushed_to_zero": 8,
+        "float16_subnormal": 17551,
+        "name": "blk.11.attn_q.weight",
+        "note": "per-head [q|gate]; llama.cpp splits it at runtime",
+        "shape": [
+          4096,
+          1024
+        ],
+        "sources": [
+          "blocks.11.mixer.q_proj.weight",
+          "blocks.11.mixer.gate_proj.weight"
+        ],
+        "transform": "interleave_q_gate(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 524288,
+        "float16_flushed_to_zero": 1,
+        "float16_subnormal": 2889,
+        "name": "blk.11.attn_k.weight",
+        "note": "",
+        "shape": [
+          512,
+          1024
+        ],
+        "sources": [
+          "blocks.11.mixer.k_proj.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 524288,
+        "float16_subnormal": 2100,
+        "name": "blk.11.attn_v.weight",
+        "note": "",
+        "shape": [
+          512,
+          1024
+        ],
+        "sources": [
+          "blocks.11.mixer.v_proj.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 4,
+        "float16_subnormal": 12351,
+        "name": "blk.11.attn_output.weight",
+        "note": "",
+        "shape": [
+          1024,
+          2048
+        ],
+        "sources": [
+          "blocks.11.mixer.out.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 256,
+        "name": "blk.11.attn_q_norm.weight",
+        "note": "already 1 + w_qwen",
+        "shape": [
+          256
+        ],
+        "sources": [
+          "blocks.11.mixer.q_norm.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 256,
+        "name": "blk.11.attn_k_norm.weight",
+        "note": "already 1 + w_qwen",
+        "shape": [
+          256
+        ],
+        "sources": [
+          "blocks.11.mixer.k_norm.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.12.attn_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.12.norm1.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.12.post_attention_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.12.norm2.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 12,
+        "float16_subnormal": 18637,
+        "name": "blk.12.ffn_gate.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.12.ffn.up.weight"
+        ],
+        "transform": "rows[:intermediate]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 14,
+        "float16_subnormal": 23496,
+        "name": "blk.12.ffn_up.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.12.ffn.up.weight"
+        ],
+        "transform": "rows[intermediate:]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 15,
+        "float16_subnormal": 27427,
+        "name": "blk.12.ffn_down.weight",
+        "note": "",
+        "shape": [
+          1024,
+          3584
+        ],
+        "sources": [
+          "blocks.12.ffn.down.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 6291456,
+        "float16_flushed_to_zero": 8,
+        "float16_subnormal": 21100,
+        "name": "blk.12.attn_qkv.weight",
+        "note": "",
+        "shape": [
+          6144,
+          1024
+        ],
+        "sources": [
+          "blocks.12.mixer.q_proj.weight",
+          "blocks.12.mixer.k_proj.weight",
+          "blocks.12.mixer.v_proj.weight"
+        ],
+        "transform": "concat_rows(q, k, reorder_v(v))"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 2,
+        "float16_subnormal": 8766,
+        "name": "blk.12.attn_gate.weight",
+        "note": "",
+        "shape": [
+          2048,
+          1024
+        ],
+        "sources": [
+          "blocks.12.mixer.output_gate.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 24576,
+        "name": "blk.12.ssm_conv1d.weight",
+        "note": "",
+        "shape": [
+          6144,
+          4
+        ],
+        "sources": [
+          "blocks.12.mixer.q_conv.conv.weight",
+          "blocks.12.mixer.k_conv.conv.weight",
+          "blocks.12.mixer.v_conv.conv.weight"
+        ],
+        "transform": "concat_rows(q, k, reorder_v(v)).squeeze(1)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 16,
+        "name": "blk.12.ssm_a",
+        "note": "",
+        "shape": [
+          16
+        ],
+        "sources": [
+          "blocks.12.mixer.decay_log_scale"
+        ],
+        "transform": "reorder_v(-exp(A_log))"
+      },
+      {
+        "dtype": "float32",
+        "elements": 16,
+        "name": "blk.12.ssm_dt.bias",
+        "note": "",
+        "shape": [
+          16
+        ],
+        "sources": [
+          "blocks.12.mixer.decay_bias"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 16384,
+        "float16_subnormal": 52,
+        "name": "blk.12.ssm_beta.weight",
+        "note": "",
+        "shape": [
+          16,
+          1024
+        ],
+        "sources": [
+          "blocks.12.mixer.write_strength.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 16384,
+        "float16_subnormal": 37,
+        "name": "blk.12.ssm_alpha.weight",
+        "note": "",
+        "shape": [
+          16,
+          1024
+        ],
+        "sources": [
+          "blocks.12.mixer.decay_down.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 128,
+        "name": "blk.12.ssm_norm.weight",
+        "note": "the one norm llama.cpp does not add 1 to; Chimera stores it plain too",
+        "shape": [
+          128
+        ],
+        "sources": [
+          "blocks.12.mixer.output_norm.weight"
+        ],
+        "transform": "row0_after_asserting_rows_equal"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 10,
+        "float16_subnormal": 12904,
+        "name": "blk.12.ssm_out.weight",
+        "note": "",
+        "shape": [
+          1024,
+          2048
+        ],
+        "sources": [
+          "blocks.12.mixer.out.weight"
+        ],
+        "transform": "reorder_v(columns)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.13.attn_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.13.norm1.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.13.post_attention_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.13.norm2.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 10,
+        "float16_subnormal": 18144,
+        "name": "blk.13.ffn_gate.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.13.ffn.up.weight"
+        ],
+        "transform": "rows[:intermediate]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 9,
+        "float16_subnormal": 23338,
+        "name": "blk.13.ffn_up.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.13.ffn.up.weight"
+        ],
+        "transform": "rows[intermediate:]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 11,
+        "float16_subnormal": 27077,
+        "name": "blk.13.ffn_down.weight",
+        "note": "",
+        "shape": [
+          1024,
+          3584
+        ],
+        "sources": [
+          "blocks.13.ffn.down.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 6291456,
+        "float16_flushed_to_zero": 13,
+        "float16_subnormal": 21903,
+        "name": "blk.13.attn_qkv.weight",
+        "note": "",
+        "shape": [
+          6144,
+          1024
+        ],
+        "sources": [
+          "blocks.13.mixer.q_proj.weight",
+          "blocks.13.mixer.k_proj.weight",
+          "blocks.13.mixer.v_proj.weight"
+        ],
+        "transform": "concat_rows(q, k, reorder_v(v))"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 6,
+        "float16_subnormal": 8270,
+        "name": "blk.13.attn_gate.weight",
+        "note": "",
+        "shape": [
+          2048,
+          1024
+        ],
+        "sources": [
+          "blocks.13.mixer.output_gate.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 24576,
+        "name": "blk.13.ssm_conv1d.weight",
+        "note": "",
+        "shape": [
+          6144,
+          4
+        ],
+        "sources": [
+          "blocks.13.mixer.q_conv.conv.weight",
+          "blocks.13.mixer.k_conv.conv.weight",
+          "blocks.13.mixer.v_conv.conv.weight"
+        ],
+        "transform": "concat_rows(q, k, reorder_v(v)).squeeze(1)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 16,
+        "name": "blk.13.ssm_a",
+        "note": "",
+        "shape": [
+          16
+        ],
+        "sources": [
+          "blocks.13.mixer.decay_log_scale"
+        ],
+        "transform": "reorder_v(-exp(A_log))"
+      },
+      {
+        "dtype": "float32",
+        "elements": 16,
+        "name": "blk.13.ssm_dt.bias",
+        "note": "",
+        "shape": [
+          16
+        ],
+        "sources": [
+          "blocks.13.mixer.decay_bias"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 16384,
+        "float16_subnormal": 60,
+        "name": "blk.13.ssm_beta.weight",
+        "note": "",
+        "shape": [
+          16,
+          1024
+        ],
+        "sources": [
+          "blocks.13.mixer.write_strength.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 16384,
+        "float16_subnormal": 37,
+        "name": "blk.13.ssm_alpha.weight",
+        "note": "",
+        "shape": [
+          16,
+          1024
+        ],
+        "sources": [
+          "blocks.13.mixer.decay_down.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 128,
+        "name": "blk.13.ssm_norm.weight",
+        "note": "the one norm llama.cpp does not add 1 to; Chimera stores it plain too",
+        "shape": [
+          128
+        ],
+        "sources": [
+          "blocks.13.mixer.output_norm.weight"
+        ],
+        "transform": "row0_after_asserting_rows_equal"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 7,
+        "float16_subnormal": 11903,
+        "name": "blk.13.ssm_out.weight",
+        "note": "",
+        "shape": [
+          1024,
+          2048
+        ],
+        "sources": [
+          "blocks.13.mixer.out.weight"
+        ],
+        "transform": "reorder_v(columns)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.14.attn_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.14.norm1.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.14.post_attention_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.14.norm2.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 10,
+        "float16_subnormal": 18747,
+        "name": "blk.14.ffn_gate.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.14.ffn.up.weight"
+        ],
+        "transform": "rows[:intermediate]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 12,
+        "float16_subnormal": 23622,
+        "name": "blk.14.ffn_up.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.14.ffn.up.weight"
+        ],
+        "transform": "rows[intermediate:]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 8,
+        "float16_subnormal": 26600,
+        "name": "blk.14.ffn_down.weight",
+        "note": "",
+        "shape": [
+          1024,
+          3584
+        ],
+        "sources": [
+          "blocks.14.ffn.down.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 6291456,
+        "float16_flushed_to_zero": 10,
+        "float16_subnormal": 22397,
+        "name": "blk.14.attn_qkv.weight",
+        "note": "",
+        "shape": [
+          6144,
+          1024
+        ],
+        "sources": [
+          "blocks.14.mixer.q_proj.weight",
+          "blocks.14.mixer.k_proj.weight",
+          "blocks.14.mixer.v_proj.weight"
+        ],
+        "transform": "concat_rows(q, k, reorder_v(v))"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 7,
+        "float16_subnormal": 8486,
+        "name": "blk.14.attn_gate.weight",
+        "note": "",
+        "shape": [
+          2048,
+          1024
+        ],
+        "sources": [
+          "blocks.14.mixer.output_gate.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 24576,
+        "name": "blk.14.ssm_conv1d.weight",
+        "note": "",
+        "shape": [
+          6144,
+          4
+        ],
+        "sources": [
+          "blocks.14.mixer.q_conv.conv.weight",
+          "blocks.14.mixer.k_conv.conv.weight",
+          "blocks.14.mixer.v_conv.conv.weight"
+        ],
+        "transform": "concat_rows(q, k, reorder_v(v)).squeeze(1)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 16,
+        "name": "blk.14.ssm_a",
+        "note": "",
+        "shape": [
+          16
+        ],
+        "sources": [
+          "blocks.14.mixer.decay_log_scale"
+        ],
+        "transform": "reorder_v(-exp(A_log))"
+      },
+      {
+        "dtype": "float32",
+        "elements": 16,
+        "name": "blk.14.ssm_dt.bias",
+        "note": "",
+        "shape": [
+          16
+        ],
+        "sources": [
+          "blocks.14.mixer.decay_bias"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 16384,
+        "float16_subnormal": 63,
+        "name": "blk.14.ssm_beta.weight",
+        "note": "",
+        "shape": [
+          16,
+          1024
+        ],
+        "sources": [
+          "blocks.14.mixer.write_strength.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 16384,
+        "float16_subnormal": 38,
+        "name": "blk.14.ssm_alpha.weight",
+        "note": "",
+        "shape": [
+          16,
+          1024
+        ],
+        "sources": [
+          "blocks.14.mixer.decay_down.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 128,
+        "name": "blk.14.ssm_norm.weight",
+        "note": "the one norm llama.cpp does not add 1 to; Chimera stores it plain too",
+        "shape": [
+          128
+        ],
+        "sources": [
+          "blocks.14.mixer.output_norm.weight"
+        ],
+        "transform": "row0_after_asserting_rows_equal"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 5,
+        "float16_subnormal": 12227,
+        "name": "blk.14.ssm_out.weight",
+        "note": "",
+        "shape": [
+          1024,
+          2048
+        ],
+        "sources": [
+          "blocks.14.mixer.out.weight"
+        ],
+        "transform": "reorder_v(columns)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.15.attn_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.15.norm1.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.15.post_attention_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.15.norm2.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 5,
+        "float16_subnormal": 16306,
+        "name": "blk.15.ffn_gate.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.15.ffn.up.weight"
+        ],
+        "transform": "rows[:intermediate]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 13,
+        "float16_subnormal": 22673,
+        "name": "blk.15.ffn_up.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.15.ffn.up.weight"
+        ],
+        "transform": "rows[intermediate:]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 16,
+        "float16_subnormal": 23655,
+        "name": "blk.15.ffn_down.weight",
+        "note": "",
+        "shape": [
+          1024,
+          3584
+        ],
+        "sources": [
+          "blocks.15.ffn.down.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 4194304,
+        "float16_flushed_to_zero": 9,
+        "float16_subnormal": 16491,
+        "name": "blk.15.attn_q.weight",
+        "note": "per-head [q|gate]; llama.cpp splits it at runtime",
+        "shape": [
+          4096,
+          1024
+        ],
+        "sources": [
+          "blocks.15.mixer.q_proj.weight",
+          "blocks.15.mixer.gate_proj.weight"
+        ],
+        "transform": "interleave_q_gate(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 524288,
+        "float16_flushed_to_zero": 1,
+        "float16_subnormal": 2957,
+        "name": "blk.15.attn_k.weight",
+        "note": "",
+        "shape": [
+          512,
+          1024
+        ],
+        "sources": [
+          "blocks.15.mixer.k_proj.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 524288,
+        "float16_subnormal": 2099,
+        "name": "blk.15.attn_v.weight",
+        "note": "",
+        "shape": [
+          512,
+          1024
+        ],
+        "sources": [
+          "blocks.15.mixer.v_proj.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 4,
+        "float16_subnormal": 9542,
+        "name": "blk.15.attn_output.weight",
+        "note": "",
+        "shape": [
+          1024,
+          2048
+        ],
+        "sources": [
+          "blocks.15.mixer.out.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 256,
+        "name": "blk.15.attn_q_norm.weight",
+        "note": "already 1 + w_qwen",
+        "shape": [
+          256
+        ],
+        "sources": [
+          "blocks.15.mixer.q_norm.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 256,
+        "name": "blk.15.attn_k_norm.weight",
+        "note": "already 1 + w_qwen",
+        "shape": [
+          256
+        ],
+        "sources": [
+          "blocks.15.mixer.k_norm.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.16.attn_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.16.norm1.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.16.post_attention_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.16.norm2.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 7,
+        "float16_subnormal": 14262,
+        "name": "blk.16.ffn_gate.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.16.ffn.up.weight"
+        ],
+        "transform": "rows[:intermediate]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 11,
+        "float16_subnormal": 21312,
+        "name": "blk.16.ffn_up.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.16.ffn.up.weight"
+        ],
+        "transform": "rows[intermediate:]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 5,
+        "float16_subnormal": 23178,
+        "name": "blk.16.ffn_down.weight",
+        "note": "",
+        "shape": [
+          1024,
+          3584
+        ],
+        "sources": [
+          "blocks.16.ffn.down.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 6291456,
+        "float16_flushed_to_zero": 12,
+        "float16_subnormal": 18487,
+        "name": "blk.16.attn_qkv.weight",
+        "note": "",
+        "shape": [
+          6144,
+          1024
+        ],
+        "sources": [
+          "blocks.16.mixer.q_proj.weight",
+          "blocks.16.mixer.k_proj.weight",
+          "blocks.16.mixer.v_proj.weight"
+        ],
+        "transform": "concat_rows(q, k, reorder_v(v))"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 3,
+        "float16_subnormal": 8739,
+        "name": "blk.16.attn_gate.weight",
+        "note": "",
+        "shape": [
+          2048,
+          1024
+        ],
+        "sources": [
+          "blocks.16.mixer.output_gate.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 24576,
+        "name": "blk.16.ssm_conv1d.weight",
+        "note": "",
+        "shape": [
+          6144,
+          4
+        ],
+        "sources": [
+          "blocks.16.mixer.q_conv.conv.weight",
+          "blocks.16.mixer.k_conv.conv.weight",
+          "blocks.16.mixer.v_conv.conv.weight"
+        ],
+        "transform": "concat_rows(q, k, reorder_v(v)).squeeze(1)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 16,
+        "name": "blk.16.ssm_a",
+        "note": "",
+        "shape": [
+          16
+        ],
+        "sources": [
+          "blocks.16.mixer.decay_log_scale"
+        ],
+        "transform": "reorder_v(-exp(A_log))"
+      },
+      {
+        "dtype": "float32",
+        "elements": 16,
+        "name": "blk.16.ssm_dt.bias",
+        "note": "",
+        "shape": [
+          16
+        ],
+        "sources": [
+          "blocks.16.mixer.decay_bias"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 16384,
+        "float16_subnormal": 56,
+        "name": "blk.16.ssm_beta.weight",
+        "note": "",
+        "shape": [
+          16,
+          1024
+        ],
+        "sources": [
+          "blocks.16.mixer.write_strength.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 16384,
+        "float16_subnormal": 34,
+        "name": "blk.16.ssm_alpha.weight",
+        "note": "",
+        "shape": [
+          16,
+          1024
+        ],
+        "sources": [
+          "blocks.16.mixer.decay_down.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 128,
+        "name": "blk.16.ssm_norm.weight",
+        "note": "the one norm llama.cpp does not add 1 to; Chimera stores it plain too",
+        "shape": [
+          128
+        ],
+        "sources": [
+          "blocks.16.mixer.output_norm.weight"
+        ],
+        "transform": "row0_after_asserting_rows_equal"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 9,
+        "float16_subnormal": 12040,
+        "name": "blk.16.ssm_out.weight",
+        "note": "",
+        "shape": [
+          1024,
+          2048
+        ],
+        "sources": [
+          "blocks.16.mixer.out.weight"
+        ],
+        "transform": "reorder_v(columns)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.17.attn_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.17.norm1.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.17.post_attention_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.17.norm2.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 4,
+        "float16_subnormal": 12535,
+        "name": "blk.17.ffn_gate.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.17.ffn.up.weight"
+        ],
+        "transform": "rows[:intermediate]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 8,
+        "float16_subnormal": 21236,
+        "name": "blk.17.ffn_up.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.17.ffn.up.weight"
+        ],
+        "transform": "rows[intermediate:]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 21,
+        "float16_subnormal": 23187,
+        "name": "blk.17.ffn_down.weight",
+        "note": "",
+        "shape": [
+          1024,
+          3584
+        ],
+        "sources": [
+          "blocks.17.ffn.down.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 6291456,
+        "float16_flushed_to_zero": 11,
+        "float16_subnormal": 16181,
+        "name": "blk.17.attn_qkv.weight",
+        "note": "",
+        "shape": [
+          6144,
+          1024
+        ],
+        "sources": [
+          "blocks.17.mixer.q_proj.weight",
+          "blocks.17.mixer.k_proj.weight",
+          "blocks.17.mixer.v_proj.weight"
+        ],
+        "transform": "concat_rows(q, k, reorder_v(v))"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 1,
+        "float16_subnormal": 7975,
+        "name": "blk.17.attn_gate.weight",
+        "note": "",
+        "shape": [
+          2048,
+          1024
+        ],
+        "sources": [
+          "blocks.17.mixer.output_gate.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 24576,
+        "name": "blk.17.ssm_conv1d.weight",
+        "note": "",
+        "shape": [
+          6144,
+          4
+        ],
+        "sources": [
+          "blocks.17.mixer.q_conv.conv.weight",
+          "blocks.17.mixer.k_conv.conv.weight",
+          "blocks.17.mixer.v_conv.conv.weight"
+        ],
+        "transform": "concat_rows(q, k, reorder_v(v)).squeeze(1)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 16,
+        "name": "blk.17.ssm_a",
+        "note": "",
+        "shape": [
+          16
+        ],
+        "sources": [
+          "blocks.17.mixer.decay_log_scale"
+        ],
+        "transform": "reorder_v(-exp(A_log))"
+      },
+      {
+        "dtype": "float32",
+        "elements": 16,
+        "name": "blk.17.ssm_dt.bias",
+        "note": "",
+        "shape": [
+          16
+        ],
+        "sources": [
+          "blocks.17.mixer.decay_bias"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 16384,
+        "float16_subnormal": 62,
+        "name": "blk.17.ssm_beta.weight",
+        "note": "",
+        "shape": [
+          16,
+          1024
+        ],
+        "sources": [
+          "blocks.17.mixer.write_strength.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 16384,
+        "float16_subnormal": 33,
+        "name": "blk.17.ssm_alpha.weight",
+        "note": "",
+        "shape": [
+          16,
+          1024
+        ],
+        "sources": [
+          "blocks.17.mixer.decay_down.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 128,
+        "name": "blk.17.ssm_norm.weight",
+        "note": "the one norm llama.cpp does not add 1 to; Chimera stores it plain too",
+        "shape": [
+          128
+        ],
+        "sources": [
+          "blocks.17.mixer.output_norm.weight"
+        ],
+        "transform": "row0_after_asserting_rows_equal"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 4,
+        "float16_subnormal": 12678,
+        "name": "blk.17.ssm_out.weight",
+        "note": "",
+        "shape": [
+          1024,
+          2048
+        ],
+        "sources": [
+          "blocks.17.mixer.out.weight"
+        ],
+        "transform": "reorder_v(columns)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.18.attn_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.18.norm1.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.18.post_attention_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.18.norm2.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 5,
+        "float16_subnormal": 11663,
+        "name": "blk.18.ffn_gate.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.18.ffn.up.weight"
+        ],
+        "transform": "rows[:intermediate]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 22,
+        "float16_subnormal": 20749,
+        "name": "blk.18.ffn_up.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.18.ffn.up.weight"
+        ],
+        "transform": "rows[intermediate:]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 12,
+        "float16_subnormal": 22988,
+        "name": "blk.18.ffn_down.weight",
+        "note": "",
+        "shape": [
+          1024,
+          3584
+        ],
+        "sources": [
+          "blocks.18.ffn.down.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 6291456,
+        "float16_flushed_to_zero": 8,
+        "float16_subnormal": 16155,
+        "name": "blk.18.attn_qkv.weight",
+        "note": "",
+        "shape": [
+          6144,
+          1024
+        ],
+        "sources": [
+          "blocks.18.mixer.q_proj.weight",
+          "blocks.18.mixer.k_proj.weight",
+          "blocks.18.mixer.v_proj.weight"
+        ],
+        "transform": "concat_rows(q, k, reorder_v(v))"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 6,
+        "float16_subnormal": 8178,
+        "name": "blk.18.attn_gate.weight",
+        "note": "",
+        "shape": [
+          2048,
+          1024
+        ],
+        "sources": [
+          "blocks.18.mixer.output_gate.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 24576,
+        "name": "blk.18.ssm_conv1d.weight",
+        "note": "",
+        "shape": [
+          6144,
+          4
+        ],
+        "sources": [
+          "blocks.18.mixer.q_conv.conv.weight",
+          "blocks.18.mixer.k_conv.conv.weight",
+          "blocks.18.mixer.v_conv.conv.weight"
+        ],
+        "transform": "concat_rows(q, k, reorder_v(v)).squeeze(1)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 16,
+        "name": "blk.18.ssm_a",
+        "note": "",
+        "shape": [
+          16
+        ],
+        "sources": [
+          "blocks.18.mixer.decay_log_scale"
+        ],
+        "transform": "reorder_v(-exp(A_log))"
+      },
+      {
+        "dtype": "float32",
+        "elements": 16,
+        "name": "blk.18.ssm_dt.bias",
+        "note": "",
+        "shape": [
+          16
+        ],
+        "sources": [
+          "blocks.18.mixer.decay_bias"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 16384,
+        "float16_subnormal": 66,
+        "name": "blk.18.ssm_beta.weight",
+        "note": "",
+        "shape": [
+          16,
+          1024
+        ],
+        "sources": [
+          "blocks.18.mixer.write_strength.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 16384,
+        "float16_subnormal": 27,
+        "name": "blk.18.ssm_alpha.weight",
+        "note": "",
+        "shape": [
+          16,
+          1024
+        ],
+        "sources": [
+          "blocks.18.mixer.decay_down.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 128,
+        "name": "blk.18.ssm_norm.weight",
+        "note": "the one norm llama.cpp does not add 1 to; Chimera stores it plain too",
+        "shape": [
+          128
+        ],
+        "sources": [
+          "blocks.18.mixer.output_norm.weight"
+        ],
+        "transform": "row0_after_asserting_rows_equal"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 9,
+        "float16_subnormal": 12922,
+        "name": "blk.18.ssm_out.weight",
+        "note": "",
+        "shape": [
+          1024,
+          2048
+        ],
+        "sources": [
+          "blocks.18.mixer.out.weight"
+        ],
+        "transform": "reorder_v(columns)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.19.attn_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.19.norm1.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.19.post_attention_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.19.norm2.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 5,
+        "float16_subnormal": 12052,
+        "name": "blk.19.ffn_gate.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.19.ffn.up.weight"
+        ],
+        "transform": "rows[:intermediate]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 11,
+        "float16_subnormal": 19892,
+        "name": "blk.19.ffn_up.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.19.ffn.up.weight"
+        ],
+        "transform": "rows[intermediate:]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 10,
+        "float16_subnormal": 21286,
+        "name": "blk.19.ffn_down.weight",
+        "note": "",
+        "shape": [
+          1024,
+          3584
+        ],
+        "sources": [
+          "blocks.19.ffn.down.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 4194304,
+        "float16_flushed_to_zero": 7,
+        "float16_subnormal": 16558,
+        "name": "blk.19.attn_q.weight",
+        "note": "per-head [q|gate]; llama.cpp splits it at runtime",
+        "shape": [
+          4096,
+          1024
+        ],
+        "sources": [
+          "blocks.19.mixer.q_proj.weight",
+          "blocks.19.mixer.gate_proj.weight"
+        ],
+        "transform": "interleave_q_gate(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 524288,
+        "float16_flushed_to_zero": 2,
+        "float16_subnormal": 2983,
+        "name": "blk.19.attn_k.weight",
+        "note": "",
+        "shape": [
+          512,
+          1024
+        ],
+        "sources": [
+          "blocks.19.mixer.k_proj.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 524288,
+        "float16_flushed_to_zero": 1,
+        "float16_subnormal": 1813,
+        "name": "blk.19.attn_v.weight",
+        "note": "",
+        "shape": [
+          512,
+          1024
+        ],
+        "sources": [
+          "blocks.19.mixer.v_proj.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 1,
+        "float16_subnormal": 7131,
+        "name": "blk.19.attn_output.weight",
+        "note": "",
+        "shape": [
+          1024,
+          2048
+        ],
+        "sources": [
+          "blocks.19.mixer.out.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 256,
+        "name": "blk.19.attn_q_norm.weight",
+        "note": "already 1 + w_qwen",
+        "shape": [
+          256
+        ],
+        "sources": [
+          "blocks.19.mixer.q_norm.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 256,
+        "name": "blk.19.attn_k_norm.weight",
+        "note": "already 1 + w_qwen",
+        "shape": [
+          256
+        ],
+        "sources": [
+          "blocks.19.mixer.k_norm.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.20.attn_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.20.norm1.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.20.post_attention_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.20.norm2.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 4,
+        "float16_subnormal": 11889,
+        "name": "blk.20.ffn_gate.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.20.ffn.up.weight"
+        ],
+        "transform": "rows[:intermediate]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 9,
+        "float16_subnormal": 19264,
+        "name": "blk.20.ffn_up.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.20.ffn.up.weight"
+        ],
+        "transform": "rows[intermediate:]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 10,
+        "float16_subnormal": 20319,
+        "name": "blk.20.ffn_down.weight",
+        "note": "",
+        "shape": [
+          1024,
+          3584
+        ],
+        "sources": [
+          "blocks.20.ffn.down.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 6291456,
+        "float16_flushed_to_zero": 7,
+        "float16_subnormal": 15565,
+        "name": "blk.20.attn_qkv.weight",
+        "note": "",
+        "shape": [
+          6144,
+          1024
+        ],
+        "sources": [
+          "blocks.20.mixer.q_proj.weight",
+          "blocks.20.mixer.k_proj.weight",
+          "blocks.20.mixer.v_proj.weight"
+        ],
+        "transform": "concat_rows(q, k, reorder_v(v))"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 4,
+        "float16_subnormal": 8218,
+        "name": "blk.20.attn_gate.weight",
+        "note": "",
+        "shape": [
+          2048,
+          1024
+        ],
+        "sources": [
+          "blocks.20.mixer.output_gate.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 24576,
+        "name": "blk.20.ssm_conv1d.weight",
+        "note": "",
+        "shape": [
+          6144,
+          4
+        ],
+        "sources": [
+          "blocks.20.mixer.q_conv.conv.weight",
+          "blocks.20.mixer.k_conv.conv.weight",
+          "blocks.20.mixer.v_conv.conv.weight"
+        ],
+        "transform": "concat_rows(q, k, reorder_v(v)).squeeze(1)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 16,
+        "name": "blk.20.ssm_a",
+        "note": "",
+        "shape": [
+          16
+        ],
+        "sources": [
+          "blocks.20.mixer.decay_log_scale"
+        ],
+        "transform": "reorder_v(-exp(A_log))"
+      },
+      {
+        "dtype": "float32",
+        "elements": 16,
+        "name": "blk.20.ssm_dt.bias",
+        "note": "",
+        "shape": [
+          16
+        ],
+        "sources": [
+          "blocks.20.mixer.decay_bias"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 16384,
+        "float16_subnormal": 56,
+        "name": "blk.20.ssm_beta.weight",
+        "note": "",
+        "shape": [
+          16,
+          1024
+        ],
+        "sources": [
+          "blocks.20.mixer.write_strength.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 16384,
+        "float16_subnormal": 26,
+        "name": "blk.20.ssm_alpha.weight",
+        "note": "",
+        "shape": [
+          16,
+          1024
+        ],
+        "sources": [
+          "blocks.20.mixer.decay_down.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 128,
+        "name": "blk.20.ssm_norm.weight",
+        "note": "the one norm llama.cpp does not add 1 to; Chimera stores it plain too",
+        "shape": [
+          128
+        ],
+        "sources": [
+          "blocks.20.mixer.output_norm.weight"
+        ],
+        "transform": "row0_after_asserting_rows_equal"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 6,
+        "float16_subnormal": 12003,
+        "name": "blk.20.ssm_out.weight",
+        "note": "",
+        "shape": [
+          1024,
+          2048
+        ],
+        "sources": [
+          "blocks.20.mixer.out.weight"
+        ],
+        "transform": "reorder_v(columns)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.21.attn_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.21.norm1.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.21.post_attention_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.21.norm2.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 9,
+        "float16_subnormal": 11772,
+        "name": "blk.21.ffn_gate.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.21.ffn.up.weight"
+        ],
+        "transform": "rows[:intermediate]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 8,
+        "float16_subnormal": 18649,
+        "name": "blk.21.ffn_up.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.21.ffn.up.weight"
+        ],
+        "transform": "rows[intermediate:]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 5,
+        "float16_subnormal": 20464,
+        "name": "blk.21.ffn_down.weight",
+        "note": "",
+        "shape": [
+          1024,
+          3584
+        ],
+        "sources": [
+          "blocks.21.ffn.down.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 6291456,
+        "float16_flushed_to_zero": 14,
+        "float16_subnormal": 15942,
+        "name": "blk.21.attn_qkv.weight",
+        "note": "",
+        "shape": [
+          6144,
+          1024
+        ],
+        "sources": [
+          "blocks.21.mixer.q_proj.weight",
+          "blocks.21.mixer.k_proj.weight",
+          "blocks.21.mixer.v_proj.weight"
+        ],
+        "transform": "concat_rows(q, k, reorder_v(v))"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 7,
+        "float16_subnormal": 7292,
+        "name": "blk.21.attn_gate.weight",
+        "note": "",
+        "shape": [
+          2048,
+          1024
+        ],
+        "sources": [
+          "blocks.21.mixer.output_gate.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 24576,
+        "name": "blk.21.ssm_conv1d.weight",
+        "note": "",
+        "shape": [
+          6144,
+          4
+        ],
+        "sources": [
+          "blocks.21.mixer.q_conv.conv.weight",
+          "blocks.21.mixer.k_conv.conv.weight",
+          "blocks.21.mixer.v_conv.conv.weight"
+        ],
+        "transform": "concat_rows(q, k, reorder_v(v)).squeeze(1)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 16,
+        "name": "blk.21.ssm_a",
+        "note": "",
+        "shape": [
+          16
+        ],
+        "sources": [
+          "blocks.21.mixer.decay_log_scale"
+        ],
+        "transform": "reorder_v(-exp(A_log))"
+      },
+      {
+        "dtype": "float32",
+        "elements": 16,
+        "name": "blk.21.ssm_dt.bias",
+        "note": "",
+        "shape": [
+          16
+        ],
+        "sources": [
+          "blocks.21.mixer.decay_bias"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 16384,
+        "float16_subnormal": 52,
+        "name": "blk.21.ssm_beta.weight",
+        "note": "",
+        "shape": [
+          16,
+          1024
+        ],
+        "sources": [
+          "blocks.21.mixer.write_strength.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 16384,
+        "float16_subnormal": 31,
+        "name": "blk.21.ssm_alpha.weight",
+        "note": "",
+        "shape": [
+          16,
+          1024
+        ],
+        "sources": [
+          "blocks.21.mixer.decay_down.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 128,
+        "name": "blk.21.ssm_norm.weight",
+        "note": "the one norm llama.cpp does not add 1 to; Chimera stores it plain too",
+        "shape": [
+          128
+        ],
+        "sources": [
+          "blocks.21.mixer.output_norm.weight"
+        ],
+        "transform": "row0_after_asserting_rows_equal"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 8,
+        "float16_subnormal": 10681,
+        "name": "blk.21.ssm_out.weight",
+        "note": "",
+        "shape": [
+          1024,
+          2048
+        ],
+        "sources": [
+          "blocks.21.mixer.out.weight"
+        ],
+        "transform": "reorder_v(columns)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.22.attn_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.22.norm1.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.22.post_attention_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.22.norm2.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 4,
+        "float16_subnormal": 11886,
+        "name": "blk.22.ffn_gate.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.22.ffn.up.weight"
+        ],
+        "transform": "rows[:intermediate]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 12,
+        "float16_subnormal": 18840,
+        "name": "blk.22.ffn_up.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.22.ffn.up.weight"
+        ],
+        "transform": "rows[intermediate:]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 10,
+        "float16_subnormal": 20940,
+        "name": "blk.22.ffn_down.weight",
+        "note": "",
+        "shape": [
+          1024,
+          3584
+        ],
+        "sources": [
+          "blocks.22.ffn.down.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 6291456,
+        "float16_flushed_to_zero": 15,
+        "float16_subnormal": 18425,
+        "name": "blk.22.attn_qkv.weight",
+        "note": "",
+        "shape": [
+          6144,
+          1024
+        ],
+        "sources": [
+          "blocks.22.mixer.q_proj.weight",
+          "blocks.22.mixer.k_proj.weight",
+          "blocks.22.mixer.v_proj.weight"
+        ],
+        "transform": "concat_rows(q, k, reorder_v(v))"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 5,
+        "float16_subnormal": 6934,
+        "name": "blk.22.attn_gate.weight",
+        "note": "",
+        "shape": [
+          2048,
+          1024
+        ],
+        "sources": [
+          "blocks.22.mixer.output_gate.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 24576,
+        "name": "blk.22.ssm_conv1d.weight",
+        "note": "",
+        "shape": [
+          6144,
+          4
+        ],
+        "sources": [
+          "blocks.22.mixer.q_conv.conv.weight",
+          "blocks.22.mixer.k_conv.conv.weight",
+          "blocks.22.mixer.v_conv.conv.weight"
+        ],
+        "transform": "concat_rows(q, k, reorder_v(v)).squeeze(1)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 16,
+        "name": "blk.22.ssm_a",
+        "note": "",
+        "shape": [
+          16
+        ],
+        "sources": [
+          "blocks.22.mixer.decay_log_scale"
+        ],
+        "transform": "reorder_v(-exp(A_log))"
+      },
+      {
+        "dtype": "float32",
+        "elements": 16,
+        "name": "blk.22.ssm_dt.bias",
+        "note": "",
+        "shape": [
+          16
+        ],
+        "sources": [
+          "blocks.22.mixer.decay_bias"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 16384,
+        "float16_subnormal": 54,
+        "name": "blk.22.ssm_beta.weight",
+        "note": "",
+        "shape": [
+          16,
+          1024
+        ],
+        "sources": [
+          "blocks.22.mixer.write_strength.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 16384,
+        "float16_subnormal": 27,
+        "name": "blk.22.ssm_alpha.weight",
+        "note": "",
+        "shape": [
+          16,
+          1024
+        ],
+        "sources": [
+          "blocks.22.mixer.decay_down.weight"
+        ],
+        "transform": "reorder_v(rows)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 128,
+        "name": "blk.22.ssm_norm.weight",
+        "note": "the one norm llama.cpp does not add 1 to; Chimera stores it plain too",
+        "shape": [
+          128
+        ],
+        "sources": [
+          "blocks.22.mixer.output_norm.weight"
+        ],
+        "transform": "row0_after_asserting_rows_equal"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_subnormal": 9849,
+        "name": "blk.22.ssm_out.weight",
+        "note": "",
+        "shape": [
+          1024,
+          2048
+        ],
+        "sources": [
+          "blocks.22.mixer.out.weight"
+        ],
+        "transform": "reorder_v(columns)"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.23.attn_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.23.norm1.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 1024,
+        "name": "blk.23.post_attention_norm.weight",
+        "note": "",
+        "shape": [
+          1024
+        ],
+        "sources": [
+          "blocks.23.norm2.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 3,
+        "float16_subnormal": 10635,
+        "name": "blk.23.ffn_gate.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.23.ffn.up.weight"
+        ],
+        "transform": "rows[:intermediate]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 3,
+        "float16_subnormal": 17325,
+        "name": "blk.23.ffn_up.weight",
+        "note": "",
+        "shape": [
+          3584,
+          1024
+        ],
+        "sources": [
+          "blocks.23.ffn.up.weight"
+        ],
+        "transform": "rows[intermediate:]"
+      },
+      {
+        "dtype": "float16",
+        "elements": 3670016,
+        "float16_flushed_to_zero": 10,
+        "float16_subnormal": 23528,
+        "name": "blk.23.ffn_down.weight",
+        "note": "",
+        "shape": [
+          1024,
+          3584
+        ],
+        "sources": [
+          "blocks.23.ffn.down.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 4194304,
+        "float16_flushed_to_zero": 13,
+        "float16_subnormal": 16595,
+        "name": "blk.23.attn_q.weight",
+        "note": "per-head [q|gate]; llama.cpp splits it at runtime",
+        "shape": [
+          4096,
+          1024
+        ],
+        "sources": [
+          "blocks.23.mixer.q_proj.weight",
+          "blocks.23.mixer.gate_proj.weight"
+        ],
+        "transform": "interleave_q_gate(rows)"
+      },
+      {
+        "dtype": "float16",
+        "elements": 524288,
+        "float16_subnormal": 3397,
+        "name": "blk.23.attn_k.weight",
+        "note": "",
+        "shape": [
+          512,
+          1024
+        ],
+        "sources": [
+          "blocks.23.mixer.k_proj.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 524288,
+        "float16_flushed_to_zero": 2,
+        "float16_subnormal": 1814,
+        "name": "blk.23.attn_v.weight",
+        "note": "",
+        "shape": [
+          512,
+          1024
+        ],
+        "sources": [
+          "blocks.23.mixer.v_proj.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float16",
+        "elements": 2097152,
+        "float16_flushed_to_zero": 3,
+        "float16_subnormal": 9903,
+        "name": "blk.23.attn_output.weight",
+        "note": "",
+        "shape": [
+          1024,
+          2048
+        ],
+        "sources": [
+          "blocks.23.mixer.out.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 256,
+        "name": "blk.23.attn_q_norm.weight",
+        "note": "already 1 + w_qwen",
+        "shape": [
+          256
+        ],
+        "sources": [
+          "blocks.23.mixer.q_norm.weight"
+        ],
+        "transform": "copy"
+      },
+      {
+        "dtype": "float32",
+        "elements": 256,
+        "name": "blk.23.attn_k_norm.weight",
+        "note": "already 1 + w_qwen",
+        "shape": [
+          256
+        ],
+        "sources": [
+          "blocks.23.mixer.k_norm.weight"
+        ],
+        "transform": "copy"
+      }
+    ],
+    "tokenizer": {
+      "add_bos": false,
+      "add_eos": false,
+      "bos_id": null,
+      "eos_id": 248046,
+      "has_chat_template": true,
+      "merges": 247587,
+      "model": "gpt2",
+      "notes": [
+        "tokenizer.ggml.pre='qwen2' is assumed for Qwen3.5; measured against the HF tokenizer in the round-trip receipt rather than trusted",
+        "250 embedding rows had no tokenizer entry and were written as [PAD*] placeholders",
+        "4096 ledger band rows written as CONTROL tokens"
+      ],
+      "pad_id": 248044,
+      "pre": "qwen2",
+      "tokens": 252416,
+      "unk_id": null
+    },
+    "write_seconds": 16.77
+  },
+  "generated_utc": "2026-09-02T12:19:01Z",
+  "n_predict": 48,
+  "notes": [
+    "the GGUF is f16 and the HF reference runs in its native bf16 on different kernels; the two are not expected to be bit-identical and no threshold is asserted here",
+    "generation uses the same token id list on both sides, so tokenizer disagreement is reported separately and cannot be mistaken for model disagreement",
+    "tokenizer.ggml.pre='qwen2' is an assumption about the pre-tokenizer regex; the per-prompt tokenizer_agrees flag is the measurement of it",
+    "top5_ids_agree compares ORDER; bf16 produces exact ties in the reference (e.g. two ids at the same probability) that the two runtimes order differently, so top5_id_set_agrees is the comparison that is about the candidates"
+  ],
+  "prompts": [
+    {
+      "hf_text": " Paris.\nThe capital of France is Paris.\nThe capital of France is Paris.\nThe capital of France is Paris.\nThe capital of France is Paris.\nThe capital of France is Paris.\nThe capital of France is",
+      "hf_tokens": [
+        11751,
+        13,
+        198,
+        760,
+        6511,
+        314,
+        9338,
+        369,
+        11751,
+        13,
+        198,
+        760,
+        6511,
+        314,
+        9338,
+        369,
+        11751,
+        13,
+        198,
+        760,
+        6511,
+        314,
+        9338,
+        369,
+        11751,
+        13,
+        198,
+        760,
+        6511,
+        314,
+        9338,
+        369,
+        11751,
+        13,
+        198,
+        760,
+        6511,
+        314,
+        9338,
+        369,
+        11751,
+        13,
+        198,
+        760,
+        6511,
+        314,
+        9338,
+        369
+      ],
+      "hf_top5_first_step": [
+        {
+          "id": 11751,
+          "p": 0.12972714006900787
+        },
+        {
+          "id": 279,
+          "p": 0.0949103981256485
+        },
+        {
+          "id": 7172,
+          "p": 0.06943793594837189
+        },
+        {
+          "id": 198,
+          "p": 0.057566069066524506
+        },
+        {
+          "id": 25,
+          "p": 0.057566069066524506
+        }
+      ],
+      "identical_text": true,
+      "index": 0,
+      "llama_cpp_seconds": 14.35,
+      "llama_cpp_stop_reason": "limit",
+      "llama_cpp_text": " Paris.\nThe capital of France is Paris.\nThe capital of France is Paris.\nThe capital of France is Paris.\nThe capital of France is Paris.\nThe capital of France is Paris.\nThe capital of France is",
+      "llama_cpp_tokens": [
+        11751,
+        13,
+        198,
+        760,
+        6511,
+        314,
+        9338,
+        369,
+        11751,
+        13,
+        198,
+        760,
+        6511,
+        314,
+        9338,
+        369,
+        11751,
+        13,
+        198,
+        760,
+        6511,
+        314,
+        9338,
+        369,
+        11751,
+        13,
+        198,
+        760,
+        6511,
+        314,
+        9338,
+        369,
+        11751,
+        13,
+        198,
+        760,
+        6511,
+        314,
+        9338,
+        369,
+        11751,
+        13,
+        198,
+        760,
+        6511,
+        314,
+        9338,
+        369
+      ],
+      "llama_cpp_top5_first_step": [
+        {
+          "id": 11751,
+          "p": 0.1286533847968778,
+          "token": " Paris"
+        },
+        {
+          "id": 279,
+          "p": 0.09893949997758196,
+          "token": " the"
+        },
+        {
+          "id": 7172,
+          "p": 0.07148454872444919,
+          "token": " located"
+        },
+        {
+          "id": 25,
+          "p": 0.05880572170457986,
+          "token": ":"
+        },
+        {
+          "id": 198,
+          "p": 0.05541688750801774,
+          "token": "\n"
+        }
+      ],
+      "matching_token_prefix": 48,
+      "prompt": "The capital of France is",
+      "prompt_tokens_hf": [
+        760,
+        6511,
+        314,
+        9338,
+        369
+      ],
+      "prompt_tokens_llama_cpp": [
+        760,
+        6511,
+        314,
+        9338,
+        369
+      ],
+      "token_agreement": 1.0,
+      "tokenizer_agrees": true,
+      "top1_first_step": {
+        "abs_diff": 0.001073755272130078,
+        "hf_p": 0.12972714006900787,
+        "llama_cpp_p": 0.1286533847968778,
+        "same_id": true
+      },
+      "top5_id_set_agrees": true,
+      "top5_ids_agree": false
+    },
+    {
+      "hf_text": " fibonacci(n-1) + fibonacci(n-2)\n\nprint(fibonacci(10))\nprint(fibonacci(100))\nprint(fibonacci(1000))\nprint(fibonacci(1",
+      "hf_tokens": [
+        73111,
+        1393,
+        12,
+        16,
+        8,
+        478,
+        73111,
+        1393,
+        12,
+        17,
+        8,
+        271,
+        1302,
+        925,
+        564,
+        38044,
+        7,
+        16,
+        15,
+        578,
+        198,
+        1302,
+        925,
+        564,
+        38044,
+        7,
+        16,
+        15,
+        15,
+        578,
+        198,
+        1302,
+        925,
+        564,
+        38044,
+        7,
+        16,
+        15,
+        15,
+        15,
+        578,
+        198,
+        1302,
+        925,
+        564,
+        38044,
+        7,
+        16
+      ],
+      "hf_top5_first_step": [
+        {
+          "id": 73111,
+          "p": 0.6527189612388611
+        },
+        {
+          "id": 220,
+          "p": 0.12852796912193298
+        },
+        {
+          "id": 15336,
+          "p": 0.060712315142154694
+        },
+        {
+          "id": 307,
+          "p": 0.060712315142154694
+        },
+        {
+          "id": 281,
+          "p": 0.028678469359874725
+        }
+      ],
+      "identical_text": true,
+      "index": 1,
+      "llama_cpp_seconds": 16.57,
+      "llama_cpp_stop_reason": "limit",
+      "llama_cpp_text": " fibonacci(n-1) + fibonacci(n-2)\n\nprint(fibonacci(10))\nprint(fibonacci(100))\nprint(fibonacci(1000))\nprint(fibonacci(1",
+      "llama_cpp_tokens": [
+        73111,
+        1393,
+        12,
+        16,
+        8,
+        478,
+        73111,
+        1393,
+        12,
+        17,
+        8,
+        271,
+        1302,
+        925,
+        564,
+        38044,
+        7,
+        16,
+        15,
+        578,
+        198,
+        1302,
+        925,
+        564,
+        38044,
+        7,
+        16,
+        15,
+        15,
+        578,
+        198,
+        1302,
+        925,
+        564,
+        38044,
+        7,
+        16,
+        15,
+        15,
+        15,
+        578,
+        198,
+        1302,
+        925,
+        564,
+        38044,
+        7,
+        16
+      ],
+      "llama_cpp_top5_first_step": [
+        {
+          "id": 73111,
+          "p": 0.6235656201713683,
+          "token": " fibonacci"
+        },
+        {
+          "id": 220,
+          "p": 0.13993924804066804,
+          "token": " "
+        },
+        {
+          "id": 307,
+          "p": 0.06778026433762617,
+          "token": " n"
+        },
+        {
+          "id": 15336,
+          "p": 0.06620925221057879,
+          "token": " fib"
+        },
+        {
+          "id": 281,
+          "p": 0.03024656081007596,
+          "token": " f"
+        }
+      ],
+      "matching_token_prefix": 48,
+      "prompt": "def fibonacci(n):\n    if n < 2:\n        return n\n    return",
+      "prompt_tokens_hf": [
+        727,
+        73111,
+        1393,
+        1590,
+        198,
+        262,
+        413,
+        307,
+        361,
+        220,
+        17,
+        25,
+        198,
+        285,
+        460,
+        307,
+        198,
+        262,
+        460
+      ],
+      "prompt_tokens_llama_cpp": [
+        727,
+        73111,
+        1393,
+        1590,
+        198,
+        262,
+        413,
+        307,
+        361,
+        220,
+        17,
+        25,
+        198,
+        285,
+        460,
+        307,
+        198,
+        262,
+        460
+      ],
+      "token_agreement": 1.0,
+      "tokenizer_agrees": true,
+      "top1_first_step": {
+        "abs_diff": 0.02915334106749279,
+        "hf_p": 0.6527189612388611,
+        "llama_cpp_p": 0.6235656201713683,
+        "same_id": true
+      },
+      "top5_id_set_agrees": true,
+      "top5_ids_agree": false
+    },
+    {
+      "hf_text": " that the prediction is not a measurement.\nThe prediction is not a measurement.\nThe prediction is not a measurement.\nThe prediction is not a measurement.\nThe prediction is not a measurement.\nThe prediction is not a measurement.",
+      "hf_tokens": [
+        421,
+        279,
+        19039,
+        369,
+        524,
+        264,
+        18100,
+        13,
+        198,
+        760,
+        19039,
+        369,
+        524,
+        264,
+        18100,
+        13,
+        198,
+        760,
+        19039,
+        369,
+        524,
+        264,
+        18100,
+        13,
+        198,
+        760,
+        19039,
+        369,
+        524,
+        264,
+        18100,
+        13,
+        198,
+        760,
+        19039,
+        369,
+        524,
+        264,
+        18100,
+        13,
+        198,
+        760,
+        19039,
+        369,
+        524,
+        264,
+        18100,
+        13
+      ],
+      "hf_top5_first_step": [
+        {
+          "id": 421,
+          "p": 0.4531901776790619
+        },
+        {
+          "id": 279,
+          "p": 0.07875263690948486
+        },
+        {
+          "id": 567,
+          "p": 0.06949896365404129
+        },
+        {
+          "id": 488,
+          "p": 0.061332620680332184
+        },
+        {
+          "id": 264,
+          "p": 0.061332620680332184
+        }
+      ],
+      "identical_text": true,
+      "index": 2,
+      "llama_cpp_seconds": 3.76,
+      "llama_cpp_stop_reason": "limit",
+      "llama_cpp_text": " that the prediction is not a measurement.\nThe prediction is not a measurement.\nThe prediction is not a measurement.\nThe prediction is not a measurement.\nThe prediction is not a measurement.\nThe prediction is not a measurement.",
+      "llama_cpp_tokens": [
+        421,
+        279,
+        19039,
+        369,
+        524,
+        264,
+        18100,
+        13,
+        198,
+        760,
+        19039,
+        369,
+        524,
+        264,
+        18100,
+        13,
+        198,
+        760,
+        19039,
+        369,
+        524,
+        264,
+        18100,
+        13,
+        198,
+        760,
+        19039,
+        369,
+        524,
+        264,
+        18100,
+        13,
+        198,
+        760,
+        19039,
+        369,
+        524,
+        264,
+        18100,
+        13,
+        198,
+        760,
+        19039,
+        369,
+        524,
+        264,
+        18100,
+        13
+      ],
+      "llama_cpp_top5_first_step": [
+        {
+          "id": 421,
+          "p": 0.4505540317888195,
+          "token": " that"
+        },
+        {
+          "id": 279,
+          "p": 0.08004904830410474,
+          "token": " the"
+        },
+        {
+          "id": 567,
+          "p": 0.06635134783109549,
+          "token": " we"
+        },
+        {
+          "id": 488,
+          "p": 0.061320153668090585,
+          "token": " you"
+        },
+        {
+          "id": 264,
+          "p": 0.06020871363541419,
+          "token": " a"
+        }
+      ],
+      "matching_token_prefix": 48,
+      "prompt": "A receipt is the artifact; a prediction is not a measurement. In practice that means",
+      "prompt_tokens_hf": [
+        32,
+        21867,
+        369,
+        279,
+        35426,
+        26,
+        264,
+        19039,
+        369,
+        524,
+        264,
+        18100,
+        13,
+        733,
+        6380,
+        421,
+        3254
+      ],
+      "prompt_tokens_llama_cpp": [
+        32,
+        21867,
+        369,
+        279,
+        35426,
+        26,
+        264,
+        19039,
+        369,
+        524,
+        264,
+        18100,
+        13,
+        733,
+        6380,
+        421,
+        3254
+      ],
+      "token_agreement": 1.0,
+      "tokenizer_agrees": true,
+      "top1_first_step": {
+        "abs_diff": 0.002636145890242414,
+        "hf_p": 0.4531901776790619,
+        "llama_cpp_p": 0.4505540317888195,
+        "same_id": true
+      },
+      "top5_id_set_agrees": true,
+      "top5_ids_agree": true
+    }
+  ],
+  "reference": {
+    "device": "cuda:0",
+    "dtype": "bfloat16",
+    "gpu_name": "Quadro RTX 8000",
+    "load_seconds": 7.67,
+    "model_dir": "/home/cereal/models/Qwen3.5-0.8B",
+    "torch_version": "2.11.0+cu128",
+    "transformers_version": "5.12.1"
+  },
+  "schema": "chimera_omni.receipt.gguf_roundtrip.qwen35.v1",
+  "server": {
+    "base_url": "http://127.0.0.1:28089",
+    "health": {
+      "status": "ok"
+    },
+    "props": {
+      "bos_token": ",",
+      "build_info": "b10068-571d0d540",
+      "chat_template": "{%- set image_count = namespace(value=0) %}\n{%- set video_count = namespace(value=0) %}\n{%- macro render_content(content, do_vision_count, is_system_content=false) %}\n    {%- if content is string %}\n        {{- content }}\n    {%- elif content is iterable and content is not mapping %}\n        {%- for item in content %}\n            {%- if 'image' in item or 'image_url' in item or item.type == 'image' %}\n                {%- if is_system_content %}\n                    {{- raise_exception('System message cannot contain images.') }}\n                {%- endif %}\n                {%- if do_vision_count %}\n                    {%- set image_count.value = image_count.value + 1 %}\n                {%- endif %}\n                {%- if add_vision_id %}\n                    {{- 'Picture ' ~ image_count.value ~ ': ' }}\n                {%- endif %}\n                {{- '<|vision_start|><|image_pad|><|vision_end|>' }}\n            {%- elif 'video' in item or item.type == 'video' %}\n                {%- if is_system_content %}\n                    {{- raise_exception('System message cannot contain videos.') }}\n                {%- endif %}\n                {%- if do_vision_count %}\n                    {%- set video_count.value = video_count.value + 1 %}\n                {%- endif %}\n                {%- if add_vision_id %}\n                    {{- 'Video ' ~ video_count.value ~ ': ' }}\n                {%- endif %}\n                {{- '<|vision_start|><|video_pad|><|vision_end|>' }}\n            {%- elif 'text' in item %}\n                {{- item.text }}\n            {%- else %}\n                {{- raise_exception('Unexpected item type in content.') }}\n            {%- endif %}\n        {%- endfor %}\n    {%- elif content is none or content is undefined %}\n        {{- '' }}\n    {%- else %}\n        {{- raise_exception('Unexpected content type.') }}\n    {%- endif %}\n{%- endmacro %}\n{%- if not messages %}\n    {{- raise_exception('No messages provided.') }}\n{%- endif %}\n{%- if tools and tools is iterable and tools is not mapping %}\n    {{- '<|im_start|>system\\n' }}\n    {{- \"# Tools\\n\\nYou have access to the following functions:\\n\\n<tools>\" }}\n    {%- for tool in tools %}\n        {{- \"\\n\" }}\n        {{- tool | tojson }}\n    {%- endfor %}\n    {{- \"\\n</tools>\" }}\n    {{- '\\n\\nIf you choose to call a function ONLY reply in the following format with NO suffix:\\n\\n<tool_call>\\n<function=example_function_name>\\n<parameter=example_parameter_1>\\nvalue_1\\n</parameter>\\n<parameter=example_parameter_2>\\nThis is the value for the second parameter\\nthat can span\\nmultiple lines\\n</parameter>\\n</function>\\n</tool_call>\\n\\n<IMPORTANT>\\nReminder:\\n- Function calls MUST follow the specified format: an inner <function=...></function> block must be nested within <tool_call></tool_call> XML tags\\n- Required parameters MUST be specified\\n- You may provide optional reasoning for your function call in natural language BEFORE the function call, but NOT after\\n- If there is no function call available, answer the question like normal with your current knowledge and do not tell the user about function calls\\n</IMPORTANT>' }}\n    {%- if messages[0].role == 'system' %}\n        {%- set content = render_content(messages[0].content, false, true)|trim %}\n        {%- if content %}\n            {{- '\\n\\n' + content }}\n        {%- endif %}\n    {%- endif %}\n    {{- '<|im_end|>\\n' }}\n{%- else %}\n    {%- if messages[0].role == 'system' %}\n        {%- set content = render_content(messages[0].content, false, true)|trim %}\n        {{- '<|im_start|>system\\n' + content + '<|im_end|>\\n' }}\n    {%- endif %}\n{%- endif %}\n{%- set ns = namespace(multi_step_tool=true, last_query_index=messages|length - 1) %}\n{%- for message in messages[::-1] %}\n    {%- set index = (messages|length - 1) - loop.index0 %}\n    {%- if ns.multi_step_tool and message.role == \"user\" %}\n        {%- set content = render_content(message.content, false)|trim %}\n        {%- if not(content.startswith('<tool_response>') and content.endswith('</tool_response>')) %}\n            {%- set ns.multi_step_tool = false %}\n            {%- set ns.last_query_index = index %}\n        {%- endif %}\n    {%- endif %}\n{%- endfor %}\n{%- if ns.multi_step_tool %}\n    {{- raise_exception('No user query found in messages.') }}\n{%- endif %}\n{%- for message in messages %}\n    {%- set content = render_content(message.content, true)|trim %}\n    {%- if message.role == \"system\" %}\n        {%- if not loop.first %}\n            {{- raise_exception('System message must be at the beginning.') }}\n        {%- endif %}\n    {%- elif message.role == \"user\" %}\n        {{- '<|im_start|>' + message.role + '\\n' + content + '<|im_end|>' + '\\n' }}\n    {%- elif message.role == \"assistant\" %}\n        {%- set reasoning_content = '' %}\n        {%- if message.reasoning_content is string %}\n            {%- set reasoning_content = message.reasoning_content %}\n        {%- else %}\n            {%- if '</think>' in content %}\n                {%- set reasoning_content = content.split('</think>')[0].rstrip('\\n').split('<think>')[-1].lstrip('\\n') %}\n                {%- set content = content.split('</think>')[-1].lstrip('\\n') %}\n            {%- endif %}\n        {%- endif %}\n        {%- set reasoning_content = reasoning_content|trim %}\n        {%- if loop.index0 > ns.last_query_index %}\n            {{- '<|im_start|>' + message.role + '\\n<think>\\n' + reasoning_content + '\\n</think>\\n\\n' + content }}\n        {%- else %}\n            {{- '<|im_start|>' + message.role + '\\n' + content }}\n        {%- endif %}\n        {%- if message.tool_calls and message.tool_calls is iterable and message.tool_calls is not mapping %}\n            {%- for tool_call in message.tool_calls %}\n                {%- if tool_call.function is defined %}\n                    {%- set tool_call = tool_call.function %}\n                {%- endif %}\n                {%- if loop.first %}\n                    {%- if content|trim %}\n                        {{- '\\n\\n<tool_call>\\n<function=' + tool_call.name + '>\\n' }}\n                    {%- else %}\n                        {{- '<tool_call>\\n<function=' + tool_call.name + '>\\n' }}\n                    {%- endif %}\n                {%- else %}\n                    {{- '\\n<tool_call>\\n<function=' + tool_call.name + '>\\n' }}\n                {%- endif %}\n                {%- if tool_call.arguments is defined %}\n                    {%- for args_name, args_value in tool_call.arguments|items %}\n                        {{- '<parameter=' + args_name + '>\\n' }}\n                        {%- set args_value = args_value | tojson | safe if args_value is mapping or (args_value is sequence and args_value is not string) else args_value | string %}\n                        {{- args_value }}\n                        {{- '\\n</parameter>\\n' }}\n                    {%- endfor %}\n                {%- endif %}\n                {{- '</function>\\n</tool_call>' }}\n            {%- endfor %}\n        {%- endif %}\n        {{- '<|im_end|>\\n' }}\n    {%- elif message.role == \"tool\" %}\n        {%- if loop.previtem and loop.previtem.role != \"tool\" %}\n            {{- '<|im_start|>user' }}\n        {%- endif %}\n        {{- '\\n<tool_response>\\n' }}\n        {{- content }}\n        {{- '\\n</tool_response>' }}\n        {%- if not loop.last and loop.nextitem.role != \"tool\" %}\n            {{- '<|im_end|>\\n' }}\n        {%- elif loop.last %}\n            {{- '<|im_end|>\\n' }}\n        {%- endif %}\n    {%- else %}\n        {{- raise_exception('Unexpected message role.') }}\n    {%- endif %}\n{%- endfor %}\n{%- if add_generation_prompt %}\n    {{- '<|im_start|>assistant\\n' }}\n    {%- if enable_thinking is defined and enable_thinking is true %}\n        {{- '<think>\\n' }}\n    {%- else %}\n        {{- '<think>\\n\\n</think>\\n\\n' }}\n    {%- endif %}\n{%- endif %}",
+      "chat_template_caps": {
+        "supports_object_arguments": true,
+        "supports_parallel_tool_calls": true,
+        "supports_preserve_reasoning": false,
+        "supports_string_content": true,
+        "supports_system_role": true,
+        "supports_tool_calls": true,
+        "supports_tools": true,
+        "supports_typed_content": false
+      },
+      "cors_proxy_enabled": false,
+      "default_generation_settings": {
+        "n_ctx": 2048,
+        "params": {
+          "backend_sampling": false,
+          "chat_format": "Content-only",
+          "dry_allowed_length": 2,
+          "dry_base": 1.75,
+          "dry_multiplier": 0.0,
+          "dry_penalty_last_n": -1,
+          "dynatemp_exponent": 1.0,
+          "dynatemp_range": 0.0,
+          "frequency_penalty": 0.0,
+          "generation_prompt": "",
+          "ignore_eos": false,
+          "lora": [],
+          "max_tokens": -1,
+          "min_keep": 0,
+          "min_p": 0.05000000074505806,
+          "mirostat": 0,
+          "mirostat_eta": 0.10000000149011612,
+          "mirostat_tau": 5.0,
+          "n_discard": 0,
+          "n_keep": 0,
+          "n_predict": -1,
+          "n_probs": 0,
+          "post_sampling_probs": false,
+          "presence_penalty": 0.0,
+          "reasoning_format": "none",
+          "reasoning_in_content": false,
+          "repeat_last_n": 64,
+          "repeat_penalty": 1.0,
+          "samplers": [
+            "penalties",
+            "dry",
+            "top_n_sigma",
+            "top_k",
+            "typ_p",
+            "top_p",
+            "min_p",
+            "xtc",
+            "temperature"
+          ],
+          "seed": 4294967295,
+          "speculative.types": "none",
+          "stream": false,
+          "temperature": 0.800000011920929,
+          "timings_per_token": false,
+          "top_k": 40,
+          "top_n_sigma": -1.0,
+          "top_p": 0.949999988079071,
+          "typical_p": 1.0,
+          "xtc_probability": 0.0,
+          "xtc_threshold": 0.10000000149011612
+        }
+      },
+      "endpoint_metrics": false,
+      "endpoint_props": false,
+      "endpoint_slots": true,
+      "eos_token": "<|im_end|>",
+      "is_sleeping": false,
+      "media_marker": "<__media_o4Yr0JeKjYKKfOPKDfia0CcaUI2oDkO1__>",
+      "modalities": {
+        "audio": false,
+        "video": false,
+        "vision": false
+      },
+      "model_alias": "/models/qwen35-0p8b-chimera-f16-s5fix.gguf",
+      "model_ftype": "F16",
+      "model_path": "/models/qwen35-0p8b-chimera-f16-s5fix.gguf",
+      "total_slots": 4,
+      "ui": true,
+      "ui_settings": {}
+    }
+  },
+  "summary": {
+    "identical_text": 3,
+    "max_top1_probability_gap": 0.02915334106749279,
+    "mean_matching_prefix": 48.0,
+    "mean_token_agreement": 1.0,
+    "prompts": 3,
+    "tokenizer_agreement": 1.0,
+    "top5_id_set_agrees": 3,
+    "top5_ids_agree_in_order": 1
+  }
+}

@@ -1,0 +1,122 @@
+{
+ "schema": "omni-campaign.composite_lineage_sources.v1",
+ "created_utc": "2026-10-13T03:04:13Z",
+ "tool": {
+  "name": "omni1_lineage",
+  "sha256": "757bf3183ef56b93b17cb8f906a0b40a809fe1697b56b99df6fc843ebe717e22"
+ },
+ "sources": [
+  {
+   "source": "Qwen3.8-27B-Uncensored",
+   "role": "text trunk and accounting parent (PARENT-Q38-27BU); folded at S3 (OC02-F-Q38-27BU-C2K4352): 4,352 Qwen FFN channels kept per layer, attention / GDN mixers, embeddings and head passed through; carried unchanged by S5 and S7",
+   "accounting": {
+    "parent_header_parameters": 27781427952,
+    "components": {
+     "count": 64,
+     "form": "qwen.mlp.layerNN:PARENT:CHILD (asserted, derived from both headers)",
+     "parent_params_each": [
+      267386880
+     ],
+     "child_params_each": [
+      66846720
+     ],
+     "parent_params_total": 17112760320,
+     "child_params_total": 4278190080,
+     "ratio": 0.25,
+     "meets_4x": true
+    },
+    "qwen_mlp_saving": 12834570240,
+    "mtp_dropped_not_folded": 424699392,
+    "non_ffn_parameters_in_child": 10586433024,
+    "parent_non_mlp_non_mtp_parameters": 10243968240,
+    "native_export_extra_parameters": 342464784,
+    "passed_through": [
+     "gdn_mixer",
+     "attention_mixer",
+     "embed / lm_head (ledger bands)",
+     "native interface"
+    ],
+    "counts_source": "S5 register_counts.json (s5_register_counts.py, oc_seal header reader) sha 6043d016aa18ef0b36d89e4d5bbbc4610b572aa4f02980b8674609f394949b1a"
+   },
+   "receipts": [
+    {
+     "path": "/home/cereal/omni-campaign/composite/c10/S5-C2K4352K3U/register_counts.json",
+     "sha256": "6043d016aa18ef0b36d89e4d5bbbc4610b572aa4f02980b8674609f394949b1a",
+     "what": "S5 header-derived counts (per-layer Qwen rows, K3 rows, native-export difference, identity 0)"
+    },
+    {
+     "path": "/home/cereal/omni-campaign/registry/PARENT-Q38-27BU/PARENT-Q38-27BU-0001-register.json",
+     "sha256": "f9b35fb8a81f72d95bff368b7ca7fd04ecf7f6702f28ce0a7f1720c266afcbbe",
+     "what": "parent record"
+    },
+    {
+     "path": "/home/cereal/omni-campaign/registry/OC02-F-Q38-27BU-C2K4352/OC02-F-Q38-27BU-C2K4352-0001-register.json",
+     "sha256": "ff1e767e56e022e384018cd8fc4bf65dba535061d6296e9ab234c61fc1dd57ae",
+     "what": "S3 trunk register record"
+    },
+    {
+     "path": "/home/cereal/omni-campaign/registry/OC02-F-Q38-27BU-C2K4352K3U/OC02-F-Q38-27BU-C2K4352K3U-0001-register.json",
+     "sha256": "6288fa557a8a07a2e723c6112f61eb050292c14816a41486e8ae5e2ff4f35280",
+     "what": "S5 register record"
+    }
+   ]
+  },
+  {
+   "source": "Kimi K3",
+   "role": "C10 union (S5, OC02-F-Q38-27BU-C2K4352K3U): dense K3 L1-92 rows lifted through the c17 ridge charts into blocks.k.ffn, design a003 = trunk/additive:0.03; ADDED rows, carried as --passed-through (not a component)",
+   "accounting": {
+    "added_parameters": 12079595520,
+    "layers": 64,
+    "rows_per_layer": 12288,
+    "form": "64 x 3 x 5120 x 12288 rows inside the fused union FFN (blocks.k.ffn.up / down), split at c10_trunk_intermediate_size 4352",
+    "union_width": 16640,
+    "counts_source": "S5 register_counts.json sha 6043d016aa18ef0b36d89e4d5bbbc4610b572aa4f02980b8674609f394949b1a"
+   },
+   "receipts": [
+    {
+     "path": "/home/cereal/omni-campaign/composite/c10/S5-C2K4352K3U/child/union_receipt.json",
+     "sha256": "b2d1996605933d0d965fb77d2688522dd9b91aec25fc3c3566591152d7208ba9",
+     "what": "c10_union_install 1.5.1 union receipt (S5 child)"
+    },
+    {
+     "path": "/home/cereal/omni-campaign/k3-run-oct09-claude/receipts/k3_dense_pass_receipt.json",
+     "sha256": "8948bab7feeaa3cd460418f3552600b2d93a6c944143cfedb1b3a9122fa787df",
+     "what": "K3 dense pass L1-92"
+    },
+    {
+     "path": "/home/cereal/omni-campaign/composite/c17/charts/receipt.json",
+     "sha256": "b32bcfd61113cad27ddc4ac1ef13a6410882693676c72b84dd5f7bfddde1960a",
+     "what": "c17 ridge charts L00-L63, merged receipt"
+    },
+    {
+     "path": "/home/cereal/omni-campaign/composite/c17/charts/alignment.json",
+     "sha256": "4006c1796946202f377356a61278bf270bd9a6a0e5a6a4d3c67801a1e0618f8c",
+     "what": "92 MoE layers -> 64 trunk layers alignment"
+    }
+   ]
+  }
+ ],
+ "media_aliases": {
+  "ACE-Step": [
+   "ace",
+   "ACE",
+   "ACE-LM"
+  ],
+  "MiniMax H3": [
+   "h3",
+   "H3"
+  ],
+  "Qwen-Image": [
+   "qimg",
+   "QIMG"
+  ],
+  "Hunyuan3D 2.1": [
+   "hy3d",
+   "HY3D"
+  ],
+  "Qwen3-VL-32B": [
+   "qvl32",
+   "QVL32"
+  ]
+ }
+}

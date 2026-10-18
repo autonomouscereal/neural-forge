@@ -1,0 +1,1164 @@
+{
+ "binding_warning": "charts are valid ONLY with the interface rows they were captured under: composite/s7/interface_latent (M1). Lane M2 wrote a DIFFERENT latent set with the same bands at composite/s7/interface + interface_c11 (feature_proj relL2 2.3-4.7 vs M1). Install one set; if it is M2s, rerun s7_host_rows.py --interface composite/s7/interface --interface-c11 composite/s7/interface_c11 and s7_chart_fit.py per unit. S5 (C10 rewrites FFNs 0-31) also invalidates the host rows.",
+ "config_check": {
+  "c16_sha256": "5353a27b67330cc521adf080ae723ae33832801670ac92d8b7977ecb8b608832",
+  "file": "units/S7_M1_CONFIG_CHECK.json",
+  "installed_parameters_total": 591437129,
+  "sha256": "9aabedb0a4ab014bb68b46f590082ab27c19639c9f8a19c8958bf34ea5a47ee3"
+ },
+ "created_at_utc": "2026-10-10T10:42:43Z",
+ "dry_run_5120": {
+  "charted_layers": [
+   4,
+   5,
+   6,
+   7,
+   8
+  ],
+  "child_parameters": 48135312,
+  "layers": 13,
+  "manifest": "scratch_dryrun_m1/out_M1/composite_manifest.json",
+  "manifest_sha256": "5bf118f2ae351f4df951102d0d8cedc5472cd8168ef5fa2b8b43eaeb53b5d68e",
+  "parameters": 639572441,
+  "text_hidden_bit_identical": true,
+  "text_logits_finite": true
+ },
+ "interface_set": {
+  "c11_companions_sha256": "1181a1bd1567ad9e6a200819c4e9b58003a9d5895db2b6a93f5e4e528a4ace44",
+  "companions_sha256": "929083f864be12a25c160632575900fc5dadfe74e46dd6c18e20744651b6d60d",
+  "dir": "composite/s7/interface_latent",
+  "receipt_sha256": "8ec22aded96a78a68263743cd1af5276651bad76b14a28de426387d12cbfdd04"
+ },
+ "lane": "M1 Claude 2026-10-10",
+ "policy": "[Cyril quote withheld]",
+ "schema": "omni-campaign.s7_m1_charts_summary.v1",
+ "units": {
+  "ace_dit_L12": {
+   "bridge_row_to_x31": {
+    "cos_bridge_vs_x31_median": 0.5678467890855015,
+    "design_width": 5121,
+    "held_scores_bridge_row_to_x31": {
+     "cos": 0.9536607527989911,
+     "cos_p05": 0.8703956794166959,
+     "r2": 0.6383699970848952,
+     "rel_l2": 0.32456647381856724,
+     "rows": 819,
+     "width": 5120
+    },
+    "reading": "how much of the trunk's x_31 at a media row is a linear function of the bridge row alone (row-split, small sample)",
+    "regime": "underdetermined",
+    "ridge_rel": 0.0001,
+    "rows": 4096
+   },
+   "chart_parameters": 20973568,
+   "chart_receipt_sha256": "9b1da8e464080d118054bcd8a0b0210da8082b353236a3be8259133e76fc31da",
+   "chart_shapes": {
+    "chart_in.bias": [
+     2048
+    ],
+    "chart_in.weight": [
+     2048,
+     5120
+    ],
+    "chart_out.weight": [
+     5120,
+     2048
+    ]
+   },
+   "charted_block_json_sha256": "48238025b6b2bd999a9143866f0b6a28cd579c4d9815697fc4a516148994ae10",
+   "charts_bytes": 83894528,
+   "charts_sha256": "ae084950a1a8f42847692dfdce6cf3ce684d7735f59accaec62590de9761074f",
+   "deviations": [
+    {
+     "name": "condition_gaussian",
+     "what": "the parent's cross-attention context is seeded gaussian (as in the c16_L12_v4 capture the unit's coreset was fitted on); the trunk reads a fixed generic prompt"
+    },
+    {
+     "name": "procedural_clips",
+     "what": "C15 procedural pair corpus (ace_s_ctx0_merged), not S1 music stimuli"
+    }
+   ],
+   "fit_split_ridge": {
+    "backward": {
+     "cos": 0.9465754648705346,
+     "cos_p05": 0.8783761773793699,
+     "r2": 0.5803031622852035,
+     "rel_l2": 0.3441525085136245,
+     "rows": 30800
+    },
+    "forward": {
+     "cos": 0.9318760314876862,
+     "cos_p05": 0.8653812665654963,
+     "r2": 0.7592207656407877,
+     "rel_l2": 0.4442576783855768,
+     "rows": 30800
+    },
+    "roundtrip": {
+     "cos": 0.9607666149219871,
+     "cos_p05": 0.8997289823090081,
+     "r2": 0.680919655079884,
+     "rel_l2": 0.3000772819566937,
+     "rows": 30800
+    }
+   },
+   "forwards": 768,
+   "groups": 96,
+   "held": {
+    "procrustes_control": {
+     "backward": {
+      "cos": 0.30968893744623444,
+      "cos_p05": 0.1488708767661306,
+      "r2": -1806.5089779116022,
+      "rel_l2": 22.53132207921644,
+      "rows": 7600
+     },
+     "forward": {
+      "cos": 0.5026409321204117,
+      "cos_p05": 0.07631472162008562,
+      "r2": 0.019276776094648618,
+      "rel_l2": 0.8934202108499858,
+      "rows": 7600
+     },
+     "roundtrip": {
+      "cos": 0.9969447408604504,
+      "cos_p05": 0.9932751832600057,
+      "r2": 0.980101135108347,
+      "rel_l2": 0.0747585029217873,
+      "rows": 7600
+     }
+    },
+    "ridge": {
+     "backward": {
+      "cos": 0.9189797259409885,
+      "cos_p05": 0.8273989066998786,
+      "r2": 0.3643956306755728,
+      "rel_l2": 0.4225128104827301,
+      "rows": 7600
+     },
+     "forward": {
+      "cos": 0.8747887789454092,
+      "cos_p05": 0.743521385044417,
+      "r2": 0.5918440109268494,
+      "rel_l2": 0.5763623848731744,
+      "rows": 7600
+     },
+     "roundtrip": {
+      "cos": 0.9582323909041569,
+      "cos_p05": 0.8978320777848074,
+      "r2": 0.6618594541349447,
+      "rel_l2": 0.30817334254580026,
+      "rows": 7600
+     }
+    },
+    "svd_control": {
+     "backward": {
+      "cos": 0.0311776195608363,
+      "cos_p05": 0.002713115937220812,
+      "r2": -2264.5198144749047,
+      "rel_l2": 25.224953634391525,
+      "rows": 7600
+     },
+     "forward": {
+      "cos": 0.00013124453295926288,
+      "cos_p05": -0.027041183880833947,
+      "r2": -0.22923474711458303,
+      "rel_l2": 1.0002301859980935,
+      "rows": 7600
+     },
+     "roundtrip": {
+      "cos": 0.9969447408604504,
+      "cos_p05": 0.9932751832600056,
+      "r2": 0.980101135108347,
+      "rel_l2": 0.07475850292178726,
+      "rows": 7600
+     }
+    }
+   },
+   "held_groups": [
+    4,
+    9,
+    14,
+    19,
+    24,
+    29,
+    34,
+    39,
+    44,
+    49,
+    54,
+    59,
+    64,
+    69,
+    74,
+    79,
+    84,
+    89,
+    94
+   ],
+   "host_diagnostics": {
+    "bridge_row_norm_median": 71.55422973632812,
+    "causal_prompt_check": {
+     "max_abs_diff_prompt_rows_with_vs_without_media": 0.5,
+     "prompt_row_norm_median": 86.81609344482422,
+     "prompt_tokens": 6
+    },
+    "content_share_pre_norm_median_per_batch": {
+     "max": 0.6976083517074585,
+     "median": 0.6924818754196167,
+     "min": 0.6779531240463257
+    },
+    "host_row_norm_median": 114.5987319946289,
+    "parent_row_norm_median": 2457.378662109375
+   },
+   "installed_parameters": 102811904,
+   "paired_rows_sha256": "d3cbeef6b7c72c67cd3233608068a9db3cb523135ab9af7064b8780507e7d8ac",
+   "pairing": {
+    "candidates": [
+     3,
+     7,
+     11,
+     15,
+     19,
+     23,
+     27,
+     31,
+     35,
+     39,
+     43,
+     47,
+     51,
+     55,
+     59,
+     63
+    ],
+    "insert_after": 31,
+    "rule": "depth-fraction -> nearest gated_gqa refinement layer",
+    "source_depth_fraction": 0.5217391304347826,
+    "trunk_depth_fraction": 0.49206349206349204
+   },
+   "parent_capture_sha256": "408b5ce9f5ad07e60f0d5d4ba33e80eafe15a22ba0048ff31e2f405e711d3066",
+   "per_type_held_forward": null,
+   "record_in_sample_forward": {
+    "cos": 0.927269749226949,
+    "rel_l2": 0.46040251490406886
+   },
+   "ridge_rel": {
+    "chart_in": 0.01,
+    "chart_out": 0.001
+   },
+   "rows": 38400,
+   "rows_held": 7600,
+   "time_reference": {
+    "rel_l2": 1.1816756995131072e-07,
+    "sigma": [
+     0.5
+    ],
+    "tolerance_rel_l2": 1e-05,
+    "verified": true
+   },
+   "trunk_prompt": "A short instrumental music clip.",
+   "type_ids": [
+    4
+   ],
+   "unit_dir": "units/ace/ace_dit_L12",
+   "write_strength": {
+    "forward": 4,
+    "host_norm_median": 118.74187469482422,
+    "measured": true,
+    "p95": 0.22504279017448425,
+    "rows": 50,
+    "write_over_host_norm_median": 0.1611691266298294
+   }
+  },
+  "h3_dit_L25_curve6": {
+   "bridge_row_to_x31": {
+    "cos_bridge_vs_x31_median": 0.4681412322802121,
+    "design_width": 5121,
+    "held_scores_bridge_row_to_x31": {
+     "cos": 0.9025503481352971,
+     "cos_p05": 0.7942381592816967,
+     "r2": 0.5108311264917531,
+     "rel_l2": 0.46786610978039217,
+     "rows": 819,
+     "width": 5120
+    },
+    "reading": "how much of the trunk's x_31 at a media row is a linear function of the bridge row alone (row-split, small sample)",
+    "regime": "underdetermined",
+    "ridge_rel": 0.0001,
+    "rows": 4096
+   },
+   "chart_parameters": 55055616,
+   "chart_receipt_sha256": "ec0d4b0508ba1240142074969f839f2db2ac7b14188b94dec1fd04a72d04ad08",
+   "chart_shapes": {
+    "chart_in.bias": [
+     5376
+    ],
+    "chart_in.weight": [
+     5376,
+     5120
+    ],
+    "chart_out.weight": [
+     5120,
+     5376
+    ]
+   },
+   "charted_block_json_sha256": "c0ca26716f8d18144e7a257510c4c67c1c65934cfc5c1254444dc086e4353fd2",
+   "charts_bytes": 220222728,
+   "charts_sha256": "7222f554e5de25f60f3c2515aa6ab7cb3a665c9ba34162052f22053196a0b8bf",
+   "deviations": [
+    {
+     "arm": "video_frames",
+     "name": "video_frame_alignment",
+     "what": "video clips are latent frames [1, 2, 3, 4] fed as frames 0..3; consecutive=True, starts_at_zero=False, gaps=[]",
+     "why_it_matters": "FRAME_PER_TOKEN (1, 4, 4, 4, 4) from latent frame 0; rope time axis counts latent frames consecutively"
+    },
+    {
+     "arm": "text",
+     "name": "text_conditioning",
+     "what": "text = seeded gaussian Qwen-width states refined by the parent's condition_proj + token_refiner",
+     "why_it_matters": "H3 is a text-to-AV model: every captured audio/video activation is conditioned through full attention on text states the parent never sees; the parent's real text path (its Qwen encoder states for a fixed prompt set, or the empty-prompt embedding) is not on this box"
+    },
+    {
+     "arm": "stimuli",
+     "name": "s1_media_stimuli",
+     "what": "S1 media stimuli absent; the C15 pair corpora (procedural clips) stand in",
+     "why_it_matters": "the spec's S6H input is 'S1 media stimuli' (STAGES S1: media stimuli remain pending)"
+    },
+    {
+     "name": "trunk_prompt_generic",
+     "what": "the trunk reads the fixed prompt 'A short video clip with its soundtrack.'; the parent saw gaussian text"
+    },
+    {
+     "name": "text_pairs_absent",
+     "what": "chart_in is fitted on AV rows only"
+    }
+   ],
+   "fit_split_ridge": {
+    "backward": {
+     "cos": 0.9147897753258819,
+     "cos_p05": 0.8196850921872585,
+     "r2": 0.5648267485456923,
+     "rel_l2": 0.4419122223816378,
+     "rows": 23040
+    },
+    "forward": {
+     "cos": 0.9669297341824488,
+     "cos_p05": 0.9271679481287592,
+     "r2": 0.8784520412890005,
+     "rel_l2": 0.28708438515567763,
+     "rows": 23040
+    },
+    "roundtrip": {
+     "cos": 0.92303446627204,
+     "cos_p05": 0.8337897698496448,
+     "r2": 0.5992767578098321,
+     "rel_l2": 0.4240598771362096,
+     "rows": 23040
+    }
+   },
+   "forwards": 480,
+   "groups": 40,
+   "held": {
+    "procrustes_control": {
+     "backward": {
+      "cos": 0.47475523753061155,
+      "cos_p05": 0.2701013407393877,
+      "r2": -47727.58965680026,
+      "rel_l2": 144.84703720686886,
+      "rows": 5760
+     },
+     "forward": {
+      "cos": 0.6176338455522677,
+      "cos_p05": 0.2855257268744864,
+      "r2": 0.005013450173316558,
+      "rel_l2": 0.8222838751403869,
+      "rows": 5760
+     },
+     "roundtrip": {
+      "cos": 1.0,
+      "cos_p05": 0.9999999999999996,
+      "r2": 1.0,
+      "rel_l2": 3.089976616791611e-13,
+      "rows": 5760
+     }
+    },
+    "ridge": {
+     "backward": {
+      "cos": 0.907089112433263,
+      "cos_p05": 0.8065339428628143,
+      "r2": 0.5386618123381492,
+      "rel_l2": 0.4503291066635797,
+      "rows": 5760
+     },
+     "forward": {
+      "cos": 0.9591691882461574,
+      "cos_p05": 0.9079179969322997,
+      "r2": 0.8498821929838454,
+      "rel_l2": 0.31939585417260064,
+      "rows": 5760
+     },
+     "roundtrip": {
+      "cos": 0.9224774243695238,
+      "cos_p05": 0.8353777098473482,
+      "r2": 0.6061169926814108,
+      "rel_l2": 0.41610596168337194,
+      "rows": 5760
+     }
+    },
+    "svd_control": {
+     "backward": {
+      "cos": -0.002774876128544097,
+      "cos_p05": -0.026239837347656527,
+      "r2": -68965.54295352692,
+      "rel_l2": 174.11634580475072,
+      "rows": 5760
+     },
+     "forward": {
+      "cos": -0.0005688425952100277,
+      "cos_p05": -0.015368865646503195,
+      "r2": -0.47157430632112685,
+      "rel_l2": 1.0000098254317635,
+      "rows": 5760
+     },
+     "roundtrip": {
+      "cos": 1.0,
+      "cos_p05": 0.9999999999999997,
+      "r2": 1.0,
+      "rel_l2": 2.1220335936774858e-15,
+      "rows": 5760
+     }
+    }
+   },
+   "held_groups": [
+    4,
+    9,
+    14,
+    19,
+    24,
+    29,
+    34,
+    39
+   ],
+   "host_diagnostics": {
+    "bridge_row_norm_median": 71.55391693115234,
+    "causal_prompt_check": {
+     "max_abs_diff_prompt_rows_with_vs_without_media": 0.5,
+     "prompt_row_norm_median": 84.23593139648438,
+     "prompt_tokens": 8
+    },
+    "content_share_pre_norm_median_per_batch": {
+     "max": 0.7558911442756653,
+     "median": 0.6949235796928406,
+     "min": 0.562925398349762
+    },
+    "host_row_norm_median": 112.01384735107422,
+    "parent_row_norm_median": 18714.69140625
+   },
+   "installed_parameters": 267889176,
+   "paired_rows_sha256": "c7941fe1941e4a5adc999ca9d6b654b51faa86be36a18a57baf58806228a3108",
+   "pairing": {
+    "candidates": [
+     3,
+     7,
+     11,
+     15,
+     19,
+     23,
+     27,
+     31,
+     35,
+     39,
+     43,
+     47,
+     51,
+     55,
+     59,
+     63
+    ],
+    "insert_after": 31,
+    "rule": "depth-fraction -> nearest gated_gqa refinement layer",
+    "source_depth_fraction": 0.5102040816326531,
+    "trunk_depth_fraction": 0.49206349206349204
+   },
+   "parent_capture_sha256": "1cdfb65303c636a29bb615710043a9da1adad65c832e19b1be688767126a3947",
+   "per_type_held_forward": {
+    "2": {
+     "cos": 0.9228519224132233,
+     "cos_p05": 0.8850791473807729,
+     "r2": 0.7050314813448016,
+     "rel_l2": 0.3938613596694728,
+     "rows": 1536,
+     "width": 5376
+    },
+    "3": {
+     "cos": 0.9723754667308608,
+     "cos_p05": 0.9547101139609585,
+     "r2": 0.837624877373587,
+     "rel_l2": 0.241831595985414,
+     "rows": 4224,
+     "width": 5376
+    }
+   },
+   "record_in_sample_forward": {
+    "cos": 0.965957758575616,
+    "rel_l2": 0.2915701884169873
+   },
+   "ridge_rel": {
+    "chart_in": 0.1,
+    "chart_out": 0.1
+   },
+   "rows": 28800,
+   "rows_held": 5760,
+   "time_reference": null,
+   "trunk_prompt": "A short video clip with its soundtrack.",
+   "type_ids": [
+    2,
+    3
+   ],
+   "unit_dir": "units/h3/h3_dit_L25_curve6",
+   "write_strength": {
+    "measured": false,
+    "why": "H3 needs explicit h3_thw_v1 source positions per row; not constructed in this check"
+   }
+  },
+  "hy3d_dit_L10": {
+   "bridge_row_to_x31": {
+    "cos_bridge_vs_x31_median": 0.4750033166645454,
+    "design_width": 5121,
+    "held_scores_bridge_row_to_x31": {
+     "cos": 0.9580142378115601,
+     "cos_p05": 0.8930058443600063,
+     "r2": 0.6269488970183976,
+     "rel_l2": 0.3137570595447679,
+     "rows": 819,
+     "width": 5120
+    },
+    "reading": "how much of the trunk's x_31 at a media row is a linear function of the bridge row alone (row-split, small sample)",
+    "regime": "underdetermined",
+    "ridge_rel": 0.001,
+    "rows": 4096
+   },
+   "chart_parameters": 20973568,
+   "chart_receipt_sha256": "2e512514f30ff771b5b063e1253a66725d2d54d76060bf4bc0a3ecd2da3d7a9f",
+   "chart_shapes": {
+    "chart_in.bias": [
+     2048
+    ],
+    "chart_in.weight": [
+     2048,
+     5120
+    ],
+    "chart_out.weight": [
+     5120,
+     2048
+    ]
+   },
+   "charted_block_json_sha256": "c5ae82e27963e043f47a9669e3a352fca38161ac43b4ee89622b0b8eb7cb3ab1",
+   "charts_bytes": 83894528,
+   "charts_sha256": "af2c6b7f0be690c2493da4fc4312040d5b47851a14c8c6c251f9bb9d4d6a0138",
+   "deviations": [
+    "the image-conditioned parent (DINO cross-attention) is paired with the image's CAPTION on the trunk side",
+    "the parent's time token (row 0) is not a trunk row; the unit has no time path (modulation none)",
+    "16,384 rows at one sigma (0.5): the only per-token block-10 capture on the box"
+   ],
+   "fit_split_ridge": {
+    "backward": {
+     "cos": 0.9612166820972458,
+     "cos_p05": 0.9257978052865644,
+     "r2": 0.670059263110917,
+     "rel_l2": 0.2918751664359915,
+     "rows": 8192
+    },
+    "forward": {
+     "cos": 0.715105748831008,
+     "cos_p05": 0.6293104737770909,
+     "r2": 0.4268275318169019,
+     "rel_l2": 0.7013329741854055,
+     "rows": 8192
+    },
+    "roundtrip": {
+     "cos": 0.9659170561851025,
+     "cos_p05": 0.9306937984443114,
+     "r2": 0.7088234508842124,
+     "rel_l2": 0.2741936374134564,
+     "rows": 8192
+    }
+   },
+   "forwards": 4,
+   "groups": 4,
+   "held": {
+    "procrustes_control": {
+     "backward": {
+      "cos": 0.6081146463785414,
+      "cos_p05": 0.5402361356320791,
+      "r2": -4.083110331956175,
+      "rel_l2": 1.1493572222565183,
+      "rows": 8192
+     },
+     "forward": {
+      "cos": 0.37106976674492037,
+      "cos_p05": 0.2739374948924347,
+      "r2": -0.035964355274227255,
+      "rel_l2": 0.950302778088281,
+      "rows": 8192
+     },
+     "roundtrip": {
+      "cos": 0.9947838776280007,
+      "cos_p05": 0.9912605067262753,
+      "r2": 0.9616237095851425,
+      "rel_l2": 0.09986694321816951,
+      "rows": 8192
+     }
+    },
+    "ridge": {
+     "backward": {
+      "cos": 0.9094801415949147,
+      "cos_p05": 0.8411453726840602,
+      "r2": 0.18136535579035384,
+      "rel_l2": 0.4612488760076142,
+      "rows": 8192
+     },
+     "forward": {
+      "cos": 0.4047869964640267,
+      "cos_p05": 0.2854161667540085,
+      "r2": 0.004761151905629979,
+      "rel_l2": 0.9314364997924796,
+      "rows": 8192
+     },
+     "roundtrip": {
+      "cos": 0.9626557665194778,
+      "cos_p05": 0.9263244932154541,
+      "r2": 0.6804453262498902,
+      "rel_l2": 0.28817934363993075,
+      "rows": 8192
+     }
+    },
+    "svd_control": {
+     "backward": {
+      "cos": 0.4975569270292536,
+      "cos_p05": 0.43141667683142887,
+      "r2": -5.599937065193668,
+      "rel_l2": 1.3096648090241654,
+      "rows": 8192
+     },
+     "forward": {
+      "cos": -0.0007783253301776236,
+      "cos_p05": -0.03622476965580586,
+      "r2": -0.34745320995346995,
+      "rel_l2": 1.0837932432783393,
+      "rows": 8192
+     },
+     "roundtrip": {
+      "cos": 0.9947838776280007,
+      "cos_p05": 0.9912605067262752,
+      "r2": 0.9616237095851425,
+      "rel_l2": 0.09986694321816954,
+      "rows": 8192
+     }
+    }
+   },
+   "held_groups": [
+    2,
+    3
+   ],
+   "host_diagnostics": {
+    "bridge_row_norm_median": 71.55386352539062,
+    "causal_prompt_check": {
+     "max_abs_diff_prompt_rows_with_vs_without_media": 1.0,
+     "prompt_row_norm_median": 76.62678527832031,
+     "prompt_tokens": 96
+    },
+    "content_share_pre_norm_median_per_batch": {
+     "max": 0.7028340697288513,
+     "median": 0.7006816267967224,
+     "min": 0.69416743516922
+    },
+    "host_row_norm_median": 113.85475158691406,
+    "parent_row_norm_median": 138.91732788085938
+   },
+   "installed_parameters": 46156031,
+   "paired_rows_sha256": "f5800bba0c2d70ff27b6bc791aef2472bfe642aaa73f0c92ba1ba79717d9dd51",
+   "pairing": {
+    "candidates": [
+     3,
+     7,
+     11,
+     15,
+     19,
+     23,
+     27,
+     31,
+     35,
+     39,
+     43,
+     47,
+     51,
+     55,
+     59,
+     63
+    ],
+    "insert_after": 31,
+    "rule": "depth-fraction -> nearest gated_gqa refinement layer",
+    "source_depth_fraction": 0.5,
+    "trunk_depth_fraction": 0.49206349206349204
+   },
+   "parent_capture_sha256": "bbdec281a1ae8e20ad0365f5c5236e84bd77c4634de40b79db38c817c26bd278",
+   "per_type_held_forward": null,
+   "record_in_sample_forward": {
+    "cos": 0.6514091207108931,
+    "rel_l2": 0.7591759114467109
+   },
+   "ridge_rel": {
+    "chart_in": 0.1,
+    "chart_out": 0.1
+   },
+   "rows": 16384,
+   "rows_held": 8192,
+   "time_reference": null,
+   "trunk_prompt": "the caption (QIMG prompt) of the conditioning image the parent saw through DINO",
+   "type_ids": [
+    7
+   ],
+   "unit_dir": "units/hy3d/hy3d_dit_L10",
+   "write_strength": {
+    "forward": 2,
+    "host_norm_median": 113.7733383178711,
+    "measured": true,
+    "p95": 0.014345770701766014,
+    "rows": 4096,
+    "write_over_host_norm_median": 0.012716500088572502
+   }
+  },
+  "qimg_mmdit_L30_img": {
+   "bridge_row_to_x31": {
+    "cos_bridge_vs_x31_median": 0.4583558379580073,
+    "design_width": 5121,
+    "held_scores_bridge_row_to_x31": {
+     "cos": 0.8741365146374355,
+     "cos_p05": 0.7128871909407476,
+     "r2": 0.34003501334470587,
+     "rel_l2": 0.5532120581056094,
+     "rows": 819,
+     "width": 5120
+    },
+    "reading": "how much of the trunk's x_31 at a media row is a linear function of the bridge row alone (row-split, small sample)",
+    "regime": "underdetermined",
+    "ridge_rel": 0.0001,
+    "rows": 4096
+   },
+   "chart_parameters": 31460352,
+   "chart_receipt_sha256": "46b5b47044d12fef7305f1e082d2734a8b481b84807580d0bdfc2fcfa80a366d",
+   "chart_shapes": {
+    "chart_in.bias": [
+     3072
+    ],
+    "chart_in.weight": [
+     3072,
+     5120
+    ],
+    "chart_out.weight": [
+     5120,
+     3072
+    ]
+   },
+   "charted_block_json_sha256": "a793b69972743c5731318d1739916911b07919504d86d4458aec2fd968e562ef",
+   "charts_bytes": 125841672,
+   "charts_sha256": "87ee5e23f72763249256640ce4f843a3ee38738f0a9a51ce5f47adb5cb4d2e03",
+   "deviations": [
+    "the parent's bf16 capture is the target (fp8 weights widened); packing order (c,ph,pw) read from comfy process_img source, not hook-verified"
+   ],
+   "fit_split_ridge": {
+    "backward": {
+     "cos": 0.9037176526347143,
+     "cos_p05": 0.7868845916648818,
+     "r2": 0.5295856974333176,
+     "rel_l2": 0.46833050201446197,
+     "rows": 49152
+    },
+    "forward": {
+     "cos": 0.8765365873395862,
+     "cos_p05": 0.8171125613456215,
+     "r2": 0.6601687665760954,
+     "rel_l2": 0.4993635981353876,
+     "rows": 49152
+    },
+    "roundtrip": {
+     "cos": 0.9236010320162099,
+     "cos_p05": 0.8169373874728173,
+     "r2": 0.605890087664863,
+     "rel_l2": 0.42866780206384447,
+     "rows": 49152
+    }
+   },
+   "forwards": 64,
+   "groups": 16,
+   "held": {
+    "procrustes_control": {
+     "backward": {
+      "cos": 0.2588223657501274,
+      "cos_p05": 0.07589026573916212,
+      "r2": -377583598392.7107,
+      "rel_l2": 406164.3718832854,
+      "rows": 16384
+     },
+     "forward": {
+      "cos": 0.533389293944237,
+      "cos_p05": 0.3203135273676921,
+      "r2": -0.010241975732849573,
+      "rel_l2": 0.8529961734525078,
+      "rows": 16384
+     },
+     "roundtrip": {
+      "cos": 0.996079817644063,
+      "cos_p05": 0.9917170243707659,
+      "r2": 0.9856850900541123,
+      "rel_l2": 0.07908417249790073,
+      "rows": 16384
+     }
+    },
+    "ridge": {
+     "backward": {
+      "cos": 0.8732565096327198,
+      "cos_p05": 0.7422653628964979,
+      "r2": 0.3235231418660919,
+      "rel_l2": 0.5436529346548404,
+      "rows": 16384
+     },
+     "forward": {
+      "cos": 0.8131520825908275,
+      "cos_p05": 0.7170671015534985,
+      "r2": 0.49704789541935446,
+      "rel_l2": 0.6018630657957955,
+      "rows": 16384
+     },
+     "roundtrip": {
+      "cos": 0.9293615257170138,
+      "cos_p05": 0.8323514381931696,
+      "r2": 0.5908716403588785,
+      "rel_l2": 0.42279034097920815,
+      "rows": 16384
+     }
+    },
+    "svd_control": {
+     "backward": {
+      "cos": -0.0024432125224181245,
+      "cos_p05": -0.021874025158184856,
+      "r2": -518942160066.45374,
+      "rel_l2": 476162.0093442425,
+      "rows": 16384
+     },
+     "forward": {
+      "cos": 0.00010528693645909371,
+      "cos_p05": -0.02158123973871817,
+      "r2": -0.3884531936977127,
+      "rel_l2": 1.0000000000758298,
+      "rows": 16384
+     },
+     "roundtrip": {
+      "cos": 0.9960798176440424,
+      "cos_p05": 0.9917170243705932,
+      "r2": 0.9856850900540683,
+      "rel_l2": 0.07908417249801938,
+      "rows": 16384
+     }
+    }
+   },
+   "held_groups": [
+    6,
+    7,
+    14,
+    15
+   ],
+   "host_diagnostics": {
+    "bridge_row_norm_median": 71.55397033691406,
+    "causal_prompt_check": {
+     "max_abs_diff_prompt_rows_with_vs_without_media": 0.75,
+     "prompt_row_norm_median": 76.40623474121094,
+     "prompt_tokens": 93
+    },
+    "content_share_pre_norm_median_per_batch": {
+     "max": 0.7020036578178406,
+     "median": 0.668186604976654,
+     "min": 0.6469948887825012
+    },
+    "host_row_norm_median": 116.00756072998047,
+    "parent_row_norm_median": 63151220.0
+   },
+   "installed_parameters": 154985727,
+   "paired_rows_sha256": "b68437f480336482b66ecb104d6362850709ce8418260ee1195c254ecdcb8c8b",
+   "pairing": {
+    "candidates": [
+     3,
+     7,
+     11,
+     15,
+     19,
+     23,
+     27,
+     31,
+     35,
+     39,
+     43,
+     47,
+     51,
+     55,
+     59,
+     63
+    ],
+    "insert_after": 31,
+    "rule": "depth-fraction -> nearest gated_gqa refinement layer",
+    "source_depth_fraction": 0.5084745762711864,
+    "trunk_depth_fraction": 0.49206349206349204
+   },
+   "parent_capture_sha256": "18ffac3b18b8ed1efcf6e811d4253628dcc3c65e653f1558fb2a68e469f606bc",
+   "per_type_held_forward": null,
+   "record_in_sample_forward": {
+    "cos": 0.8714119910518927,
+    "rel_l2": 0.5102580545303479
+   },
+   "ridge_rel": {
+    "chart_in": 0.01,
+    "chart_out": 0.01
+   },
+   "rows": 65536,
+   "rows_held": 16384,
+   "time_reference": {
+    "rel_l2": 9.86726362839363e-08,
+    "sigma": [
+     0.15000000596046448,
+     0.3499999940395355,
+     0.6499999761581421,
+     0.8999999761581421
+    ],
+    "tolerance_rel_l2": 0.0021,
+    "verified": true
+   },
+   "trunk_prompt": "the parent's own prompt string (capture_inputs.json)",
+   "type_ids": [
+    1
+   ],
+   "unit_dir": "units/qimg/qimg_mmdit_L30_img",
+   "write_strength": {
+    "forward": 24,
+    "host_norm_median": 140.55386352539062,
+    "measured": true,
+    "p95": 0.22804169356822968,
+    "rows": 1024,
+    "write_over_host_norm_median": 0.133255273103714
+   }
+  },
+  "qvl32_vit_L13": {
+   "bridge_row_to_x31": {
+    "cos_bridge_vs_x31_median": 0.26633900489585643,
+    "design_width": 5121,
+    "held_scores_bridge_row_to_x31": {
+     "cos": 0.9548094372701903,
+     "cos_p05": 0.8972130217088663,
+     "r2": 0.5246027508538049,
+     "rel_l2": 0.31352052282959614,
+     "rows": 819,
+     "width": 5120
+    },
+    "reading": "how much of the trunk's x_31 at a media row is a linear function of the bridge row alone (row-split, small sample)",
+    "regime": "underdetermined",
+    "ridge_rel": 0.001,
+    "rows": 4096
+   },
+   "chart_parameters": 11797632,
+   "chart_receipt_sha256": "fc78bee1d320606e327a14ea95cfd545cac25ee3a62a40a6a61b1074cf089c62",
+   "chart_shapes": {
+    "chart_in.bias": [
+     1152
+    ],
+    "chart_in.weight": [
+     1152,
+     5120
+    ],
+    "chart_out.weight": [
+     5120,
+     1152
+    ]
+   },
+   "charted_block_json_sha256": "ea0b2de8c4e2ece640ab976e10db13c8fc7efec371a77430f4383742cccd5b1c",
+   "charts_bytes": 47190784,
+   "charts_sha256": "8cb1db4af70c28fde7024da8041ca37adf0f80db057553a9410cbff3a94f949b",
+   "deviations": [
+    {
+     "name": "no_sigma",
+     "what": "encoder rows carry no noise level (native_media_noise_levels None)"
+    }
+   ],
+   "fit_split_ridge": {
+    "backward": {
+     "cos": 0.9496053744969033,
+     "cos_p05": 0.8897192606776553,
+     "r2": 0.4700065864231898,
+     "rel_l2": 0.3287665173149462,
+     "rows": 47008
+    },
+    "forward": {
+     "cos": 0.5875071305995307,
+     "cos_p05": 0.32099971650925746,
+     "r2": 0.23309442290727678,
+     "rel_l2": 0.8605125344684921,
+     "rows": 47008
+    },
+    "roundtrip": {
+     "cos": 0.9599238130874509,
+     "cos_p05": 0.9042291779916205,
+     "r2": 0.5697381201687126,
+     "rel_l2": 0.2962230027891831,
+     "rows": 47008
+    }
+   },
+   "forwards": 64,
+   "groups": 32,
+   "held": {
+    "procrustes_control": {
+     "backward": {
+      "cos": 0.8955779952389251,
+      "cos_p05": 0.7959125479503826,
+      "r2": -0.28777300832474695,
+      "rel_l2": 0.5315424979683997,
+      "rows": 10848
+     },
+     "forward": {
+      "cos": 0.2452777810214904,
+      "cos_p05": 0.07416921202829069,
+      "r2": -1.8162989596680386,
+      "rel_l2": 1.6476780322798619,
+      "rows": 10848
+     },
+     "roundtrip": {
+      "cos": 0.995937367150821,
+      "cos_p05": 0.9895809596756469,
+      "r2": 0.9635587171220891,
+      "rel_l2": 0.08941598451870934,
+      "rows": 10848
+     }
+    },
+    "ridge": {
+     "backward": {
+      "cos": 0.9271339819794777,
+      "cos_p05": 0.8487162527692442,
+      "r2": 0.2712251949666763,
+      "rel_l2": 0.39986648859823315,
+      "rows": 10848
+     },
+     "forward": {
+      "cos": 0.3627978770413499,
+      "cos_p05": 0.14572253601483176,
+      "r2": 0.1159262942564897,
+      "rel_l2": 0.923160494409965,
+      "rows": 10848
+     },
+     "roundtrip": {
+      "cos": 0.9553304700534272,
+      "cos_p05": 0.8922285346585543,
+      "r2": 0.5328887821563755,
+      "rel_l2": 0.3201315538298993,
+      "rows": 10848
+     }
+    },
+    "svd_control": {
+     "backward": {
+      "cos": 0.8774801322029272,
+      "cos_p05": 0.7611688483854244,
+      "r2": -0.46766057726407717,
+      "rel_l2": 0.5674546359309446,
+      "rows": 10848
+     },
+     "forward": {
+      "cos": -0.0010903199453065043,
+      "cos_p05": -0.04504621324670164,
+      "r2": -2.221161365821885,
+      "rel_l2": 1.7621351524135715,
+      "rows": 10848
+     },
+     "roundtrip": {
+      "cos": 0.995937367150821,
+      "cos_p05": 0.9895809596756466,
+      "r2": 0.9635587171220891,
+      "rel_l2": 0.08941598451870929,
+      "rows": 10848
+     }
+    }
+   },
+   "held_groups": [
+    4,
+    9,
+    14,
+    19,
+    24,
+    29
+   ],
+   "host_diagnostics": {
+    "bridge_row_norm_median": 71.55423736572266,
+    "causal_prompt_check": {
+     "max_abs_diff_prompt_rows_with_vs_without_media": 0.25,
+     "prompt_row_norm_median": 78.71986389160156,
+     "prompt_tokens": 4
+    },
+    "content_share_pre_norm_median_per_batch": {
+     "max": 0.3485269844532013,
+     "median": 0.33587515354156494,
+     "min": 0.30070096254348755
+    },
+    "host_row_norm_median": 90.19703674316406,
+    "parent_row_norm_median": 17.630441665649414
+   },
+   "installed_parameters": 19594291,
+   "paired_rows_sha256": "ffd49a1ee116f6d5f6f6d2f43ede30f06d062059a7ad94c830eb4888315afe7f",
+   "pairing": {
+    "candidates": [
+     3,
+     7,
+     11,
+     15,
+     19,
+     23,
+     27,
+     31,
+     35,
+     39,
+     43,
+     47,
+     51,
+     55,
+     59,
+     63
+    ],
+    "insert_after": 31,
+    "rule": "depth-fraction -> nearest gated_gqa refinement layer",
+    "source_depth_fraction": 0.5,
+    "trunk_depth_fraction": 0.49206349206349204
+   },
+   "parent_capture_sha256": "32ed96e283b1a3c8eeb74c788f91b5f70f5587529278e0297289a619df05d888",
+   "per_type_held_forward": null,
+   "record_in_sample_forward": {
+    "cos": 0.5717893363638559,
+    "rel_l2": 0.8643863023566128
+   },
+   "ridge_rel": {
+    "chart_in": 0.01,
+    "chart_out": 0.0001
+   },
+   "rows": 57856,
+   "rows_held": 10848,
+   "time_reference": null,
+   "trunk_prompt": "Describe this image.",
+   "type_ids": [
+    6
+   ],
+   "unit_dir": "units/qvl32/qvl32_vit_L13",
+   "write_strength": {
+    "forward": 8,
+    "host_norm_median": 90.56712341308594,
+    "measured": true,
+    "p95": 0.23021119832992554,
+    "rows": 784,
+    "write_over_host_norm_median": 0.17136891186237335
+   }
+  }
+ }
+}

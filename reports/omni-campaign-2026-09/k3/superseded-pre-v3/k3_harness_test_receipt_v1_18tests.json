@@ -1,0 +1,389 @@
+{
+ "devices": [
+  {
+   "capability": "sm86",
+   "index": 0,
+   "name": "NVIDIA GeForce RTX 3090",
+   "total_GB": 25.3
+  },
+  {
+   "capability": "sm86",
+   "index": 1,
+   "name": "NVIDIA GeForce RTX 3090",
+   "total_GB": 25.3
+  },
+  {
+   "capability": "sm75",
+   "index": 2,
+   "name": "Quadro RTX 8000",
+   "total_GB": 47.6
+  },
+  {
+   "capability": "sm61",
+   "index": 3,
+   "name": "Tesla P40",
+   "total_GB": 25.6
+  },
+  {
+   "capability": "sm61",
+   "index": 4,
+   "name": "Tesla P40",
+   "total_GB": 25.6
+  },
+  {
+   "capability": "sm61",
+   "index": 5,
+   "name": "Tesla P40",
+   "total_GB": 25.6
+  },
+  {
+   "capability": "sm61",
+   "index": 6,
+   "name": "Tesla P40",
+   "total_GB": 25.6
+  }
+ ],
+ "failed": 0,
+ "modeling_import": "ok",
+ "passed": 18,
+ "python": "3.12.3",
+ "results": [
+  {
+   "detail": {
+    "parameters": {
+     "attention": 18744,
+     "body": 29224,
+     "expert_count": 8,
+     "experts": 49152,
+     "residual": 384
+    },
+    "read": {
+     "MB_per_s": 99.5,
+     "gigabytes": 0.0,
+     "seconds": 0.0,
+     "shards": [
+      {
+       "MB_per_s": 102.0,
+       "gigabytes": 0.0,
+       "seconds": 0.0,
+       "shard": "model-00003-of-00003.safetensors",
+       "tensors": 70
+      }
+     ],
+     "tensors": 70
+    },
+    "shards": 3
+   },
+   "seconds": 0.0,
+   "status": "PASS",
+   "test": "t01_synthetic_checkpoint_round_trips"
+  },
+  {
+   "detail": {
+    "even": 0.5,
+    "odd": 1.0,
+    "scaled": 0.0078125,
+    "signed_high": -0.5,
+    "signed_low": -1.0
+   },
+   "seconds": 0.0,
+   "status": "PASS",
+   "test": "t02_mxfp4_layout_is_low_nibble_even_column"
+  },
+  {
+   "detail": {
+    "available": true,
+    "bit_exact": true,
+    "descale_module": "compressed_tensors.compressors.mx_utils",
+    "e2m1_table_library": [
+     0.0,
+     0.5,
+     1.0,
+     1.5,
+     2.0,
+     3.0,
+     4.0,
+     6.0
+    ],
+    "e2m1_table_matches": true,
+    "max_abs_difference": 0.0,
+    "ours_sha256": "e569dfcc59382cc3ee5811a7962ebd9dcd6c130a152baaeb7092e8d6b7ab2408",
+    "reference_sha256": "e569dfcc59382cc3ee5811a7962ebd9dcd6c130a152baaeb7092e8d6b7ab2408",
+    "unpack_module": "compressed_tensors.compressors.nvfp4.helpers"
+   },
+   "seconds": 0.2,
+   "status": "PASS",
+   "test": "t03_mxfp4_matches_compressed_tensors"
+  },
+  {
+   "detail": {
+    "bit_exact": true,
+    "shape": [
+     64,
+     32
+    ]
+   },
+   "seconds": 0.0,
+   "status": "PASS",
+   "test": "t04_situ_matches_the_repo"
+  },
+  {
+   "detail": {
+    "apply_attn_res": "bit exact",
+    "rms_norm": "bit exact"
+   },
+   "seconds": 0.01,
+   "status": "PASS",
+   "test": "t05_norm_and_attn_res_match_the_repo"
+  },
+  {
+   "detail": {
+    "A_log_axis_fla_form": "num_heads (fla does A_log.view(H, 1))",
+    "A_log_axis_real_k3": "head_dim -- f32[128] against num_heads 96; see k3_layer.kda_gate_axis",
+    "gate": {
+     "max_abs": 0.0,
+     "relL2": 0.0
+    },
+    "output": {
+     "max_abs": 0.0,
+     "relL2": 0.0
+    },
+    "state": {
+     "max_abs": 0.0,
+     "relL2": 0.0
+    }
+   },
+   "seconds": 0.09,
+   "status": "PASS",
+   "test": "t06_kda_gate_and_recurrence_match_fla"
+  },
+  {
+   "detail": {
+    "heads_axis_sha256": "564efd5068f8d32d",
+    "key_dim_axis_sha256": "97d7f8b95730fcee",
+    "relative_difference_between_axes": 0.08975978195667267
+   },
+   "seconds": 0.04,
+   "status": "PASS",
+   "test": "t06b_key_dim_A_log_runs_end_to_end"
+  },
+  {
+   "detail": {
+    "cache_continuity": {
+     "max_abs": 0.0,
+     "relL2": 0.0
+    },
+    "causal": {
+     "max_abs": 2.384185791015625e-07,
+     "relL2": 4.937795949899737e-08
+    }
+   },
+   "seconds": 0.01,
+   "status": "PASS",
+   "test": "t07_short_conv_is_causal_and_matches_a_loop"
+  },
+  {
+   "detail": {
+    "bf16_gap": 0.0029881021473556757,
+    "fp32": {
+     "max_abs": 9.313225746154785e-10,
+     "relL2": 1.986630238093312e-08
+    },
+    "latent_norm_eps": 1e-06,
+    "reference_bf16_floor": 0.0042006694711744785
+   },
+   "seconds": 0.05,
+   "status": "PASS",
+   "test": "t08_mla_matches_the_repo_module"
+  },
+  {
+   "detail": {
+    "experts_touched": 4,
+    "router_topk_set_agreement": 1.0,
+    "scores": {
+     "max_abs": 0.0,
+     "relL2": 0.0
+    }
+   },
+   "seconds": 0.03,
+   "status": "PASS",
+   "test": "t09_moe_matches_the_repo_module"
+  },
+  {
+   "detail": {
+    "bf16_gap": 0.006268935743719339,
+    "block_stack": "bit exact",
+    "blocks_in": 1,
+    "fp32": {
+     "max_abs": 4.470348358154297e-08,
+     "relL2": 1.5982685397375462e-07
+    },
+    "proposed_D_a2_prefix_relL2_max": 0.02,
+    "reference_bf16_floor": 0.006057695485651493
+   },
+   "seconds": 0.07,
+   "status": "PASS",
+   "test": "t10_whole_layer_matches_the_repo_layer"
+  },
+  {
+   "detail": {
+    "final_prefix_sha256": "ac1d32387ffeb673",
+    "layers_cached": 2,
+    "logits_top_ids": [
+     2,
+     112,
+     48,
+     0,
+     42
+    ],
+    "resume_reproduces": true,
+    "staged_body_reused": true
+   },
+   "seconds": 7.22,
+   "status": "PASS",
+   "test": "t11_streamed_pass_writes_a_resumable_cache"
+  },
+  {
+   "detail": {
+    "logits": {
+     "max_abs": 0.0,
+     "relL2": 0.0
+    },
+    "top1_agree": 1.0
+   },
+   "seconds": 0.28,
+   "status": "PASS",
+   "test": "t12_streamed_pass_equals_a_resident_pass"
+  },
+  {
+   "detail": {
+    "ridge": {
+     "max_abs": 0.0,
+     "relL2": 0.0
+    },
+    "selection_identical": true
+   },
+   "seconds": 0.01,
+   "status": "PASS",
+   "test": "t13_pivoted_selection_and_gram_ridge_match_mx45"
+  },
+  {
+   "detail": {
+    "heldout_relL2": [
+     0.86016,
+     0.86749,
+     0.89572
+    ],
+    "routed_ratio": [
+     4.0,
+     8.0,
+     16.0
+    ],
+    "update_scale": [
+     0.1336,
+     0.1147,
+     0.097
+    ],
+    "widths": [
+     128,
+     64,
+     32
+    ]
+   },
+   "seconds": 3.49,
+   "status": "PASS",
+   "test": "t14_c14_coreset_folds_a_layer"
+  },
+  {
+   "detail": {
+    "dense_channels": 64,
+    "moe_out_relL2_child_vs_parent": 0.8460580706596375
+   },
+   "seconds": 0.03,
+   "status": "PASS",
+   "test": "t15_dense_fold_installs_and_changes_the_layer"
+  },
+  {
+   "detail": {
+    "decode_tokens_per_second": [
+     20.611,
+     54.935,
+     44.728
+    ],
+    "decode_without_folds_refused": true,
+    "decoded_tokens": [
+     [
+      13,
+      11,
+      97,
+      63,
+      106,
+      54
+     ],
+     [
+      54,
+      34,
+      114,
+      36,
+      21,
+      61
+     ],
+     [
+      112,
+      47,
+      87,
+      3,
+      26,
+      100
+     ]
+    ],
+    "proxy_drift": [
+     {
+      "kl_parent_child_max": 0.02404,
+      "kl_parent_child_mean": 0.00806,
+      "top1_agreement": 0.11111,
+      "top5_set_agreement": 0.36667
+     },
+     {
+      "kl_parent_child_max": 0.01442,
+      "kl_parent_child_mean": 0.00605,
+      "top1_agreement": 0.16667,
+      "top5_set_agreement": 0.51111
+     },
+     {
+      "kl_parent_child_max": 0.0154,
+      "kl_parent_child_mean": 0.007,
+      "top1_agreement": 0.27778,
+      "top5_set_agreement": 0.31111
+     }
+    ]
+   },
+   "seconds": 11.43,
+   "status": "PASS",
+   "test": "t16_review_runner_proxy_and_decode"
+  },
+  {
+   "detail": {
+    "last_position": {
+     "max_abs": 0.0,
+     "relL2": 0.0
+    },
+    "top1_matches": true
+   },
+   "seconds": 0.25,
+   "status": "PASS",
+   "test": "t17_incremental_decode_state_matches_a_full_pass"
+  }
+ ],
+ "skipped": 0,
+ "synthetic": {
+  "bytes": 266000,
+  "out_dir": "/home/cereal/omni-campaign/k3/testwork/synthetic-k3",
+  "tensors": 98
+ },
+ "torch": "2.11.0+cu128",
+ "transformers": "5.12.1",
+ "transformers_compat": {
+  "OutputRecorder": "re-exported from transformers.utils.output_capturing (moved in 5.12)"
+ }
+}

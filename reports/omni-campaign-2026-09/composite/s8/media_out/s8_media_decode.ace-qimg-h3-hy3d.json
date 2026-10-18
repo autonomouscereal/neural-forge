@@ -1,0 +1,1664 @@
+{
+ "schema": "omni-campaign.s8_media_decode.v1",
+ "tool": {
+  "name": "s8_media_decode",
+  "version": "1.0.0",
+  "sha256": "9178bcc26fc016a6e4c89231defb791792218f0b10d260ace5338f216d751f50"
+ },
+ "argv": [
+  "--modalities",
+  "ace,qimg,h3,hy3d"
+ ],
+ "runtime": {
+  "comfy_root": "/opt/ComfyUI",
+  "torch": "2.6.0+cu124",
+  "cuda": true,
+  "device_name": "NVIDIA GeForce RTX 3090",
+  "device_uuid": "4ead7f3a-cc79-fa5b-de42-ef024e27f561",
+  "device_count": 1,
+  "sha256": {
+   "comfy/sd.py": "7efb10f22252446069a0b88f0a8bc2d94713696d9f946d7757a0981ae8101b58",
+   "comfy/latent_formats.py": "f13259cbd815a339a474976522eb6aae10fb16c8397f13b41e50ddd107f8caf8",
+   "comfy/ldm/minimax/model.py": "882c280b05aa60cd17f231e5e2389b921b52880fb3b4e23574c0aba5f2bd5024",
+   "comfy_extras/nodes_hunyuan3d.py": "2294d13e70e634e33be9fc91249260bc25a371df06e282bf00dedde4df7bb7d1"
+  }
+ },
+ "started_utc": "2026-10-13T06:42:32Z",
+ "policy": "every number is a diagnostic (owner policy 2026-10-06)",
+ "modalities": {
+  "ace": {
+   "vae": {
+    "kind": "comfy",
+    "path": "/home/cereal/comfyui/models/vae/ace_1.5_vae.safetensors",
+    "comfy_kitchen_stubbed": false,
+    "forced_cpu": false,
+    "expected_class": "AudioOobleckVAE(strides=[2,4,4,6,10])",
+    "sd_py_lines": "651-674",
+    "latent_dim": 1,
+    "first_stage_class": "AudioOobleckVAE",
+    "vae_dtype": "torch.float16",
+    "device": "cuda:0",
+    "posterior": "mean",
+    "path_mode": "wrapper",
+    "crop_input": true,
+    "downscale_ratio": 1920,
+    "upscale_ratio": 1920
+   },
+   "sample_rate": 48000,
+   "segments": {
+    "ace_s030": {
+     "files": {
+      "clean": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/ace/ace_s030.clean.wav",
+       "bytes": 768044,
+       "sha256": "9a3c9bc04069e49623236401800bd671f5de5f715a8ce8ce3fa5453d926fe373"
+      },
+      "x_t": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/ace/ace_s030.x_t.wav",
+       "bytes": 768044,
+       "sha256": "73149fb75704e44b8bf4761f73424c1a11c82105f4b5553388b012f7a7f6b97e"
+      },
+      "x0_omni_final": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/ace/ace_s030.x0_omni_final.wav",
+       "bytes": 768044,
+       "sha256": "a234c2571ffb51fcd17b2e462be518a919743776137e3857cfd9c187636b6ffc"
+      },
+      "x0_omni_site": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/ace/ace_s030.x0_omni_site.wav",
+       "bytes": 768044,
+       "sha256": "7dc561cd62fb76c8e9abbd3685dbc7402995b85201f9196364ac0ed41de69eac"
+      },
+      "x0_parent": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/ace/ace_s030.x0_parent.wav",
+       "bytes": 768044,
+       "sha256": "b55cea354b8e87d7d2d47d0cdde0cc1bf4582bb634f02f3cc445377929fee7e3"
+      }
+     },
+     "metrics": {
+      "clean": {
+       "finite": true,
+       "rms": 0.3943833030744079,
+       "samples": 192000,
+       "snr_db_vs_parent": 8.908917346546035,
+       "stft_cos_vs_parent": 0.9821521349643169
+      },
+      "x_t": {
+       "finite": true,
+       "rms": 0.29572296257959396,
+       "samples": 192000,
+       "snr_db_vs_clean": 7.686972836690922,
+       "stft_cos_vs_clean": 0.9529917902122834,
+       "snr_db_vs_parent": 5.6333498312515085,
+       "stft_cos_vs_parent": 0.9522860671333094
+      },
+      "x0_omni_final": {
+       "finite": true,
+       "rms": 0.30388854723642134,
+       "samples": 192000,
+       "snr_db_vs_clean": 3.445065273617245,
+       "stft_cos_vs_clean": 0.8202148015821987,
+       "snr_db_vs_parent": 3.434352851418223,
+       "stft_cos_vs_parent": 0.8276368004875456
+      },
+      "x0_omni_site": {
+       "finite": true,
+       "rms": 0.5864949207830735,
+       "samples": 192000,
+       "snr_db_vs_clean": -2.7830945425602307,
+       "stft_cos_vs_clean": 0.6115778694508927,
+       "snr_db_vs_parent": -1.094877530830748,
+       "stft_cos_vs_parent": 0.6328662888493273
+      },
+      "x0_parent": {
+       "finite": true,
+       "rms": 0.5071383329439778,
+       "samples": 192000,
+       "snr_db_vs_clean": 6.724758972936884,
+       "stft_cos_vs_clean": 0.9821521349643169
+      }
+     },
+     "vs_noisy_input": {
+      "x0_omni_final": {
+       "snr_db_vs_clean": 3.445065273617245,
+       "x_t_baseline": 7.686972836690922,
+       "beats_noisy_input": false
+      },
+      "x0_omni_site": {
+       "snr_db_vs_clean": -2.7830945425602307,
+       "x_t_baseline": 7.686972836690922,
+       "beats_noisy_input": false
+      },
+      "x0_parent": {
+       "snr_db_vs_clean": 6.724758972936884,
+       "x_t_baseline": 7.686972836690922,
+       "beats_noisy_input": false
+      }
+     }
+    },
+    "ace_s050": {
+     "files": {
+      "clean": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/ace/ace_s050.clean.wav",
+       "bytes": 768044,
+       "sha256": "9a3c9bc04069e49623236401800bd671f5de5f715a8ce8ce3fa5453d926fe373"
+      },
+      "x_t": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/ace/ace_s050.x_t.wav",
+       "bytes": 768044,
+       "sha256": "d63c9f78c9e91e6ce2a8860fc16f30554343c104b974f872f435bb803deb4ec1"
+      },
+      "x0_omni_final": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/ace/ace_s050.x0_omni_final.wav",
+       "bytes": 768044,
+       "sha256": "b979766155fe0a70597eee5b076f819885513b47bea3341e6a30794c23fce488"
+      },
+      "x0_omni_site": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/ace/ace_s050.x0_omni_site.wav",
+       "bytes": 768044,
+       "sha256": "373d88cd5eec50661e2890a52f823ae3b2d77d8a11ad4d2131b348a7d4810dad"
+      },
+      "x0_parent": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/ace/ace_s050.x0_parent.wav",
+       "bytes": 768044,
+       "sha256": "561bada5c5c793b9b8e486b5fb313cd6e5f8976af76f8aedec38dbb490da3a0a"
+      }
+     },
+     "metrics": {
+      "clean": {
+       "finite": true,
+       "rms": 0.3943833030744079,
+       "samples": 192000,
+       "snr_db_vs_parent": 3.0857841243728505,
+       "stft_cos_vs_parent": 0.8926179805525355
+      },
+      "x_t": {
+       "finite": true,
+       "rms": 0.2329703391409458,
+       "samples": 192000,
+       "snr_db_vs_clean": 2.1593405568670523,
+       "stft_cos_vs_clean": 0.7258344578871847,
+       "snr_db_vs_parent": 2.6189025034296805,
+       "stft_cos_vs_parent": 0.8060340478661864
+      },
+      "x0_omni_final": {
+       "finite": true,
+       "rms": 0.26012870341929595,
+       "samples": 192000,
+       "snr_db_vs_clean": -0.5762887725560322,
+       "stft_cos_vs_clean": 0.39310674845958604,
+       "snr_db_vs_parent": -0.11064896038281134,
+       "stft_cos_vs_parent": 0.5043749331149342
+      },
+      "x0_omni_site": {
+       "finite": true,
+       "rms": 0.8075535809225407,
+       "samples": 192000,
+       "snr_db_vs_clean": -7.091308484403413,
+       "stft_cos_vs_clean": 0.21063589077143158,
+       "snr_db_vs_parent": -6.952590104612883,
+       "stft_cos_vs_parent": 0.310328847758656
+      },
+      "x0_parent": {
+       "finite": true,
+       "rms": 0.3988776360378666,
+       "samples": 192000,
+       "snr_db_vs_clean": 2.9873607786790095,
+       "stft_cos_vs_clean": 0.8926179805525355
+      }
+     },
+     "vs_noisy_input": {
+      "x0_omni_final": {
+       "snr_db_vs_clean": -0.5762887725560322,
+       "x_t_baseline": 2.1593405568670523,
+       "beats_noisy_input": false
+      },
+      "x0_omni_site": {
+       "snr_db_vs_clean": -7.091308484403413,
+       "x_t_baseline": 2.1593405568670523,
+       "beats_noisy_input": false
+      },
+      "x0_parent": {
+       "snr_db_vs_clean": 2.9873607786790095,
+       "x_t_baseline": 2.1593405568670523,
+       "beats_noisy_input": true
+      }
+     }
+    },
+    "ace_s075": {
+     "files": {
+      "clean": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/ace/ace_s075.clean.wav",
+       "bytes": 768044,
+       "sha256": "9a3c9bc04069e49623236401800bd671f5de5f715a8ce8ce3fa5453d926fe373"
+      },
+      "x_t": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/ace/ace_s075.x_t.wav",
+       "bytes": 768044,
+       "sha256": "2b037693a35506fc2f34d7bdc03e640c6cdc3eed278d5d8848ba594597d80438"
+      },
+      "x0_omni_final": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/ace/ace_s075.x0_omni_final.wav",
+       "bytes": 768044,
+       "sha256": "b8f79c318c9a94342f80df3791d9dfdcaeaea223b2f828d222c277467899f2dc"
+      },
+      "x0_omni_site": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/ace/ace_s075.x0_omni_site.wav",
+       "bytes": 768044,
+       "sha256": "7089a026f39a7fb4a2b5d587f08313af11b832fe6326893e5b4ea3310f29675e"
+      },
+      "x0_parent": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/ace/ace_s075.x0_parent.wav",
+       "bytes": 768044,
+       "sha256": "170a61d8d58b9778840e1dd1157faad06c2c40fb002ec48d24bd5c4d1a95fecd"
+      }
+     },
+     "metrics": {
+      "clean": {
+       "finite": true,
+       "rms": 0.3943833030744079,
+       "samples": 192000,
+       "snr_db_vs_parent": -5.554551266371699,
+       "stft_cos_vs_parent": 0.47645687794642816
+      },
+      "x_t": {
+       "finite": true,
+       "rms": 0.2016222708801586,
+       "samples": 192000,
+       "snr_db_vs_clean": -0.5506110689259518,
+       "stft_cos_vs_clean": 0.339036173636377,
+       "snr_db_vs_parent": 0.27492566117087536,
+       "stft_cos_vs_parent": 0.7286237744994553
+      },
+      "x0_omni_final": {
+       "finite": true,
+       "rms": 0.26138711016623556,
+       "samples": 192000,
+       "snr_db_vs_clean": -1.5074489255019738,
+       "stft_cos_vs_clean": 0.12773456032016245,
+       "snr_db_vs_parent": -3.4065452568493058,
+       "stft_cos_vs_parent": 0.3460934007409918
+      },
+      "x0_omni_site": {
+       "finite": true,
+       "rms": 0.9153354375378429,
+       "samples": 192000,
+       "snr_db_vs_clean": -8.079812203004446,
+       "stft_cos_vs_clean": 0.1191945067314877,
+       "snr_db_vs_parent": -12.62533934223016,
+       "stft_cos_vs_parent": 0.4548023362053126
+      },
+      "x0_parent": {
+       "finite": true,
+       "rms": 0.21982537820771622,
+       "samples": 192000,
+       "snr_db_vs_clean": -0.47773744656070033,
+       "stft_cos_vs_clean": 0.47645687794642816
+      }
+     },
+     "vs_noisy_input": {
+      "x0_omni_final": {
+       "snr_db_vs_clean": -1.5074489255019738,
+       "x_t_baseline": -0.5506110689259518,
+       "beats_noisy_input": false
+      },
+      "x0_omni_site": {
+       "snr_db_vs_clean": -8.079812203004446,
+       "x_t_baseline": -0.5506110689259518,
+       "beats_noisy_input": false
+      },
+      "x0_parent": {
+       "snr_db_vs_clean": -0.47773744656070033,
+       "x_t_baseline": -0.5506110689259518,
+       "beats_noisy_input": true
+      }
+     }
+    }
+   },
+   "seconds": 3.4
+  },
+  "qimg": {
+   "vae": {
+    "kind": "comfy",
+    "path": "/home/cereal/comfyui/models/vae/qwen_image_vae.safetensors",
+    "comfy_kitchen_stubbed": false,
+    "forced_cpu": false,
+    "expected_class": null,
+    "sd_py_lines": null,
+    "latent_dim": 3,
+    "first_stage_class": "WanVAE",
+    "vae_dtype": "torch.bfloat16",
+    "device": "cuda:0",
+    "posterior": "mean",
+    "path_mode": "direct",
+    "crop_input": true,
+    "downscale_ratio": [
+     "callable",
+     8,
+     8
+    ],
+    "upscale_ratio": [
+     "callable",
+     8,
+     8
+    ]
+   },
+   "latent_format": "Wan21 (latents_mean / latents_std)",
+   "source_image": "/mnt/lexar/omni-campaign/qimg-broad-calibration-sep07/batch1/b1_held_glass_pitcher.png",
+   "source_image_sha256": "e2a93fb4723fefdc9903e7c41cefe09af426b1d9b3a08041b769714df33d7bde",
+   "segments": {
+    "qimg_s015": {
+     "files": {
+      "clean": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/qimg/qimg_s015.clean.png",
+       "bytes": 204793,
+       "sha256": "17a94a12c174cba12209025e82eb56f0fa285ee983dab64c246a7929f364e523",
+       "hw": [
+        512,
+        512
+       ],
+       "raw_range": [
+        0.013671875,
+        0.984375
+       ]
+      },
+      "x_t": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/qimg/qimg_s015.x_t.png",
+       "bytes": 258428,
+       "sha256": "1d1e6345904f451831fe67e303129950ef3c16cf08c76702c96c39efd195badf",
+       "hw": [
+        512,
+        512
+       ],
+       "raw_range": [
+        0.001953125,
+        0.99609375
+       ]
+      },
+      "x0_omni_final": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/qimg/qimg_s015.x0_omni_final.png",
+       "bytes": 261355,
+       "sha256": "53a84defbc0710457901a6331c632754cad3cdccd563bddae86613302cf7a8ac",
+       "hw": [
+        512,
+        512
+       ],
+       "raw_range": [
+        0.001953125,
+        1.0
+       ]
+      },
+      "x0_omni_site": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/qimg/qimg_s015.x0_omni_site.png",
+       "bytes": 260689,
+       "sha256": "4d8af20ec70adfccc1cdca23af89063cbd704f87f789523449b6d000397f636b",
+       "hw": [
+        512,
+        512
+       ],
+       "raw_range": [
+        0.001953125,
+        0.9921875
+       ]
+      },
+      "x0_parent": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/qimg/qimg_s015.x0_parent.png",
+       "bytes": 205560,
+       "sha256": "b150815318da376e5b0ce6a30dfa1f88b6c81e13f0142e4531c70ca121c6d9a6",
+       "hw": [
+        512,
+        512
+       ],
+       "raw_range": [
+        0.013671875,
+        0.9765625
+       ]
+      }
+     },
+     "metrics": {
+      "clean": {
+       "finite": true,
+       "psnr_vs_source_png": 49.0954151334715,
+       "psnr_vs_parent": 38.53123263831303
+      },
+      "x_t": {
+       "finite": true,
+       "psnr_vs_clean": 27.983309120040182,
+       "psnr_vs_source_png": 28.054572334809997,
+       "psnr_vs_parent": 28.22199407103543
+      },
+      "x0_omni_final": {
+       "finite": true,
+       "psnr_vs_clean": 28.345636529389022,
+       "psnr_vs_source_png": 28.281647312247415,
+       "psnr_vs_parent": 28.744570401164182
+      },
+      "x0_omni_site": {
+       "finite": true,
+       "psnr_vs_clean": 28.330305153863115,
+       "psnr_vs_source_png": 28.32878785540228,
+       "psnr_vs_parent": 28.65997537510558
+      },
+      "x0_parent": {
+       "finite": true,
+       "psnr_vs_clean": 38.53123263831303,
+       "psnr_vs_source_png": 38.13652706210986
+      }
+     },
+     "vs_noisy_input": {
+      "x0_omni_final": {
+       "psnr_vs_clean": 28.345636529389022,
+       "x_t_baseline": 27.983309120040182,
+       "beats_noisy_input": true
+      },
+      "x0_omni_site": {
+       "psnr_vs_clean": 28.330305153863115,
+       "x_t_baseline": 27.983309120040182,
+       "beats_noisy_input": true
+      },
+      "x0_parent": {
+       "psnr_vs_clean": 38.53123263831303,
+       "x_t_baseline": 27.983309120040182,
+       "beats_noisy_input": true
+      }
+     }
+    },
+    "qimg_s035": {
+     "files": {
+      "clean": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/qimg/qimg_s035.clean.png",
+       "bytes": 204793,
+       "sha256": "17a94a12c174cba12209025e82eb56f0fa285ee983dab64c246a7929f364e523",
+       "hw": [
+        512,
+        512
+       ],
+       "raw_range": [
+        0.013671875,
+        0.984375
+       ]
+      },
+      "x_t": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/qimg/qimg_s035.x_t.png",
+       "bytes": 366140,
+       "sha256": "bc8b196bddf619ff91d260ef06b75bc5db0fd18b0b2ec94d9eaa96ac3394e0d1",
+       "hw": [
+        512,
+        512
+       ],
+       "raw_range": [
+        0.0,
+        1.0
+       ]
+      },
+      "x0_omni_final": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/qimg/qimg_s035.x0_omni_final.png",
+       "bytes": 371145,
+       "sha256": "50c227b3f5bc5c9cd6a27ec3779f683796c88e96b01dc89834d03ec53051a110",
+       "hw": [
+        512,
+        512
+       ],
+       "raw_range": [
+        0.0,
+        1.0
+       ]
+      },
+      "x0_omni_site": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/qimg/qimg_s035.x0_omni_site.png",
+       "bytes": 368576,
+       "sha256": "49ce9a6443364e2a44bba71ee0f74af8ff392af1bbdfc955199c2c964d76001c",
+       "hw": [
+        512,
+        512
+       ],
+       "raw_range": [
+        0.0,
+        1.0
+       ]
+      },
+      "x0_parent": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/qimg/qimg_s035.x0_parent.png",
+       "bytes": 208481,
+       "sha256": "c955e7885928c0bd7edb3c83d01f16fe60115d475ddbac61a9f1e60a76911934",
+       "hw": [
+        512,
+        512
+       ],
+       "raw_range": [
+        0.015625,
+        0.97265625
+       ]
+      }
+     },
+     "metrics": {
+      "clean": {
+       "finite": true,
+       "psnr_vs_source_png": 49.0954151334715,
+       "psnr_vs_parent": 33.544739243533485
+      },
+      "x_t": {
+       "finite": true,
+       "psnr_vs_clean": 19.017206352575567,
+       "psnr_vs_source_png": 19.050383535981144,
+       "psnr_vs_parent": 19.03883751596705
+      },
+      "x0_omni_final": {
+       "finite": true,
+       "psnr_vs_clean": 19.406549206958612,
+       "psnr_vs_source_png": 19.392928546015796,
+       "psnr_vs_parent": 19.539261394513836
+      },
+      "x0_omni_site": {
+       "finite": true,
+       "psnr_vs_clean": 19.414358983788105,
+       "psnr_vs_source_png": 19.424994906507216,
+       "psnr_vs_parent": 19.48843292981663
+      },
+      "x0_parent": {
+       "finite": true,
+       "psnr_vs_clean": 33.544739243533485,
+       "psnr_vs_source_png": 33.338352319954836
+      }
+     },
+     "vs_noisy_input": {
+      "x0_omni_final": {
+       "psnr_vs_clean": 19.406549206958612,
+       "x_t_baseline": 19.017206352575567,
+       "beats_noisy_input": true
+      },
+      "x0_omni_site": {
+       "psnr_vs_clean": 19.414358983788105,
+       "x_t_baseline": 19.017206352575567,
+       "beats_noisy_input": true
+      },
+      "x0_parent": {
+       "psnr_vs_clean": 33.544739243533485,
+       "x_t_baseline": 19.017206352575567,
+       "beats_noisy_input": true
+      }
+     }
+    },
+    "qimg_s065": {
+     "files": {
+      "clean": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/qimg/qimg_s065.clean.png",
+       "bytes": 204793,
+       "sha256": "17a94a12c174cba12209025e82eb56f0fa285ee983dab64c246a7929f364e523",
+       "hw": [
+        512,
+        512
+       ],
+       "raw_range": [
+        0.013671875,
+        0.984375
+       ]
+      },
+      "x_t": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/qimg/qimg_s065.x_t.png",
+       "bytes": 468505,
+       "sha256": "deb480620172619346035472cf94b2cb51449ea89ee999612a1f24fecf38fd17",
+       "hw": [
+        512,
+        512
+       ],
+       "raw_range": [
+        0.0,
+        1.0
+       ]
+      },
+      "x0_omni_final": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/qimg/qimg_s065.x0_omni_final.png",
+       "bytes": 477715,
+       "sha256": "7c05b3c2a8059f8c5c60d1481dd2dd10003320dd186386dd2d7381dc2e61e421",
+       "hw": [
+        512,
+        512
+       ],
+       "raw_range": [
+        0.0,
+        1.0
+       ]
+      },
+      "x0_omni_site": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/qimg/qimg_s065.x0_omni_site.png",
+       "bytes": 470979,
+       "sha256": "0bb5c427b78dff69cfd72ce7b9a6344a086fcc16f6aa12bb445e438a87b9d401",
+       "hw": [
+        512,
+        512
+       ],
+       "raw_range": [
+        0.0,
+        1.0
+       ]
+      },
+      "x0_parent": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/qimg/qimg_s065.x0_parent.png",
+       "bytes": 213418,
+       "sha256": "52a04b76bd75f70c2b5c77d4a63147f94b129098554b8f2dc4155db923b19cc4",
+       "hw": [
+        512,
+        512
+       ],
+       "raw_range": [
+        0.021484375,
+        0.97265625
+       ]
+      }
+     },
+     "metrics": {
+      "clean": {
+       "finite": true,
+       "psnr_vs_source_png": 49.0954151334715,
+       "psnr_vs_parent": 29.17434718734734
+      },
+      "x_t": {
+       "finite": true,
+       "psnr_vs_clean": 12.384087413614333,
+       "psnr_vs_source_png": 12.399833746215151,
+       "psnr_vs_parent": 12.345593525948788
+      },
+      "x0_omni_final": {
+       "finite": true,
+       "psnr_vs_clean": 12.738241408244019,
+       "psnr_vs_source_png": 12.734242504863253,
+       "psnr_vs_parent": 12.796240876069556
+      },
+      "x0_omni_site": {
+       "finite": true,
+       "psnr_vs_clean": 12.77537207321478,
+       "psnr_vs_source_png": 12.782170493582452,
+       "psnr_vs_parent": 12.778128463491536
+      },
+      "x0_parent": {
+       "finite": true,
+       "psnr_vs_clean": 29.17434718734734,
+       "psnr_vs_source_png": 29.022574041351078
+      }
+     },
+     "vs_noisy_input": {
+      "x0_omni_final": {
+       "psnr_vs_clean": 12.738241408244019,
+       "x_t_baseline": 12.384087413614333,
+       "beats_noisy_input": true
+      },
+      "x0_omni_site": {
+       "psnr_vs_clean": 12.77537207321478,
+       "x_t_baseline": 12.384087413614333,
+       "beats_noisy_input": true
+      },
+      "x0_parent": {
+       "psnr_vs_clean": 29.17434718734734,
+       "x_t_baseline": 12.384087413614333,
+       "beats_noisy_input": true
+      }
+     }
+    },
+    "qimg_s090": {
+     "files": {
+      "clean": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/qimg/qimg_s090.clean.png",
+       "bytes": 204793,
+       "sha256": "17a94a12c174cba12209025e82eb56f0fa285ee983dab64c246a7929f364e523",
+       "hw": [
+        512,
+        512
+       ],
+       "raw_range": [
+        0.013671875,
+        0.984375
+       ]
+      },
+      "x_t": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/qimg/qimg_s090.x_t.png",
+       "bytes": 505775,
+       "sha256": "3c0864d3ba9d764c8c0a3b0eae59d523cead55137c0e9c12ca1c3726ce5a7065",
+       "hw": [
+        512,
+        512
+       ],
+       "raw_range": [
+        0.0,
+        1.0
+       ]
+      },
+      "x0_omni_final": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/qimg/qimg_s090.x0_omni_final.png",
+       "bytes": 520908,
+       "sha256": "9c9afa279d0fe8e2bca445fb1b317bf65a4b5a6896b3daddd05ddebdd7ebb0af",
+       "hw": [
+        512,
+        512
+       ],
+       "raw_range": [
+        0.0,
+        1.0
+       ]
+      },
+      "x0_omni_site": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/qimg/qimg_s090.x0_omni_site.png",
+       "bytes": 511874,
+       "sha256": "03649d67dc7f1696aee0de94ebd6c56621e8f28fbccc88a68dda0279d78ad0ed",
+       "hw": [
+        512,
+        512
+       ],
+       "raw_range": [
+        0.0,
+        1.0
+       ]
+      },
+      "x0_parent": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/qimg/qimg_s090.x0_parent.png",
+       "bytes": 215648,
+       "sha256": "e0b899a38fc519ffaf3ec84ac11d664c16d7ff54f9d59381de88a392048deeca",
+       "hw": [
+        512,
+        512
+       ],
+       "raw_range": [
+        0.03125,
+        0.96484375
+       ]
+      }
+     },
+     "metrics": {
+      "clean": {
+       "finite": true,
+       "psnr_vs_source_png": 49.0954151334715,
+       "psnr_vs_parent": 23.39113365547111
+      },
+      "x_t": {
+       "finite": true,
+       "psnr_vs_clean": 9.377449771475757,
+       "psnr_vs_source_png": 9.387853269447843,
+       "psnr_vs_parent": 9.603251455868557
+      },
+      "x0_omni_final": {
+       "finite": true,
+       "psnr_vs_clean": 9.552798453298303,
+       "psnr_vs_source_png": 9.5513107940082,
+       "psnr_vs_parent": 9.840195024030706
+      },
+      "x0_omni_site": {
+       "finite": true,
+       "psnr_vs_clean": 9.678401265761618,
+       "psnr_vs_source_png": 9.682629108229353,
+       "psnr_vs_parent": 9.951698787621417
+      },
+      "x0_parent": {
+       "finite": true,
+       "psnr_vs_clean": 23.39113365547111,
+       "psnr_vs_source_png": 23.35373142267975
+      }
+     },
+     "vs_noisy_input": {
+      "x0_omni_final": {
+       "psnr_vs_clean": 9.552798453298303,
+       "x_t_baseline": 9.377449771475757,
+       "beats_noisy_input": true
+      },
+      "x0_omni_site": {
+       "psnr_vs_clean": 9.678401265761618,
+       "x_t_baseline": 9.377449771475757,
+       "beats_noisy_input": true
+      },
+      "x0_parent": {
+       "psnr_vs_clean": 23.39113365547111,
+       "x_t_baseline": 9.377449771475757,
+       "beats_noisy_input": true
+      }
+     }
+    }
+   },
+   "seconds": 4.7
+  },
+  "h3": {
+   "video_vae": {
+    "kind": "comfy",
+    "path": "/home/cereal/comfyui/models/vae/minimax_h3_video_vae_fp16.safetensors",
+    "comfy_kitchen_stubbed": false,
+    "forced_cpu": false,
+    "expected_class": "comfy.ldm.minimax.vae.MiniMaxH3VideoVAE",
+    "sd_py_lines": "942-964",
+    "latent_dim": 3,
+    "first_stage_class": "MiniMaxH3VideoVAE",
+    "vae_dtype": "torch.float16",
+    "device": "cuda:0",
+    "posterior": "mean",
+    "path_mode": "direct",
+    "crop_input": true,
+    "downscale_ratio": [
+     "callable",
+     16,
+     16
+    ],
+    "upscale_ratio": [
+     "callable",
+     16,
+     16
+    ]
+   },
+   "audio_vae": {
+    "kind": "comfy",
+    "path": "/home/cereal/comfyui/models/vae/minimax_h3_audio_vae_fp32.safetensors",
+    "comfy_kitchen_stubbed": false,
+    "forced_cpu": false,
+    "expected_class": "comfy.ldm.minimax.audio_vae.MiniMaxH3AudioVAE",
+    "sd_py_lines": "965-985",
+    "latent_dim": 2,
+    "first_stage_class": "MiniMaxH3AudioVAE",
+    "vae_dtype": "torch.float32",
+    "device": "cuda:0",
+    "posterior": "mean",
+    "path_mode": "wrapper",
+    "crop_input": true,
+    "downscale_ratio": 800,
+    "upscale_ratio": 800
+   },
+   "audio_sample_rate": 32000,
+   "latent_format": {
+    "class": "MiniMaxH3Video",
+    "scale_factor": 1.0,
+    "shift_factor": 0.0
+   },
+   "segments": {
+    "h3_step0": {
+     "files": {
+      "video_clean": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/h3/h3_step0.video_clean.png",
+       "bytes": 96360,
+       "sha256": "b55a2bb10b5f9a9eb646a85854d7551e4edac1f14de36689d425a213cd44c50f",
+       "frames": 13,
+       "hw": [
+        64,
+        64
+       ],
+       "raw_range": [
+        0.0,
+        1.0
+       ]
+      },
+      "audio_clean": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/h3/h3_step0.audio_clean.wav",
+       "bytes": 70444,
+       "sha256": "077b0ca73e8e59f79183198d0f4396f4dd93a973f3777508cbf6883858a4ad25"
+      },
+      "video_x_t": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/h3/h3_step0.video_x_t.png",
+       "bytes": 85220,
+       "sha256": "aa1223d06dde6ff7a2e9b9db3bf77750efdfca6d34b7720c11fe8d301292152f",
+       "frames": 13,
+       "hw": [
+        64,
+        64
+       ],
+       "raw_range": [
+        0.0,
+        1.0
+       ]
+      },
+      "audio_x_t": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/h3/h3_step0.audio_x_t.wav",
+       "bytes": 70444,
+       "sha256": "81f57f1c12c984e07601508b563d3a157118e283bee2eade692a734edd81f8d3"
+      },
+      "video_x0_omni_final": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/h3/h3_step0.video_x0_omni_final.png",
+       "bytes": 83365,
+       "sha256": "48c763427835a4e6e971b9a73010b023fcb8374df2b57893cf07c309ce079ad2",
+       "frames": 13,
+       "hw": [
+        64,
+        64
+       ],
+       "raw_range": [
+        0.0,
+        1.0
+       ]
+      },
+      "audio_x0_omni_final": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/h3/h3_step0.audio_x0_omni_final.wav",
+       "bytes": 70444,
+       "sha256": "20660721ce26baf9953d2520fb6a5f20169275c247c15baab0f069ed51ae0c22"
+      },
+      "video_x0_omni_site": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/h3/h3_step0.video_x0_omni_site.png",
+       "bytes": 83953,
+       "sha256": "ce9e558e3104d28a5dc89ca146ef9bae97b121033ad7adda1880831a03f8eeea",
+       "frames": 13,
+       "hw": [
+        64,
+        64
+       ],
+       "raw_range": [
+        0.0,
+        1.0
+       ]
+      },
+      "audio_x0_omni_site": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/h3/h3_step0.audio_x0_omni_site.wav",
+       "bytes": 70444,
+       "sha256": "7967595a0d958358ba11ebb2121deea9b3b8f116cd0ff7093eb7cc08fcdee7d2"
+      }
+     },
+     "video_metrics": {
+      "clean": {
+       "finite": true
+      },
+      "x_t": {
+       "finite": true,
+       "psnr_vs_clean": 9.655945840885638
+      },
+      "x0_omni_final": {
+       "finite": true,
+       "psnr_vs_clean": 5.284221581151924
+      },
+      "x0_omni_site": {
+       "finite": true,
+       "psnr_vs_clean": 6.120038370953489
+      }
+     },
+     "audio_metrics": {
+      "clean": {
+       "finite": true,
+       "rms": 0.08113330457893543,
+       "samples": 17600
+      },
+      "x_t": {
+       "finite": true,
+       "rms": 0.07518529898441126,
+       "samples": 17600,
+       "snr_db_vs_clean": -0.6329659420008991,
+       "stft_cos_vs_clean": 0.6136960659093695
+      },
+      "x0_omni_final": {
+       "finite": true,
+       "rms": 0.44211890288103,
+       "samples": 17600,
+       "snr_db_vs_clean": -14.81651112937266,
+       "stft_cos_vs_clean": 0.24161803346987856
+      },
+      "x0_omni_site": {
+       "finite": true,
+       "rms": 0.5153886059101859,
+       "samples": 17600,
+       "snr_db_vs_clean": -16.159574377336398,
+       "stft_cos_vs_clean": 0.1989238447596222
+      }
+     },
+     "video_vs_noisy_input": {
+      "x0_omni_final": {
+       "psnr_vs_clean": 5.284221581151924,
+       "x_t_baseline": 9.655945840885638,
+       "beats_noisy_input": false
+      },
+      "x0_omni_site": {
+       "psnr_vs_clean": 6.120038370953489,
+       "x_t_baseline": 9.655945840885638,
+       "beats_noisy_input": false
+      }
+     },
+     "audio_vs_noisy_input": {
+      "x0_omni_final": {
+       "snr_db_vs_clean": -14.81651112937266,
+       "x_t_baseline": -0.6329659420008991,
+       "beats_noisy_input": false
+      },
+      "x0_omni_site": {
+       "snr_db_vs_clean": -16.159574377336398,
+       "x_t_baseline": -0.6329659420008991,
+       "beats_noisy_input": false
+      }
+     }
+    },
+    "h3_step1": {
+     "files": {
+      "video_clean": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/h3/h3_step1.video_clean.png",
+       "bytes": 96360,
+       "sha256": "b55a2bb10b5f9a9eb646a85854d7551e4edac1f14de36689d425a213cd44c50f",
+       "frames": 13,
+       "hw": [
+        64,
+        64
+       ],
+       "raw_range": [
+        0.0,
+        1.0
+       ]
+      },
+      "audio_clean": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/h3/h3_step1.audio_clean.wav",
+       "bytes": 70444,
+       "sha256": "077b0ca73e8e59f79183198d0f4396f4dd93a973f3777508cbf6883858a4ad25"
+      },
+      "video_x_t": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/h3/h3_step1.video_x_t.png",
+       "bytes": 92494,
+       "sha256": "a55a45c1db3742c631cf43d446d441d8d03fdd9643ab12af2ceb8b1a73e8d0e2",
+       "frames": 13,
+       "hw": [
+        64,
+        64
+       ],
+       "raw_range": [
+        0.0,
+        1.0
+       ]
+      },
+      "audio_x_t": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/h3/h3_step1.audio_x_t.wav",
+       "bytes": 70444,
+       "sha256": "ad6c4ccd441a83f45d9c6e2a6cd8b454e5d292e71dd5f31669b72a688477b1ac"
+      },
+      "video_x0_omni_final": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/h3/h3_step1.video_x0_omni_final.png",
+       "bytes": 75611,
+       "sha256": "33ba0f9f345362b9d6cc969315a68eb01aa78cb345294ff5998278a41272b91f",
+       "frames": 13,
+       "hw": [
+        64,
+        64
+       ],
+       "raw_range": [
+        0.0,
+        1.0
+       ]
+      },
+      "audio_x0_omni_final": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/h3/h3_step1.audio_x0_omni_final.wav",
+       "bytes": 70444,
+       "sha256": "a1c185ce44e4ae6379351a3dc175d981b30173449e24c78c834d0fc0a0498bfc"
+      },
+      "video_x0_omni_site": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/h3/h3_step1.video_x0_omni_site.png",
+       "bytes": 90439,
+       "sha256": "95683902d3a69b692192267ea04fdd3de3031e3833827c287dc2438fc47fbfd3",
+       "frames": 13,
+       "hw": [
+        64,
+        64
+       ],
+       "raw_range": [
+        0.0,
+        1.0
+       ]
+      },
+      "audio_x0_omni_site": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/h3/h3_step1.audio_x0_omni_site.wav",
+       "bytes": 70444,
+       "sha256": "7252ce9f2533b7b5b90a43a4a32ac0a2373d774a7835d5a2fe0ee561836eacbe"
+      }
+     },
+     "video_metrics": {
+      "clean": {
+       "finite": true
+      },
+      "x_t": {
+       "finite": true,
+       "psnr_vs_clean": 8.239174284287866
+      },
+      "x0_omni_final": {
+       "finite": true,
+       "psnr_vs_clean": 4.442420470775174
+      },
+      "x0_omni_site": {
+       "finite": true,
+       "psnr_vs_clean": 6.038340477343031
+      }
+     },
+     "audio_metrics": {
+      "clean": {
+       "finite": true,
+       "rms": 0.08113330457893543,
+       "samples": 17600
+      },
+      "x_t": {
+       "finite": true,
+       "rms": 0.11433338200995477,
+       "samples": 17600,
+       "snr_db_vs_clean": -4.516053525736361,
+       "stft_cos_vs_clean": 0.2559075218566032
+      },
+      "x0_omni_final": {
+       "finite": true,
+       "rms": 0.7046168192818107,
+       "samples": 17600,
+       "snr_db_vs_clean": -18.80932962064008,
+       "stft_cos_vs_clean": 0.2526353645370144
+      },
+      "x0_omni_site": {
+       "finite": true,
+       "rms": 0.7613614594742797,
+       "samples": 17600,
+       "snr_db_vs_clean": -19.492372727960113,
+       "stft_cos_vs_clean": 0.21987064824220598
+      }
+     },
+     "video_vs_noisy_input": {
+      "x0_omni_final": {
+       "psnr_vs_clean": 4.442420470775174,
+       "x_t_baseline": 8.239174284287866,
+       "beats_noisy_input": false
+      },
+      "x0_omni_site": {
+       "psnr_vs_clean": 6.038340477343031,
+       "x_t_baseline": 8.239174284287866,
+       "beats_noisy_input": false
+      }
+     },
+     "audio_vs_noisy_input": {
+      "x0_omni_final": {
+       "snr_db_vs_clean": -18.80932962064008,
+       "x_t_baseline": -4.516053525736361,
+       "beats_noisy_input": false
+      },
+      "x0_omni_site": {
+       "snr_db_vs_clean": -19.492372727960113,
+       "x_t_baseline": -4.516053525736361,
+       "beats_noisy_input": false
+      }
+     }
+    },
+    "h3_step2": {
+     "files": {
+      "video_clean": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/h3/h3_step2.video_clean.png",
+       "bytes": 96360,
+       "sha256": "b55a2bb10b5f9a9eb646a85854d7551e4edac1f14de36689d425a213cd44c50f",
+       "frames": 13,
+       "hw": [
+        64,
+        64
+       ],
+       "raw_range": [
+        0.0,
+        1.0
+       ]
+      },
+      "audio_clean": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/h3/h3_step2.audio_clean.wav",
+       "bytes": 70444,
+       "sha256": "077b0ca73e8e59f79183198d0f4396f4dd93a973f3777508cbf6883858a4ad25"
+      },
+      "video_x_t": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/h3/h3_step2.video_x_t.png",
+       "bytes": 92178,
+       "sha256": "c5e05008672718c576777e602a738f5073e8244fcf662e0f9b3e26303a80b6a7",
+       "frames": 13,
+       "hw": [
+        64,
+        64
+       ],
+       "raw_range": [
+        0.0,
+        1.0
+       ]
+      },
+      "audio_x_t": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/h3/h3_step2.audio_x_t.wav",
+       "bytes": 70444,
+       "sha256": "dd9be0d6a18ec1e20c0249ac36a5c4bf548fa82446e02e358d975356d6109d42"
+      },
+      "video_x0_omni_final": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/h3/h3_step2.video_x0_omni_final.png",
+       "bytes": 75157,
+       "sha256": "9067e9d41f0c7d593330cee642704920c554ca223a739e7f6602bf7dac3a7d1e",
+       "frames": 13,
+       "hw": [
+        64,
+        64
+       ],
+       "raw_range": [
+        0.0,
+        1.0
+       ]
+      },
+      "audio_x0_omni_final": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/h3/h3_step2.audio_x0_omni_final.wav",
+       "bytes": 70444,
+       "sha256": "776fa503ff4431f17db279e326c5e30afb8671c238f623038c8d6b43baff814f"
+      },
+      "video_x0_omni_site": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/h3/h3_step2.video_x0_omni_site.png",
+       "bytes": 90839,
+       "sha256": "b40d6327fd884c935366e543085b37aa11c241a22cd78dbd8b92e4d198f73a5d",
+       "frames": 13,
+       "hw": [
+        64,
+        64
+       ],
+       "raw_range": [
+        0.0,
+        1.0
+       ]
+      },
+      "audio_x0_omni_site": {
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/h3/h3_step2.audio_x0_omni_site.wav",
+       "bytes": 70444,
+       "sha256": "126ffab9e203abde0ea3da9036551afc7192f84bfe0e5ba2f585d639ff64490e"
+      }
+     },
+     "video_metrics": {
+      "clean": {
+       "finite": true
+      },
+      "x_t": {
+       "finite": true,
+       "psnr_vs_clean": 8.335385889896548
+      },
+      "x0_omni_final": {
+       "finite": true,
+       "psnr_vs_clean": 4.805727413476114
+      },
+      "x0_omni_site": {
+       "finite": true,
+       "psnr_vs_clean": 6.413163809245777
+      }
+     },
+     "audio_metrics": {
+      "clean": {
+       "finite": true,
+       "rms": 0.08113330457893543,
+       "samples": 17600
+      },
+      "x_t": {
+       "finite": true,
+       "rms": 0.23822175563532605,
+       "samples": 17600,
+       "snr_db_vs_clean": -9.781633966738031,
+       "stft_cos_vs_clean": 0.14688070310236648
+      },
+      "x0_omni_final": {
+       "finite": true,
+       "rms": 0.7429360418388389,
+       "samples": 17600,
+       "snr_db_vs_clean": -19.29396959808379,
+       "stft_cos_vs_clean": 0.27794281771719836
+      },
+      "x0_omni_site": {
+       "finite": true,
+       "rms": 0.7921247509858923,
+       "samples": 17600,
+       "snr_db_vs_clean": -19.834025687322836,
+       "stft_cos_vs_clean": 0.21983676640410374
+      }
+     },
+     "video_vs_noisy_input": {
+      "x0_omni_final": {
+       "psnr_vs_clean": 4.805727413476114,
+       "x_t_baseline": 8.335385889896548,
+       "beats_noisy_input": false
+      },
+      "x0_omni_site": {
+       "psnr_vs_clean": 6.413163809245777,
+       "x_t_baseline": 8.335385889896548,
+       "beats_noisy_input": false
+      }
+     },
+     "audio_vs_noisy_input": {
+      "x0_omni_final": {
+       "snr_db_vs_clean": -19.29396959808379,
+       "x_t_baseline": -9.781633966738031,
+       "beats_noisy_input": false
+      },
+      "x0_omni_site": {
+       "snr_db_vs_clean": -19.834025687322836,
+       "x_t_baseline": -9.781633966738031,
+       "beats_noisy_input": false
+      }
+     }
+    }
+   },
+   "seconds": 24.4
+  },
+  "hy3d": {
+   "vae": {
+    "checkpoint": "/home/cereal/comfyui/models/checkpoints/hunyuan_3d_v2.1.safetensors",
+    "vae_tensors": 410,
+    "class": "ShapeVAE"
+   },
+   "octree_resolution": 256,
+   "num_chunks": 20000,
+   "mesh_threshold": 0.6,
+   "latent_format": {
+    "class": "Hunyuan3Dv2_1",
+    "scale_factor": 1.0039506158752403
+   },
+   "segments": {
+    "hy3d_s025": {
+     "files": {
+      "clean": {
+       "grid": [
+        257,
+        257,
+        257
+       ],
+       "finite": true,
+       "logit_range": [
+        0.0,
+        1.0
+       ],
+       "occupied_fraction": 0.054879847913980484,
+       "vertices": 290872,
+       "faces": 648378,
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/hy3d/hy3d_s025.clean.glb",
+       "bytes": 11271784,
+       "sha256": "cf32112ce436f76235d568acb87fe7cac3c9269983944844135c430f7dfbea72"
+      },
+      "x_t": {
+       "grid": [
+        257,
+        257,
+        257
+       ],
+       "finite": true,
+       "logit_range": [
+        0.0,
+        0.836181640625
+       ],
+       "occupied_fraction": 0.010002891533076763,
+       "vertices": 87669,
+       "faces": 187524,
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/hy3d/hy3d_s025.x_t.glb",
+       "bytes": 3303096,
+       "sha256": "8eb95176058f3c24abe9cc87022361344abd581c0a0a1c3ba00dd493bddfad77"
+      },
+      "x0_omni_final": {
+       "grid": [
+        257,
+        257,
+        257
+       ],
+       "finite": true,
+       "logit_range": [
+        0.0,
+        0.790771484375
+       ],
+       "occupied_fraction": 0.0032711243256926537,
+       "vertices": 34594,
+       "faces": 73918,
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/hy3d/hy3d_s025.x0_omni_final.glb",
+       "bytes": 1302924,
+       "sha256": "6ff35e74fda276564492353b7a44d34d4f7aed2e239ecbce281b9182f197e30e"
+      },
+      "x0_omni_site": {
+       "grid": [
+        257,
+        257,
+        257
+       ],
+       "finite": true,
+       "logit_range": [
+        0.00048828125,
+        0.677978515625
+       ],
+       "occupied_fraction": 0.0004150320601183921,
+       "vertices": 7110,
+       "faces": 15352,
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/hy3d/hy3d_s025.x0_omni_site.glb",
+       "bytes": 270316,
+       "sha256": "d21685fd8cf5dd4764fd9c602e0e18305720eb8349b733d25e3f650465cd7a48"
+      }
+     },
+     "metrics": {
+      "clean": {},
+      "x_t": {
+       "iou_vs_clean": 0.07385758120297306,
+       "logit_cos_vs_clean": 0.2479230109063315
+      },
+      "x0_omni_final": {
+       "iou_vs_clean": 0.044756420121443305,
+       "logit_cos_vs_clean": 0.2608268587279943
+      },
+      "x0_omni_site": {
+       "iou_vs_clean": 0.007192793256823388,
+       "logit_cos_vs_clean": 0.24997681898488153
+      }
+     },
+     "vs_noisy_input": {
+      "x0_omni_final": {
+       "iou_vs_clean": 0.044756420121443305,
+       "x_t_baseline": 0.07385758120297306,
+       "beats_noisy_input": false
+      },
+      "x0_omni_site": {
+       "iou_vs_clean": 0.007192793256823388,
+       "x_t_baseline": 0.07385758120297306,
+       "beats_noisy_input": false
+      }
+     }
+    },
+    "hy3d_s050": {
+     "files": {
+      "clean": {
+       "grid": [
+        257,
+        257,
+        257
+       ],
+       "finite": true,
+       "logit_range": [
+        0.0,
+        1.0
+       ],
+       "occupied_fraction": 0.054879847913980484,
+       "vertices": 290872,
+       "faces": 648378,
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/hy3d/hy3d_s050.clean.glb",
+       "bytes": 11271784,
+       "sha256": "cf32112ce436f76235d568acb87fe7cac3c9269983944844135c430f7dfbea72"
+      },
+      "x_t": {
+       "grid": [
+        257,
+        257,
+        257
+       ],
+       "finite": true,
+       "logit_range": [
+        0.0,
+        0.018798828125
+       ],
+       "occupied_fraction": 0.0,
+       "vertices": 0,
+       "faces": 0,
+       "mesh": "empty at this threshold"
+      },
+      "x0_omni_final": {
+       "grid": [
+        257,
+        257,
+        257
+       ],
+       "finite": true,
+       "logit_range": [
+        0.0,
+        0.003173828125
+       ],
+       "occupied_fraction": 0.0,
+       "vertices": 0,
+       "faces": 0,
+       "mesh": "empty at this threshold"
+      },
+      "x0_omni_site": {
+       "grid": [
+        257,
+        257,
+        257
+       ],
+       "finite": true,
+       "logit_range": [
+        0.0,
+        0.00927734375
+       ],
+       "occupied_fraction": 0.0,
+       "vertices": 0,
+       "faces": 0,
+       "mesh": "empty at this threshold"
+      },
+      "x0_parent": {
+       "grid": [
+        257,
+        257,
+        257
+       ],
+       "finite": true,
+       "logit_range": [
+        0.0,
+        1.0
+       ],
+       "occupied_fraction": 0.14843149483203888,
+       "vertices": 297962,
+       "faces": 598530,
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/hy3d/hy3d_s050.x0_parent.glb",
+       "bytes": 10758688,
+       "sha256": "931686103d668141f17b28c021174c31a124134d206a9772362920c411b7c1fe"
+      }
+     },
+     "metrics": {
+      "clean": {
+       "iou_vs_parent": 0.36973128297940316
+      },
+      "x_t": {
+       "iou_vs_clean": 0.0,
+       "logit_cos_vs_clean": 0.18911814599006097,
+       "iou_vs_parent": 0.0
+      },
+      "x0_omni_final": {
+       "iou_vs_clean": 0.0,
+       "logit_cos_vs_clean": 0.2868203456954698,
+       "iou_vs_parent": 0.0
+      },
+      "x0_omni_site": {
+       "iou_vs_clean": 0.0,
+       "logit_cos_vs_clean": 0.1385553290002751,
+       "iou_vs_parent": 0.0
+      },
+      "x0_parent": {
+       "iou_vs_clean": 0.36973128297940316,
+       "logit_cos_vs_clean": 0.6829686160197315
+      }
+     },
+     "vs_noisy_input": {
+      "x0_omni_final": {
+       "iou_vs_clean": 0.0,
+       "x_t_baseline": 0.0,
+       "beats_noisy_input": false
+      },
+      "x0_omni_site": {
+       "iou_vs_clean": 0.0,
+       "x_t_baseline": 0.0,
+       "beats_noisy_input": false
+      },
+      "x0_parent": {
+       "iou_vs_clean": 0.36973128297940316,
+       "x_t_baseline": 0.0,
+       "beats_noisy_input": true
+      }
+     }
+    },
+    "hy3d_s075": {
+     "files": {
+      "clean": {
+       "grid": [
+        257,
+        257,
+        257
+       ],
+       "finite": true,
+       "logit_range": [
+        0.0,
+        1.0
+       ],
+       "occupied_fraction": 0.054879847913980484,
+       "vertices": 290872,
+       "faces": 648378,
+       "path": "/home/cereal/omni-campaign/composite/s8/media_out/hy3d/hy3d_s075.clean.glb",
+       "bytes": 11271784,
+       "sha256": "cf32112ce436f76235d568acb87fe7cac3c9269983944844135c430f7dfbea72"
+      },
+      "x_t": {
+       "grid": [
+        257,
+        257,
+        257
+       ],
+       "finite": true,
+       "logit_range": [
+        0.0,
+        0.016845703125
+       ],
+       "occupied_fraction": 0.0,
+       "vertices": 0,
+       "faces": 0,
+       "mesh": "empty at this threshold"
+      },
+      "x0_omni_final": {
+       "grid": [
+        257,
+        257,
+        257
+       ],
+       "finite": true,
+       "logit_range": [
+        0.0,
+        0.01025390625
+       ],
+       "occupied_fraction": 0.0,
+       "vertices": 0,
+       "faces": 0,
+       "mesh": "empty at this threshold"
+      },
+      "x0_omni_site": {
+       "grid": [
+        257,
+        257,
+        257
+       ],
+       "finite": true,
+       "logit_range": [
+        0.0,
+        0.02392578125
+       ],
+       "occupied_fraction": 0.0,
+       "vertices": 0,
+       "faces": 0,
+       "mesh": "empty at this threshold"
+      }
+     },
+     "metrics": {
+      "clean": {},
+      "x_t": {
+       "iou_vs_clean": 0.0,
+       "logit_cos_vs_clean": 0.1818621500569887
+      },
+      "x0_omni_final": {
+       "iou_vs_clean": 0.0,
+       "logit_cos_vs_clean": 0.28869752943108473
+      },
+      "x0_omni_site": {
+       "iou_vs_clean": 0.0,
+       "logit_cos_vs_clean": 0.18014058243447473
+      }
+     },
+     "vs_noisy_input": {
+      "x0_omni_final": {
+       "iou_vs_clean": 0.0,
+       "x_t_baseline": 0.0,
+       "beats_noisy_input": false
+      },
+      "x0_omni_site": {
+       "iou_vs_clean": 0.0,
+       "x_t_baseline": 0.0,
+       "beats_noisy_input": false
+      }
+     }
+    }
+   },
+   "seconds": 378.6
+  }
+ },
+ "seconds": 423.0
+}

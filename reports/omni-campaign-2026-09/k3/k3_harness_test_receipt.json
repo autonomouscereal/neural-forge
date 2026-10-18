@@ -1,0 +1,665 @@
+{
+ "devices": [
+  {
+   "capability": "sm75",
+   "index": 0,
+   "name": "Quadro RTX 8000",
+   "total_GB": 47.6
+  }
+ ],
+ "failed": 0,
+ "modeling_import": "ok",
+ "passed": 30,
+ "peak_rss_gigabytes": 1.296,
+ "python": "3.12.3",
+ "results": [
+  {
+   "detail": {
+    "parameters": {
+     "attention": 18744,
+     "body": 29224,
+     "expert_count": 8,
+     "expert_scale_elements": 1536,
+     "expert_scale_note": "E8M0 group scales, one per 32 packed values, NOT counted in `experts`; excluding them understates the parent",
+     "experts": 49152,
+     "residual": 384
+    },
+    "read": {
+     "MB_per_s": 88.4,
+     "bytes": 122832,
+     "gigabytes": 0.0,
+     "seconds": 0.0,
+     "shards": [
+      {
+       "MB_per_s": 90.5,
+       "gigabytes": 0.0,
+       "seconds": 0.0,
+       "shard": "model-00003-of-00003.safetensors",
+       "tensors": 70
+      }
+     ],
+     "tensors": 70
+    },
+    "shards": 3
+   },
+   "seconds": 0.0,
+   "status": "PASS",
+   "test": "t01_synthetic_checkpoint_round_trips"
+  },
+  {
+   "detail": {
+    "even": 0.5,
+    "odd": 1.0,
+    "scaled": 0.0078125,
+    "signed_high": -0.5,
+    "signed_low": -1.0
+   },
+   "seconds": 0.0,
+   "status": "PASS",
+   "test": "t02_mxfp4_layout_is_low_nibble_even_column"
+  },
+  {
+   "detail": {
+    "available": true,
+    "bit_exact": true,
+    "descale_module": "compressed_tensors.compressors.mx_utils",
+    "e2m1_table_library": [
+     0.0,
+     0.5,
+     1.0,
+     1.5,
+     2.0,
+     3.0,
+     4.0,
+     6.0
+    ],
+    "e2m1_table_matches": true,
+    "max_abs_difference": 0.0,
+    "ours_sha256": "2698f4706f2f1447f4163935f6ec429b18375a4167d17361c17289948c9d7d78",
+    "reference_sha256": "2698f4706f2f1447f4163935f6ec429b18375a4167d17361c17289948c9d7d78",
+    "unpack_module": "compressed_tensors.compressors.nvfp4.helpers"
+   },
+   "seconds": 26.11,
+   "status": "PASS",
+   "test": "t03_mxfp4_matches_compressed_tensors"
+  },
+  {
+   "detail": {
+    "bit_exact": true,
+    "shape": [
+     64,
+     32
+    ]
+   },
+   "seconds": 0.0,
+   "status": "PASS",
+   "test": "t04_situ_matches_the_repo"
+  },
+  {
+   "detail": {
+    "apply_attn_res": "bit exact",
+    "rms_norm": "bit exact"
+   },
+   "seconds": 0.01,
+   "status": "PASS",
+   "test": "t05_norm_and_attn_res_match_the_repo"
+  },
+  {
+   "detail": {
+    "distinct_gains": [
+     "block_sparse_moe.routed_expert_norm.weight",
+     "input_layernorm.weight",
+     "kv_a_layernorm.weight",
+     "mlp_res_norm.weight",
+     "post_attention_layernorm.weight",
+     "q_a_layernorm.weight",
+     "self_attention_res_norm.weight"
+    ],
+    "floor_on_the_four_wired_by_name_and_routed_expert_norm": 0.001,
+    "floor_on_the_two_MLA_latent_gains": 1e-06,
+    "mutation_relL2_vs_unmutated": {
+     "input_layernorm -> ones": 0.111216,
+     "kv_a_layernorm -> ones": 0.111229,
+     "mlp_res_norm -> ones": 0.211941,
+     "post_attention_layernorm -> ones": 0.113698,
+     "q_a_layernorm -> ones": 8.90001e-05,
+     "routed_expert_norm -> ones": 0.0645927,
+     "self_attention_res_norm -> ones": 0.00239269,
+     "swap input_layernorm <-> post_attention_layernorm": 0.249722,
+     "swap self_attention_res_norm <-> mlp_res_norm": 0.287366
+    },
+    "why_two_floors": "the MLA latent gains act inside a rank-24/32 bottleneck, so their effect is ~9e-5 on this fixture; the claim about them is only that the harness reads them at all"
+   },
+   "seconds": 0.37,
+   "status": "PASS",
+   "test": "t05b_the_fixture_can_tell_the_norm_gains_apart"
+  },
+  {
+   "detail": {
+    "A_log_axis_fla_form": "num_heads (fla does A_log.view(H, 1))",
+    "A_log_axis_real_k3": "head_dim -- f32[128] against num_heads 96; see k3_layer.kda_gate_axis",
+    "gate": {
+     "max_abs": 0.0,
+     "relL2": 0.0
+    },
+    "output": {
+     "max_abs": 0.0,
+     "relL2": 0.0
+    },
+    "state": {
+     "max_abs": 0.0,
+     "relL2": 0.0
+    }
+   },
+   "seconds": 0.08,
+   "status": "PASS",
+   "test": "t06_kda_gate_and_recurrence_match_fla"
+  },
+  {
+   "detail": {
+    "heads_axis_sha256": "6e2e48a4d23af27b",
+    "key_dim_axis_sha256": "5e2f7e0d8654b5a7",
+    "relative_difference_between_axes": 0.08892349898815155
+   },
+   "seconds": 0.09,
+   "status": "PASS",
+   "test": "t06b_key_dim_A_log_runs_end_to_end"
+  },
+  {
+   "detail": {
+    "cache_continuity": {
+     "max_abs": 0.0,
+     "relL2": 0.0
+    },
+    "causal": {
+     "max_abs": 2.384185791015625e-07,
+     "relL2": 4.937795949899737e-08
+    }
+   },
+   "seconds": 0.01,
+   "status": "PASS",
+   "test": "t07_short_conv_is_causal_and_matches_a_loop"
+  },
+  {
+   "detail": {
+    "bf16_gap": 0.0029189465567469597,
+    "fp32": {
+     "max_abs": 9.313225746154785e-10,
+     "relL2": 3.522849922887872e-08
+    },
+    "latent_norm_eps": 1e-06,
+    "reference_bf16_floor": 0.004844228737056255
+   },
+   "seconds": 0.02,
+   "status": "PASS",
+   "test": "t08_mla_matches_the_repo_module"
+  },
+  {
+   "detail": {
+    "experts_touched": 3,
+    "router_topk_set_agreement": 1.0,
+    "scores": {
+     "max_abs": 0.0,
+     "relL2": 0.0
+    }
+   },
+   "seconds": 0.02,
+   "status": "PASS",
+   "test": "t09_moe_matches_the_repo_module"
+  },
+  {
+   "detail": {
+    "attn_res_block_size": 2,
+    "bf16_gap": 0.004553948994725943,
+    "bf16_gap_inside_proposed_D_a2": true,
+    "block_stack": "bit exact",
+    "blocks_in": 1,
+    "blocks_out": 1,
+    "fp32": {
+     "max_abs": 4.470348358154297e-08,
+     "relL2": 1.10053939295085e-07
+    },
+    "layer": 1,
+    "proposed_D_a2_note": "reported, NOT gated; the decision line is Cyril's",
+    "proposed_D_a2_prefix_relL2_max": 0.02,
+    "reference_bf16_floor": 0.133557990193367,
+    "residual_branch": "carried = prefix_sum + attn_out"
+   },
+   "seconds": 0.07,
+   "status": "PASS",
+   "test": "t10_whole_layer_matches_the_repo_layer"
+  },
+  {
+   "detail": {
+    "carried": {
+     "attn_res_block_size": 3,
+     "bf16_gap": 0.004371542017906904,
+     "bf16_gap_inside_proposed_D_a2": true,
+     "block_stack": "bit exact",
+     "blocks_in": 2,
+     "blocks_out": 2,
+     "fp32": {
+      "max_abs": 4.470348358154297e-08,
+      "relL2": 1.3155008105059096e-07
+     },
+     "layer": 5,
+     "proposed_D_a2_note": "reported, NOT gated; the decision line is Cyril's",
+     "proposed_D_a2_prefix_relL2_max": 0.02,
+     "reference_bf16_floor": 0.005999792832881212,
+     "residual_branch": "carried = prefix_sum + attn_out"
+    },
+    "snapshot": {
+     "attn_res_block_size": 3,
+     "bf16_gap": 0.006688847206532955,
+     "bf16_gap_inside_proposed_D_a2": true,
+     "block_stack": "bit exact",
+     "blocks_in": 1,
+     "blocks_out": 2,
+     "fp32": {
+      "max_abs": 5.960464477539063e-08,
+      "relL2": 1.7808305585731432e-07
+     },
+     "layer": 3,
+     "proposed_D_a2_note": "reported, NOT gated; the decision line is Cyril's",
+     "proposed_D_a2_prefix_relL2_max": 0.02,
+     "reference_bf16_floor": 0.25669851899147034,
+     "residual_branch": "snapshot (prefix reset to None)"
+    }
+   },
+   "seconds": 0.13,
+   "status": "PASS",
+   "test": "t10b_whole_layer_covers_both_residual_branches"
+  },
+  {
+   "detail": {
+    "final_prefix_sha256": "2633a2f0190ba879",
+    "layers_cached": 2,
+    "logits_top_ids": [
+     51,
+     115,
+     93,
+     76,
+     92
+    ],
+    "resume_reproduces": true,
+    "staged_body_reused": true
+   },
+   "seconds": 7.81,
+   "status": "PASS",
+   "test": "t11_streamed_pass_writes_a_resumable_cache"
+  },
+  {
+   "detail": {
+    "cut_after_layer": 0,
+    "final_prefix_sha256": "2633a2f0190ba879",
+    "layers_in_merged_receipt": [
+     0,
+     1
+    ],
+    "matches_single_pass": true
+   },
+   "seconds": 8.04,
+   "status": "PASS",
+   "test": "t11b_segmented_resume_reproduces_a_single_pass"
+  },
+  {
+   "detail": {
+    "logits": {
+     "max_abs": 0.0,
+     "relL2": 0.0
+    },
+    "top1_agree": 1.0
+   },
+   "seconds": 1.73,
+   "status": "PASS",
+   "test": "t12_streamed_pass_equals_a_resident_pass"
+  },
+  {
+   "detail": {
+    "cases": [
+     {
+      "max_abs": 0.0,
+      "relL2": 0.0
+     },
+     {
+      "max_abs": 0.0,
+      "relL2": 0.0
+     }
+    ],
+    "gigabytes_read": 0.0,
+    "layer_reads": 2
+   },
+   "seconds": 5.53,
+   "status": "PASS",
+   "test": "t12b_streamed_proxy_equals_the_resident_proxy"
+  },
+  {
+   "detail": {
+    "gram_not_mutated": true,
+    "ridge": {
+     "max_abs": 0.0,
+     "relL2": 0.0
+    },
+    "selection_identical": true
+   },
+   "seconds": 0.01,
+   "status": "PASS",
+   "test": "t13_pivoted_selection_and_gram_ridge_match_mx45"
+  },
+  {
+   "detail": {
+    "free_solve_update_scale": 1.03585,
+    "lambda_relative": 0.1,
+    "solution": {
+     "max_abs": 0.0,
+     "relL2": 0.0
+    },
+    "veto_binding": true
+   },
+   "seconds": 0.15,
+   "status": "PASS",
+   "test": "t13b_law_abiding_solve_matches_a_three_gram_reference"
+  },
+  {
+   "detail": {
+    "device_transient_peak_gigabytes_at_K65536_chunk1024": 0.82,
+    "device_transients_are_chunk_bounded_not_quadratic_in_K": true,
+    "refit_peak_gigabytes": {
+     "8704": 3.423,
+     "17408": 11.694,
+     "32768": 38.118,
+     "65536": 144.955
+    },
+    "resident_terms_are_checked_by": "t13d",
+    "stage2_at_pool_131072": {
+     "cholesky_factor_gigabytes": 68.719,
+     "peak_gigabytes": 206.158,
+     "pool_gram_gigabytes": 137.439,
+     "python_iterations": 65536
+    }
+   },
+   "seconds": 0.0,
+   "status": "PASS",
+   "test": "t13c_memory_estimates_match_the_documented_table"
+  },
+  {
+   "detail": {
+    "budget_gigabytes_on_a_25_3_GB_3090": 22.77,
+    "e8m0_scale_bytes": 924844032,
+    "fixture_guard_names_the_resident_terms": true,
+    "new_estimate_refused": true,
+    "old_estimate_admitted": true,
+    "packed_expert_bytes_on_a_real_moe_layer": 14797504512,
+    "priced_peak_gigabytes_at_K65536": 24.161,
+    "transient_only_peak_gigabytes_at_K65536": 0.82,
+    "under_pricing_factor": 29.5
+   },
+   "seconds": 3.35,
+   "status": "PASS",
+   "test": "t13d_the_device_budget_prices_what_actually_lands_on_the_device"
+  },
+  {
+   "detail": {
+    "device_bytes_of_an_absent_device": 0,
+    "fixture_layer_bytes_on_cpu": {
+     "attention": 37488,
+     "body": 58464,
+     "experts_packed": 26112,
+     "residual": 768,
+     "total": 122832
+    }
+   },
+   "seconds": 0.0,
+   "status": "PASS",
+   "test": "t13e_packed_experts_default_to_the_host"
+  },
+  {
+   "detail": {
+    "cuda_arm": {
+     "capability": "sm75",
+     "card": "Quadro RTX 8000",
+     "default_budget_gigabytes": 42.803,
+     "layer_bytes_cuda0": 122832,
+     "layer_bytes_cuda_alias": 122832,
+     "priced_peak_bytes": 333776,
+     "resident_cuda_alias": {
+      "calibration_cache_on_device": 55296,
+      "expert_bank": 6144,
+      "form_m_lift": 28672,
+      "layer_weights_on_device": 122832,
+      "score_heldout_buffers": 81920
+     },
+     "transient_only_peak_bytes": 38912
+    },
+    "layer_bytes_cpu": 122832,
+    "layer_bytes_cpu0_alias": 122832,
+    "raw_equality_hits_on_the_alias": 0,
+    "resident_cpu": {
+     "calibration_cache_on_device": 55296,
+     "expert_bank": 6144,
+     "form_m_lift": 28672,
+     "layer_weights_on_device": 122832,
+     "score_heldout_buffers": 81920
+    },
+    "resident_cpu0_alias": {
+     "calibration_cache_on_device": 55296,
+     "expert_bank": 6144,
+     "form_m_lift": 28672,
+     "layer_weights_on_device": 122832,
+     "score_heldout_buffers": 81920
+    }
+   },
+   "seconds": 0.95,
+   "status": "PASS",
+   "test": "t13f_a_device_alias_does_not_zero_the_resident_estimate"
+  },
+  {
+   "detail": {
+    "estimated_peak_gigabytes": [
+     0.001,
+     0.0,
+     0.0
+    ],
+    "fold_files_named_by_requested_rung": true,
+    "heldout_relL2": [
+     0.88166,
+     0.89616,
+     0.92146
+    ],
+    "process_peak_rss_so_far_gigabytes": 0.572,
+    "routed_ratio": [
+     4.0,
+     8.0,
+     16.0
+    ],
+    "rungs_requested": [
+     128,
+     64,
+     32
+    ],
+    "unaffordable_rung_refused_with_arithmetic": true,
+    "update_scale": [
+     0.0157,
+     0.0114,
+     0.0094
+    ],
+    "veto_binding": [
+     true,
+     true,
+     true
+    ],
+    "widths": [
+     128,
+     64,
+     32
+    ]
+   },
+   "seconds": 9.63,
+   "status": "PASS",
+   "test": "t14_c14_coreset_folds_a_layer"
+  },
+  {
+   "detail": {
+    "apportionment_modes": {
+     "7": "top-mass experts (fewer slots than live experts)",
+     "61": "top-mass experts (fewer slots than live experts)",
+     "64": "largest-remainder apportionment",
+     "65": "largest-remainder apportionment",
+     "128": "largest-remainder apportionment",
+     "257": "largest-remainder apportionment",
+     "500": "largest-remainder apportionment",
+     "732": "largest-remainder apportionment"
+    },
+    "device_peak_gigabytes": 0.0,
+    "k_pool_allocated": 64,
+    "k_pool_selected": 64,
+    "stage1_only_rung": 64,
+    "stage2": "pool already at or below the rung (stage-1-only policy)",
+    "width_installed": 64
+   },
+   "seconds": 4.29,
+   "status": "PASS",
+   "test": "t14b_stage1_only_lands_on_the_rung_exactly"
+  },
+  {
+   "detail": {
+    "dense_channels": 64,
+    "moe_out_relL2_child_vs_parent": 0.8738939166069031
+   },
+   "seconds": 0.31,
+   "status": "PASS",
+   "test": "t15_dense_fold_installs_and_changes_the_layer"
+  },
+  {
+   "detail": {
+    "decode_refusal_read_no_weights": true,
+    "decode_tokens_per_second": [
+     3.514,
+     43.928,
+     81.461
+    ],
+    "decode_without_folds_refused": true,
+    "decoded_tokens": [
+     [
+      18,
+      123,
+      0,
+      31,
+      68,
+      34
+     ],
+     [
+      18,
+      59,
+      23,
+      108,
+      99,
+      16
+     ],
+     [
+      77,
+      18,
+      18,
+      50,
+      122,
+      82
+     ]
+    ],
+    "expert_bytes_skipped_by_the_fold": 26112,
+    "proxy_drift": [
+     {
+      "kl_parent_child_max": 0.01578,
+      "kl_parent_child_mean": 0.00906,
+      "top1_agreement": 0.05556,
+      "top5_set_agreement": 0.28889
+     },
+     {
+      "kl_parent_child_max": 0.00858,
+      "kl_parent_child_mean": 0.00459,
+      "top1_agreement": 0.33333,
+      "top5_set_agreement": 0.44444
+     },
+     {
+      "kl_parent_child_max": 0.02175,
+      "kl_parent_child_mean": 0.008,
+      "top1_agreement": 0.27778,
+      "top5_set_agreement": 0.44444
+     }
+    ],
+    "proxy_streamed": true
+   },
+   "seconds": 23.32,
+   "status": "PASS",
+   "test": "t16_review_runner_proxy_and_decode"
+  },
+  {
+   "detail": {
+    "refusal_lists_available_rungs": true,
+    "refusal_read_no_weights": true,
+    "unmatched_dense_layer_refused": true,
+    "unmatched_rung_refused": true
+   },
+   "seconds": 4.69,
+   "status": "PASS",
+   "test": "t16b_a_fold_request_that_matches_nothing_is_refused"
+  },
+  {
+   "detail": {
+    "allow_folded_baseline_is_the_only_way_through": true,
+    "consuming_receipt_records": {
+     "baseline_is_stamped": true,
+     "baseline_layers_folded": [],
+     "baseline_path": "/home/cereal/omni-campaign/k3/testwork6/parent_logits.safetensors",
+     "baseline_sha256": "5637cba35a2d0ffb85fc6260cb9c39510ff857b037a46bde5d66342c95f19854"
+    },
+    "decode_mode_emit_baseline_refused": true,
+    "emitted_baseline_stamp": {
+     "dense_dir": "/home/cereal/omni-campaign/k3/testwork6/folds",
+     "fold_rung_requested": "64",
+     "is_parent": "False",
+     "layers_folded": "[1]",
+     "layers_folded_count": "1",
+     "mode": "proxy",
+     "model_dir": "/home/cereal/omni-campaign/k3/testwork6/synthetic-k3",
+     "produced_by": "k3_review_stream.py"
+    },
+    "folded_baseline_refused_on_read": true,
+    "folded_run_refused_to_emit_a_baseline": true
+   },
+   "seconds": 12.88,
+   "status": "PASS",
+   "test": "t16c_a_folded_run_cannot_be_written_or_read_as_a_parent_baseline"
+  },
+  {
+   "detail": {
+    "last_position": {
+     "max_abs": 0.0,
+     "relL2": 0.0
+    },
+    "top1_matches": true
+   },
+   "seconds": 0.39,
+   "status": "PASS",
+   "test": "t17_incremental_decode_state_matches_a_full_pass"
+  }
+ ],
+ "skipped": 0,
+ "synthetic": {
+  "bytes": 266000,
+  "out_dir": "/home/cereal/omni-campaign/k3/testwork6/synthetic-k3",
+  "tensors": 98
+ },
+ "synthetic_attn_res_block_size": 2,
+ "synthetic_branch_fixture": {
+  "attn_res_block_size": 3,
+  "bytes": 862016,
+  "layers": 6,
+  "out_dir": "/home/cereal/omni-campaign/k3/testwork6/synthetic-k3-blocks",
+  "tensors": 396
+ },
+ "torch": "2.11.0+cu128",
+ "transformers": "5.12.1",
+ "transformers_compat": {
+  "OutputRecorder": "re-exported from transformers.utils.output_capturing (moved in 5.12)"
+ }
+}

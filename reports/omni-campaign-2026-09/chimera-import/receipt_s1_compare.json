@@ -1,0 +1,60 @@
+{
+  "schema": "chimera_omni.behaviour_receipt.s1.compare",
+  "before": {
+    "label": "c1ca0b2 pre-change",
+    "path": "/home/cereal/omni-campaign/chimera-import-s1/receipt_s1_before.json"
+  },
+  "after": {
+    "label": "claude/omni-import S1 4be3b0a",
+    "path": "/home/cereal/omni-campaign/chimera-import-s1/receipt_s1_after.json"
+  },
+  "profiles": [
+    {
+      "profile": "k3_aligned_test_config",
+      "added_state_dict_entries": [
+        "blocks.0.attention_residual.prefix_logit_bias",
+        "blocks.0.feed_forward_residual.prefix_logit_bias",
+        "blocks.1.attention_residual.prefix_logit_bias",
+        "blocks.1.feed_forward_residual.prefix_logit_bias",
+        "blocks.2.attention_residual.prefix_logit_bias",
+        "blocks.2.feed_forward_residual.prefix_logit_bias",
+        "blocks.3.attention_residual.prefix_logit_bias",
+        "blocks.3.feed_forward_residual.prefix_logit_bias",
+        "blocks.4.attention_residual.prefix_logit_bias",
+        "blocks.4.feed_forward_residual.prefix_logit_bias",
+        "output_attention_residual.prefix_logit_bias"
+      ],
+      "removed_state_dict_entries": [],
+      "changed_shared_state_dict_entries": [],
+      "logits_sha256_equal": true,
+      "cached_logits_sha256_equal": true,
+      "loss_equal": true,
+      "parameter_count_delta": 11,
+      "logits_sha256": "e1a6bb2d8a870c9ec8d616dae7c718b78b317980c7c839d8eefc13e9eef0fbeb",
+      "loss": 9.827261924743652
+    },
+    {
+      "profile": "small_test_config",
+      "added_state_dict_entries": [
+        "blocks.0.attention_residual.prefix_logit_bias",
+        "blocks.0.feed_forward_residual.prefix_logit_bias",
+        "blocks.1.attention_residual.prefix_logit_bias",
+        "blocks.1.feed_forward_residual.prefix_logit_bias",
+        "blocks.2.attention_residual.prefix_logit_bias",
+        "blocks.2.feed_forward_residual.prefix_logit_bias",
+        "blocks.3.attention_residual.prefix_logit_bias",
+        "blocks.3.feed_forward_residual.prefix_logit_bias",
+        "output_attention_residual.prefix_logit_bias"
+      ],
+      "removed_state_dict_entries": [],
+      "changed_shared_state_dict_entries": [],
+      "logits_sha256_equal": true,
+      "cached_logits_sha256_equal": true,
+      "loss_equal": true,
+      "parameter_count_delta": 9,
+      "logits_sha256": "75dc7855a2363629ade8ed3a9a3bd08e18bc9e1afbb4946e7e868b99864e1414",
+      "loss": 9.858162879943848
+    }
+  ],
+  "behaviour_preserved": true
+}

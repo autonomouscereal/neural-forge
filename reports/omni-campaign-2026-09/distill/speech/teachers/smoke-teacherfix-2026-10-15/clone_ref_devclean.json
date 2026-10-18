@@ -1,0 +1,10 @@
+[
+ {
+  "id": "7850-286674-0009",
+  "audio": "/mnt/lexar/omni-campaign/corpus/external/librispeech/LibriSpeech/dev-clean/7850/286674/7850-286674-0009.flac",
+  "reference": "THEY KNEW THAT WHENEVER THEY STUCK OUT THEIR LOWER LIPS AT THE SMALL FISHES AND BUGS THEY SWAM AWAY AS FAST AS THEY COULD",
+  "source": "librispeech/dev-clean",
+  "licence": "CC BY 4.0",
+  "pick_key": "0075c8b8ff3ddb99c6e31cd453de4529c3628424e1812d48a914e34397b7799c"
+ }
+]

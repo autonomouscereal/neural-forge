@@ -1,0 +1,175 @@
+{
+  "schema": "chimera_omni.media_fold.receipt.v1",
+  "created_at_utc": "2026-09-02T08:17:18.020951+00:00",
+  "kind": "c15_pairs",
+  "geometry": {
+    "name": "ace_1.5_vae.safetensors",
+    "modality": "audio",
+    "latent_channels": 64,
+    "sample_rate_hz": 48000,
+    "hop_samples": 1920,
+    "channels": 2,
+    "channel_in_latent": false,
+    "spatial_stride": 0,
+    "temporal_stride": 0,
+    "frame_rate_hz": 25.0,
+    "notes": {
+      "kind": "comfy",
+      "path": "/opt/ComfyUI/models/vae/ace_1.5_vae.safetensors",
+      "comfy_kitchen_stubbed": true,
+      "forced_cpu": true,
+      "expected_class": "AudioOobleckVAE(strides=[2,4,4,6,10])",
+      "sd_py_lines": "651-674",
+      "latent_dim": 1,
+      "first_stage_class": "AudioOobleckVAE",
+      "vae_dtype": "torch.float32",
+      "device": "cpu",
+      "posterior": "mean",
+      "path_mode": "direct",
+      "crop_input": true,
+      "downscale_ratio": 1920,
+      "upscale_ratio": 1920
+    },
+    "pairing": "per_channel",
+    "context": 0,
+    "d_raw": 1920,
+    "d_latent": 64,
+    "d_centre": 1920,
+    "centre_offset": 0,
+    "rows": 6400,
+    "clips": 64,
+    "chimera_segment": 1920,
+    "chimera_stride": 1920,
+    "chimera_tokens_per_frame": 2,
+    "merged_from": 4,
+    "merged_clip_totals": [
+      16,
+      16,
+      16,
+      16
+    ],
+    "declared_clips_sum": 64
+  },
+  "pairs": {
+    "path": "pairs/ace_d_ctx0_merged/pairs.safetensors",
+    "bytes": 100147736,
+    "file_sha256": "4f10d24509d39582d59a924342a085360a7c8461975a92472895e09e6ad5802d",
+    "state_sha256": "a149e3be17fa69dbb89785caa652d00d471539d53c7048bfec18b340265d44f7",
+    "parameters": 25011200,
+    "tensors": {
+      "channel_index": {
+        "dtype": "torch.int64",
+        "shape": [
+          6400
+        ],
+        "sha256": "c81168f234597691ac071d75c0b77f596b8df8b9e3e48d134b7b77414ed8cde4"
+      },
+      "clip_index": {
+        "dtype": "torch.int64",
+        "shape": [
+          6400
+        ],
+        "sha256": "779c73fd722ca406bc072b9b3069469c8903c50888821934050a9a1b37d15cff"
+      },
+      "frame_index": {
+        "dtype": "torch.int64",
+        "shape": [
+          6400
+        ],
+        "sha256": "133a485d6b469b9582bb133ef9c42d33ce92e03859de482e66385a19b417882d"
+      },
+      "latent": {
+        "dtype": "torch.float32",
+        "shape": [
+          6400,
+          64
+        ],
+        "sha256": "f151876bc9862dae3a28289d23d0c7e44339ff77293d23c7951eb5c6998876f0"
+      },
+      "raw": {
+        "dtype": "torch.float32",
+        "shape": [
+          6400,
+          1920
+        ],
+        "sha256": "b4950a4b00ac1f6232410a1ad94af4a0ec1d4d202b53ae07eeb48568deaca48a"
+      },
+      "roundtrip": {
+        "dtype": "torch.float32",
+        "shape": [
+          6400,
+          1920
+        ],
+        "sha256": "5144638cf12550f3dbeeb134648a5d610db0b96003bab606336f05fbd7c98f47"
+      },
+      "split": {
+        "dtype": "torch.int64",
+        "shape": [
+          6400
+        ],
+        "sha256": "60da1a8889faa2db8e7a1f1c3156744323fbaca09b3929650b447a093066f475"
+      }
+    }
+  },
+  "split": {
+    "fit_rows": 4800,
+    "holdout_rows": 1600,
+    "split_by": "clip"
+  },
+  "runtime": {
+    "python": "3.12.3 (main, Jun 19 2026, 12:46:00) [GCC 13.3.0]",
+    "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39",
+    "cwd": "/home/cereal/omni-campaign/media",
+    "torch": "2.11.0+cu128",
+    "torch_cuda": "12.8",
+    "cuda_available": true,
+    "nvidia_smi": [
+      "0, NVIDIA GeForce RTX 3090, GPU-4ead7f3a-cc79-fa5b-de42-ef024e27f561, 26 MiB",
+      "1, Tesla P40, GPU-c95fb5b3-f97c-bfb2-9760-79fe107ffe6d, 21405 MiB",
+      "2, Tesla P40, GPU-a92b0dfe-83f8-11ff-db0d-c65921f365b4, 7 MiB",
+      "3, Tesla P40, GPU-08b615f9-8dbe-3edd-d59f-f6ebe8212ca8, 7 MiB",
+      "4, NVIDIA GeForce RTX 3090, GPU-2ce6a95c-7b1f-644a-3808-d781732a0582, 18 MiB",
+      "5, Tesla P40, GPU-ce4a1da0-baa8-3d62-419c-a28f6565610f, 7 MiB",
+      "6, Quadro RTX 8000, GPU-f5a09535-fc85-a027-50f7-734b344747dd, 8 MiB"
+    ]
+  },
+  "merged_from": [
+    {
+      "dir": "/home/cereal/omni-campaign/media/pairs/ace_d_ctx0_c0",
+      "rows": 1600,
+      "clips": 16,
+      "receipt_sha256": "936652ebda88649531d2e5d9ffb5da8998a466679a76fc4598a051821aedfb89",
+      "pairs_sha256": "5a205f432481a03f7d2981bf4e39bfa51c1e9b3d09ebc43dddee32aa5d214907"
+    },
+    {
+      "dir": "/home/cereal/omni-campaign/media/pairs/ace_d_ctx0_c1",
+      "rows": 1600,
+      "clips": 16,
+      "receipt_sha256": "d959a94b896825bd2b03ebada8db1b3bb1773ee10353a597aadd29440bd3eaa9",
+      "pairs_sha256": "94ba8908469e0c3e0d68abcd2891000aad47c8214227412793fb3490c4ca8068"
+    },
+    {
+      "dir": "/home/cereal/omni-campaign/media/pairs/ace_d_ctx0_c2",
+      "rows": 1600,
+      "clips": 16,
+      "receipt_sha256": "bc430db98a27e9d75325978a7dd95d42766abab8e359613e51828fc18c34f631",
+      "pairs_sha256": "57eff25b6a5a4f26ce2ed17ef7ea88d03c5268aa17e73a4d1299e879a6b990fb"
+    },
+    {
+      "dir": "/home/cereal/omni-campaign/media/pairs/ace_d_ctx0_c3",
+      "rows": 1600,
+      "clips": 16,
+      "receipt_sha256": "24c3abfdf3ec9e8c98e7818b93696e5d9b10066282eacf8aa2910fef527bc86d",
+      "pairs_sha256": "0aa82f54137b9ae8d4b9873f523945ec8f20cb1dac5df69a0fb9381caf14e124"
+    }
+  ],
+  "argv": {
+    "pairs": [
+      "pairs/ace_d_ctx0_c0",
+      "pairs/ace_d_ctx0_c1",
+      "pairs/ace_d_ctx0_c2",
+      "pairs/ace_d_ctx0_c3"
+    ],
+    "out": "pairs/ace_d_ctx0_merged"
+  }
+}

@@ -1,0 +1,4 @@
+{"schema": "omni-campaign.host-venv-gpu-claim.v1", "name": "c10-pivot-gpu-check-oct10-claude", "owner": "claude", "kind": "host-venv",
+ "gpu_index": 0, "gpu_uuid": "GPU-4ead7f3a-cc79-fa5b-de42-ef024e27f561", "gpu_used_mib_at_start": 24, "pid": 2859947,
+ "started_utc": "2026-10-10T09:01Z (launched within the minute before)", "log": "/home/cereal/c10-rehearsal-oct10/pivot_gpu_check.log",
+ "command": "/home/cereal/c10-rehearsal-oct10/pivot_gpu_check.py (c10 1.2.0 pivoted_columns_gram_on vs c14 host loop)", "release": "process exit"}

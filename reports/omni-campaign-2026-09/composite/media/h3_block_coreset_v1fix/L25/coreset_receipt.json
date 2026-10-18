@@ -1,0 +1,823 @@
+{
+  "schema": "chimera_omni.media_fold.receipt.v1",
+  "created_at_utc": "2026-09-07T02:37:57.486657+00:00",
+  "kind": "c16_h3_coreset",
+  "stage": "S6H",
+  "block": 25,
+  "keep": 3584,
+  "intermediate": 14336,
+  "component": {
+    "component": "h3.dit.block.mlp",
+    "parent_parameters": 231211008,
+    "child_parameters": 57802752,
+    "compression_x": 4.0,
+    "meets_4x_component_floor": true
+  },
+  "whole_block": {
+    "component": "h3.dit.block",
+    "parent_parameters": 386233600,
+    "child_parameters": 212825344,
+    "compression_x": 1.8147913812370016,
+    "meets_4x_component_floor": false
+  },
+  "frozen_parameters": 155022592,
+  "kv_head_merge_arm": "NOT BUILT (rung 2): H3 attention is 56-head MHA (qkv_proj [21504, 5376], no kv sharing); the whole-block ratio above is the MLP coreset alone",
+  "header_counts": {
+    "parent_mlp_parameters": 231211008,
+    "child_mlp_parameters": 57802752,
+    "parent_block_parameters": 386233600,
+    "child_block_parameters": 212825344,
+    "mlp_ratio_child_over_parent": 0.25,
+    "mlp_ratio_le_0_25": true
+  },
+  "child": {
+    "path": "/mnt/lexar/omni-campaign/media/h3_block_coreset_v1fix/L25/mlp.safetensors",
+    "bytes": 115605712,
+    "file_sha256": "c072e44a1382904e49c91dc226dd10cd1ae36a758fb17e7ec8cb585a0288cfcd",
+    "state_sha256": "198b5692cc88a7270c65c825de1f1fe4976fbf1acec681e731a6956f15fd0f15",
+    "parameters": 57802752,
+    "tensors": {
+      "blocks.25.mlp.fc1.weight": {
+        "dtype": "torch.bfloat16",
+        "shape": [
+          7168,
+          5376
+        ],
+        "sha256": "3675f081eb71badaf291cb853d676d973539786ca1d8c6d9d2df23ba1c43fd01"
+      },
+      "blocks.25.mlp.fc2.weight": {
+        "dtype": "torch.bfloat16",
+        "shape": [
+          5376,
+          3584
+        ],
+        "sha256": "53a1e4d9bcf82b946f75c0082bb7b327a85455e1eb1c11a00941f212ae80af48"
+      }
+    }
+  },
+  "selection_file": {
+    "path": "/mnt/lexar/omni-campaign/media/h3_block_coreset_v1fix/L25/selection.safetensors",
+    "bytes": 28752,
+    "file_sha256": "8c5e9e157cd211e2536d03963d5e45bab11fdad9c407850a137ce3cdf7f99734",
+    "state_sha256": "1aa84106c20ad1f3c9ab6bf3fd6d5e80f497f4f2ddb10f1a4227849485793420",
+    "parameters": 3584,
+    "tensors": {
+      "selection": {
+        "dtype": "torch.int64",
+        "shape": [
+          3584
+        ],
+        "sha256": "3032ab0ba49e0804ef3591e7aae2500def4d9d0270091602477a0e3646c8af70"
+      }
+    },
+    "note": "pivoted parent channel indices (provenance, not parameters); not counted in mlp.safetensors"
+  },
+  "s7_consumability": {
+    "consumable_by_c16_install_media_blocks": false,
+    "format_of_record": "composite/COMPOSITE_S6_INPUT_FORMATS.md section 3 (chimera_omni.composite.charted_block.v1)",
+    "this_output": "L{i}/mlp.safetensors (blocks.{i}.mlp.fc1.weight fused [2*keep, hidden], blocks.{i}.mlp.fc2.weight [hidden, keep]) + selection.safetensors",
+    "converter_available": "none for H3 (only --convert-ace-run); an H3 -> charted-container converter is NOT built",
+    "mechanical_renames": {
+      "mlp.fc1.weight -> mlp.gate_proj.weight / mlp.up_proj.weight": "split_fc1 (rows [:3584] / [3584:]); mlp_kind swiglu",
+      "mlp.fc2.weight -> mlp.down_proj.weight": "verbatim",
+      "attn.qkv_proj.weight -> attn.q_proj / k_proj / v_proj": "chunk(3, dim=0) of [21504, 5376]; heads 56, kv_heads 56 (MHA), head_dim 128",
+      "attn.out_proj.weight -> attn.o_proj.weight": "verbatim",
+      "attn.q_norm / k_norm -> attn.q_norm / k_norm": "verbatim (qk_norm true)",
+      "norm1 / norm2 -> attn_norm / mlp_norm": "verbatim; norm_kind must be checked against comfy/ldm/minimax/model.py before it is declared rms"
+    },
+    "spec_extensions_required": {
+      "modulation": "H3 adaLN is per-MODALITY: adaln_proj.linear [96768, 8] maps an 8-dim curve embedding to 3 modalities x 6 rows x 5376; ChartedBlockSpec adaln6 has ONE scale_shift_table [6, P] driven by time_embed. Decision: which of the three modality row sets (video 0 / text 1 / audio 2) the trunk drives, or a per-type_id table (spec extension)",
+      "time_embed": "H3 has no sinusoid -> linear_1 -> linear_2 -> time_proj path; its t_emb is an 8-dim curve embedding of (sigma_video, sigma_audio). Decision: a time_embed whose output reproduces the 8-dim curve (time_freq_dim / time_hidden / time_factor have no H3 values), or a new modulation kind",
+      "attention_width": "MHA inner width 7168 (56 x 128) on hidden 5376: the charted attention must allow inner != width",
+      "rope": "H3 packs [text | audio | video] with per-segment rope tables (rope_freqs per forward); the 1-D rope_theta field does not describe it -- record in metadata"
+    },
+    "price": "converter + charted_block.json writer + test: ~0.5 day once the modulation/time_embed decision is taken; the decision itself belongs to the S7 owner (Cyril), not this tool",
+    "stage_receipt_note": "S7's h3_Lmid input requires the spec extension above; until it lands the H3 block is measured (this receipt) but not installable"
+  },
+  "coreset": {
+    "keep": 3584,
+    "intermediate": 14336,
+    "selection_sha256": "3032ab0ba49e0804ef3591e7aae2500def4d9d0270091602477a0e3646c8af70",
+    "selected_channels": "3584 channels (list omitted)",
+    "solve": {
+      "ridge_lambda": 1.6178491616891775,
+      "update_scale": 0.8291789647226678,
+      "solver": "cholesky",
+      "ridge_rel": 1e-06,
+      "scores": {
+        "rel_l2": 0.1390008151866961,
+        "cos": 0.9802049619755832,
+        "cos_p05": 0.9578699369498914,
+        "r2": 0.9794603763219881,
+        "rows": 27360,
+        "width": 5376
+      },
+      "ladder": [
+        {
+          "ridge_rel": 1e-06,
+          "rel_l2": 0.1390008151866961,
+          "update_scale": 0.8291789647226678,
+          "vetoed": false
+        },
+        {
+          "ridge_rel": 1e-05,
+          "rel_l2": 0.13900082185326024,
+          "update_scale": 0.8288783039755079,
+          "vetoed": false
+        },
+        {
+          "ridge_rel": 0.0001,
+          "rel_l2": 0.13900148033533194,
+          "update_scale": 0.8258959618028058,
+          "vetoed": false
+        },
+        {
+          "ridge_rel": 0.001,
+          "rel_l2": 0.13906006300590837,
+          "update_scale": 0.7982779756983249,
+          "vetoed": false
+        },
+        {
+          "ridge_rel": 0.01,
+          "rel_l2": 0.1416879395995432,
+          "update_scale": 0.6356532460776101,
+          "vetoed": false
+        },
+        {
+          "ridge_rel": 0.1,
+          "rel_l2": 0.16457318771357912,
+          "update_scale": 0.32454819870342605,
+          "vetoed": false
+        },
+        {
+          "ridge_rel": 1.0,
+          "rel_l2": 0.21116380809414237,
+          "update_scale": 0.11105251317806175,
+          "vetoed": false
+        },
+        {
+          "ridge_rel": 10.0,
+          "rel_l2": 0.2521548337840292,
+          "update_scale": 0.03201118960016839,
+          "vetoed": false
+        },
+        {
+          "ridge_rel": 100.0,
+          "rel_l2": 0.28175118326580023,
+          "update_scale": 0.009619687305265783,
+          "vetoed": false
+        }
+      ]
+    },
+    "component": {
+      "component": "h3.dit.block.mlp",
+      "parent_parameters": 231211008,
+      "child_parameters": 57802752,
+      "compression_x": 4.0,
+      "meets_4x_component_floor": true
+    },
+    "whole_block": {
+      "component": "h3.dit.block",
+      "parent_parameters": 386233600,
+      "child_parameters": 212825344,
+      "compression_x": 1.8147913812370016,
+      "meets_4x_component_floor": false
+    },
+    "fit_scores": {
+      "rel_l2": 0.1390008151739212,
+      "cos": 0.9802049619797236,
+      "cos_p05": 0.957869937306647,
+      "r2": 0.9794603763259028,
+      "rows": 27360,
+      "width": 5376
+    },
+    "holdout_scores": {
+      "rel_l2": 0.3420417361749667,
+      "cos": 0.9635819437022611,
+      "cos_p05": 0.9083347638156938,
+      "r2": 0.8753090219101414,
+      "rows": 7200,
+      "width": 5376
+    },
+    "rows": 34560,
+    "fit_rows": 27360,
+    "holdout_rows": 7200,
+    "split_by": "clip (48 clips, 10 held out)",
+    "split_groups": {
+      "group_name": "clip",
+      "groups": 48,
+      "fit_groups": 38,
+      "holdout_groups": 10,
+      "membership_checked": true,
+      "membership_width": 2,
+      "fit_rows_drawing_on_a_held_out_group": 0
+    },
+    "split_guarantee": "row-level disjointness of the source material between fit and holdout (re-derived from row_membership, not from the group ids). This is NOT statistical independence of the two sets of activations: if the rows were produced by a model whose receptive field spans several groups, a held-out row's activation still encodes fit material. The caller's capture receipt is where the receptive field is recorded.",
+    "fit_rows_per_kept_channel": 7.633928571428571,
+    "note": "per-COMPONENT compression is the >=4x claim; the whole-block ratio is coverage driven and reaches 4x only with the kv-head merge (rung 2)"
+  },
+  "arms": [
+    {
+      "arm": "replace",
+      "fit_scores": {
+        "rel_l2": 0.1390008151739212,
+        "cos": 0.9802049619797236,
+        "cos_p05": 0.957869937306647,
+        "r2": 0.9794603763259028,
+        "rows": 27360,
+        "width": 5376
+      },
+      "holdout_scores": {
+        "rel_l2": 0.3420417361749667,
+        "cos": 0.9635819437022611,
+        "cos_p05": 0.9083347638156938,
+        "r2": 0.8753090219101414,
+        "rows": 7200,
+        "width": 5376
+      },
+      "child_mlp_parameters": 57802752,
+      "selected_channels_sha256": "3032ab0ba49e0804ef3591e7aae2500def4d9d0270091602477a0e3646c8af70",
+      "fit_scores_by_kind": {
+        "audio": {
+          "rel_l2": 0.14970861772116334,
+          "cos": 0.9792103373897644,
+          "cos_p05": 0.9571090168336848,
+          "r2": 0.9745425331932844,
+          "rows": 24320,
+          "width": 5376
+        },
+        "video": {
+          "rel_l2": 0.13170824307388082,
+          "cos": 0.9881619586993994,
+          "cos_p05": 0.9720898070763233,
+          "r2": 0.9769370558269439,
+          "rows": 3040,
+          "width": 5376
+        }
+      },
+      "holdout_scores_by_kind": {
+        "audio": {
+          "rel_l2": 0.20100903727780386,
+          "cos": 0.9706072263666846,
+          "cos_p05": 0.9366640925111257,
+          "r2": 0.9531919711073797,
+          "rows": 6400,
+          "width": 5376
+        },
+        "video": {
+          "rel_l2": 0.3986767409694252,
+          "cos": 0.9073796823868733,
+          "cos_p05": 0.8344338262159993,
+          "r2": 0.788194713017371,
+          "rows": 800,
+          "width": 5376
+        }
+      }
+    },
+    {
+      "arm": "control",
+      "fit_scores": {
+        "rel_l2": 1.415788565856701,
+        "cos": -0.00038558504602955146,
+        "cos_p05": -0.02122804855058704,
+        "r2": -1.1308583905796294,
+        "rows": 27360,
+        "width": 5376
+      },
+      "holdout_scores": {
+        "rel_l2": 1.4352454734443503,
+        "cos": -0.0007247401496305325,
+        "cos_p05": -0.02142545077735489,
+        "r2": -1.1954785525135834,
+        "rows": 7200,
+        "width": 5376
+      },
+      "child_mlp_parameters": 57802752,
+      "norm_matched_to_parent_on_fit_rows": true,
+      "down_scale": 4360.318802921913,
+      "fit_scores_by_kind": {
+        "audio": {
+          "rel_l2": 1.3153237332757688,
+          "cos": -0.00016403197751195387,
+          "cos_p05": -0.02084084343819768,
+          "r2": -0.9651101467801004,
+          "rows": 24320,
+          "width": 5376
+        },
+        "video": {
+          "rel_l2": 1.476371935358465,
+          "cos": -0.002158009594170331,
+          "cos_p05": -0.023895185851466424,
+          "r2": -1.8978799946185831,
+          "rows": 3040,
+          "width": 5376
+        }
+      },
+      "holdout_scores_by_kind": {
+        "audio": {
+          "rel_l2": 1.3718995670368368,
+          "cos": -0.0005221948912450498,
+          "cos_p05": -0.020978788644490577,
+          "r2": -1.180388205753784,
+          "rows": 6400,
+          "width": 5376
+        },
+        "video": {
+          "rel_l2": 1.4687852425089865,
+          "cos": -0.0023451022167143964,
+          "cos_p05": -0.024876926795022843,
+          "r2": -1.8748262280419001,
+          "rows": 800,
+          "width": 5376
+        }
+      }
+    },
+    {
+      "arm": "random_select",
+      "fit_scores": {
+        "rel_l2": 0.4534092803017586,
+        "cos": 0.8672723409522027,
+        "cos_p05": 0.7615636391511869,
+        "r2": 0.7814561459145368,
+        "rows": 27360,
+        "width": 5376
+      },
+      "holdout_scores": {
+        "rel_l2": 0.5238020115514004,
+        "cos": 0.8469615034299858,
+        "cos_p05": 0.7249031662013651,
+        "r2": 0.7075772540257987,
+        "rows": 7200,
+        "width": 5376
+      },
+      "child_mlp_parameters": 57802752,
+      "solve": {
+        "ridge_lambda": 441810.2102017446,
+        "update_scale": 0.5525803435673151,
+        "solver": "cholesky",
+        "ridge_rel": 1.0,
+        "scores": {
+          "rel_l2": 0.45340928031766176,
+          "cos": 0.867272340935838,
+          "cos_p05": 0.7615636395507855,
+          "r2": 0.7814561458988891,
+          "rows": 27360,
+          "width": 5376
+        }
+      },
+      "selected_channels_sha256": "83fe2322ceb9e25cf75ef6475752ebd03652f8e1cb691acc197d7803612610ed",
+      "channels_shared_with_pivoted": 886,
+      "fit_scores_by_kind": {
+        "audio": {
+          "rel_l2": 0.4589960968941974,
+          "cos": 0.8657547588743099,
+          "cos_p05": 0.7591561296397151,
+          "r2": 0.7607017237717998,
+          "rows": 24320,
+          "width": 5376
+        },
+        "video": {
+          "rel_l2": 0.44980529088568755,
+          "cos": 0.8794129975753456,
+          "cos_p05": 0.7968726950287892,
+          "r2": 0.7310088734028726,
+          "rows": 3040,
+          "width": 5376
+        }
+      },
+      "holdout_scores_by_kind": {
+        "audio": {
+          "rel_l2": 0.4979039646044558,
+          "cos": 0.8498824450698431,
+          "cos_p05": 0.7250964710582595,
+          "r2": 0.7128026985618554,
+          "rows": 6400,
+          "width": 5376
+        },
+        "video": {
+          "rel_l2": 0.5374588032332964,
+          "cos": 0.8235939703111262,
+          "cos_p05": 0.7218366892648176,
+          "r2": 0.6150668095965389,
+          "rows": 800,
+          "width": 5376
+        }
+      }
+    },
+    {
+      "arm": "prior_only",
+      "fit_scores": {
+        "rel_l2": 0.32024969688737204,
+        "cos": 0.9429444328760777,
+        "cos_p05": 0.9089356623801828,
+        "r2": 0.8909727036666508,
+        "rows": 27360,
+        "width": 5376
+      },
+      "holdout_scores": {
+        "rel_l2": 0.3306371923838406,
+        "cos": 0.939716891130178,
+        "cos_p05": 0.9056913514590561,
+        "r2": 0.8834854301666065,
+        "rows": 7200,
+        "width": 5376
+      },
+      "child_mlp_parameters": 57802752,
+      "down_proj": "parent columns verbatim (no refit)",
+      "selected_channels_sha256": "3032ab0ba49e0804ef3591e7aae2500def4d9d0270091602477a0e3646c8af70",
+      "channels": "the pivoted selection (same channels as replace)",
+      "fit_scores_by_kind": {
+        "audio": {
+          "rel_l2": 0.26668117559792703,
+          "cos": 0.944946596541851,
+          "cos_p05": 0.9147818532726776,
+          "r2": 0.9192195427571823,
+          "rows": 24320,
+          "width": 5376
+        },
+        "video": {
+          "rel_l2": 0.3501967907660033,
+          "cos": 0.9269271235498922,
+          "cos_p05": 0.8743721070421636,
+          "r2": 0.8369528700800355,
+          "rows": 3040,
+          "width": 5376
+        }
+      },
+      "holdout_scores_by_kind": {
+        "audio": {
+          "rel_l2": 0.29829504354199066,
+          "cos": 0.9411983071172446,
+          "cos_p05": 0.9093224309365101,
+          "r2": 0.896918373992735,
+          "rows": 6400,
+          "width": 5376
+        },
+        "video": {
+          "rel_l2": 0.34707726910119074,
+          "cos": 0.9278655632336449,
+          "cos_p05": 0.872338521935302,
+          "r2": 0.8394732766487276,
+          "rows": 800,
+          "width": 5376
+        }
+      }
+    }
+  ],
+  "measured": {
+    "holdout_group": "clip",
+    "holdout_group_axis": "video",
+    "holdout_scores_replace": {
+      "rel_l2": 0.3420417361749667,
+      "cos": 0.9635819437022611,
+      "cos_p05": 0.9083347638156938,
+      "r2": 0.8753090219101414,
+      "rows": 7200,
+      "width": 5376
+    },
+    "fit_scores_replace": {
+      "rel_l2": 0.1390008151739212,
+      "cos": 0.9802049619797236,
+      "cos_p05": 0.957869937306647,
+      "r2": 0.9794603763259028,
+      "rows": 27360,
+      "width": 5376
+    },
+    "per_arm_holdout": {
+      "replace": {
+        "rel_l2": 0.3420417361749667,
+        "cos": 0.9635819437022611,
+        "cos_p05": 0.9083347638156938,
+        "r2": 0.8753090219101414,
+        "rows": 7200,
+        "width": 5376
+      },
+      "control": {
+        "rel_l2": 1.4352454734443503,
+        "cos": -0.0007247401496305325,
+        "cos_p05": -0.02142545077735489,
+        "r2": -1.1954785525135834,
+        "rows": 7200,
+        "width": 5376
+      },
+      "random_select": {
+        "rel_l2": 0.5238020115514004,
+        "cos": 0.8469615034299858,
+        "cos_p05": 0.7249031662013651,
+        "r2": 0.7075772540257987,
+        "rows": 7200,
+        "width": 5376
+      },
+      "prior_only": {
+        "rel_l2": 0.3306371923838406,
+        "cos": 0.939716891130178,
+        "cos_p05": 0.9056913514590561,
+        "r2": 0.8834854301666065,
+        "rows": 7200,
+        "width": 5376
+      }
+    },
+    "per_arm_holdout_by_kind": {
+      "replace": {
+        "audio": {
+          "rel_l2": 0.20100903727780386,
+          "cos": 0.9706072263666846,
+          "cos_p05": 0.9366640925111257,
+          "r2": 0.9531919711073797,
+          "rows": 6400,
+          "width": 5376
+        },
+        "video": {
+          "rel_l2": 0.3986767409694252,
+          "cos": 0.9073796823868733,
+          "cos_p05": 0.8344338262159993,
+          "r2": 0.788194713017371,
+          "rows": 800,
+          "width": 5376
+        }
+      },
+      "control": {
+        "audio": {
+          "rel_l2": 1.3718995670368368,
+          "cos": -0.0005221948912450498,
+          "cos_p05": -0.020978788644490577,
+          "r2": -1.180388205753784,
+          "rows": 6400,
+          "width": 5376
+        },
+        "video": {
+          "rel_l2": 1.4687852425089865,
+          "cos": -0.0023451022167143964,
+          "cos_p05": -0.024876926795022843,
+          "r2": -1.8748262280419001,
+          "rows": 800,
+          "width": 5376
+        }
+      },
+      "random_select": {
+        "audio": {
+          "rel_l2": 0.4979039646044558,
+          "cos": 0.8498824450698431,
+          "cos_p05": 0.7250964710582595,
+          "r2": 0.7128026985618554,
+          "rows": 6400,
+          "width": 5376
+        },
+        "video": {
+          "rel_l2": 0.5374588032332964,
+          "cos": 0.8235939703111262,
+          "cos_p05": 0.7218366892648176,
+          "r2": 0.6150668095965389,
+          "rows": 800,
+          "width": 5376
+        }
+      },
+      "prior_only": {
+        "audio": {
+          "rel_l2": 0.29829504354199066,
+          "cos": 0.9411983071172446,
+          "cos_p05": 0.9093224309365101,
+          "r2": 0.896918373992735,
+          "rows": 6400,
+          "width": 5376
+        },
+        "video": {
+          "rel_l2": 0.34707726910119074,
+          "cos": 0.9278655632336449,
+          "cos_p05": 0.872338521935302,
+          "r2": 0.8394732766487276,
+          "rows": 800,
+          "width": 5376
+        }
+      }
+    },
+    "per_arm_fit_by_kind": {
+      "replace": {
+        "audio": {
+          "rel_l2": 0.14970861772116334,
+          "cos": 0.9792103373897644,
+          "cos_p05": 0.9571090168336848,
+          "r2": 0.9745425331932844,
+          "rows": 24320,
+          "width": 5376
+        },
+        "video": {
+          "rel_l2": 0.13170824307388082,
+          "cos": 0.9881619586993994,
+          "cos_p05": 0.9720898070763233,
+          "r2": 0.9769370558269439,
+          "rows": 3040,
+          "width": 5376
+        }
+      },
+      "control": {
+        "audio": {
+          "rel_l2": 1.3153237332757688,
+          "cos": -0.00016403197751195387,
+          "cos_p05": -0.02084084343819768,
+          "r2": -0.9651101467801004,
+          "rows": 24320,
+          "width": 5376
+        },
+        "video": {
+          "rel_l2": 1.476371935358465,
+          "cos": -0.002158009594170331,
+          "cos_p05": -0.023895185851466424,
+          "r2": -1.8978799946185831,
+          "rows": 3040,
+          "width": 5376
+        }
+      },
+      "random_select": {
+        "audio": {
+          "rel_l2": 0.4589960968941974,
+          "cos": 0.8657547588743099,
+          "cos_p05": 0.7591561296397151,
+          "r2": 0.7607017237717998,
+          "rows": 24320,
+          "width": 5376
+        },
+        "video": {
+          "rel_l2": 0.44980529088568755,
+          "cos": 0.8794129975753456,
+          "cos_p05": 0.7968726950287892,
+          "r2": 0.7310088734028726,
+          "rows": 3040,
+          "width": 5376
+        }
+      },
+      "prior_only": {
+        "audio": {
+          "rel_l2": 0.26668117559792703,
+          "cos": 0.944946596541851,
+          "cos_p05": 0.9147818532726776,
+          "r2": 0.9192195427571823,
+          "rows": 24320,
+          "width": 5376
+        },
+        "video": {
+          "rel_l2": 0.3501967907660033,
+          "cos": 0.9269271235498922,
+          "cos_p05": 0.8743721070421636,
+          "r2": 0.8369528700800355,
+          "rows": 3040,
+          "width": 5376
+        }
+      }
+    },
+    "holdout_rows_by_kind": {
+      "audio": 6400,
+      "video": 800
+    },
+    "fit_rows_by_kind": {
+      "audio": 24320,
+      "video": 3040
+    },
+    "headline_kind": "the pooled 'av' holdout is 89% audio rows ({'audio': 6400, 'video': 800}); read per_arm_holdout_by_kind for the kind the S7 path will drive",
+    "solver": "cholesky",
+    "ace_block12_reference": {
+      "rel_l2": 0.5442424558949278,
+      "cos": 0.8415188270864858,
+      "source": "media/receipts/c16_L12_v4/c16_receipt.json holdout_scores (clip-aligned window)"
+    },
+    "reading": "holdout_scores are on rows held out by CLIP (group axis above; the membership row [video clip, parent audio clip] is re-derived per row and no fit row touches a held-out clip); one seed, one window, error bar unswept. The arms share the holdout so replace / control / random_select / prior_only are comparable to each other; they are the MLP-level analogues of the T1 arms, not the chart-level arms of the S7 install. prior_only scores the PIVOTED channels with the parent's down_proj columns verbatim; random_select scores its own random channels."
+  },
+  "rows": {
+    "captured": 40704,
+    "used": 34560,
+    "fit": 27360,
+    "holdout": 7200,
+    "selection": "av",
+    "sigmas": [
+      0.6315789222717285,
+      0.8780487775802612,
+      0.9523809552192688,
+      0.9882352948188782
+    ],
+    "steps": [
+      "/mnt/lexar/omni-campaign/media/h3_blocks/step00/L25.safetensors",
+      "/mnt/lexar/omni-campaign/media/h3_blocks/step01/L25.safetensors",
+      "/mnt/lexar/omni-campaign/media/h3_blocks/step02/L25.safetensors",
+      "/mnt/lexar/omni-campaign/media/h3_blocks/step03/L25.safetensors"
+    ]
+  },
+  "sigma_grid_consumed": {
+    "sigma_grid": "shifted",
+    "sigmas": [
+      0.631578947368421,
+      0.8780487804878049,
+      0.9523809523809523,
+      0.9882352941176471
+    ],
+    "sigmas_in_rows": [
+      0.6315789222717285,
+      0.8780487775802612,
+      0.9523809552192688,
+      0.9882352948188782
+    ],
+    "coverage_note": null
+  },
+  "capture_deviations": null,
+  "capture_stimulus_arms": null,
+  "grouping": {
+    "grouped_by": "clip",
+    "group_axis": "video",
+    "group_by_requested": "auto",
+    "group_id": "video clip id (audio clip id where a forward has no video rows)",
+    "video_clips_with_several_audio_partners": 0,
+    "audio_clips_with_several_video_partners": 0,
+    "axis_rule": "group by video iff every audio clip pairs with one video clip; by audio iff every video clip pairs with one audio clip; the same pair recurring per sigma step is not a share",
+    "groups": 48,
+    "forwards": 192,
+    "rows_before_drop": 40704,
+    "rows_used": 34560,
+    "text_rows_dropped": 6144,
+    "rows_selection": "av",
+    "membership_checked": true,
+    "membership": "[video_clip, AUDIO_CLIP_OFFSET + audio_clip] per row, re-derived from the rows of each forward",
+    "guarantee": "row-level clip-pair disjointness (no video clip and no audio clip has rows on both sides); with one forward = one clip pair this is also independence of the activations -- read receptive_field"
+  },
+  "receptive_field": {
+    "attention_receptive_field": "one packed forward [text | audio | video] (every H3 block is full attention over the packed sequence), so a token's activation is a function of every row of its forward",
+    "forward_is_single_clip_pair": true,
+    "reading": "each forward is exactly one video clip and one audio clip, so an activation carries no content from any other clip and a clip-pair-grouped holdout is independent of the fit"
+  },
+  "stored_parity": {
+    "rel_l2": 0.0023984194502158556,
+    "cos": 0.9999971010596006,
+    "cos_p05": 0.9999963543644207,
+    "r2": 0.9999938870112327,
+    "rows": 34560,
+    "width": 5376,
+    "reading": "stored (bf16) mlp_out vs the fp32 recompute from the verbatim block weights: the storage rounding, not a fit"
+  },
+  "capture": {
+    "receipt": "/mnt/lexar/omni-campaign/media/h3_blocks/capture_receipt.json",
+    "block_weights": "/mnt/lexar/omni-campaign/media/h3_blocks/blocks/L25.safetensors",
+    "block_weights_sha256": "3a34bace2a3ba2911af20127870339b4a8dc274d52a221db0ef275e8942075cf",
+    "compute_dtype": "torch.float32",
+    "mlp_parity": {
+      "rows": 212,
+      "rel_l2": 0.0,
+      "max_abs_diff": 0.0,
+      "reference": "mediafold.c16_h3.mlp_reference (fp32) vs the container's mlp.forward",
+      "tolerance": 0.001,
+      "pass": true
+    },
+    "residency": {
+      "resident": true,
+      "off_device": [],
+      "off_device_count": 0,
+      "numel": 20111438744,
+      "dtype_numel": {
+        "torch.float32": 45037720,
+        "torch.bfloat16": 20066401024
+      }
+    },
+    "vram_after_load": {
+      "device": "cuda:0",
+      "allocated_bytes": 40395429376,
+      "reserved_bytes": 40508588032,
+      "max_allocated_bytes": 40395429376,
+      "free_bytes": 4926144512,
+      "total_bytes": 47558819840
+    }
+  },
+  "wall_seconds": 584.3642101287842,
+  "runtime": {
+    "python": "3.12.3 (main, Jun 19 2026, 12:46:00) [GCC 13.3.0]",
+    "platform": "Linux-7.0.0-30-generic-x86_64-with-glibc2.39",
+    "cwd": "/home/cereal/omni-campaign",
+    "torch": "2.11.0+cu128",
+    "torch_cuda": "12.8",
+    "cuda_available": true,
+    "nvidia_smi": [
+      "0, NVIDIA GeForce RTX 3090, GPU-4ead7f3a-cc79-fa5b-de42-ef024e27f561, 26 MiB",
+      "1, Tesla P40, GPU-c95fb5b3-f97c-bfb2-9760-79fe107ffe6d, 7 MiB",
+      "2, Tesla P40, GPU-a92b0dfe-83f8-11ff-db0d-c65921f365b4, 7 MiB",
+      "3, Tesla P40, GPU-08b615f9-8dbe-3edd-d59f-f6ebe8212ca8, 7 MiB",
+      "4, NVIDIA GeForce RTX 3090, GPU-2ce6a95c-7b1f-644a-3808-d781732a0582, 18 MiB",
+      "5, Tesla P40, GPU-ce4a1da0-baa8-3d62-419c-a28f6565610f, 7 MiB",
+      "6, Quadro RTX 8000, GPU-f5a09535-fc85-a027-50f7-734b344747dd, 39986 MiB"
+    ]
+  },
+  "argv": {
+    "captures": "/mnt/lexar/omni-campaign/media/h3_blocks",
+    "block": 25,
+    "steps": "all",
+    "keep": 3584,
+    "rows": "av",
+    "group_by": "auto",
+    "holdout_fraction": 0.2,
+    "seed": 0,
+    "arms": "replace,control,random_select,prior_only",
+    "dtype": "float32",
+    "out": "/mnt/lexar/omni-campaign/media/h3_block_coreset_v1fix",
+    "receipt_copy": "/home/cereal/omni-campaign/composite/media/h3_block_coreset_v1fix"
+  },
+  "source_sha256": {
+    "/home/cereal/omni-campaign/media/c16_h3_coreset.py": "98e833d7306118700f0541bcba85d893f1e4a1d6b8edf85f659bd1bcf38d2dd6",
+    "/home/cereal/omni-campaign/media/mediafold/c16_h3.py": "5701a22159d5a80815c5c3f60377fb75dada0fa7f4e6b019915b2a518b9cc1b1",
+    "/home/cereal/omni-campaign/media/mediafold/c16_transplant.py": "217c04555c9fb3cca59eb7c29e7795bf23ed4310348503e0e92c5fb578d78874"
+  }
+}

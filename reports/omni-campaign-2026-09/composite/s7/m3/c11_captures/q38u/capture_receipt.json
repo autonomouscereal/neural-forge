@@ -1,0 +1,1309 @@
+{
+  "argv": [
+    "/tools/m3_c11_qvl_capture.py",
+    "--parent",
+    "/parent",
+    "--prefix",
+    "model.visual.",
+    "--images",
+    "/out/images.txt",
+    "--out",
+    "/out/q38u",
+    "--device",
+    "cuda:0"
+  ],
+  "compute": {
+    "device": "cuda:0",
+    "dtype": "float32 (BF16 weights widened exactly)",
+    "gpu": "Tesla P40",
+    "tf32": false,
+    "torch": "2.8.0+cu126"
+  },
+  "config": {
+    "depth": 27,
+    "hidden_size": 1152,
+    "in_channels": 3,
+    "intermediate_size": 4304,
+    "num_heads": 16,
+    "num_position_embeddings": 2304,
+    "out_hidden_size": 5120,
+    "patch_size": 16,
+    "spatial_merge_size": 2,
+    "temporal_patch_size": 2
+  },
+  "deepstack_tensors_not_run": 0,
+  "images": [
+    {
+      "file": "img0000.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/3D/codex_gpu6_clean_knight_hy3d21_textured/Albedo_0.png",
+      "image_sha256": "f847ceabae60c6e64398be23858bed087f373a5baae319b15afd5dff2d47b78b",
+      "index": 0,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0001.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/gauntlet_sol_batch002/S01-DANIEL-PLANS-SOL-002/frames_00063_.png",
+      "image_sha256": "e71cf9e434cc13ccb80aee2e856d0fc1705794984449653c58f61314e75a1482",
+      "index": 1,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0002.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/ice_h3_realesrgan/1d2583daa4eba46a/frame_00049_00001_.png",
+      "image_sha256": "42d41e46298b5d638f6e2f65adeed337c3ac168c65c4c38cbf348df2655be938",
+      "index": 2,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0003.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/ice_h3_realesrgan/39a4433137065da3/frame_00124_00001_.png",
+      "image_sha256": "9fb2ad125e0bdaa30d4b80a7e00a26492c2fc96f5df95a40a455ff8ddfde3b06",
+      "index": 3,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0004.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/ice_h3_realesrgan/672fc875220ec98b/frame_00103_00001_.png",
+      "image_sha256": "104bdf3378089e9b0cd68255e5d0e2c794b1aa0b6376685f703e2d0e17043674",
+      "index": 4,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0005.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/ice_h3_realesrgan/87cf7eda75876311/frame_00004_00001_.png",
+      "image_sha256": "b6824680672ba4afdac59804771b9b0a00f0bae0c2213209be4d31088ed8489c",
+      "index": 5,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0006.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/ice_h3_realesrgan/a58b3ab12c6b495c/frame_00015_00001_.png",
+      "image_sha256": "f15fe9dd23cc7706fdffd3d21b4bbb8ddd81493a5787d23a1a8bbaaf62586709",
+      "index": 6,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0007.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/ice_h3_realesrgan/c5cd05492d5811ff/frame_00033_00001_.png",
+      "image_sha256": "cc478c2ee23a0abb4e45ac48070a945193c536589b4cfb5ddbf62aba01ffc868",
+      "index": 7,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0008.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/ice_h3_realesrgan/ea958b103fbda5d4/frame_00009_00001_.png",
+      "image_sha256": "2b7a4aebfb90387663e140e126fbd3b4eac8e969f3d7ed6b9cb51c52527f0114",
+      "index": 8,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0009.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/breck-b1g-identity-final-v6-natural-pickup-107f-i2va-gpu4-20260901-8e27fad6_20260901T104638Z_1da8fdf5/seed-1517011974_lossless_frames_00074_.png",
+      "image_sha256": "b25a4622f74caa73e2129dfdc94610cf58d94f74028d3931eab2d37cabb4e46b",
+      "index": 9,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0010.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/breck-shot06-final-chord-micro-expression-107f-576x864-r4_20260830T131547Z_fed16940/seed-2026083043_lossless_frames_00095_.png",
+      "image_sha256": "f6c140fa28f1cf92023d8ab2f48cf4355b487d54a8b0578a7416e9b9270c275e",
+      "index": 10,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0011.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/gpu0_regular_judge1_contact_right_ready_to_impact/seed-2026082124_lossless_frames_00038_.png",
+      "image_sha256": "6f5b7f1dcc5e3cb4dff277d88701a926a2c2e24a422c5b91189e97353254ed01",
+      "index": 11,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0012.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/h3_run/seed-2026087077_lossless_frames_00050_.png",
+      "image_sha256": "efb5576e6d1a1c43c214d3a03eaca56b45ad0c446d9305b954815e2c19ab331f",
+      "index": 12,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0013.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/h3_run/seed-2026092001_lossless_frames_00062_.png",
+      "image_sha256": "5fe8198db5cbc8809dbf77e0ea4b8ae02707b2fe6336eea1d7c014381d1d9b26",
+      "index": 13,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0014.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/h3_run/seed-2026092107_lossless_frames_00074_.png",
+      "image_sha256": "714bc36f128f0c722d40f2c7bab58fe3e1475591d6c8f1d49131b7b07293af28",
+      "index": 14,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0015.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/h3_run/seed-2026092119_lossless_frames_00086_.png",
+      "image_sha256": "eb9473a93c89d52b74766ebe2e013623a4263e22431a6cd6a7d4eb9639fdcc0e",
+      "index": 15,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0016.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/h3_run/seed-2026092300_lossless_frames_00098_.png",
+      "image_sha256": "0c09e80473a1a1d2c15993a7ce684d471c3c587a52d882edbe384a33d11c7555",
+      "index": 16,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0017.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/h3_run/seed-2026092315_lossless_frames_00110_.png",
+      "image_sha256": "8b7ef1a0fa777eeb87b986ba39b6b13e01c2f79e7104edb44f176cd39ef520e5",
+      "index": 17,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0018.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/h3_run/seed-2026092327_lossless_frames_00122_.png",
+      "image_sha256": "4ac8aa033aa91049f2a6ea36b6e52ae14edeb9abd4860bb16097a82d922a8558",
+      "index": 18,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0019.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/h3_run/seed-2026092342_lossless_frames_00010_.png",
+      "image_sha256": "467840095110c7f8ec3fd973f37a97398791c2d7138ac8eb55197980cab6b7bb",
+      "index": 19,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0020.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/h3_run/seed-2026092354_lossless_frames_00022_.png",
+      "image_sha256": "e581a63dd09790514f75616cf11c8f4950fba8c8cddb817c6b764fd00834fd3b",
+      "index": 20,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0021.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/h3_run/seed-2026092370_lossless_frames_00034_.png",
+      "image_sha256": "a196bb343308dbd815b8b2ec77ccd3495ac6097730e1e4589112f364b39b9e35",
+      "index": 21,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0022.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/h3_run/seed-2026092384_lossless_frames_00046_.png",
+      "image_sha256": "0b280bba9aed2b6a2e8e1f1e9bac2f5be65dbfb2a7c00c7ca10b664f23c3ed5c",
+      "index": 22,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0023.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/h3_run/seed-2026092396_lossless_frames_00058_.png",
+      "image_sha256": "b6cec0f93334abe42a72c828156a8f308af8fa41962d5c70b2ae7deaad9c0de0",
+      "index": 23,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0024.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/h3_run/seed-2026092414_lossless_frames_00070_.png",
+      "image_sha256": "5bfcc8f621b090bda6571747ec4091396814840bbf03461140193faaa2051c5e",
+      "index": 24,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0025.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/h3_run/seed-2026092428_lossless_frames_00082_.png",
+      "image_sha256": "1f06ee7529793fcdd1937907cb400988b18025f4f01179a91649c9afc38cdb2d",
+      "index": 25,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0026.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/h3_run/seed-2026092444_lossless_frames_00094_.png",
+      "image_sha256": "6dc48bd9295b3215dfe8ccc82bc1b0473f7c4b92fab48cda6b934b532ed7df44",
+      "index": 26,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0027.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/h3_run/seed-2026092456_lossless_frames_00106_.png",
+      "image_sha256": "3a549d5579c069142432fbac4567b9adcbab4e213da92cb0f3fc7dcac68f45f0",
+      "index": 27,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0028.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/h3_run/seed-2026092468_lossless_frames_00118_.png",
+      "image_sha256": "61e8751e0951c2f874c09ec85d5ec2fbc511c46a7812fd8a908a8be49b56dd67",
+      "index": 28,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0029.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/h3_run/seed-2026092481_lossless_frames_00006_.png",
+      "image_sha256": "267e996793749270cdfdc840addd5e41e23356d892d1a632e0d867b92b3b94ce",
+      "index": 29,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0030.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/h3_run/seed-2026092502_lossless_frames_00018_.png",
+      "image_sha256": "745ca5739e82ebf0ab36060f02b3f0caffb4e093fef3be03a1b332e175487197",
+      "index": 30,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0031.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/h3_run/seed-2026093001_lossless_frames_00030_.png",
+      "image_sha256": "cf029cc856826e96593ad3fbd54aac6531613ecf24b86e7f4cdee48e56ba6d84",
+      "index": 31,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0032.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/h3_run/seed-2026093305_lossless_frames_00042_.png",
+      "image_sha256": "869fa23e097c9184b6e20c0df7a170bbb15aaf97e106a08e49c8f069ebd4a61f",
+      "index": 32,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0033.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/h3_run/seed-2026093379_lossless_frames_00054_.png",
+      "image_sha256": "a9125245d4da9345e5314538abfe559c8760c9c3052bfda9578375f69bdff480",
+      "index": 33,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0034.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/h3_run/seed-2026093441_lossless_frames_00066_.png",
+      "image_sha256": "61fec51cbd6e43a4d87c5aa8d16d201dcd6322c393616fa8ef16993efe4f4435",
+      "index": 34,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0035.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/h3_run/seed-2026094300_lossless_frames_00078_.png",
+      "image_sha256": "7b239db97eb10cf1e791495dc1fc87d3410caa2888843e9133df764a7bd95c01",
+      "index": 35,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0036.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/h3_run/seed-2026109961_lossless_frames_00090_.png",
+      "image_sha256": "01b5ae20ac18301156dae0caec964bef6e188aa6f8a084b5ff78f6c7dbe11c21",
+      "index": 36,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0037.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-border-primary-down-body-mechanical-v018-gpu0_20260818T084711Z_3c91d5b8/seed-2026082201_lossless_frames_00102_.png",
+      "image_sha256": "296feb550f7327f10de679b696f1c08ac854c4b6c458d7c10ab5a15400b2fbb6",
+      "index": 37,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0038.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-border-r-prime-up-centerline-seat-alt-v095-gpu4_20260819T143627Z_6535c692/seed-2026089502_lossless_frames_00114_.png",
+      "image_sha256": "99db88b7c9268286967319b17f8d5d5c9c4d907b5d0ab26c6c7943ad38cd2685",
+      "index": 38,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0039.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-border-sniper-r-prime-down-endpoint-scout-v082-gpu0_20260819T105713Z_a7046c08/seed-2026088201_lossless_frames_00002_.png",
+      "image_sha256": "c78994d0862d81911235ce7e59fa20405e54208562472cc531adf93e3f0d44f8",
+      "index": 39,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0040.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-border-sniper-r-release-down-body-only-biomechanics-v071-gpu0_20260819T084226Z_5aedf21a/seed-2026087101_lossless_frames_00014_.png",
+      "image_sha256": "bb2da2e354c115b71faec00aa20c8360fe326b3277a46626faa70789050750e2",
+      "index": 40,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0041.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-cart-ram-karen-ram-up-pass-a-v267-gpu0-3090_20260824T001359Z_af5d285d/seed-2026082671_lossless_frames_00026_.png",
+      "image_sha256": "efe9d571166d9b8f8fbe54b759ef951c2fa913047a171f879d95fcd0f70f6123",
+      "index": 41,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0042.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-cart-ram-karen-up-b-to-a-v114-gpu4-3090_20260820T152119Z_f4e0901d/seed-2026082041_lossless_frames_00038_.png",
+      "image_sha256": "573e052a5537921b7ce39d8524f953af6b3bb1309ae940b78852b202964318b5",
+      "index": 42,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0043.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-cart-ram-karen-windup-up-pass-a-v258-gpu0-3090_20260823T231702Z_c08a616c/seed-2026082581_lossless_frames_00050_.png",
+      "image_sha256": "b0c4c28ea1648b365db827ea32ff6b11d20e08f79b5fe076fbf87f71d3c565d4",
+      "index": 43,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0044.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-commander-e-right-pure-relax-v019-gpu0_20260818T105156Z_3f914886/seed-2026082113_lossless_frames_00062_.png",
+      "image_sha256": "05fd6758fdf59ad5cc3d1910cc0824f56c06299bff17a42b3ef4928c984ef002",
+      "index": 44,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0045.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-commander-q-down-squad-rally-current-camera-v047-gpu4_20260819T000713Z_e8b82a55/seed-2026084702_lossless_frames_00074_.png",
+      "image_sha256": "7ba2c00e0bbf2e355f9a1fc1ed8be16c9af03013e55767328531aa9e8134eda7",
+      "index": 45,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0046.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-district-judge-attack-down-empty-shaft-a-to-b-v115-gpu0-3090_20260820T154156Z_b77a40a2/seed-2026082042_lossless_frames_00086_.png",
+      "image_sha256": "250fd5d340806a3fca5a8c0df681498fb2485bb6ce5300ab348561e9a9cd6ee3",
+      "index": 46,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0047.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-district-judge-attack-up-empty-shaft-a-to-b-v115-gpu0-3090_20260821T113357Z_e15f05d1/seed-2026082044_lossless_frames_00098_.png",
+      "image_sha256": "c3e2193d118df92d8d00ccd0b7cffc13eb0cb2e1e1be2a12a698acd7a31598dd",
+      "index": 47,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0048.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-district-judge-event-boss-slam-up-body-only-stage-a-v537-gpu4-3090_20260824T153549Z_adefde69/seed-2026085221_lossless_frames_00110_.png",
+      "image_sha256": "98e543a3ac8811db371481fde794da09c2ce1cc8c31ae6dc76ecda820d270a04",
+      "index": 48,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0049.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-district-judge-slam-right-body-v002-gpu0_20260817T204323Z_150ace98/seed-2026081478_lossless_frames_00122_.png",
+      "image_sha256": "6399b720d686fca4d7673a23221c6b22946006cc9a2511f5e00d9f420e0de906",
+      "index": 49,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0050.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-hostile-immigrant-illegal1-contact-down-stage-a-v526-gpu4-3090_20260824T150906Z_0c36f658/seed-2026085181_lossless_frames_00010_.png",
+      "image_sha256": "683ac2ba6f1c75c00dbfa8606f7b802e9e62aa0f9e39b884bee72139d7abe6a0",
+      "index": 50,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0051.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-immigrant-illegal1-contact-down-pass-a-official20-v661-gpu0-3090_20260826T130514Z_cc361dce/seed-2026086619_lossless_frames_00022_.png",
+      "image_sha256": "27a5b843eda44f5ec1121028a536fee285acabef4cee5a43020516867d113fd7",
+      "index": 51,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0052.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-immigrant-illegal1-contact-up-impact-to-ready-v135-gpu4-3090_20260821T021837Z_239daaed/seed-2026082113_lossless_frames_00034_.png",
+      "image_sha256": "a23c3a26b8c16ba53077c530b171353640c83f9db2dacd1db4925823c63e9228",
+      "index": 52,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0053.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-immigrant-illegal1-walk-up-b-to-a-placard-v136-gpu4-3090_20260821T024041Z_1ebca3e1/seed-2026082115_lossless_frames_00046_.png",
+      "image_sha256": "bf64230535ba42b0b5272171c9f6ff69365a60217c22701433e5fc63f0c6759e",
+      "index": 53,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0054.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-immigrant-illegal2-walk-down-pass-a-official20-v652-gpu4-3090_20260826T084316Z_7a241662/seed-2026086524_lossless_frames_00058_.png",
+      "image_sha256": "d40386b5c4b91e56f0e3ef2df93df24938213f1edb0973e73626fda8540b0cd1",
+      "index": 54,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0055.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-karen1-contact-right-body-v001-gpu4_20260817T234613Z_3b258588/seed-2026081490_lossless_frames_00070_.png",
+      "image_sha256": "88cf744271db4b19039a108a4472780318ab83628f31746a8a2cc6b1630f5061",
+      "index": 55,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0056.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-karen-karen1-contact-up-forward-depth-impact-to-ready-v123-retry-gpu4-3090_20260820T201422Z_3b033933/seed-2026082074_lossless_frames_00082_.png",
+      "image_sha256": "dbb3e065291066a5f885823c4fc104dce0324891a9a3287ac65d6fe509a136c8",
+      "index": 56,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0057.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-karen-karen1-scream-walk-up-v109-altseed-gpu4_20260820T131218Z_0f3eea84/seed-2026082013_lossless_frames_00094_.png",
+      "image_sha256": "e3a7cadd9949e423842203b3ae757920091437468b87d9bc8079d6163ebdee2a",
+      "index": 57,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0058.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-karen-karen3-contact-up-forward-drive-v133-gpu4-3090_20260821T003922Z_921d7292/seed-2026082104_lossless_frames_00106_.png",
+      "image_sha256": "f41f61efa185a7834f72f74e5ecb75ddb79e440c7b72e372800782689375e3e7",
+      "index": 58,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0059.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-la-incumbent-mayor-permit-stampede-down-pass-a-official20-v642-gpu0-3090_20260826T050121Z_9af95e78/seed-2026086420_lossless_frames_00118_.png",
+      "image_sha256": "e23011feb240022430bb88cf392fd2500182c27f78004398dc2c078603d62a51",
+      "index": 59,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0060.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-lawyer-walk-down-pass-a-v311-gpu4-3090_20260824T041625Z_31fb7cef/seed-2026083111_lossless_frames_00006_.png",
+      "image_sha256": "d2a3af1c5f38d4d3bbae81cbfb6b46445e3a4af72aa95f39681de5d924042613",
+      "index": 60,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0061.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-player-walk-down-midpoint-scout-v083-gpu4_20260819T105713Z_29753165/seed-2026088302_lossless_frames_00018_.png",
+      "image_sha256": "d3b4610259d01db1de2502202afa277cdd6403f3ca8285ffab8085807259658f",
+      "index": 61,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0062.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-ranged-karen-karen2-idle-right-pass-b-return-v394-gpu4-3090_20260824T080524Z_1a1d6974/seed-2026083941_lossless_frames_00030_.png",
+      "image_sha256": "e6877f5dcb5806af7b4d47f7bc37ff870af9c9d31cf422d0b18005685e667127",
+      "index": 62,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0063.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-ranged-karen-karen2-walk-right-body-v002-gpu4_20260817T191229Z_d01724ce/seed-2026081473_lossless_frames_00042_.png",
+      "image_sha256": "7d1fee32448fa058897e8f390e9607bc898cbc57d6841cf410877560bdc895b4",
+      "index": 63,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0064.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-ranged-karen-karen4-throw-down-release-to-neutral-v124-gpu0-3090_20260820T200952Z_81df5853/seed-2026082073_lossless_frames_00054_.png",
+      "image_sha256": "4939f425e8a2b50d6f9503dcc6d9af3b8c2109ef813300b1ffc6b179e418d997",
+      "index": 64,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0065.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-red-tape-golem-down-neutral-to-crouch-v146-gpu0-3090_20260821T090618Z_a3f12a94/seed-2026082154_lossless_frames_00066_.png",
+      "image_sha256": "31b0d5811db0f8cf36d28d56ea8b3309b8f6ed0161809a77f527e849a96eccba",
+      "index": 65,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0066.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-regular-judge1-contact-down-neutral-to-impact-v147-gpu0-3090_20260821T094930Z_f1f7efe0/seed-2026082158_lossless_frames_00078_.png",
+      "image_sha256": "347c9de0d4b7133d6df9cb05952583b7701348013d7c498158c4de2079b2ece9",
+      "index": 66,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0067.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-regular-judge1-contact-right-ready-to-impact-v138-gpu0-3090_20260821T040218Z_512dca4a/seed-2026082120_lossless_frames_00090_.png",
+      "image_sha256": "2fc489e8ff3e0e5a70c8ebd1cb719e756c1b691a48df93e8a75e729134854276",
+      "index": 67,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0068.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-regular-judge2-contact-right-followthrough-to-ready-v140-gpu4-3090_20260821T052421Z_76ee1a93/seed-2026082131_lossless_frames_00102_.png",
+      "image_sha256": "66495c135ab6e591bcc349817da944293fc298eeac6a03ea58a67f74ef07d184",
+      "index": 68,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0069.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-regular-judge2-contact-up-pass-a-official20-v684_20260827T025403Z_f8661c40/seed-2026086841_lossless_frames_00114_.png",
+      "image_sha256": "1608def3d48f731483d925c254a335ee960ca0531b1fd9243e0306f6d7d038d5",
+      "index": 69,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0070.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-regular-judge-contact-down-return-b-grounded-pass-a-official20-v682-gpu0-309_20260826T232018Z_36b9ee4f/seed-2026086821_lossless_frames_00002_.png",
+      "image_sha256": "aa3ea3b49a7f6fa46eeb45eac9f52afef1ab6caefc0366d9e634c7f07721759d",
+      "index": 70,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0071.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-regular-judge-contact-up-impact-to-ready-v117-gpu4-3090_20260820T171921Z_692c0c0f/seed-2026082053_lossless_frames_00014_.png",
+      "image_sha256": "a0d5caaf5be5ac2861787766f2d205a7d0568240b698b61da55f30ab7f3f9ce9",
+      "index": 71,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0072.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-regular-judge-walk-down-pass-b-retry-v355-gpu4-3090_20260824T061730Z_5b2cc51b/seed-2026083551_lossless_frames_00026_.png",
+      "image_sha256": "4bf1485a6bc98694b0fb5a60b76258ad26bf723d14feed8498a06ff2bed9a50d",
+      "index": 72,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0073.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-riot-e-down-loop-close-clean-idle-v002_20260817T154155Z_ec896a52/seed-2026081451_lossless_frames_00038_.png",
+      "image_sha256": "654d23340c27ea5bf9a541e1207d394fc8201d09b9a71e25f4924de0ba943486",
+      "index": 73,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0074.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-riot-e-right-return-to-guard-v002_20260813T055016Z_212ba6c5/seed-2026081224_lossless_frames_00050_.png",
+      "image_sha256": "ff5bbd453871d98f6fccf57a8f375a3391cdcec932c0ff8219fb77dc4a861fdc",
+      "index": 74,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0075.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-riot-primary-up-return-to-guard-v002_20260814T032824Z_7bc5a56e/seed-2026081232_lossless_frames_00062_.png",
+      "image_sha256": "f8fa212412e418a4b20fd3a43abeaa81269d09fce42b66da797426fec862699a",
+      "index": 75,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0076.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-riot-r-up-body-only-prime-v001_20260817T171338Z_57a57e22/seed-2026081458_lossless_frames_00074_.png",
+      "image_sha256": "939b13a6642d0dd229adeadfe47c8964b1d276a51bba0aa36b2606d900af953d",
+      "index": 76,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0077.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-riot-secondary-right-body-anchored600-v008-gpu0_20260818T034636Z_04345bca/seed-2026081911_lossless_frames_00086_.png",
+      "image_sha256": "d69fce9ceb3b901c4a48c431c4828e9668c9d953e8d80d5a48eb49b43c2c9b0a",
+      "index": 77,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0078.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-riot-taser-fire-up-body-anchored600-v012-gpu4_20260818T094528Z_222be7d7/seed-2026081926_lossless_frames_00098_.png",
+      "image_sha256": "32b9b4e299cba790b319654b6c3cebfcce07c2234d0e8b93594502019ba3f532",
+      "index": 78,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0079.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-riot-tear-throw-right-body-anchored600-v007-gpu0_20260818T030020Z_06f34352/seed-2026081905_lossless_frames_00110_.png",
+      "image_sha256": "4c8029528a9c5b20dd90cdca00cc149f633d715b7862b1ef167729110c4a32db",
+      "index": 79,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0080.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/ice-zohran-mamdani-fare-free-bus-rush-right-pass-a-official20-v643-gpu4-3090_20260826T050121Z_3c7244dd/seed-2026086434_lossless_frames_00122_.png",
+      "image_sha256": "41fb9268224bfce68f53655dd337a83a1acf508a4c3c404da5871db2ef2e5049",
+      "index": 80,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0081.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/OPEN023_warm_native_01/seed-2026090823_lossless_frames_00144_.png",
+      "image_sha256": "fe7e0c5abb7ec8ef6ba931b63a93655d5c0ae734fcb0b3a31023ccd1f6843b38",
+      "index": 81,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0082.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/pair_v2_R01_09_native_01/seed-20260909109_lossless_frames_00064_.png",
+      "image_sha256": "d5bbda96ebe6aafe930f063198b5d43d08c40e417a5b0f103e925904a37fe1d0",
+      "index": 82,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0083.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/pair_v2_S01_001_native_02/seed-266600585_lossless_frames_00164_.png",
+      "image_sha256": "93424b4176fc268870897ebb92def51e6127d0378687d8a9e233520e09819f41",
+      "index": 83,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0084.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/pair_v2_S01_008_native_02/seed-661789185_lossless_frames_00038_.png",
+      "image_sha256": "22a65cca76932d42492a59806a42251c1834bcb25189353c6b6c2f879e04db46",
+      "index": 84,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0085.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/pair_v2_S01_012_native_02/seed-814862829_lossless_frames_00082_.png",
+      "image_sha256": "865b8f159fa5b6927d4ae8e3c12ab34e307f3f4c3f32aa4352ed502e35663804",
+      "index": 85,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0086.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/pair_v2_S01_022_native_03/seed-929284395_lossless_frames_00092_.png",
+      "image_sha256": "fff477638f697a1f8f07a55f98d226f46be2266b0b7f1b11bf45e5449dc1f857",
+      "index": 86,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0087.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/pair_v2_S06_001_native_01/seed-991563116_lossless_frames_00029_.png",
+      "image_sha256": "395beca21930334cc9376f86124fd365d4be042d6743307b415ef8133bbb47b3",
+      "index": 87,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0088.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/pair_v2_S11_025_native_01/seed-839575056_lossless_frames_00219_.png",
+      "image_sha256": "99f9b68ae6291fae3faa8aa795c9107f6d9f6b5ec06468e8316019c4886d02a5",
+      "index": 88,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0089.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/pair_v2_S30_018_native_01/seed-515884070_lossless_frames_00093_.png",
+      "image_sha256": "8f0cc41fd5ac3999584a7381198a3828f2a6826b5bff64e40ffb75038f2eb4bc",
+      "index": 89,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0090.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/pair_v2_S30_046_native_01/seed-497966170_lossless_frames_00137_.png",
+      "image_sha256": "162d973a579678fa1a83eef12338bbb1922b5927d1a001f95f2aa372132041bb",
+      "index": 90,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0091.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/pair_v2_S32_019_native_01/seed-793067385_lossless_frames_00198_.png",
+      "image_sha256": "238b595be0b13a6394c28b30705b3b2f42f7457225e1cb7b1c016004b039a542",
+      "index": 91,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0092.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/pair_v2_S33_020_native_01/seed-214926075_lossless_frames_00118_.png",
+      "image_sha256": "fd3ea956cadb25f2fd57ca2986d64cbd678c7625317e206e5c66cb65ecefa4d8",
+      "index": 92,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0093.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/pair_v2_S33_029_native_01/seed-804926568_lossless_frames_00135_.png",
+      "image_sha256": "8ecdb5d78a4b50d77bd8c90e0f73cf7fecc99353a1c5ccf664e1b76719889839",
+      "index": 93,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0094.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/pair_v2_S33_067_native_01/seed-523639906_lossless_frames_00089_.png",
+      "image_sha256": "1084d73f0c1500ae9eb4eb2dc70992c8892db3bba301fcadfd1a8d69ff0b5886",
+      "index": 94,
+      "merged_rows": 196,
+      "rows": 784
+    },
+    {
+      "file": "img0095.safetensors",
+      "grid_thw": [
+        1,
+        28,
+        28
+      ],
+      "image": "/home/cereal/comfyui/output/minimax_h3/pair_v2_S34_016_native_01/seed-390248905_lossless_frames_00167_.png",
+      "image_sha256": "b61078dd73b71e029cb0726dcb7f8fdf096a4195e884dbb0b102be81297e92ce",
+      "index": 95,
+      "merged_rows": 196,
+      "rows": 784
+    }
+  ],
+  "parent": "/parent",
+  "parent_code": {
+    "classes": "comfy.text_encoders.qwen35.Qwen35VisionModel + qwen_vl.process_qwen2vl_images",
+    "comfy_root": "/opt/ComfyUI",
+    "qwen35_py_sha256": "d0f2678b001726ac5996839006cabfc863188f424cd8198e3e42b808a884b7eb",
+    "qwen_vl_py_sha256": "3ac8d517b5adf33bd7c3c87c505cee79537dc5a3981a577f8d43bfe5eba80c16"
+  },
+  "parent_files": [
+    "/parent/model-00012-of-00012.safetensors"
+  ],
+  "prefix": "model.visual.",
+  "preprocess": {
+    "mean_std": [
+      0.5,
+      0.5
+    ],
+    "patch_size": 16,
+    "resize": "PIL bicubic 448x448",
+    "temporal": "frame duplicated to temporal_patch_size 2 (process_qwen2vl_images)"
+  },
+  "tool": "m3_c11_qvl_capture",
+  "tool_sha256": "7dc7cef4273e8276abb9314d3219ddae57cb69e80d011035aee9a2e3e24c6c58",
+  "tool_version": "1.0.0",
+  "wall_seconds": 28.747732400894165
+}

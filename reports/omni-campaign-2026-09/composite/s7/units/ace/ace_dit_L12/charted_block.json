@@ -1,0 +1,191 @@
+{
+  "accounting": {
+    "child_block_parameters": 34621952,
+    "child_mlp_parameters": 9437184,
+    "parent_block_parameters": 62933504,
+    "parent_mlp_parameters": 37748736
+  },
+  "holdout": {
+    "cos": 0.8415188270864858,
+    "cos_p05": 0.7799929815120936,
+    "r2": 0.6532203718005033,
+    "rel_l2": 0.5442424558949278,
+    "rows": 950,
+    "split_by": "clip (96 clips, 19 held out)",
+    "width": 2048
+  },
+  "insert_after": null,
+  "provenance": {
+    "ace_weights": "/home/cereal/comfyui/models/diffusion_models/acestep_v1.5_turbo.safetensors",
+    "capture_file": "capture_L12.safetensors",
+    "capture_receipt": "/home/cereal/omni-campaign/media/out/c16_L12_v4/c16_receipt.json",
+    "capture_receipt_sha256": "ebd8be41fbacf1a5b2f8f076c26ffd81a47089ad3d0f91a5f385bbe655563ce4",
+    "capture_sha256": "45bf9aa3cd5e0f85237451e5d973959fbea5abdd29f4bd19af5a9e334ad67d97",
+    "chart_file": "chart_ridge.safetensors",
+    "chart_sha256": "f883c6e8cbb799f61d03b461a07af41728479e00c424771e9fc1570a0d918e4f",
+    "charts_host128_reference": {
+      "file": "charts_host128.reference.safetensors",
+      "sha256": "84002ea37c2e9e424d21edef06170da5ebfb970cd0004670c38ded301370e6ad",
+      "shapes": {
+        "chart_in.bias": [
+          2048
+        ],
+        "chart_in.weight": [
+          2048,
+          128
+        ],
+        "chart_out.weight": [
+          128,
+          2048
+        ]
+      },
+      "why_not_installed": "chart_in.weight is [2048, 128]: fitted on the c16_transplant_run toy host (hidden 128), not the 5,120-wide S3 trunk; c16 would refuse it on shape at S7"
+    },
+    "dropped_tensors": [
+      "cross_attn.k_norm.weight",
+      "cross_attn.k_proj.weight",
+      "cross_attn.o_proj.weight",
+      "cross_attn.q_norm.weight",
+      "cross_attn.q_proj.weight",
+      "cross_attn.v_proj.weight",
+      "cross_attn_norm.weight"
+    ],
+    "folded_block_file": "folded_block_L12_keep1536.safetensors",
+    "folded_block_sha256": "38c357c82f85caafa45e4608dcbb0f264d8f61743e146212672da4641002aeec",
+    "prefix_depth_captured": 12,
+    "source_prefix": "decoder.layers.12.",
+    "source_tensor_sha256": {
+      "cross_attn.k_norm.weight": "e103849f375dcd73fa55b23a1fb646103bf06cb1685fb51f67e5949adea10736",
+      "cross_attn.k_proj.weight": "5c1c5ab13a7f7fb36bcd9a281c26539f94c465a4a23d3e78de5b350bac19f17a",
+      "cross_attn.o_proj.weight": "9ac42e45c585fff864a95a5306fc603ac6250c71551023022b064abcbd51e146",
+      "cross_attn.q_norm.weight": "4c8c9a089106344efb58da9fa7e34e828203675cfb7ff1fe3db64f649647b005",
+      "cross_attn.q_proj.weight": "b2a615dd4685241651de527c75398e61bcb80dd70badea798dda3dde657b33b1",
+      "cross_attn.v_proj.weight": "2cc6145a42d7b5de0a29107bff43d7deb8fdf92d06aef581ff98cb261a3183b0",
+      "cross_attn_norm.weight": "c239704ede849986957b126b93ac7c52e054ebb1830754d00aaa9a69507c2d1d",
+      "mlp.down_proj.weight": "0c3404ae76e6ed4ab0f9c32b128b6eb42a491c880379ca6c2091a120b0f06087",
+      "mlp.gate_proj.weight": "81c0d943d22bc14e011267be6e82b5d3453cfbdd3df7b15162b83b2e9ef64b9f",
+      "mlp.up_proj.weight": "4e4dc1c4c6287f7d2ae99a41fcd618adb43b8aa894e4243683cbd231cec0475b",
+      "mlp_norm.weight": "58bc0ea443b389de69ffec6783e85f77a480b66d946123ac4175906aa13e0b66",
+      "scale_shift_table": "87b5673ff23d44eac6838ebcbb089a0683dcbe809ca57bf96c5d1566d29e66d7",
+      "self_attn.k_norm.weight": "d788c1e35ea6dcb34850198eff55455307b41c35371fa96bf059024d82ca8fdd",
+      "self_attn.k_proj.weight": "2c3706169795392678e4fbd89064afb8bcb1a98dea9dab82545942c5a11da5ad",
+      "self_attn.o_proj.weight": "0052ad07dcf158d15f1f9b1a794ee053e67d8d820322a5cd10800284a346ec76",
+      "self_attn.q_norm.weight": "10b49f2ef03247fd931bb49cfb7635c479fdacb4c692e14239a49a2ebbca1d2b",
+      "self_attn.q_proj.weight": "0d0ed188ebe06c428a89bd273031fb2d40bb57be954752d3d1f504b5262c724f",
+      "self_attn.v_proj.weight": "1268ce55406263c1e32c84058c272c7d8d8ce740fd48e4f9def9e3e75cb2558c",
+      "self_attn_norm.weight": "af951079d091d9840c6473a588b9da4a7ee40f8c34b77baf6f707c00f2067dc9"
+    },
+    "source_weights": "/home/cereal/comfyui/models/diffusion_models/acestep_v1.5_turbo.safetensors"
+  },
+  "s7_unit": {
+    "built_by": "c16_install_media.convert_ace_run (unchanged) + chart set aside",
+    "canonical": {
+      "block_parameters_without_charts": 81838336,
+      "canonical_tensor_set": true,
+      "chart_parameters_at_hidden_5120": 20973568,
+      "installed_parameters_at_hidden_5120": 102811904,
+      "spec_mlp_parameter_count": 9437184
+    },
+    "charts_status": "MISSING at hidden 5120 (needs paired host/parent rows: --tap-rows <dir>/<unit>/paired_rows.safetensors)",
+    "component_4x": {
+      "meets_4x_component": true,
+      "mlp_compression_x": 4.0,
+      "mlp_ratio": 0.25,
+      "rule": "c16 components(): child MLP / parent MLP <= 0.25 registers as --component",
+      "whole_block_ratio_recorded_only": 0.550135457259777
+    },
+    "deviations": [
+      "cross_attn.* dropped (trunk is the context)",
+      "timestep_r = 0 as captured"
+    ],
+    "source": "ACE",
+    "time_reference_conversion_rel_l2": 1.1816756995131072e-07,
+    "tool": "s7_unit_build",
+    "tool_version": "1.0.0"
+  },
+  "schema": "chimera_omni.composite.charted_block.v1",
+  "spec": {
+    "attn_bias": false,
+    "chart_in_bias": true,
+    "component": "ace.dit.block12.mlp",
+    "delta_scale": 1.0,
+    "head_dim": 128,
+    "heads": 16,
+    "kv_heads": 8,
+    "metadata": {
+      "converted_from": "/home/cereal/omni-campaign/media/out/c16_L12_v4",
+      "cross_attention": "dropped",
+      "layer_type": "sliding_attention",
+      "timestep_r": "0.0 as captured; time_embed_r is evaluated at the trunk noise level (t - 0)"
+    },
+    "mlp_kind": "swiglu",
+    "mlp_width": 1536,
+    "modulation": "adaln6",
+    "norm_affine": true,
+    "norm_eps": 1e-06,
+    "norm_kind": "rms",
+    "qk_norm": true,
+    "rope_theta": 1000000.0,
+    "rung": "latents",
+    "sliding_window": 128,
+    "source": "ace",
+    "source_depth_fraction": 0.5217391304347826,
+    "time_embed_r": true,
+    "time_factor": 1000.0,
+    "time_freq_dim": 256,
+    "time_hidden": 2048,
+    "type_ids": [
+      4
+    ],
+    "width": 2048
+  },
+  "tensor_sha256": {
+    "charted_block.safetensors": {
+      "attn.k_norm.weight": "f293ed92a82eea0eab2ec7a89c686df490d56d31b9b3e1049dba7ab4014f2a8a",
+      "attn.k_proj.weight": "07b67fa052a1684a8ff2f331034e0746caf73cb8343cbd128759ca89541a0e47",
+      "attn.o_proj.weight": "295dd16cfc4c29f82bd8c67fd5b54e00d0271cc0095f0c3b377326c479403150",
+      "attn.q_norm.weight": "e2e2f1929a42e7df8e94b5f9e9ab26642eb4ab0ee2101b9f0cdb6f43b4686d41",
+      "attn.q_proj.weight": "04183933906d10de2481e7d4ad1592a970146b30b0930d764240fc47f8f1b8b3",
+      "attn.v_proj.weight": "1bde06fb5da91a201669d8ec5e17927d203b905a2221d3c321e61516abe8ef6a",
+      "attn_norm.weight": "be95bf8855a28cae2d32471fd850f05dd130e2023b5b13d3ef054bbaa434236c",
+      "mlp.down_proj.weight": "9b0bf2e4eb228e52e47e33ccebb485903b29a6e60bfe9b382f2d5da7542969e8",
+      "mlp.gate_proj.weight": "b292cb789413f6ca4a9b0ef3e66cd6b2e8d6c2c52aedc4d7e5fc2536e627101e",
+      "mlp.up_proj.weight": "dbbeb2bad9012fc22ee55dce983826881cad9bb9b86d40238c46fb1a2539b1e9",
+      "mlp_norm.weight": "087d1f55334167d6ef2fe3c3215ab048f4c52db2aff8e6a03d862d90d5184429",
+      "scale_shift_table": "b95146b2925338d27df47df541f73d9e26b0985566aafd631157023d04c1f7af",
+      "time_embed.linear_1.bias": "774554286099f6e6a127c0f49d047b00ca589128472afb5fd6f5d26bc7dbfb18",
+      "time_embed.linear_1.weight": "0a2ccf70f9473ee9f6fcdd9899e1af11efbe29bfc8b3c0d008088acd4ed00978",
+      "time_embed.linear_2.bias": "06c21696c62a31963aae2908457ae97fb72922ed5af816975d6d1441cd2f5eba",
+      "time_embed.linear_2.weight": "064b3ecb17d2154335d8e1ce2f4f0d1533745ea1ec416205810cd7d59b123297",
+      "time_embed.time_proj.bias": "1fb1208dbf680458a9a89bb63c5cb2d6cbac1c1861f7d8752364dd0b3afe1b6c",
+      "time_embed.time_proj.weight": "72cb9b7f5b3a1e035af58ec07b675cf8b18a2d1f0f9793c4e1d537c86f751df1",
+      "time_embed_r.linear_1.bias": "124285ef9be657390efb7a96ca0d1bf5fece684b8f3c0cb8d5e70c0f23c16bf7",
+      "time_embed_r.linear_1.weight": "79e2a31039838813638355d01cded56698f788beff6e72ebfa7eabd13a911007",
+      "time_embed_r.linear_2.bias": "7bae4abff4ace706560d432aaa049cff50a4f678edfaf871deb223f844eebcb0",
+      "time_embed_r.linear_2.weight": "00e65420584ad51d322ad5dd978f64b2767026332bd61523ab539220c0e4809a",
+      "time_embed_r.time_proj.bias": "fe90ed66250d5fd5c51ffb7b228598c8a1df3cdf8ee541ada60898c8dc7ecb54",
+      "time_embed_r.time_proj.weight": "a3c2d09ee55a9f8b221e33140a4261f89b3aada870558accd46c5bffd0d724f3"
+    },
+    "time_reference.safetensors": {
+      "modulation": "ea0bc02933031930a50edca1001f85feb566d400f2e27ec6f43983e14e86e28b",
+      "sigma": "bb588a311384e54e732fa740b0a3ae366511b74752b82cf47149897a9a33ac21"
+    }
+  },
+  "time_reference": {
+    "chunk_norms": [
+      4.869841575622559,
+      375.8321838378906,
+      32.186885833740234,
+      5.852973461151123,
+      124.78207397460938,
+      33.848995208740234
+    ],
+    "conversion_rel_l2": 1.1816756995131072e-07,
+    "file": "time_reference.safetensors",
+    "sigma": [
+      0.5
+    ],
+    "source": "capture_L12.safetensors:temb (rows identical; row 0)",
+    "timestep_r": 0.0
+  }
+}

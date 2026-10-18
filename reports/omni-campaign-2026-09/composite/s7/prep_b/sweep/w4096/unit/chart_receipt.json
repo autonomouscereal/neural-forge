@@ -1,0 +1,536 @@
+{
+ "arms_notes": {
+  "ridge": {
+   "regime": {
+    "backward": "overdetermined",
+    "forward": "overdetermined",
+    "ladder_backward": "overdetermined",
+    "ladder_forward": "overdetermined"
+   },
+   "ridge_lambda_in": 3580.0956700985926,
+   "ridge_lambda_out": 4775.354951878453
+  }
+ },
+ "charted_block_json": {
+  "file": "/home/cereal/omni-campaign/composite/s7/prep_b/sweep/w4096/unit/charted_block.json",
+  "pre_m1_backup": "/home/cereal/omni-campaign/composite/s7/prep_b/sweep/w4096/unit/charted_block.json.pre-m1",
+  "pre_m1_sha256": "c461702c5f2937e5c2c732a8e2b4af132b37ca080618129e2ec35d13a6470e3e",
+  "sha256": "4b31b41654615740372429b51684f20911f71461e8a4483f1e0835a127b2784f"
+ },
+ "charts": {
+  "arms": [
+   "ridge"
+  ],
+  "chart_out_bias": "not written (c16 never installs it)",
+  "diagnostics_held": {
+   "forward": {
+    "cos": 0.40517134538355787,
+    "cos_p05": 0.28871035618291235,
+    "r2": 0.011627095444899704,
+    "rel_l2": 0.9282957161379852,
+    "rows": 8194
+   },
+   "roundtrip": {
+    "cos": 0.9641313154994423,
+    "cos_p05": 0.9297952152422577,
+    "r2": 0.6941219940438816,
+    "rel_l2": 0.2819364336770961,
+    "rows": 8194
+   }
+  },
+  "file": "charts.safetensors",
+  "hidden": 5120,
+  "method": "ridge (mediafold.linalg.fit_ridge_linear, fp64) refitted on every paired row at the lambdas chosen by the c17 fit-split ladder",
+  "pairs": {
+   "holdout": "group split (see the pair receipt)",
+   "host_site": "block 31 OUTPUT (the residual the charted block inserted after layer 31 reads)",
+   "interface": [
+    "/home/cereal/omni-campaign/composite/s7/interface_latent/companions.json"
+   ],
+   "paired_rows": "/home/cereal/omni-campaign/composite/s7/tap_rows_s3/hy3d_dit_L10/paired_rows.safetensors",
+   "paired_rows_sha256": "cefe8634d19ba65e2994d83a2a4cd1f92decbd3d96d3f3f716ecbbe919326719",
+   "parent_pairs": "/home/cereal/omni-campaign/composite/s7/pairs/hy3d_dit_L10/parent_capture.safetensors",
+   "rows": 16388,
+   "rows_held": 8194,
+   "trunk": "/mnt/lexar/omni-campaign/s3-native-v2-3a25a459-4347-416d-a58a-2cb3c8e738fd/actual/native-s3-text-stage/native"
+  },
+  "policy": "owner 2026-10-06: these numbers are diagnostics, never gates",
+  "producer": {
+   "lane": "M1 2026-10-10",
+   "sha256": "269acf33be0436863b0b3f058ebb9463511200786555e3d9f807b41668d2bc09",
+   "tool": "s7_chart_fit",
+   "version": "1.1.0"
+  },
+  "ridge_rel": {
+   "chart_in": 0.1,
+   "chart_out": 0.01
+  },
+  "sha256": "ae1028540bcf2268af2a3717c204784ef42a5d390444f231f81ce9c0c058b78b",
+  "shapes": {
+   "chart_in.bias": [
+    2048
+   ],
+   "chart_in.weight": [
+    2048,
+    5120
+   ],
+   "chart_out.weight": [
+    5120,
+    2048
+   ]
+  },
+  "time_rows": {
+   "held_forward_content": {
+    "cos": 0.4050299099249409,
+    "cos_p05": 0.28871035618291235,
+    "r2": 0.010312190310602043,
+    "rel_l2": 0.9288352801845631,
+    "row_cos": [
+     0.2809091261656902,
+     0.42080947007257363,
+     0.4073736127298928,
+     0.4000005816071411,
+     0.37150158752816487,
+     0.41872445874907305,
+     0.39159895358451724,
+     0.3721193201694971
+    ],
+    "row_rel_l2": [
+     1.0546030768619574,
+     0.9339560066663087,
+     0.9449051562117328,
+     0.9249079552600997,
+     0.9410089346283469,
+     0.9263501863838411,
+     0.9356650348586384,
+     0.956364002951353
+    ],
+    "rows": 8192,
+    "width": 2048
+   },
+   "held_forward_time": {
+    "cos": 0.9844909838785647,
+    "cos_p05": 0.9842149359185566,
+    "r2": -1.2804592661971292,
+    "rel_l2": 0.1755840147283183,
+    "row_cos": [
+     0.9847670318385728,
+     0.9842149359185566
+    ],
+    "row_rel_l2": [
+     0.17402728562882339,
+     0.17718631146723748
+    ],
+    "rows": 2,
+    "width": 2048
+   },
+   "how": "the time rows are ordinary rows of both charts; each is replicated `weight` times in the fit design (split fit: fit time rows only; record: every time row)",
+   "requirement": "hy3d_time_token_row",
+   "rows": 4,
+   "rows_held": 2,
+   "weight": 4096
+  },
+  "valid_only_with": "the latent interface rows these host rows were captured under (s7/interface_latent) and the S3 trunk prefix 0..31; S5 (C10 rewrites FFNs 0-31) needs a recapture"
+ },
+ "created_at_utc": "2026-10-10T23:19:37Z",
+ "diagnostics": {
+  "bridge_row_predicts_x31": {
+   "cos_bridge_vs_x31_median": 0.47280266969147733,
+   "design_width": 5121,
+   "held_scores_bridge_row_to_x31": {
+    "cos": 0.959249186976362,
+    "cos_p05": 0.916926278292962,
+    "r2": 0.6340502402123785,
+    "rel_l2": 0.30804224147503817,
+    "rows": 819,
+    "width": 5120
+   },
+   "reading": "how much of the trunk's x_31 at a media row is a linear function of the bridge row alone (row-split, small sample)",
+   "regime": "underdetermined",
+   "ridge_rel": 0.001,
+   "rows": 4096
+  },
+  "per_type_held_forward": null,
+  "procrustes_control_held": null,
+  "record_in_sample": {
+   "backward": {
+    "cos": 0.957411410844152,
+    "cos_p05": 0.9176327035063809,
+    "r2": 0.6396191643947282,
+    "rel_l2": 0.30591317729238127,
+    "rows": 16388,
+    "width": 5120
+   },
+   "forward": {
+    "cos": 0.6321002798553138,
+    "cos_p05": 0.5331476245846059,
+    "r2": 0.3141553473563711,
+    "rel_l2": 0.7747282670347854,
+    "rows": 16388,
+    "width": 2048
+   },
+   "label": "IN-SAMPLE (every row fitted); the held numbers of the split ridge arm are the honest ones",
+   "roundtrip": {
+    "cos": 0.9627525010729354,
+    "cos_p05": 0.9230103338386654,
+    "r2": 0.6841977921786597,
+    "rel_l2": 0.2863682870454563,
+    "rows": 16388,
+    "width": 5120
+   }
+  },
+  "ridge_split_fit": {
+   "backward": {
+    "cos": 0.9813840873793397,
+    "cos_p05": 0.9455460868057856,
+    "r2": 0.8127566028910854,
+    "rel_l2": 0.22276176631277583,
+    "rows": 16384
+   },
+   "forward": {
+    "cos": 0.8448305300593795,
+    "cos_p05": 0.6216682660499523,
+    "r2": 0.84553590223298,
+    "rel_l2": 0.2933699320493249,
+    "rows": 16384
+   },
+   "roundtrip": {
+    "cos": 0.9836484110833988,
+    "cos_p05": 0.9499410809383217,
+    "r2": 0.8354829517608013,
+    "rel_l2": 0.2088059410726023,
+    "rows": 16384
+   }
+  },
+  "ridge_split_held": {
+   "backward": {
+    "cos": 0.90020328247181,
+    "cos_p05": 0.8229413642218996,
+    "r2": 0.1425104112377087,
+    "rel_l2": 0.47205380714152967,
+    "rows": 8194
+   },
+   "forward": {
+    "cos": 0.40517134538355787,
+    "cos_p05": 0.28871035618291235,
+    "r2": 0.011627095444899704,
+    "rel_l2": 0.9282957161379852,
+    "rows": 8194
+   },
+   "roundtrip": {
+    "cos": 0.9641313154994423,
+    "cos_p05": 0.9297952152422577,
+    "r2": 0.6941219940438816,
+    "rel_l2": 0.2819364336770961,
+    "rows": 8194
+   }
+  },
+  "svd_control_held": null,
+  "time_rows": {
+   "label": "diagnostics only; 'time' = the parent's evolved time token rows, 'content' = latent rows",
+   "norms": {
+    "host_content_median": 113.79012770470527,
+    "host_time": [
+     93.8151706198966,
+     93.71120777429674,
+     94.94832176950253,
+     93.62756298770738
+    ],
+    "parent_content_median": 138.9173309015758,
+    "parent_time": [
+     313.5507372183634,
+     318.62335654952756,
+     318.60720838534036,
+     312.63482429441535
+    ]
+   },
+   "record_in_sample_forward": {
+    "content": {
+     "cos": 0.6320104610834485,
+     "cos_p05": 0.5331476245846059,
+     "r2": 0.3132035131615989,
+     "rel_l2": 0.7752035630040075,
+     "row_cos": [
+      0.7355810093268305,
+      0.8174244664259785,
+      0.8024732981689232,
+      0.5778185314836117,
+      0.5439879321747932,
+      0.6112594155364437,
+      0.8528957063994406,
+      0.645884526190095
+     ],
+     "row_rel_l2": [
+      0.6858455723554477,
+      0.6175169177690955,
+      0.6005581923780461,
+      0.8165596528091483,
+      0.8432714838980614,
+      0.7921919056697232,
+      0.594926013144923,
+      0.7655406833687399
+     ],
+     "rows": 16384,
+     "width": 2048
+    },
+    "time": {
+     "cos": 0.9999979694157506,
+     "cos_p05": 0.9999972307540993,
+     "r2": 0.9997261018386333,
+     "rel_l2": 0.0021079287501162003,
+     "row_cos": [
+      0.9999982241412643,
+      0.9999981920183714,
+      0.9999972307540996,
+      0.999998230749267
+     ],
+     "row_rel_l2": [
+      0.0018949490567423944,
+      0.002117563032840032,
+      0.002455520108615894,
+      0.0019003197971176403
+     ],
+     "rows": 4,
+     "width": 2048
+    }
+   },
+   "rows": 4,
+   "rows_held": 2,
+   "split_ridge_fit_forward_time": {
+    "cos": 0.9999997266447591,
+    "cos_p05": 0.9999997253963658,
+    "r2": 0.999933270894231,
+    "rel_l2": 0.0008324616216644651,
+    "row_cos": [
+     0.9999997253963657,
+     0.9999997278931525
+    ],
+    "row_rel_l2": [
+     0.0007562368784905449,
+     0.000900147383825498
+    ],
+    "rows": 2,
+    "width": 2048
+   },
+   "split_ridge_held_backward": {
+    "content": {
+     "cos": 0.9001866478418572,
+     "cos_p05": 0.8229413642218996,
+     "r2": 0.14227777038109235,
+     "rel_l2": 0.4720793889456935,
+     "row_cos": [
+      0.7871587994522683,
+      0.7641843155590076,
+      0.7283229988219463,
+      0.8056699982890507,
+      0.851670773731851,
+      0.7364479866235666,
+      0.8481415572986544,
+      0.6609985335586412
+     ],
+     "row_rel_l2": [
+      0.6685561002055714,
+      0.6463641438185679,
+      0.7310196540193497,
+      0.6368021794015187,
+      0.5402142936688697,
+      0.7289820166800294,
+      0.5491814873626287,
+      0.8405459379613425
+     ],
+     "rows": 8192,
+     "width": 5120
+    },
+    "time": {
+     "cos": 0.968338726758295,
+     "cos_p05": 0.9551654037599849,
+     "r2": -6.953268280534111,
+     "rel_l2": 0.2613297892749438,
+     "row_cos": [
+      0.9815120497566053,
+      0.9551654037599848
+     ],
+     "row_rel_l2": [
+      0.19194534514544903,
+      0.3172334584645647
+     ],
+     "rows": 2,
+     "width": 5120
+    }
+   },
+   "split_ridge_held_forward": {
+    "content": {
+     "cos": 0.4050299099249409,
+     "cos_p05": 0.28871035618291235,
+     "r2": 0.010312190310602043,
+     "rel_l2": 0.9288352801845631,
+     "row_cos": [
+      0.2809091261656902,
+      0.42080947007257363,
+      0.4073736127298928,
+      0.4000005816071411,
+      0.37150158752816487,
+      0.41872445874907305,
+      0.39159895358451724,
+      0.3721193201694971
+     ],
+     "row_rel_l2": [
+      1.0546030768619574,
+      0.9339560066663087,
+      0.9449051562117328,
+      0.9249079552600997,
+      0.9410089346283469,
+      0.9263501863838411,
+      0.9356650348586384,
+      0.956364002951353
+     ],
+     "rows": 8192,
+     "width": 2048
+    },
+    "time": {
+     "cos": 0.9844909838785647,
+     "cos_p05": 0.9842149359185566,
+     "r2": -1.2804592661971292,
+     "rel_l2": 0.1755840147283183,
+     "row_cos": [
+      0.9847670318385728,
+      0.9842149359185566
+     ],
+     "row_rel_l2": [
+      0.17402728562882339,
+      0.17718631146723748
+     ],
+     "rows": 2,
+     "width": 2048
+    }
+   },
+   "weight": 4096
+  }
+ },
+ "ridge_notes": {
+  "in": {
+   "design_width": 5121,
+   "fit_bias": true,
+   "fit_rows": 16384,
+   "holdout_rows": 0,
+   "ladder_inner_fit_rows": 13107,
+   "ladder_regime": "overdetermined",
+   "ladder_rows": 16384,
+   "lambda_ladder": [
+    {
+     "rel_l2": 0.6597000780832587,
+     "ridge_rel": 1e-06
+    },
+    {
+     "rel_l2": 0.6455198425298633,
+     "ridge_rel": 1e-05
+    },
+    {
+     "rel_l2": 0.5631897741423225,
+     "ridge_rel": 0.0001
+    },
+    {
+     "rel_l2": 0.41936120357171147,
+     "ridge_rel": 0.001
+    },
+    {
+     "rel_l2": 0.33984436067979906,
+     "ridge_rel": 0.01
+    },
+    {
+     "rel_l2": 0.3240752704531717,
+     "ridge_rel": 0.1
+    },
+    {
+     "rel_l2": 0.3300166919716701,
+     "ridge_rel": 1.0
+    },
+    {
+     "rel_l2": 0.3493188195925034,
+     "ridge_rel": 10.0
+    },
+    {
+     "rel_l2": 0.39416992467863277,
+     "ridge_rel": 100.0
+    }
+   ],
+   "refit_fit_rows": 16384,
+   "refit_regime": "overdetermined",
+   "ridge_rel": 0.1,
+   "ridge_rel_selected": 0.1,
+   "seed": 0
+  },
+  "out": {
+   "design_width": 2049,
+   "fit_bias": true,
+   "fit_rows": 16384,
+   "holdout_rows": 0,
+   "ladder_inner_fit_rows": 13107,
+   "ladder_regime": "overdetermined",
+   "ladder_rows": 16384,
+   "lambda_ladder": [
+    {
+     "rel_l2": 0.29853523357831213,
+     "ridge_rel": 1e-06
+    },
+    {
+     "rel_l2": 0.29846629224597365,
+     "ridge_rel": 1e-05
+    },
+    {
+     "rel_l2": 0.29705107891132265,
+     "ridge_rel": 0.0001
+    },
+    {
+     "rel_l2": 0.28702067781766366,
+     "ridge_rel": 0.001
+    },
+    {
+     "rel_l2": 0.2685152362712637,
+     "ridge_rel": 0.01
+    },
+    {
+     "rel_l2": 0.2757472825815353,
+     "ridge_rel": 0.1
+    },
+    {
+     "rel_l2": 0.332261139436188,
+     "ridge_rel": 1.0
+    },
+    {
+     "rel_l2": 0.4019468244781499,
+     "ridge_rel": 10.0
+    },
+    {
+     "rel_l2": 0.6030267290540939,
+     "ridge_rel": 100.0
+    }
+   ],
+   "refit_fit_rows": 16384,
+   "refit_regime": "overdetermined",
+   "ridge_rel": 0.01,
+   "ridge_rel_selected": 0.01,
+   "seed": 0
+  }
+ },
+ "schema": "omni-campaign.s7_chart_receipt.v1",
+ "seconds": 1270.3648602962494,
+ "split_ridge_file": {
+  "file": "/home/cereal/omni-campaign/composite/s7/prep_b/sweep/w4096/unit/charts_split_ridge.diagnostic.safetensors",
+  "note": "fit-split ridge chart, diagnostic only",
+  "sha256": "ce9caaa7e46d18bf4d50953f296f86b0e1fdfdefe364fb7cfb7cfaa4612f35b8"
+ },
+ "tensor_sha256": {
+  "chart_in.bias": "0fdd591832d8c2e3f815918d33a083332994a740b885d9c3c15be5c2b65eb2ae",
+  "chart_in.weight": "9f6559f60dd32ddf9b6a7e3f7caa8f2e682fa9677785921a374cae2616dbd5cc",
+  "chart_out.weight": "6d5572f3ca58d18e558401034dc3060d2c1dadf63a4b4d5e0e28f1ceaaf2b9b7"
+ },
+ "tool": {
+  "c17_chart_fit_sha256": "a60220946e41ffbffff0f06118ee0aeb592cf3e46495c33ec482c286f1cb6e3c",
+  "name": "s7_chart_fit",
+  "sha256": "269acf33be0436863b0b3f058ebb9463511200786555e3d9f807b41668d2bc09",
+  "version": "1.1.0"
+ },
+ "unit": "hy3d_dit_L10",
+ "unit_dir": "/home/cereal/omni-campaign/composite/s7/prep_b/sweep/w4096/unit"
+}

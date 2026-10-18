@@ -1,0 +1,367 @@
+{
+ "cast": {
+  "down_cast_relL2": 0.0016582239186391234,
+  "ffn_dtype": "bfloat16",
+  "rule": "scores and update_scale are measured on the weights cast to the FFN dtype (what is installed live and shipped); ridge.update_scale is the fp32 ladder number",
+  "up_cast_relL2": 0.001516534830443561
+ },
+ "chart": {
+  "arm": "ridge",
+  "convention": "c17: trunk_to_k3 = C_out^T (+ C_out_bias), k3_to_trunk = C_in^T (+ C_in_bias)",
+  "fit_trunk_rows_key": "normed",
+  "input_bias_norm": 0.19308830797672272,
+  "k3_to_trunk_shape": [
+   5120,
+   7168
+  ],
+  "layer_json_sha256": "aedeebf7ea751d10fbb945089ac4f151750ba299cb73da95396ac0d3991b1bd4",
+  "output_bias_norm": 4.545692443847656,
+  "path": "/home/cereal/omni-campaign/composite/c17/charts/L15/ridge.safetensors",
+  "sha256": "053ec9306ec3a7843d3df1866f5f3003084235fdbcdca5d4792fe2141bc16a3d",
+  "trunk_to_k3_shape": [
+   7168,
+   5120
+  ]
+ },
+ "chart_bias": {
+  "ceiling": 0.0,
+  "input": {
+   "definition": "||1 (w . b_in)^T||_F / ||X W^T||_F over the fit rows, per source and gate/up",
+   "per_source": [
+    {
+     "gate_shift_norm": 0.9833056330680847,
+     "gate_shift_relL2": 0.0069457295636337225,
+     "source": "K3L22.routed",
+     "up_shift_norm": 0.9427921175956726,
+     "up_shift_relL2": 0.006694256199594922
+    },
+    {
+     "gate_shift_norm": 0.3633044362068176,
+     "gate_shift_relL2": 0.009863682179681525,
+     "source": "K3L22.shared",
+     "up_shift_norm": 0.3760870695114136,
+     "up_shift_relL2": 0.010310369412659486
+    },
+    {
+     "gate_shift_norm": 1.0629938840866089,
+     "gate_shift_relL2": 0.007348871186566108,
+     "source": "K3L23.routed",
+     "up_shift_norm": 1.0469975471496582,
+     "up_shift_relL2": 0.0072794524589168685
+    },
+    {
+     "gate_shift_norm": 0.4865570664405823,
+     "gate_shift_relL2": 0.015464020415443055,
+     "source": "K3L23.shared",
+     "up_shift_norm": 0.5211731195449829,
+     "up_shift_relL2": 0.017092011764120337
+    }
+   ],
+   "treatment": "applied exactly in the K3 reference; DROPPED from the lifted rows (a bias-free FeedForward row cannot carry a constant pre-activation shift); the ridge refit absorbs what it can",
+   "worst_shift_relL2": 0.017092011764120337
+  },
+  "output": {
+   "definition": "||C_in_bias|| sqrt(n_fit) / ||Y_fit||, summed over the layer's K3 layers",
+   "energy_fraction_fit": 0.07983991452083561,
+   "norm": 9.091384887695312,
+   "treatment": "UNREPRESENTABLE by the union FFN (a constant vector per token); excluded from Y, reported"
+  }
+ },
+ "extra_sources": [],
+ "gram": {
+  "check_gram_width": 16640,
+  "check_pass_nonfinite_dropped": 0,
+  "check_rows": 24576,
+  "dtype": "fp64 host accumulator, fp32 column-block products on --device",
+  "inner_rows": 49152,
+  "rule": "one pool-sized Gram; the check Gram is accumulated on the KEPT columns only, after the full Gram is sliced and freed",
+  "width": 51456
+ },
+ "heldout_relL2": 0.17120838165283203,
+ "hidden": 5120,
+ "installed": {
+  "down_sha256": "f454b2eeabd42725dd5385aa36bc8bd0c65047813dd3e84c3c778e45280bc9e4",
+  "intermediate_size": 16640,
+  "k3_rows": 12288,
+  "qwen_rows": 4352,
+  "up_sha256": "2da838c6873bf79ffb04804640d745f5870ef6cc4be26d9bf49d76dfc7dbfd41",
+  "zero_pad_rows": 0
+ },
+ "k3_layers": [
+  22,
+  23
+ ],
+ "k3_rows_function_absent": false,
+ "k3_sources": [
+  {
+   "dense_width": 0,
+   "file": "/home/cereal/omni-campaign/composite/c10/rehearsal-k3-1-60/k3_dense_1_60/L22/ffn.safetensors",
+   "k3_layer": 22,
+   "kind": "form_E",
+   "routed_width": 17408,
+   "sha256": "29efb99bcf3ca4482e50934dc663f09f773bfbea549ef35c7e1ea30edaeabbba",
+   "shared_width": 6144,
+   "y_lat_rms_mean_fit": 0.09925655994151988,
+   "zero_gains": {
+    "rule": "multiplied, never divided by (run-book section 3b)",
+    "tensor": "K3 L22 routed_expert_norm",
+    "zero_gain_coordinates_first": [],
+    "zero_gain_count": 0
+   }
+  },
+  {
+   "dense_width": 0,
+   "file": "/home/cereal/omni-campaign/composite/c10/rehearsal-k3-1-60/k3_dense_1_60/L23/ffn.safetensors",
+   "k3_layer": 23,
+   "kind": "form_E",
+   "routed_width": 17408,
+   "sha256": "e480bd3a4e912ca88f654a2a6ea0b3df763e2e59ac8e12eb16a993153b276b51",
+   "shared_width": 6144,
+   "y_lat_rms_mean_fit": 0.1682874156521032,
+   "zero_gains": {
+    "rule": "multiplied, never divided by (run-book section 3b)",
+    "tensor": "K3 L23 routed_expert_norm",
+    "zero_gain_coordinates_first": [],
+    "zero_gain_count": 0
+   }
+  }
+ ],
+ "k3_term_energy_fraction": {
+  "definition": "||sum_l FFN_k3,l(T x + b) U^T|| / ||Y||, Y = MLP_parent(x) + that sum",
+  "fit": 0.9802612744618698,
+  "held": 0.9815263916838448
+ },
+ "layer": 15,
+ "parent_mlp_sha256": {
+  "blocks.15.ffn.down.weight": "dccaa3aecc9119b895af831b064d4f6302de5cc1112a5aab5df9429e38b31faa",
+  "blocks.15.ffn.up.weight": "6412d03d8e1f599b2863b7c46d2ffb646a1ec5a5d547f666c4458403c97c9fb3"
+ },
+ "partial": {
+  "tensors": "/home/cereal/omni-campaign/composite/c10/rehearsal-k3-1-60/child.partial/L15.safetensors",
+  "tensors_sha256": "5bc77054b15583912c320bb60810807d03b404a9a6eb749510fa2ab8bb8e83a0"
+ },
+ "peak_rss_gigabytes": 130.405,
+ "peak_rss_gigabytes_after_selection": 130.405,
+ "phase_seconds": {
+  "cast_and_scores": 26.81,
+  "chart_bias_and_situ_scalars": 61.71,
+  "check_gram": 38.66,
+  "law_abiding_solve": 211.94,
+  "pool_gram": 379.16,
+  "selection": 450.28,
+  "targets_and_k3_reference": 85.92
+ },
+ "pool": {
+  "k3_candidates": 47104,
+  "k3_share": 12288,
+  "k3_share_requested": 12288,
+  "per_source": [
+   {
+    "source": "K3L22.routed",
+    "width": 17408
+   },
+   {
+    "source": "K3L22.shared",
+    "width": 6144
+   },
+   {
+    "source": "K3L23.routed",
+    "width": 17408
+   },
+   {
+    "source": "K3L23.shared",
+    "width": 6144
+   }
+  ],
+  "qwen": 4352
+ },
+ "qwen_rows": 4352,
+ "ridge": {
+  "check_sse_monotone_decreasing_in_lambda": false,
+  "chosen_is_largest_lambda": false,
+  "chosen_is_weakest_admitted": true,
+  "free_solve_update_scale": 2.8638695655528568,
+  "interpretation": "the check split discriminated between lambdas",
+  "ladder": [
+   {
+    "check_sse": 17021544.327838898,
+    "lambda_relative": 1e-06,
+    "update_scale": 2.8638695655528568
+   },
+   {
+    "check_sse": 16866812.27387446,
+    "lambda_relative": 1e-05,
+    "update_scale": 2.815902440977261
+   },
+   {
+    "check_sse": 15884564.362020493,
+    "lambda_relative": 0.0001,
+    "update_scale": 2.471317375245072
+   },
+   {
+    "check_sse": 13786443.97018385,
+    "lambda_relative": 0.001,
+    "update_scale": 1.56770335844256
+   },
+   {
+    "check_sse": 12066606.423073888,
+    "lambda_relative": 0.01,
+    "update_scale": 0.8626876689119928
+   },
+   {
+    "check_sse": 13807194.26372397,
+    "lambda_relative": 0.1,
+    "update_scale": 0.45218441109575946
+   },
+   {
+    "check_sse": 23366682.536354363,
+    "lambda_relative": 1.0,
+    "update_scale": 0.2200507635688751
+   },
+   {
+    "check_sse": 48261865.364433885,
+    "lambda_relative": 10.0,
+    "update_scale": 0.09483879421825873
+   },
+   {
+    "check_sse": 96307630.11828774,
+    "lambda_relative": 100.0,
+    "update_scale": 0.03306551160222781
+   }
+  ],
+  "lambda_law_would_have_picked": 0.01,
+  "lambda_relative": 0.01,
+  "lambda_selected_on": "internal fit split",
+  "lambdas_vetoed": 4,
+  "solve_device": "cuda:0",
+  "update_scale": 0.8626876689119928,
+  "veto_binding": true
+ },
+ "rows": {
+  "fit": 73728,
+  "fit_feature_nonfinite_dropped": 0,
+  "fit_nonfinite_dropped": 0,
+  "held": 24576,
+  "held_nonfinite_dropped": 0,
+  "held_target_nonfinite_dropped": 0
+ },
+ "scores": {
+  "fit": {
+   "no_repair_prior": {
+    "cos": 0.5988806486129761,
+    "cos_p05": 0.4333803355693817,
+    "relL2": 0.788745105266571
+   },
+   "rows": 73728,
+   "trunk_only": {
+    "cos": 0.12806285917758942,
+    "cos_p05": 0.07172176241874695,
+    "relL2": 0.9920629858970642
+   },
+   "union": {
+    "cos": 0.9892728328704834,
+    "cos_p05": 0.9732614159584045,
+    "relL2": 0.12362784147262573
+   }
+  },
+  "held": {
+   "no_repair_prior": {
+    "cos": 0.5995967984199524,
+    "cos_p05": 0.43512535095214844,
+    "relL2": 0.7944513559341431
+   },
+   "rows": 24576,
+   "trunk_only": {
+    "cos": 0.12757693231105804,
+    "cos_p05": 0.0723831057548523,
+    "relL2": 0.992706298828125
+   },
+   "union": {
+    "cos": 0.9797064661979675,
+    "cos_p05": 0.9419125318527222,
+    "relL2": 0.17120838165283203
+   }
+  }
+ },
+ "scores_dtype": "bfloat16",
+ "seconds": 1254.49,
+ "selection": {
+  "filled_with_rank_starved_rows": 0,
+  "kept_per_source": {
+   "K3L22.routed": 6102,
+   "K3L22.shared": 29,
+   "K3L23.routed": 6140,
+   "K3L23.shared": 17
+  },
+  "mode": "pivoted Cholesky on the Schur complement of the K3 pool given the pinned Qwen rows (formed in place)",
+  "note": "",
+  "pivot": "pivoted_columns_gram_on(cuda:0)",
+  "pivot_seconds": 129.11,
+  "pool": 47104,
+  "qwen_rows_all_kept": true,
+  "qwen_rows_kept": "0..4351 (every trunk row, verbatim, in order)",
+  "rank_starved": false,
+  "requested": 12288,
+  "schur_diagonal_energy": 211994491.62184006,
+  "selected": 12288
+ },
+ "situ_to_silu": [
+  {
+   "channels": 17408,
+   "dead_channels": 0,
+   "definition": "s_c = <silu(g.x)(u.x), situ(g.x,u.x)> / ||silu(g.x)(u.x)||^2 over the fit rows; relL2 = ||s a - b||_F / ||b||_F over every channel of the source",
+   "kind": "routed",
+   "per_channel_relL2_max": 0.4165951673403247,
+   "per_channel_relL2_mean": 0.06398197130477873,
+   "relL2": 0.10040736635722085,
+   "rows": 73728,
+   "scale_max": 0.9817611149094261,
+   "scale_min": 0.31798175184345334,
+   "source": "K3L22.routed"
+  },
+  {
+   "channels": 6144,
+   "dead_channels": 0,
+   "definition": "s_c = <silu(g.x)(u.x), situ(g.x,u.x)> / ||silu(g.x)(u.x)||^2 over the fit rows; relL2 = ||s a - b||_F / ||b||_F over every channel of the source",
+   "kind": "shared",
+   "per_channel_relL2_max": 0.2055054735471993,
+   "per_channel_relL2_mean": 0.010277907253306124,
+   "relL2": 0.07279148074179537,
+   "rows": 73728,
+   "scale_max": 0.9999999830058331,
+   "scale_min": 0.6645538090217344,
+   "source": "K3L22.shared"
+  },
+  {
+   "channels": 17408,
+   "dead_channels": 0,
+   "definition": "s_c = <silu(g.x)(u.x), situ(g.x,u.x)> / ||silu(g.x)(u.x)||^2 over the fit rows; relL2 = ||s a - b||_F / ||b||_F over every channel of the source",
+   "kind": "routed",
+   "per_channel_relL2_max": 0.4426435481302841,
+   "per_channel_relL2_mean": 0.06811633620405153,
+   "relL2": 0.11269484486277535,
+   "rows": 73728,
+   "scale_max": 0.9790569680127857,
+   "scale_min": 0.3115964828124475,
+   "source": "K3L23.routed"
+  },
+  {
+   "channels": 6144,
+   "dead_channels": 0,
+   "definition": "s_c = <silu(g.x)(u.x), situ(g.x,u.x)> / ||silu(g.x)(u.x)||^2 over the fit rows; relL2 = ||s a - b||_F / ||b||_F over every channel of the source",
+   "kind": "shared",
+   "per_channel_relL2_max": 0.48794771309420304,
+   "per_channel_relL2_mean": 0.006697116199920321,
+   "relL2": 0.17372386430929196,
+   "rows": 73728,
+   "scale_max": 1.0000000304686556,
+   "scale_min": 0.4492481616835686,
+   "source": "K3L23.shared"
+  }
+ ],
+ "update_scale": 0.8660344481468201,
+ "update_scale_cast_exceeds_law": false,
+ "update_scale_fp32_solution": 0.8626876689119928,
+ "veto_binding": true,
+ "veto_reason": "THE LAW: the free solve wanted more than the prior (ridge.veto_binding)"
+}

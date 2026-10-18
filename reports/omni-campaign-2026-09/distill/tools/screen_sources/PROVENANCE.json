@@ -1,0 +1,8 @@
+{
+ "lfm2_on_policy_fit_prompts_v1.json": {
+  "copied_from": "C:/Users/cereal/Documents/ai training/neural-forge/experiments/lfm2_on_policy_fit_prompts_v1.json",
+  "sha256": "e85000326c5c39ae683506d69bc7e8edf3557845dc3b06e562f5ba6c23fe436f",
+  "role": "source pack of the stage-2 64-prompt free-run probe (stage2_freerun_probe.load_stage2_freerun_probe_prompts draws a seeded 64 of these 120); screened whole",
+  "copied_by": "distill_corpus_build 1.0.0 lane, 2026-10-12"
+ }
+}

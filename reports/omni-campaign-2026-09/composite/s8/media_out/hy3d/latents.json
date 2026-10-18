@@ -1,0 +1,132 @@
+{
+ "schema": "omni-campaign.s8_media_latents.v1",
+ "modality": "hy3d",
+ "file": "/home/cereal/omni-campaign/composite/s8/media_out/hy3d/latents.safetensors",
+ "sha256": "7d42aa577c865277d82d510f9d9ad30d628fb4b8df839d5159fc056b6491d77c",
+ "keys": {
+  "hy3d_s025.clean": [
+   1,
+   64,
+   4096
+  ],
+  "hy3d_s025.x_t": [
+   1,
+   64,
+   4096
+  ],
+  "hy3d_s025.raw_omni_final": [
+   1,
+   64,
+   4096
+  ],
+  "hy3d_s025.x0_omni_final": [
+   1,
+   64,
+   4096
+  ],
+  "hy3d_s025.raw_omni_site": [
+   1,
+   64,
+   4096
+  ],
+  "hy3d_s025.x0_omni_site": [
+   1,
+   64,
+   4096
+  ],
+  "hy3d_s050.clean": [
+   1,
+   64,
+   4096
+  ],
+  "hy3d_s050.x_t": [
+   1,
+   64,
+   4096
+  ],
+  "hy3d_s050.parent_raw": [
+   1,
+   64,
+   4096
+  ],
+  "hy3d_s050.x0_parent": [
+   1,
+   64,
+   4096
+  ],
+  "hy3d_s050.raw_omni_final": [
+   1,
+   64,
+   4096
+  ],
+  "hy3d_s050.x0_omni_final": [
+   1,
+   64,
+   4096
+  ],
+  "hy3d_s050.raw_omni_site": [
+   1,
+   64,
+   4096
+  ],
+  "hy3d_s050.x0_omni_site": [
+   1,
+   64,
+   4096
+  ],
+  "hy3d_s075.clean": [
+   1,
+   64,
+   4096
+  ],
+  "hy3d_s075.x_t": [
+   1,
+   64,
+   4096
+  ],
+  "hy3d_s075.raw_omni_final": [
+   1,
+   64,
+   4096
+  ],
+  "hy3d_s075.x0_omni_final": [
+   1,
+   64,
+   4096
+  ],
+  "hy3d_s075.raw_omni_site": [
+   1,
+   64,
+   4096
+  ],
+  "hy3d_s075.x0_omni_site": [
+   1,
+   64,
+   4096
+  ]
+ },
+ "space": "the parent's DiT latent space; decode = vae.decode(latent_format.process_out(x))",
+ "segments": [
+  {
+   "segment": "hy3d_s025",
+   "sigma": 0.25,
+   "layout": {
+    "latent": "[1, 64, 4096] Hunyuan3D-2.1 ShapeVAE latent x scale_factor (DiT space); comfy layout [B, C, N]"
+   }
+  },
+  {
+   "segment": "hy3d_s050",
+   "sigma": 0.5,
+   "layout": {
+    "latent": "[1, 64, 4096] Hunyuan3D-2.1 ShapeVAE latent x scale_factor (DiT space); comfy layout [B, C, N]"
+   }
+  },
+  {
+   "segment": "hy3d_s075",
+   "sigma": 0.75,
+   "layout": {
+    "latent": "[1, 64, 4096] Hunyuan3D-2.1 ShapeVAE latent x scale_factor (DiT space); comfy layout [B, C, N]"
+   }
+  }
+ ]
+}

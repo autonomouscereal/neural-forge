@@ -1,0 +1,16 @@
+{
+  "schema": "fold-research.vendor-pins.v1",
+  "statement": "Read-only copies of Codex L-FOLD modules. Never edited here; fold_common.verify_vendor_pins() refuses to run if a byte changes.",
+  "source_repo": "C:/Users/cereal/Documents/ai training/.agent-worktrees/neural-forge-a495ffdd2f/best",
+  "source_head": "9ccfd57b5e98cbe9301d8c965b06aada85b40b07",
+  "folding_retention_commit": "67b32b545278c7a642eaa11c06941ef5ef8b5a46",
+  "files": {
+    "chimera_recovery/folding_retention.py": "47d75509d9f36eb4d8dc0c25f658bb87b8330527275c219321bf2d2810e5bd5b",
+    "chimera_recovery/evaluation.py": "6a84626d3a849dcb07073c1d89a9ccc1e1a9255c22e9b7abae31167f7d105f79",
+    "chimera_recovery/corpus.py": "8d1eca68d238808121f3d86d857335e36c2c23bd3c5596eaf0ff0f24414ab634"
+  },
+  "notes": [
+    "evaluation.py sha equals grader_sha256 in codex-local-recovery-eval-combined-oct13-v1/manifest.json",
+    "chimera_recovery/__init__.py is ours (one docstring line) so the vendored relative imports resolve"
+  ]
+}

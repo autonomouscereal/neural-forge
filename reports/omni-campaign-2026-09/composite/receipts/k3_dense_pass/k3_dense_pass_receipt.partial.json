@@ -1,0 +1,451 @@
+{
+ "arguments": {
+  "allow_share_read": false,
+  "arm_layers": "1-12",
+  "arm_rung": null,
+  "body_dir": null,
+  "chimera_src": "/home/cereal/omni-campaign/import/rq27b/tree_c5e6052/src",
+  "chunk": 1024,
+  "compute_dtype": "auto",
+  "delete_staged_after_consume": false,
+  "device": "cuda:0",
+  "digest_receipt": "/home/cereal/omni-campaign/k3/logs/k3_lexar_digest_verify.json",
+  "divergence_rows": 0,
+  "experts_device": "cpu",
+  "force_stage": false,
+  "held_rows": true,
+  "holdout_blocks": 24,
+  "input_ids": "/home/cereal/omni-campaign/composite/corpus/k3_input_ids.safetensors",
+  "k_pool_factor": 1,
+  "kda_backend": "torch",
+  "layer0_import_receipt": "/home/cereal/omni-campaign/composite/receipts/k3_layer0_import_receipt.json",
+  "layers": "0-1",
+  "max_device_gb": -1.0,
+  "max_gram_gb": 160.0,
+  "mixer_diagnostic": false,
+  "model_dir": "/mnt/lexar/models/moonshotai/Kimi-K3",
+  "modeling_src": "/home/cereal/omni-campaign/k3/k3_src",
+  "no_layer0_receipt": false,
+  "no_share_read": true,
+  "out": "/mnt/lexar/omni-campaign/k3",
+  "prefetch": 2,
+  "receipt_dir": "/home/cereal/omni-campaign/composite/receipts/k3_dense_pass",
+  "resid_device": "cpu",
+  "resume": false,
+  "review_input_ids": [],
+  "review_topk": 16,
+  "row_chunk": 1,
+  "rung": 17408,
+  "share_rate_receipt": "/home/cereal/omni-campaign/composite/receipts/share_rate_2026-09.json",
+  "snapshot_every": 12,
+  "snapshot_keep": 2,
+  "src_dir": "/mnt/lexar/models/moonshotai/Kimi-K3",
+  "stage_dir": null,
+  "stage_stall_seconds": 900.0,
+  "stage_window": 3,
+  "token_chunk": 1024
+ },
+ "compute_dtype": "parent (bf16)",
+ "corpus": {
+  "corpus_sha256": "a1cf6d19d56451b68e7dbc3788d07aa5a7e6e6b47250bafba0ba4ebf7bc43a6d",
+  "fit_tokens": 69743,
+  "held_tokens": 23186,
+  "real_tokens": 92929,
+  "review_tokens": 0,
+  "segments": [
+   {
+    "file_sha256": "bb3b16573665d049fdc6f1368182fbffb2aabee2b83eff771b9f35c5c839ed38",
+    "fit_mask_sha256": "0cf522e5b88e295e3a2c6a2fca6c2f1bbc0f1064d075b7246e5df70c2aac0019",
+    "fit_tokens": 69743,
+    "held_tokens": 23186,
+    "input_ids_sha256": "cfd92b2eef67a8496857eec8807a515de06543890aa351e54199096f862f4c1e",
+    "metadata": {
+     "evidence_manifest_sha256": "8a3422d89d245b79a152ffb1de44d077d39ec5574dc063bf4e8482a5107b4870",
+     "file": "k3_input_ids",
+     "in_band_tensors": "input_ids,split,real_lengths,fit_mask,held_mask",
+     "pad_id": "163839",
+     "role": "evidence",
+     "rows": "24",
+     "schema": "neural-forge-k3-corpus-ids-v2",
+     "separator_id": "163585",
+     "sequence_length": "4096",
+     "split_codes": "{\"fit\": 0, \"held\": 1, \"review\": 2}",
+     "tiktoken_model_sha256": "b6c497a7469b33ced9c38afb1ad6e47f03f5e5dc05f15930799210ec050c5103",
+     "tokenizer": "kimi_k3 tiktoken"
+    },
+    "path": "/home/cereal/omni-campaign/composite/corpus/k3_input_ids.safetensors",
+    "real_tokens": 92929,
+    "role": "evidence",
+    "rows": 24,
+    "sequence_length": 4096,
+    "tokens": 98304
+   }
+  ],
+  "tokens": 98304
+ },
+ "device": "cuda:0",
+ "devices": [
+  {
+   "capability": "sm75",
+   "index": 0,
+   "name": "Quadro RTX 8000",
+   "total_GB": 47.6
+  }
+ ],
+ "experts_device": "cpu",
+ "first_moe_layer": 1,
+ "fit": {
+  "input": "FOLDED pair: latent_in = W_down . post-attention residual of the folded stream",
+  "k_pool_factor": 1,
+  "rung": 17408,
+  "selection_mass": "teacher router top-k on the teacher's own input",
+  "split": "corpus in-band fit_mask (fit rows) / held_mask (held rows); ridge check split = every third contiguous block of the fit positions",
+  "target": "TEACHER pair: y_lat, the PRE-norm fp32 routed accumulator (routed output)",
+  "zero_gain_rule": "section 3b: no division by a norm gain anywhere; zero gains are counted"
+ },
+ "kda_backend": "torch",
+ "lane_dir": "/home/cereal/omni-campaign/k3/harness",
+ "lane_sha256": {
+  "c14_union_coreset.py": "3356780e918af111a108d40ef6b2b2658667441256014a9eb3443fa1e78cd535",
+  "k3_common.py": "70117c6bd55f18ed5a751adf3c9480f7e9e949f2702662dfdd91f9cdcb298f16",
+  "k3_layer.py": "07269c9196ab6e45c3299d671f972e6d2da296157fe5194e4cee5fd7a61c5390",
+  "k3_receipt.py": "c7930a8882bc41cd7eb407bed42be900a260306c7df1b71bc2b6faa329fbf182",
+  "k3_review_stream.py": "94c2005b80d5ba963cbf3f73ae76be57b1381d74ae984f873a0d48719d35af76",
+  "k3_stream.py": "789cb7fe18cbfa0a5b83b3addd5fc8edd5ccf094edbc5f55766bd4e5dc29b5bf"
+ },
+ "layers": {
+  "0": {
+   "block_residual_blocks": 1,
+   "dequant_seconds": 0.0,
+   "finite_checks": [
+    {
+     "elements": 704643072,
+     "non_finite": 0,
+     "tensor": "teacher prefix after the layer"
+    },
+    {
+     "elements": 704643072,
+     "non_finite": 0,
+     "tensor": "folded prefix after the layer"
+    }
+   ],
+   "fit_skipped": null,
+   "folded": {
+    "cloned_from_teacher": true,
+    "note": "no MoE layer has been folded yet, so the folded pair IS the teacher pair"
+   },
+   "folded_seconds": 24.54,
+   "is_kda": true,
+   "layer": 0,
+   "layer_bytes_on_device": {
+    "attention": 887480832,
+    "body": 1453326336,
+    "experts_packed": 0,
+    "residual": 86016,
+    "total": 2340893184
+   },
+   "layer_seconds": 127.7,
+   "mlp": {
+    "done_marker_sha256": "168664e7b5150210875c63120d0d7034a4f0dc801ce92f37555fe8e74a6f8fd1",
+    "header_parameters": 726663168,
+    "import_receipt_comparison": {
+     "all_match": true,
+     "compared": true,
+     "matches": {
+      "language_model.model.layers.0.mlp.down_proj.weight": {
+       "in_receipt": true,
+       "match": true,
+       "ours": "b45f5dc5724b46e8cfb17f9323638f750678692d30de00212ca528483ec98353",
+       "receipt_sha256": "b45f5dc5724b46e8cfb17f9323638f750678692d30de00212ca528483ec98353"
+      },
+      "language_model.model.layers.0.mlp.gate_proj.weight": {
+       "in_receipt": true,
+       "match": true,
+       "ours": "c5bace9b3192b81ae996489268b03388137dd7cbbb0acdc317a103aa39fed62c",
+       "receipt_sha256": "c5bace9b3192b81ae996489268b03388137dd7cbbb0acdc317a103aa39fed62c"
+      },
+      "language_model.model.layers.0.mlp.up_proj.weight": {
+       "in_receipt": true,
+       "match": true,
+       "ours": "5371f4720d4c2bc7e1d95f5728332a701a4a08620fa31a76a099cf38994765a0",
+       "receipt_sha256": "5371f4720d4c2bc7e1d95f5728332a701a4a08620fa31a76a099cf38994765a0"
+      }
+     },
+     "path": "/home/cereal/omni-campaign/composite/receipts/k3_layer0_import_receipt.json",
+     "receipt_sha256": "62d61d0741d1d78864fbe2f14b1aa0253564bef6f017523d71482ceea6d7d966",
+     "tensors_compared": 3
+    },
+    "path": "/mnt/lexar/omni-campaign/k3/dense/L00/mlp.safetensors",
+    "sha256": "f17330e8e781a1f413ef8cc513ddf3db13da441b8bd2a1c8389a44e056924e6b",
+    "tensor_listing": {
+     "all_in_index": true,
+     "chimera_listing": [
+      "language_model.model.layers.0.input_layernorm.weight",
+      "language_model.model.layers.0.post_attention_layernorm.weight",
+      "language_model.model.layers.0.self_attention_res_norm.weight",
+      "language_model.model.layers.0.self_attention_res_proj.weight",
+      "language_model.model.layers.0.mlp_res_norm.weight",
+      "language_model.model.layers.0.mlp_res_proj.weight",
+      "language_model.model.layers.0.self_attn.q_proj.weight",
+      "language_model.model.layers.0.self_attn.k_proj.weight",
+      "language_model.model.layers.0.self_attn.v_proj.weight",
+      "language_model.model.layers.0.self_attn.q_conv1d.weight",
+      "language_model.model.layers.0.self_attn.k_conv1d.weight",
+      "language_model.model.layers.0.self_attn.v_conv1d.weight",
+      "language_model.model.layers.0.self_attn.f_a_proj.weight",
+      "language_model.model.layers.0.self_attn.f_b_proj.weight",
+      "language_model.model.layers.0.self_attn.dt_bias",
+      "language_model.model.layers.0.self_attn.A_log",
+      "language_model.model.layers.0.self_attn.b_proj.weight",
+      "language_model.model.layers.0.self_attn.g_proj.weight",
+      "language_model.model.layers.0.self_attn.o_norm.weight",
+      "language_model.model.layers.0.self_attn.o_proj.weight",
+      "language_model.model.layers.0.mlp.gate_proj.weight",
+      "language_model.model.layers.0.mlp.up_proj.weight",
+      "language_model.model.layers.0.mlp.down_proj.weight"
+     ],
+     "chimera_listing_count": 23,
+     "chimera_src": "/home/cereal/omni-campaign/import/rq27b/tree_c5e6052/src",
+     "index_tensors": 23,
+     "missing_from_index": []
+    },
+    "tensor_sha256": {
+     "language_model.model.layers.0.mlp.down_proj.weight": "b45f5dc5724b46e8cfb17f9323638f750678692d30de00212ca528483ec98353",
+     "language_model.model.layers.0.mlp.gate_proj.weight": "c5bace9b3192b81ae996489268b03388137dd7cbbb0acdc317a103aa39fed62c",
+     "language_model.model.layers.0.mlp.up_proj.weight": "5371f4720d4c2bc7e1d95f5728332a701a4a08620fa31a76a099cf38994765a0"
+    },
+    "tensors": {
+     "language_model.model.layers.0.mlp.down_proj.weight": {
+      "byte_exact": true,
+      "dtype": "BF16",
+      "elements": 242221056,
+      "sha256_import_lane": "b45f5dc5724b46e8cfb17f9323638f750678692d30de00212ca528483ec98353",
+      "shape": [
+       7168,
+       33792
+      ],
+      "written_sha256_import_lane": "b45f5dc5724b46e8cfb17f9323638f750678692d30de00212ca528483ec98353"
+     },
+     "language_model.model.layers.0.mlp.gate_proj.weight": {
+      "byte_exact": true,
+      "dtype": "BF16",
+      "elements": 242221056,
+      "sha256_import_lane": "c5bace9b3192b81ae996489268b03388137dd7cbbb0acdc317a103aa39fed62c",
+      "shape": [
+       33792,
+       7168
+      ],
+      "written_sha256_import_lane": "c5bace9b3192b81ae996489268b03388137dd7cbbb0acdc317a103aa39fed62c"
+     },
+     "language_model.model.layers.0.mlp.up_proj.weight": {
+      "byte_exact": true,
+      "dtype": "BF16",
+      "elements": 242221056,
+      "sha256_import_lane": "5371f4720d4c2bc7e1d95f5728332a701a4a08620fa31a76a099cf38994765a0",
+      "shape": [
+       33792,
+       7168
+      ],
+      "written_sha256_import_lane": "5371f4720d4c2bc7e1d95f5728332a701a4a08620fa31a76a099cf38994765a0"
+     }
+    }
+   },
+   "moe": false,
+   "norm_gains": [
+    {
+     "tensor": "input_layernorm.weight",
+     "zero_gain_coordinates": [],
+     "zero_gain_count": 0
+    },
+    {
+     "tensor": "post_attention_layernorm.weight",
+     "zero_gain_coordinates": [],
+     "zero_gain_count": 0
+    },
+    {
+     "tensor": "self_attention_res_norm.weight",
+     "zero_gain_coordinates": [],
+     "zero_gain_count": 0
+    },
+    {
+     "tensor": "mlp_res_norm.weight",
+     "zero_gain_coordinates": [],
+     "zero_gain_count": 0
+    }
+   ],
+   "parameters": {
+    "attention": 443740416,
+    "body": 726663168,
+    "expert_count": 0,
+    "expert_scale_elements": 0,
+    "expert_scale_note": "E8M0 group scales, one per 32 packed values, NOT counted in `experts`; excluding them understates the parent",
+    "experts": 0,
+    "residual": 43008
+   },
+   "peak_rss_bytes": 17301176320,
+   "prefix_out_sha256": {
+    "folded": "67ecacc1eb4efbc055b8f8e9d11cb96402380cde7beb4788cc7ff35445f316e0",
+    "teacher": "67ecacc1eb4efbc055b8f8e9d11cb96402380cde7beb4788cc7ff35445f316e0"
+   },
+   "read": {
+    "MB_per_s": 594.0,
+    "bytes": 2341213184,
+    "compute_dtype": "torch.bfloat16",
+    "compute_dtype_source": "parent projection dtype (attn.b_proj.weight)",
+    "gigabytes": 2.341,
+    "seconds": 3.9,
+    "shards": [
+     {
+      "MB_per_s": 594.1,
+      "gigabytes": 2.341,
+      "path": "/mnt/lexar/models/moonshotai/Kimi-K3/model-00001-of-000096.safetensors",
+      "seconds": 3.9,
+      "shard": "model-00001-of-000096.safetensors",
+      "staged": false,
+      "tensors": 23
+     }
+    ],
+    "tensors": 23
+   },
+   "staged_release": [],
+   "stream_divergence": {
+    "fit": {
+     "block_stack": {
+      "blocks": 1,
+      "cos": 1.0,
+      "cos_p05": 0.9999998807907104,
+      "relL2": 0.0
+     },
+     "cos": 1.0,
+     "cos_p05": 0.9999999403953552,
+     "relL2": 0.0,
+     "rows": 69743,
+     "scored": "prefix_sum"
+    },
+    "held": {
+     "block_stack": {
+      "blocks": 1,
+      "cos": 1.0,
+      "cos_p05": 0.9999998807907104,
+      "relL2": 0.0
+     },
+     "cos": 1.0,
+     "cos_p05": 0.9999999403953552,
+     "relL2": 0.0,
+     "rows": 23186,
+     "scored": "prefix_sum"
+    },
+    "real": {
+     "block_stack": {
+      "blocks": 1,
+      "cos": 1.0,
+      "cos_p05": 0.9999998807907104,
+      "relL2": 0.0
+     },
+     "cos": 1.0,
+     "cos_p05": 0.9999999403953552,
+     "relL2": 0.0,
+     "rows": 92929,
+     "scored": "prefix_sum"
+    },
+    "what": "prefix_sum = the carried residual; block_stack = every block residual flattened (the AttnRes read's other input); relL2 of folded vs teacher"
+   },
+   "teacher_compute_seconds": 64.49
+  }
+ },
+ "model": {
+  "attn_res_block_size": 12,
+  "config_sha256": "9710e121a58d03ac92c8d6da287a19541994319afbbe6d6202af001ffd379213",
+  "digest_verify_receipt": {
+   "all_verified": true,
+   "files_expected": 96,
+   "files_listed": 98,
+   "files_verified": 98,
+   "mismatch": 0,
+   "missing": 0,
+   "partial": false,
+   "path": "/home/cereal/omni-campaign/k3/logs/k3_lexar_digest_verify.json",
+   "present": true,
+   "receipt_sha256": "58bc54f0c635ec78f53a4575155d249ebd10bde4ea302f65872bebe253d7a91f",
+   "updated_utc": "2026-09-06T17:49:30Z"
+  },
+  "hidden_size": 7168,
+  "index_sha256": "a1c5210650ce71d2d3ae9ec5a101ac4afd3cf4b10091be589853437eb967febd",
+  "layer_prefix": "language_model.model.layers.",
+  "model_dir": "/mnt/lexar/models/moonshotai/Kimi-K3",
+  "num_layers": 93,
+  "src_dir": "/mnt/lexar/models/moonshotai/Kimi-K3"
+ },
+ "peak_rss_bytes_so_far": 17301176320,
+ "python": "3.12.3",
+ "refusal": {
+  "at_utc": "2026-09-07T04:05:23Z",
+  "layer": 1,
+  "message": "no lambda on the ladder brings update_scale to 1.0 (free 81.642); THE LAW refuses the install"
+ },
+ "resid_device": "cpu",
+ "run_id": "56928930003e",
+ "schema": "omni-campaign.k3_dense_pass.v1",
+ "share_policy": {
+  "no_share_read": true,
+  "note": "read source is a local disk; the share_rate receipt is not consulted",
+  "read_source": "/mnt/lexar/models/moonshotai/Kimi-K3",
+  "share_rate": null,
+  "share_root": "/mnt/ai_data",
+  "source_on_share": false
+ },
+ "snapshots": {
+  "every": 12,
+  "keep": 2,
+  "written": [
+   {
+    "corpus_sha256": "a1cf6d19d56451b68e7dbc3788d07aa5a7e6e6b47250bafba0ba4ebf7bc43a6d",
+    "files": {
+     "folded": {
+      "bytes": 1409286600,
+      "path": "/mnt/lexar/omni-campaign/k3/snapshots/before_L00_folded.safetensors",
+      "sha256": "e14a3c043359a5fb2de075a218314a553e8856296dd2e6b9b0d30c854080b04e"
+     },
+     "teacher": {
+      "bytes": 1409286600,
+      "path": "/mnt/lexar/omni-campaign/k3/snapshots/before_L00.safetensors",
+      "sha256": "8bfc55c3c318cdeb85c28e0cc99bf85b681510c3fe11d965a10f3918b8ae11f1"
+     }
+    },
+    "installed_layers": [],
+    "layer": 0,
+    "rung": 17408
+   }
+  ]
+ },
+ "staging": {
+  "delete_after_consume": false,
+  "enabled": false,
+  "events": [
+   {
+    "action": "model_level_read_from_source",
+    "run_id": "56928930003e",
+    "shard": "model-00094-of-000096.safetensors",
+    "tensor": "language_model.model.embed_tokens.weight"
+   }
+  ],
+  "foreign_files_left_alone": [],
+  "model_level_shards": "read from the source, never staged (see model_level_read_from_source events)",
+  "prefetch": 2,
+  "run_id": "56928930003e",
+  "stage_dir": null,
+  "stall_seconds": 900.0,
+  "still_staged_by_this_run": [],
+  "window": 3,
+  "window_residents": []
+ },
+ "start": {
+  "from": "embedding",
+  "layer": 0
+ },
+ "started_utc": "2026-09-07T03:27:03Z",
+ "tool": "k3_dense_pass",
+ "tool_sha256": "a98041dfb3fe4edc592e99489121f9d2dc6de137bc30035c0e6134f58e362372",
+ "tool_version": "1.1.1",
+ "torch": "2.11.0+cu128"
+}

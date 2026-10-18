@@ -1,0 +1,899 @@
+{
+  "block_kind": "gated_mla",
+  "columns": [
+    {
+      "attention_residual": {
+        "chimera_weight_shape": [
+          1,
+          64,
+          2
+        ],
+        "cosine": 0.9999999999999362,
+        "depth_blocks": 2,
+        "max_abs_diff": 4.76837158203125e-07,
+        "mean_abs_diff": 1.2166081475584178e-08,
+        "reference_absmax": 3.4142048358917236,
+        "reference_rms": 0.712435245513916,
+        "relative_l2": 4.512140550664573e-08
+      },
+      "attn_res_block_size": 12,
+      "chimera_seconds": 0.114,
+      "compared": "pre-norm randn input -> post-mixer output; each side runs its own imported RMSNorm and its own mixer, and mixer_output_shared_input repeats the comparison with one normalised tensor fed to both mixers",
+      "device": "cpu",
+      "dtype": "float32",
+      "feed_forward_residual": {
+        "chimera_weight_shape": [
+          1,
+          64,
+          2
+        ],
+        "cosine": 0.999999999999938,
+        "depth_blocks": 2,
+        "max_abs_diff": 4.76837158203125e-07,
+        "mean_abs_diff": 1.5361523608703465e-08,
+        "reference_absmax": 3.414133071899414,
+        "reference_rms": 0.7104750871658325,
+        "relative_l2": 4.9858121935322286e-08
+      },
+      "fla_kernels_used": false,
+      "fla_note": "KimiMLAAttention is pure torch; the fla kernels the KDA receipt has to stand in for on cpu are not on this path",
+      "import_receipt": {
+        "block_kind": "gated_mla",
+        "consumed": [
+          {
+            "dtype": "BF16",
+            "elements": 7168,
+            "name": "language_model.model.layers.3.input_layernorm.weight",
+            "sha256": "45120718bec48f19868e48485178136cf70e2290b723b17047c67d81e8854d65",
+            "shape": [
+              7168
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 7168,
+            "name": "language_model.model.layers.3.mlp_res_norm.weight",
+            "sha256": "0dadca8f75945b2bf2910d4ac25ea67cebd3d02c2ee5cd436559bc865c88b791",
+            "shape": [
+              7168
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 7168,
+            "name": "language_model.model.layers.3.mlp_res_proj.weight",
+            "sha256": "0498f00f1dd7db4c3483da6632c300b0cb77f76e3170f2b18c4261668faaff0a",
+            "shape": [
+              1,
+              7168
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 7168,
+            "name": "language_model.model.layers.3.post_attention_layernorm.weight",
+            "sha256": "ad73d2f41544491ea5d65813292e0422ee02d50e853d61760d3f59cdcac8b6f6",
+            "shape": [
+              7168
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 7168,
+            "name": "language_model.model.layers.3.self_attention_res_norm.weight",
+            "sha256": "f3b13e177d5447355419c496b2809a9d7b7c6f2c5f9ed41bcf9e799b086fcd8a",
+            "shape": [
+              7168
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 7168,
+            "name": "language_model.model.layers.3.self_attention_res_proj.weight",
+            "sha256": "76be2afd276ef4fdaba6a3a9493dbe1f30efe45d657d2e94436690637dc20410",
+            "shape": [
+              1,
+              7168
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 88080384,
+            "name": "language_model.model.layers.3.self_attn.g_proj.weight",
+            "sha256": "51c88e3c3b94e9b8acf5bb380ef3bed2180f2bc9b010b58f8e9b3257c6d0bda5",
+            "shape": [
+              12288,
+              7168
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 512,
+            "name": "language_model.model.layers.3.self_attn.kv_a_layernorm.weight",
+            "sha256": "bd576235f00a66fe7734fb7a85c2c9fda8e4df464eef96ee99896ab0d53ee7d6",
+            "shape": [
+              512
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 4128768,
+            "name": "language_model.model.layers.3.self_attn.kv_a_proj_with_mqa.weight",
+            "sha256": "219f34391ad907255e677c901bf3368ba5a9e4303c26b9e7ed580cb2d541b94b",
+            "shape": [
+              576,
+              7168
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 12582912,
+            "name": "language_model.model.layers.3.self_attn.kv_b_proj.weight",
+            "sha256": "c62483b2d3c7d4b5665801142b7d8a068860940bdee02da1420af42ba695d96b",
+            "shape": [
+              24576,
+              512
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 88080384,
+            "name": "language_model.model.layers.3.self_attn.o_proj.weight",
+            "sha256": "f7a82f3b627d8fb9fd592dd66ff6bc3b8934ba466052de9e7cb758ee49350832",
+            "shape": [
+              7168,
+              12288
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 1536,
+            "name": "language_model.model.layers.3.self_attn.q_a_layernorm.weight",
+            "sha256": "1ca01ffc00aa2a905da9270fc3a27ea54e99c17d4444c3a96d31ea16dcec2f19",
+            "shape": [
+              1536
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 11010048,
+            "name": "language_model.model.layers.3.self_attn.q_a_proj.weight",
+            "sha256": "1562ec09e405296325e5b11fb32b28f340886abe3a658f0ab50dfea1addfd281",
+            "shape": [
+              1536,
+              7168
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 28311552,
+            "name": "language_model.model.layers.3.self_attn.q_b_proj.weight",
+            "sha256": "590ba0437650c75d0e6d62d9b5257398151e53864cab7642e3c0e1ab239c6c13",
+            "shape": [
+              18432,
+              1536
+            ]
+          }
+        ],
+        "consumed_tensors": 14,
+        "dense_mlp": false,
+        "device": "cpu",
+        "dtype": "torch.float32",
+        "initialised": [
+          "attention_residual.prefix_logit_bias 0.0 (attnres_init='zero'; no K3 source)",
+          "feed_forward_residual.prefix_logit_bias 0.0 (attnres_init='zero'; no K3 source)",
+          "ffn.down.weight (7168, 33792) random init (routed layer, no dense MLP)",
+          "ffn.up.weight (67584, 7168) random init (routed layer, no dense MLP)"
+        ],
+        "layer_index": 3,
+        "notes": [
+          "dt_bias is viewed as [heads, head_dim]; o_norm's single row is broadcast per head",
+          "res_proj is squeezed into DepthAttentionResidual.query; (w*k).q == k.(w*q)",
+          "prefix_logit_bias has no K3 source and stays 0 (uniform depth mixing, K3's behaviour)"
+        ],
+        "parameter_counts": {
+          "block_total": 958902274,
+          "imported": 232239104
+        },
+        "schema": "chimera_omni.import.kimi_k3.layer.v1",
+        "source_adjustments": [],
+        "source_prefix": "language_model.model.",
+        "written_parameters": {
+          "attention_residual.norm.weight": 7168,
+          "attention_residual.query": 7168,
+          "feed_forward_residual.norm.weight": 7168,
+          "feed_forward_residual.query": 7168,
+          "mixer.gate.weight": 88080384,
+          "mixer.kv_down.weight": 4128768,
+          "mixer.kv_norm.weight": 512,
+          "mixer.kv_up.weight": 12582912,
+          "mixer.out.weight": 88080384,
+          "mixer.q_down.weight": 11010048,
+          "mixer.q_norm.weight": 1536,
+          "mixer.q_up.weight": 28311552,
+          "norm1.weight": 7168,
+          "norm2.weight": 7168
+        }
+      },
+      "input_layernorm": {
+        "cosine": 0.9999999999999407,
+        "max_abs_diff": 0.0,
+        "mean_abs_diff": 0.0,
+        "reference_absmax": 2.86146879196167,
+        "reference_rms": 0.18212495744228363,
+        "relative_l2": 0.0
+      },
+      "input_seed": 0,
+      "input_shape": [
+        1,
+        64,
+        7168
+      ],
+      "intermediate_shapes": {
+        "compressed_kv": [
+          1,
+          64,
+          576
+        ],
+        "gate_projection": [
+          1,
+          64,
+          12288
+        ],
+        "kv_states": [
+          1,
+          64,
+          24576
+        ],
+        "q_latent": [
+          1,
+          64,
+          1536
+        ],
+        "q_states": [
+          1,
+          64,
+          18432
+        ]
+      },
+      "intermediates": {
+        "compressed_kv": {
+          "cosine": 0.9999999999999869,
+          "max_abs_diff": 0.0,
+          "mean_abs_diff": 0.0,
+          "reference_absmax": 3.126619577407837,
+          "reference_rms": 0.445387601852417,
+          "relative_l2": 0.0
+        },
+        "gate_projection": {
+          "cosine": 0.9999999999998925,
+          "max_abs_diff": 0.0,
+          "mean_abs_diff": 0.0,
+          "reference_absmax": 3.002924680709839,
+          "reference_rms": 0.34521737694740295,
+          "relative_l2": 0.0
+        },
+        "kv_states": {
+          "cosine": 0.9999999999998366,
+          "max_abs_diff": 0.0,
+          "mean_abs_diff": 0.0,
+          "reference_absmax": 1.0633797645568848,
+          "reference_rms": 0.11317694932222366,
+          "relative_l2": 0.0
+        },
+        "q_latent": {
+          "cosine": 0.9999999999999712,
+          "max_abs_diff": 0.0,
+          "mean_abs_diff": 0.0,
+          "reference_absmax": 3.1418023109436035,
+          "reference_rms": 0.6496984958648682,
+          "relative_l2": 0.0
+        },
+        "q_states": {
+          "cosine": 0.999999999999873,
+          "max_abs_diff": 0.0,
+          "mean_abs_diff": 0.0,
+          "reference_absmax": 13.627952575683594,
+          "reference_rms": 1.4604570865631104,
+          "relative_l2": 0.0
+        }
+      },
+      "mixer_output": {
+        "cosine": 0.9999999999999192,
+        "max_abs_diff": 8.940696716308594e-08,
+        "mean_abs_diff": 6.529781160224957e-09,
+        "reference_absmax": 0.6114494204521179,
+        "reference_rms": 0.047747354954481125,
+        "relative_l2": 1.8725258985432824e-07
+      },
+      "mixer_output_shared_input": {
+        "cosine": 0.9999999999999192,
+        "max_abs_diff": 8.940696716308594e-08,
+        "mean_abs_diff": 6.529781160224957e-09,
+        "reference_absmax": 0.6114494204521179,
+        "reference_rms": 0.047747354954481125,
+        "relative_l2": 1.8725258985432824e-07
+      },
+      "post_attention_layernorm": {
+        "cosine": 0.9999999999999454,
+        "max_abs_diff": 0.0,
+        "mean_abs_diff": 0.0,
+        "reference_absmax": 0.8431857824325562,
+        "reference_rms": 0.04548252001404762,
+        "relative_l2": 0.0
+      },
+      "pushes_a_block_at_this_layer": false,
+      "reference_attention_implementation": "eager",
+      "reference_load_state_dict": {
+        "missing_keys": [],
+        "modules_loaded": [
+          "input_layernorm",
+          "mlp_res_norm",
+          "mlp_res_proj",
+          "post_attention_layernorm",
+          "self_attention_res_norm",
+          "self_attention_res_proj",
+          "self_attn"
+        ],
+        "per_module": {
+          "input_layernorm": {
+            "missing_keys": [],
+            "unexpected_keys": []
+          },
+          "mlp_res_norm": {
+            "missing_keys": [],
+            "unexpected_keys": []
+          },
+          "mlp_res_proj": {
+            "missing_keys": [],
+            "unexpected_keys": []
+          },
+          "post_attention_layernorm": {
+            "missing_keys": [],
+            "unexpected_keys": []
+          },
+          "self_attention_res_norm": {
+            "missing_keys": [],
+            "unexpected_keys": []
+          },
+          "self_attention_res_proj": {
+            "missing_keys": [],
+            "unexpected_keys": []
+          },
+          "self_attn": {
+            "missing_keys": [],
+            "unexpected_keys": []
+          }
+        },
+        "unexpected_keys": [],
+        "unrouted_source_tensors": []
+      },
+      "reference_seconds": 0.114,
+      "transformers_shims": {
+        "OutputRecorder": "placeholder; absent from this transformers version"
+      }
+    },
+    {
+      "attention_residual": {
+        "chimera_weight_shape": [
+          1,
+          64,
+          2
+        ],
+        "cosine": 0.9999997551905182,
+        "depth_blocks": 2,
+        "max_abs_diff": 0.015625,
+        "mean_abs_diff": 7.93749641161412e-05,
+        "reference_absmax": 3.421875,
+        "reference_rms": 0.7124336957931519,
+        "relative_l2": 0.0006997281090977894
+      },
+      "attn_res_block_size": 12,
+      "chimera_seconds": 0.023,
+      "compared": "pre-norm randn input -> post-mixer output; each side runs its own imported RMSNorm and its own mixer, and mixer_output_shared_input repeats the comparison with one normalised tensor fed to both mixers",
+      "device": "cuda:0",
+      "dtype": "bfloat16",
+      "feed_forward_residual": {
+        "chimera_weight_shape": [
+          1,
+          64,
+          2
+        ],
+        "cosine": 0.9999998367124767,
+        "depth_blocks": 2,
+        "max_abs_diff": 0.015625,
+        "mean_abs_diff": 5.123576556798071e-05,
+        "reference_absmax": 3.40625,
+        "reference_rms": 0.7104765772819519,
+        "relative_l2": 0.0005714691449622341
+      },
+      "fla_kernels_used": false,
+      "fla_note": "KimiMLAAttention is pure torch; the fla kernels the KDA receipt has to stand in for on cpu are not on this path",
+      "gpu_name": "Quadro RTX 8000",
+      "import_receipt": {
+        "block_kind": "gated_mla",
+        "consumed": [
+          {
+            "dtype": "BF16",
+            "elements": 7168,
+            "name": "language_model.model.layers.3.input_layernorm.weight",
+            "sha256": "45120718bec48f19868e48485178136cf70e2290b723b17047c67d81e8854d65",
+            "shape": [
+              7168
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 7168,
+            "name": "language_model.model.layers.3.mlp_res_norm.weight",
+            "sha256": "0dadca8f75945b2bf2910d4ac25ea67cebd3d02c2ee5cd436559bc865c88b791",
+            "shape": [
+              7168
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 7168,
+            "name": "language_model.model.layers.3.mlp_res_proj.weight",
+            "sha256": "0498f00f1dd7db4c3483da6632c300b0cb77f76e3170f2b18c4261668faaff0a",
+            "shape": [
+              1,
+              7168
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 7168,
+            "name": "language_model.model.layers.3.post_attention_layernorm.weight",
+            "sha256": "ad73d2f41544491ea5d65813292e0422ee02d50e853d61760d3f59cdcac8b6f6",
+            "shape": [
+              7168
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 7168,
+            "name": "language_model.model.layers.3.self_attention_res_norm.weight",
+            "sha256": "f3b13e177d5447355419c496b2809a9d7b7c6f2c5f9ed41bcf9e799b086fcd8a",
+            "shape": [
+              7168
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 7168,
+            "name": "language_model.model.layers.3.self_attention_res_proj.weight",
+            "sha256": "76be2afd276ef4fdaba6a3a9493dbe1f30efe45d657d2e94436690637dc20410",
+            "shape": [
+              1,
+              7168
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 88080384,
+            "name": "language_model.model.layers.3.self_attn.g_proj.weight",
+            "sha256": "51c88e3c3b94e9b8acf5bb380ef3bed2180f2bc9b010b58f8e9b3257c6d0bda5",
+            "shape": [
+              12288,
+              7168
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 512,
+            "name": "language_model.model.layers.3.self_attn.kv_a_layernorm.weight",
+            "sha256": "bd576235f00a66fe7734fb7a85c2c9fda8e4df464eef96ee99896ab0d53ee7d6",
+            "shape": [
+              512
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 4128768,
+            "name": "language_model.model.layers.3.self_attn.kv_a_proj_with_mqa.weight",
+            "sha256": "219f34391ad907255e677c901bf3368ba5a9e4303c26b9e7ed580cb2d541b94b",
+            "shape": [
+              576,
+              7168
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 12582912,
+            "name": "language_model.model.layers.3.self_attn.kv_b_proj.weight",
+            "sha256": "c62483b2d3c7d4b5665801142b7d8a068860940bdee02da1420af42ba695d96b",
+            "shape": [
+              24576,
+              512
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 88080384,
+            "name": "language_model.model.layers.3.self_attn.o_proj.weight",
+            "sha256": "f7a82f3b627d8fb9fd592dd66ff6bc3b8934ba466052de9e7cb758ee49350832",
+            "shape": [
+              7168,
+              12288
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 1536,
+            "name": "language_model.model.layers.3.self_attn.q_a_layernorm.weight",
+            "sha256": "1ca01ffc00aa2a905da9270fc3a27ea54e99c17d4444c3a96d31ea16dcec2f19",
+            "shape": [
+              1536
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 11010048,
+            "name": "language_model.model.layers.3.self_attn.q_a_proj.weight",
+            "sha256": "1562ec09e405296325e5b11fb32b28f340886abe3a658f0ab50dfea1addfd281",
+            "shape": [
+              1536,
+              7168
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 28311552,
+            "name": "language_model.model.layers.3.self_attn.q_b_proj.weight",
+            "sha256": "590ba0437650c75d0e6d62d9b5257398151e53864cab7642e3c0e1ab239c6c13",
+            "shape": [
+              18432,
+              1536
+            ]
+          }
+        ],
+        "consumed_tensors": 14,
+        "dense_mlp": false,
+        "device": "cuda:0",
+        "dtype": "torch.bfloat16",
+        "initialised": [
+          "attention_residual.prefix_logit_bias 0.0 (attnres_init='zero'; no K3 source)",
+          "feed_forward_residual.prefix_logit_bias 0.0 (attnres_init='zero'; no K3 source)",
+          "ffn.down.weight (7168, 33792) random init (routed layer, no dense MLP)",
+          "ffn.up.weight (67584, 7168) random init (routed layer, no dense MLP)"
+        ],
+        "layer_index": 3,
+        "notes": [
+          "dt_bias is viewed as [heads, head_dim]; o_norm's single row is broadcast per head",
+          "res_proj is squeezed into DepthAttentionResidual.query; (w*k).q == k.(w*q)",
+          "prefix_logit_bias has no K3 source and stays 0 (uniform depth mixing, K3's behaviour)"
+        ],
+        "parameter_counts": {
+          "block_total": 958902274,
+          "imported": 232239104
+        },
+        "schema": "chimera_omni.import.kimi_k3.layer.v1",
+        "source_adjustments": [],
+        "source_prefix": "language_model.model.",
+        "written_parameters": {
+          "attention_residual.norm.weight": 7168,
+          "attention_residual.query": 7168,
+          "feed_forward_residual.norm.weight": 7168,
+          "feed_forward_residual.query": 7168,
+          "mixer.gate.weight": 88080384,
+          "mixer.kv_down.weight": 4128768,
+          "mixer.kv_norm.weight": 512,
+          "mixer.kv_up.weight": 12582912,
+          "mixer.out.weight": 88080384,
+          "mixer.q_down.weight": 11010048,
+          "mixer.q_norm.weight": 1536,
+          "mixer.q_up.weight": 28311552,
+          "norm1.weight": 7168,
+          "norm2.weight": 7168
+        }
+      },
+      "input_layernorm": {
+        "cosine": 0.999996297735973,
+        "max_abs_diff": 0.015625,
+        "mean_abs_diff": 0.00019432927365414798,
+        "reference_absmax": 2.84375,
+        "reference_rms": 0.1820930540561676,
+        "relative_l2": 0.002727105786079801
+      },
+      "input_seed": 0,
+      "input_shape": [
+        1,
+        64,
+        7168
+      ],
+      "intermediate_shapes": {
+        "compressed_kv": [
+          1,
+          64,
+          576
+        ],
+        "gate_projection": [
+          1,
+          64,
+          12288
+        ],
+        "kv_states": [
+          1,
+          64,
+          24576
+        ],
+        "q_latent": [
+          1,
+          64,
+          1536
+        ],
+        "q_states": [
+          1,
+          64,
+          18432
+        ]
+      },
+      "intermediates": {
+        "compressed_kv": {
+          "cosine": 1.0,
+          "max_abs_diff": 0.0,
+          "mean_abs_diff": 0.0,
+          "reference_absmax": 3.125,
+          "reference_rms": 0.4453139007091522,
+          "relative_l2": 0.0
+        },
+        "gate_projection": {
+          "cosine": 1.0000000000000002,
+          "max_abs_diff": 0.0,
+          "mean_abs_diff": 0.0,
+          "reference_absmax": 3.0,
+          "reference_rms": 0.3451473116874695,
+          "relative_l2": 0.0
+        },
+        "kv_states": {
+          "cosine": 0.9999943863488023,
+          "max_abs_diff": 0.00390625,
+          "mean_abs_diff": 0.00022365219774655998,
+          "reference_absmax": 1.0625,
+          "reference_rms": 0.11316962540149689,
+          "relative_l2": 0.003351940772767359
+        },
+        "q_latent": {
+          "cosine": 0.9999961325442,
+          "max_abs_diff": 0.015625,
+          "mean_abs_diff": 0.000711921020410955,
+          "reference_absmax": 3.140625,
+          "reference_rms": 0.6496790051460266,
+          "relative_l2": 0.0027814674827221736
+        },
+        "q_states": {
+          "cosine": 0.9999971309239231,
+          "max_abs_diff": 0.0625,
+          "mean_abs_diff": 0.0016799113946035504,
+          "reference_absmax": 13.625,
+          "reference_rms": 1.4603664875030518,
+          "relative_l2": 0.0023959863498875904
+        }
+      },
+      "mixer_output": {
+        "cosine": 0.9999783545567202,
+        "max_abs_diff": 0.00390625,
+        "mean_abs_diff": 0.0002159950090572238,
+        "reference_absmax": 0.609375,
+        "reference_rms": 0.04774490371346474,
+        "relative_l2": 0.006580225142256916
+      },
+      "mixer_output_shared_input": {
+        "cosine": 0.9999851988017971,
+        "max_abs_diff": 0.00390625,
+        "mean_abs_diff": 0.00017376594769302756,
+        "reference_absmax": 0.609375,
+        "reference_rms": 0.04774490371346474,
+        "relative_l2": 0.005447243863677544
+      },
+      "post_attention_layernorm": {
+        "cosine": 0.9999963407737963,
+        "max_abs_diff": 0.00390625,
+        "mean_abs_diff": 4.812014230992645e-05,
+        "reference_absmax": 0.83984375,
+        "reference_rms": 0.04547418653964996,
+        "relative_l2": 0.002712414502409527
+      },
+      "pushes_a_block_at_this_layer": false,
+      "reference_attention_implementation": "eager",
+      "reference_load_state_dict": {
+        "missing_keys": [],
+        "modules_loaded": [
+          "input_layernorm",
+          "mlp_res_norm",
+          "mlp_res_proj",
+          "post_attention_layernorm",
+          "self_attention_res_norm",
+          "self_attention_res_proj",
+          "self_attn"
+        ],
+        "per_module": {
+          "input_layernorm": {
+            "missing_keys": [],
+            "unexpected_keys": []
+          },
+          "mlp_res_norm": {
+            "missing_keys": [],
+            "unexpected_keys": []
+          },
+          "mlp_res_proj": {
+            "missing_keys": [],
+            "unexpected_keys": []
+          },
+          "post_attention_layernorm": {
+            "missing_keys": [],
+            "unexpected_keys": []
+          },
+          "self_attention_res_norm": {
+            "missing_keys": [],
+            "unexpected_keys": []
+          },
+          "self_attention_res_proj": {
+            "missing_keys": [],
+            "unexpected_keys": []
+          },
+          "self_attn": {
+            "missing_keys": [],
+            "unexpected_keys": []
+          }
+        },
+        "unexpected_keys": [],
+        "unrouted_source_tensors": []
+      },
+      "reference_seconds": 0.042,
+      "transformers_shims": {}
+    }
+  ],
+  "config": {
+    "activation_kind": "situ",
+    "architecture": "dense_decoder_native_omnimodal_encoder_free",
+    "attention_head_dim": 128,
+    "attnres_block_size": 12,
+    "attnres_init": "zero",
+    "aux_heads": [
+      "flow",
+      "grounding",
+      "sync"
+    ],
+    "block_pattern": [
+      "kda",
+      "kda",
+      "kda",
+      "gated_mla"
+    ],
+    "csa_compress_stride": 64,
+    "dropout": 0.0,
+    "feed_forward_kind": "dense",
+    "force_final_gated_mla": true,
+    "gqa_output_gate": true,
+    "gqa_qk_norm": true,
+    "gqa_rope_dim": 0,
+    "gqa_rope_theta": 10000000.0,
+    "hca_compress_stride": 1024,
+    "hidden_size": 7168,
+    "intermediate_size": 33792,
+    "intermediate_sizes": [],
+    "kda_conv_bias": false,
+    "kda_decay_kind": "kda",
+    "kda_decay_rank": 128,
+    "kda_gate_lower_bound": -5.0,
+    "kda_head_dim": 128,
+    "kda_num_heads": 96,
+    "kda_num_key_heads": 96,
+    "kda_output_gate": "sigmoid",
+    "kda_qk_norm_eps": 1e-06,
+    "kda_qk_norm_kind": "fla",
+    "kda_query_scale": "inv_sqrt_key_dim",
+    "kda_short_conv_kernel_size": 4,
+    "kda_value_head_dim": 128,
+    "ledger_bands": [
+      [
+        "control",
+        512
+      ],
+      [
+        "media",
+        2048
+      ],
+      [
+        "grounding",
+        1024
+      ],
+      [
+        "sync",
+        128
+      ],
+      [
+        "tool",
+        384
+      ]
+    ],
+    "ledger_base_vocab_size": 163840,
+    "ledger_kind": "fixed_band",
+    "local_window": 256,
+    "max_sequence_length": 1048576,
+    "metadata": {
+      "import_source": "kimi_k3",
+      "moe_folding": "uniform_dense_width",
+      "source_config_scope": "text_config",
+      "source_config_sha256": "a15a5818a3b84f2d78be7476983d4a384ef0bb9c93667c099cfa5ba6e8775c5d"
+    },
+    "mla_extra_head_dim": 64,
+    "mla_key_head_dim": 128,
+    "mla_latent_norm_eps": 1e-06,
+    "mla_latent_size": 512,
+    "mla_query_latent_size": 1536,
+    "mla_value_head_dim": 128,
+    "mtp_heads": 0,
+    "native_bidirectional_block_kinds": [
+      "gated_mla"
+    ],
+    "native_bidirectional_refinement": false,
+    "native_coordinate_frequencies": 8,
+    "native_feature_dim": 6144,
+    "native_loss_reduction": "type_balanced",
+    "native_position_dim": 4,
+    "native_type_count": 8,
+    "num_heads": 96,
+    "num_kv_heads": 96,
+    "num_layers": 93,
+    "residual_mode": "block_attnres",
+    "rms_norm_eps": 1e-05,
+    "scale_policy": "explicit_config_no_baked_target_size",
+    "schema": "chimera_omni.config.v1",
+    "situ_gate_beta": 4.0,
+    "situ_up_beta": 25.0,
+    "tie_word_embeddings": false,
+    "vocab_size": 167936
+  },
+  "generated_utc": "2026-09-02T13:14:46Z",
+  "k3_dir": "/mnt/ai_data/models/moonshotai/Kimi-K3",
+  "k3_src": "/home/cereal/omni-campaign/k3/k3_src",
+  "layer_index": 3,
+  "notes": [
+    "reference = KimiMLAAttention from the checkpoint's own modeling_kimi_linear.py, eager attention, additive causal mask at torch.finfo(dtype).min",
+    "the six modules around the mixer are built with KimiDecoderLayer.__init__'s own constructor arguments because a routed decoder layer cannot be instantiated (896 experts); _apply_attn_res is the checkpoint's own function",
+    "KimiMLAAttention builds q_a_layernorm and kv_a_layernorm with KimiRMSNorm's DEFAULT eps (1e-6), not config.rms_norm_eps (1e-5); mla_latent_norm_eps carries that",
+    "bf16-only divergences, by construction and not import bugs: (a) KimiRMSNorm rounds to the column dtype BEFORE multiplying by the norm weight while Chimera's RMSNorm multiplies in fp32 and rounds after; (b) the reference computes QK^T, the PV product and the gate in the column dtype while Chimera upcasts q/k/v to fp32 and rounds only at o_proj's input; (c) the reference multiplies the scores by q_head_dim**-0.5 while Chimera divides by sqrt(q_head_dim)"
+  ],
+  "read": {
+    "bytes": 464478208,
+    "dtypes": [
+      "BF16"
+    ],
+    "megabytes_per_second": 1290.18,
+    "requested": [
+      "language_model.model.layers.3.input_layernorm.weight",
+      "language_model.model.layers.3.post_attention_layernorm.weight",
+      "language_model.model.layers.3.self_attention_res_norm.weight",
+      "language_model.model.layers.3.self_attention_res_proj.weight",
+      "language_model.model.layers.3.mlp_res_norm.weight",
+      "language_model.model.layers.3.mlp_res_proj.weight",
+      "language_model.model.layers.3.self_attn.q_a_proj.weight",
+      "language_model.model.layers.3.self_attn.q_a_layernorm.weight",
+      "language_model.model.layers.3.self_attn.q_b_proj.weight",
+      "language_model.model.layers.3.self_attn.kv_a_proj_with_mqa.weight",
+      "language_model.model.layers.3.self_attn.kv_a_layernorm.weight",
+      "language_model.model.layers.3.self_attn.kv_b_proj.weight",
+      "language_model.model.layers.3.self_attn.g_proj.weight",
+      "language_model.model.layers.3.self_attn.o_proj.weight"
+    ],
+    "seconds": 0.34,
+    "source": "/home/cereal/omni-campaign/k3/staged/model-00004-of-000096.safetensors",
+    "source_kind": "shard_file",
+    "tensors": 14
+  },
+  "schema": "chimera_omni.receipt.import.kimi_k3.mla_mixer.v1",
+  "scope": "MIXER ONLY. Layer 3 is a routed layer (block_sparse_moe.*, 896 MXFP4 experts) and Chimera Omni is dense, so the layer's channel mixing has no exact import target and is NOT part of this receipt. The ChimeraBlock's feed-forward is random-initialised and listed as such in import_receipt.",
+  "score_scaling": {
+    "chimera_divisor": "13.856406460551018",
+    "chimera_expression": "scores / math.sqrt(query_head_dim)",
+    "chimera_reciprocal": "0.07216878364870323",
+    "q_head_dim": 192,
+    "reference_expression": "scores * (q_head_dim ** -0.5)",
+    "reference_value": "0.07216878364870322",
+    "same_constant": false
+  },
+  "source_prefix": "language_model.model."
+}

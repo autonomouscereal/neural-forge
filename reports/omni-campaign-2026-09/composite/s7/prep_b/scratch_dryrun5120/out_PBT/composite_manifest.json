@@ -1,0 +1,550 @@
+{
+  "accounting": {
+    "charted_dtype": "BF16",
+    "charted_or_blend_added": 46156031,
+    "child_header_parameters": 48135312,
+    "equality_asserted": true,
+    "oc_seal_header_parameters": 94291343,
+    "output_header_parameters": 94291343,
+    "quantization": "none",
+    "storage_dtype": "BF16"
+  },
+  "band": {
+    "note": "no band table given"
+  },
+  "blocks": {
+    "added_parameters": 46156031,
+    "arm": "insert",
+    "placements": [
+      {
+        "accounting": {
+          "child_block_parameters": 25182463,
+          "child_mlp_parameters": 8388607,
+          "parent_block_parameters": 50358528,
+          "parent_mlp_parameters": 33564672,
+          "scope": "self-attention + MLP; zero q/k/v bias rows (3 x width) are counted"
+        },
+        "chart_fit": null,
+        "chart_parameters": 20973568,
+        "chart_source": "container",
+        "component": "hy3d.dit.block10.mlp",
+        "container": "hy3d_dit_L10",
+        "dropped_chart_keys": [],
+        "files": {
+          "charted_block.json": "6eff2077c759a87605ba058dbb7146967ef59deff16da407fd3696d1f2e33d79",
+          "charted_block.safetensors": "58574fe6255d924a651d910ed941115da1d1aabaf5f1c4f8afba1e81e8b5d817",
+          "charts.safetensors": "5209e8343562193140684f719c860c23b28c67cb0785f87dfcdda357c5dd4b5b",
+          "time_reference.safetensors": null
+        },
+        "holdout": {
+          "note": "Codex fold_receipt candidate_diagnostics (block_output relL2 etc.); not re-derived here"
+        },
+        "layer_index": 4,
+        "mlp_parameters": 8388607,
+        "mlp_tensor_prefix": "blocks.4.charted.mlp.",
+        "narrowing": {
+          "attn.k_norm.weight": {
+            "dtype": "BF16",
+            "max_abs_narrowing": 0.0009765625
+          },
+          "attn.k_proj.bias": {
+            "dtype": "BF16",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.k_proj.weight": {
+            "dtype": "BF16",
+            "max_abs_narrowing": 3.0517578125e-05
+          },
+          "attn.o_proj.bias": {
+            "dtype": "BF16",
+            "max_abs_narrowing": 9.1552734375e-05
+          },
+          "attn.o_proj.weight": {
+            "dtype": "BF16",
+            "max_abs_narrowing": 3.0517578125e-05
+          },
+          "attn.q_norm.weight": {
+            "dtype": "BF16",
+            "max_abs_narrowing": 0.0009765625
+          },
+          "attn.q_proj.bias": {
+            "dtype": "BF16",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.q_proj.weight": {
+            "dtype": "BF16",
+            "max_abs_narrowing": 3.0517578125e-05
+          },
+          "attn.v_proj.bias": {
+            "dtype": "BF16",
+            "max_abs_narrowing": 0.0
+          },
+          "attn.v_proj.weight": {
+            "dtype": "BF16",
+            "max_abs_narrowing": 3.0517578125e-05
+          },
+          "attn_norm.bias": {
+            "dtype": "BF16",
+            "max_abs_narrowing": 4.57763671875e-05
+          },
+          "attn_norm.weight": {
+            "dtype": "BF16",
+            "max_abs_narrowing": 0.0009765625
+          },
+          "chart_in.bias": {
+            "dtype": "BF16",
+            "max_abs_narrowing": 4.310533404350281e-05
+          },
+          "chart_in.weight": {
+            "dtype": "BF16",
+            "max_abs_narrowing": 0.0009222626686096191
+          },
+          "chart_out.weight": {
+            "dtype": "BF16",
+            "max_abs_narrowing": 0.0009703934192657471
+          },
+          "mlp.fc1.bias": {
+            "dtype": "BF16",
+            "max_abs_narrowing": 3.0517578125e-05
+          },
+          "mlp.fc1.weight": {
+            "dtype": "BF16",
+            "max_abs_narrowing": 3.0517578125e-05
+          },
+          "mlp.fc2.bias": {
+            "dtype": "BF16",
+            "max_abs_narrowing": 9.1552734375e-05
+          },
+          "mlp.fc2.weight": {
+            "dtype": "BF16",
+            "max_abs_narrowing": 0.0001220703125
+          },
+          "mlp_norm.bias": {
+            "dtype": "BF16",
+            "max_abs_narrowing": 1.52587890625e-05
+          },
+          "mlp_norm.weight": {
+            "dtype": "BF16",
+            "max_abs_narrowing": 0.0009765625
+          }
+        },
+        "pairing": {
+          "candidates": [
+            3,
+            7
+          ],
+          "insert_after": 3,
+          "rule": "depth-fraction -> nearest gated_gqa refinement layer",
+          "source_depth_fraction": 0.5,
+          "trunk_depth_fraction": 0.42857142857142855
+        },
+        "parameters": 46156031,
+        "provenance": {
+          "dense_child": "/mnt/lexar/omni-campaign/hy3d-native-4983c53b-7eee-4f49-980f-ab3788f5db69/dense-child-blocks/dense-child-block-10-1c1709d9-8afb-47f0-931f-35e01f90f125/dense-child-block10/dense_child.safetensors",
+          "dense_child_fold_receipt": "/mnt/lexar/omni-campaign/hy3d-native-4983c53b-7eee-4f49-980f-ab3788f5db69/dense-child-blocks/dense-child-block-10-1c1709d9-8afb-47f0-931f-35e01f90f125/dense-child-block10/fold_receipt.json",
+          "dense_child_fold_receipt_sha256": "9bde4056ebc280ed9f4176be67f8981739a3eb70d463af7c0fd17201d6f6cda9",
+          "dense_child_sha256": "984d6b87c64ad97a61baa09573bfc08435ea197d0568198da012734396b897f6",
+          "dropped_tensors": [
+            "attn2.k_norm.weight",
+            "attn2.out_proj.bias",
+            "attn2.out_proj.weight",
+            "attn2.q_norm.weight",
+            "attn2.to_k.weight",
+            "attn2.to_q.weight",
+            "attn2.to_v.weight",
+            "norm2.bias",
+            "norm2.weight"
+          ],
+          "source_math_reference": "chimera-omni codex/validated docs/HY3D_NATIVE_COMPONENT.md",
+          "source_prefix": "model.blocks.10.",
+          "source_weights": "/home/cereal/comfyui/models/checkpoints/hunyuan_3d_v2.1.safetensors"
+        },
+        "rung": "hy3d-native-dense-child",
+        "source": "hy3d",
+        "spec": {
+          "attn_bias": true,
+          "chart_in_bias": true,
+          "component": "hy3d.dit.block10.mlp",
+          "delta_scale": 1.0,
+          "h3_curve_dim": 0,
+          "h3_curve_grid": 0,
+          "h3_rope_freqs": 0,
+          "head_dim": 128,
+          "heads": 16,
+          "kv_heads": 16,
+          "layer_index": 4,
+          "metadata": {
+            "converted_from": "/mnt/lexar/omni-campaign/hy3d-native-4983c53b-7eee-4f49-980f-ab3788f5db69/dense-child-blocks/dense-child-block-10-1c1709d9-8afb-47f0-931f-35e01f90f125/dense-child-block10/dense_child.safetensors",
+            "cross_attention": "attn2 (DINO image context) dropped: the charted kind has no conditioning input (structural; owner decision)",
+            "layer_type": "hunyuandit_plain_dense",
+            "mlp_gelu": "exact (non-approximate) per HY3D_NATIVE_COMPONENT.md",
+            "qkv": "re-packed from source per-head (q|k|v) split",
+            "qkv_bias": "zero rows written (source q/k/v have no bias; out_proj does)",
+            "time": "time token = ROW 0 of the volume segment, an owned type-7 row (runtime_requirements.hy3d_time_token_row); the block attends to it exactly as the parent self-attention does (modulation none: HY3D has no adaLN)"
+          },
+          "mlp_kind": "gelu",
+          "mlp_width": 2047,
+          "modulation": "none",
+          "norm_affine": true,
+          "norm_eps": 1e-06,
+          "norm_kind": "layer",
+          "qk_norm": true,
+          "rope_theta": 0.0,
+          "rung": "hy3d-native-dense-child",
+          "sliding_window": 0,
+          "source": "hy3d",
+          "source_depth_fraction": 0.5,
+          "time_embed_r": false,
+          "time_factor": 1000.0,
+          "time_freq_dim": 256,
+          "time_hidden": 0,
+          "type_ids": [
+            7
+          ],
+          "width": 2048
+        },
+        "tensor_prefix": "blocks.4.charted.",
+        "tensor_sha256_check": {
+          "charted_block.safetensors": {
+            "declared": 18,
+            "verified": true
+          },
+          "charts.safetensors": {
+            "declared": 3,
+            "verified": true
+          }
+        },
+        "time_reference": null,
+        "type_ids": [
+          7
+        ]
+      }
+    ],
+    "trunk_layer_map": {
+      "0": 0,
+      "1": 1,
+      "2": 2,
+      "3": 3,
+      "4": 5,
+      "5": 6,
+      "6": 7,
+      "7": 8
+    }
+  },
+  "child": {
+    "chimera_commit": "ffffffffffffffffffffffffffffffffffffffff",
+    "config_sha256": "2913cf3e90ebe75c0ed6b6afb7b2ea58f59427a9bca0be569c62f8d9776fe251",
+    "directory": "/home/cereal/omni-campaign/composite/s7/prep_b/scratch_dryrun5120/tiny_child",
+    "header_bytes": 96270624,
+    "header_parameters": 48135312,
+    "index_sha256": "dfd2f5ca19054e1a38f614cf3ca6774059ad6ee2771c01bcc88887f33783829d",
+    "shards": [
+      "model-00001-of-00001.safetensors"
+    ],
+    "storage_dtype": "BF16",
+    "tensors": 143,
+    "tensors_sha256_verified": 143,
+    "tied_weights": {}
+  },
+  "components": [
+    {
+      "child_params": 8388607,
+      "component": "hy3d.dit.block10.mlp",
+      "counts_source": "child derived from the written headers under the prefix; parent from the container's source-block accounting",
+      "meets_4x": true,
+      "note": "the ledger's 4-field derived form needs the PREFIX in the parent's headers too; the parent block lives in the source model, so the register line uses the 3-field asserted form and this manifest carries the derivation",
+      "parent_params": 33564672,
+      "ratio": 0.2499236995374184,
+      "register_form": "--component",
+      "register_spec": "hy3d.dit.block10.mlp:33564672:8388607",
+      "source": "hy3d",
+      "tensor_prefix": "blocks.4.charted.mlp.",
+      "whole_block": {
+        "child_params": 25182463,
+        "parent_params": 50358528,
+        "ratio": 0.5000635244938056
+      }
+    }
+  ],
+  "disk": {
+    "estimated_output_bytes": 188582686,
+    "filesystem_probe": "/home/cereal/omni-campaign/composite/s7/prep_b/scratch_dryrun5120",
+    "free_bytes_before": 228462325760,
+    "materialised_bytes": 92312062,
+    "min_free_gib": 60.0,
+    "streamed_bytes": 96270624
+  },
+  "generated_utc": "2026-10-11T05:18:41Z",
+  "interface": {
+    "entries": [],
+    "note": "no interface row sets given"
+  },
+  "narrowing": {
+    "max_abs_per_modified_tensor": {},
+    "storage_dtype": "BF16"
+  },
+  "output": {
+    "checkpoint_id": "DRYRUN-S7-PBT",
+    "config": {
+      "activation_kind": "silu",
+      "architecture": "dense_decoder_native_omnimodal_encoder_free",
+      "attention_head_dim": 8,
+      "attnres_block_size": 4,
+      "attnres_init": "zero",
+      "aux_heads": [
+        "flow",
+        "grounding",
+        "sync"
+      ],
+      "block_pattern": [
+        "kda",
+        "kda",
+        "kda",
+        "gated_gqa",
+        "charted",
+        "kda",
+        "kda",
+        "kda",
+        "gated_gqa"
+      ],
+      "charted_blocks": [
+        {
+          "attn_bias": true,
+          "chart_in_bias": true,
+          "component": "hy3d.dit.block10.mlp",
+          "delta_scale": 1.0,
+          "h3_curve_dim": 0,
+          "h3_curve_grid": 0,
+          "h3_rope_freqs": 0,
+          "head_dim": 128,
+          "heads": 16,
+          "kv_heads": 16,
+          "layer_index": 4,
+          "metadata": {
+            "converted_from": "/mnt/lexar/omni-campaign/hy3d-native-4983c53b-7eee-4f49-980f-ab3788f5db69/dense-child-blocks/dense-child-block-10-1c1709d9-8afb-47f0-931f-35e01f90f125/dense-child-block10/dense_child.safetensors",
+            "cross_attention": "attn2 (DINO image context) dropped: the charted kind has no conditioning input (structural; owner decision)",
+            "layer_type": "hunyuandit_plain_dense",
+            "mlp_gelu": "exact (non-approximate) per HY3D_NATIVE_COMPONENT.md",
+            "qkv": "re-packed from source per-head (q|k|v) split",
+            "qkv_bias": "zero rows written (source q/k/v have no bias; out_proj does)",
+            "time": "time token = ROW 0 of the volume segment, an owned type-7 row (runtime_requirements.hy3d_time_token_row); the block attends to it exactly as the parent self-attention does (modulation none: HY3D has no adaLN)"
+          },
+          "mlp_kind": "gelu",
+          "mlp_width": 2047,
+          "modulation": "none",
+          "norm_affine": true,
+          "norm_eps": 1e-06,
+          "norm_kind": "layer",
+          "qk_norm": true,
+          "rope_theta": 0.0,
+          "rung": "hy3d-native-dense-child",
+          "sliding_window": 0,
+          "source": "hy3d",
+          "source_depth_fraction": 0.5,
+          "time_embed_r": false,
+          "time_factor": 1000.0,
+          "time_freq_dim": 256,
+          "time_hidden": 0,
+          "type_ids": [
+            7
+          ],
+          "width": 2048
+        }
+      ],
+      "csa_compress_stride": 64,
+      "dropout": 0.0,
+      "feed_forward_kind": "dense",
+      "force_final_gated_mla": false,
+      "gqa_output_gate": true,
+      "gqa_qk_norm": true,
+      "gqa_rope_dim": 2,
+      "gqa_rope_theta": 10000000.0,
+      "hca_compress_stride": 1024,
+      "hidden_size": 5120,
+      "intermediate_size": 96,
+      "intermediate_sizes": [],
+      "kda_conv_bias": false,
+      "kda_decay_kind": "gdn",
+      "kda_decay_rank": 0,
+      "kda_gate_lower_bound": -5.0,
+      "kda_head_dim": 8,
+      "kda_num_heads": 4,
+      "kda_num_key_heads": 2,
+      "kda_output_gate": "silu",
+      "kda_qk_norm_eps": 1e-06,
+      "kda_qk_norm_kind": "fla",
+      "kda_query_scale": "inv_sqrt_key_dim",
+      "kda_short_conv_kernel_size": 4,
+      "kda_value_head_dim": 8,
+      "ledger_bands": [
+        [
+          "control",
+          8
+        ],
+        [
+          "media",
+          16
+        ],
+        [
+          "grounding",
+          8
+        ],
+        [
+          "sync",
+          8
+        ],
+        [
+          "tool",
+          8
+        ],
+        [
+          "music_codes",
+          24
+        ]
+      ],
+      "ledger_base_vocab_size": 256,
+      "ledger_kind": "fixed_band",
+      "local_window": 256,
+      "max_sequence_length": 256,
+      "metadata": {
+        "composite_arm": "insert",
+        "composite_tool": "c16_install_media 1.3.0",
+        "fixture": "c16_media_fixtures",
+        "profile": "toy_27b_shaped"
+      },
+      "mla_extra_head_dim": 0,
+      "mla_key_head_dim": 0,
+      "mla_latent_norm_eps": 0.0,
+      "mla_latent_size": 0,
+      "mla_query_latent_size": 0,
+      "mla_value_head_dim": 0,
+      "mtp_heads": 0,
+      "native_bidirectional_block_kinds": [
+        "gated_mla"
+      ],
+      "native_bidirectional_refinement": false,
+      "native_coordinate_frequencies": 8,
+      "native_feature_dim": 48,
+      "native_loss_reduction": "type_balanced",
+      "native_position_dim": 4,
+      "native_type_count": 8,
+      "num_heads": 4,
+      "num_kv_heads": 2,
+      "num_layers": 9,
+      "residual_mode": "none",
+      "rms_norm_eps": 1e-06,
+      "scale_policy": "explicit_config_no_baked_target_size",
+      "schema": "chimera_omni.config.v1",
+      "situ_gate_beta": 4.0,
+      "situ_up_beta": 25.0,
+      "tie_word_embeddings": false,
+      "vocab_size": 328
+    },
+    "config_sha256": "021f86abf2339590f48b575535ea3e41f86dd1bd5189b5ccaf198dcbbd788c33",
+    "directory": "/home/cereal/omni-campaign/composite/s7/prep_b/scratch_dryrun5120/out_PBT",
+    "index_sha256": "80b27edbbba72e2c1e72c74ad6a9a14d31dfc5948ff385b2914f7162ea777684",
+    "shard_sha256": {
+      "model-00001-of-00001.safetensors": "b4abad74e3d1943c3567b22084878e7a4216920211acc170f0d374b2dbecc09a"
+    },
+    "shards": [
+      "model-00001-of-00001.safetensors"
+    ],
+    "tensors": 164
+  },
+  "policy": {
+    "note": "owner policy 2026-10-06 (S7 decision D5): finite fit values are recorded, never gates; structural / sha / shape / non-finite checks refuse",
+    "time_reference": "diagnostic",
+    "time_reference_rel_tol": 1e-05
+  },
+  "register": {
+    "accounting_parent": {
+      "directory": null,
+      "parameter_count": null,
+      "source": null
+    },
+    "accounting_slack_required": null,
+    "claimed_parent": 33564672,
+    "claimed_saving": 25176065,
+    "command": "$L register --checkpoint-id DRYRUN-S7-PBT --stage fold --parent-checkpoint-id DRYRUN-TINY-CHILD --directory /home/cereal/omni-campaign/composite/s7/prep_b/scratch_dryrun5120/out_PBT --component hy3d.dit.block10.mlp:33564672:8388607 --recipe /home/cereal/omni-campaign/composite/s7/prep_b/scratch_dryrun5120/out_PBT/composite_manifest.json --recipe-command 'c16_install_media.py --child /home/cereal/omni-campaign/composite/s7/prep_b/scratch_dryrun5120/tiny_child --out /home/cereal/omni-campaign/composite/s7/prep_b/scratch_dryrun5120/out_PBT --blocks /home/cereal/omni-campaign/composite/s7/units/hy3d/hy3d_dit_L10 --tap-rows /home/cereal/omni-campaign/composite/s7/prep_b/scratch_dryrun5120/tap --pair-by depth-fraction --arm insert --chimera-src /home/cereal/omni-campaign/import/rq27b/tree_ef1ffb9 --mediafold-root /home/cereal/omni-campaign/media --time-reference-rel-tol 1e-05 --checkpoint-id DRYRUN-S7-PBT --parent-checkpoint-id DRYRUN-TINY-CHILD --min-free-gib 60 --overwrite --charted-dtype match' --confirm",
+    "directory": {
+      "known": true,
+      "matched_prefix": null,
+      "note": null,
+      "protected_prefixes": [
+        "/mnt",
+        "/home/cereal/models"
+      ],
+      "registerable": true
+    },
+    "lineage_parent_checkpoint_id": "DRYRUN-TINY-CHILD",
+    "measured_drop": null,
+    "notes": [
+      "--parent-checkpoint-id is the LINEAGE parent (the S5 child); the fold accounting is priced against the accounting parent (PARENT-Q38-27BU's directory, derived from its headers by the ledger) because an insert-arm child GROWS by the charted state relative to the S5 child and oc_checkpoint._fold_accounting refuses measured_drop <= 0. Every growth stage of the chain (S3, S5, S7) is priced the same way.",
+      "no accounting parent given (--accounting-parent-directory / --parent-parameter-count): the emitted line would be refused by the ledger (measured_drop <= 0 against the S5 child); reachable=False"
+    ],
+    "passed_through": [],
+    "reachable": false
+  },
+  "runtime": {
+    "peak_rss_bytes": 972517376,
+    "python": "3.12.3"
+  },
+  "schema": "chimera_omni.composite_manifest.v1",
+  "sources": [
+    {
+      "mechanisms": [
+        {
+          "component": "hy3d.dit.block10.mlp",
+          "mechanism": "C16 4x block, insert arm",
+          "parameters": 46156031,
+          "rung": "hy3d-native-dense-child",
+          "sha256": "58574fe6255d924a651d910ed941115da1d1aabaf5f1c4f8afba1e81e8b5d817"
+        }
+      ],
+      "source": "hy3d"
+    }
+  ],
+  "tool": {
+    "argv": [
+      "--child",
+      "/home/cereal/omni-campaign/composite/s7/prep_b/scratch_dryrun5120/tiny_child",
+      "--out",
+      "/home/cereal/omni-campaign/composite/s7/prep_b/scratch_dryrun5120/out_PBT",
+      "--blocks",
+      "/home/cereal/omni-campaign/composite/s7/units/hy3d/hy3d_dit_L10",
+      "--tap-rows",
+      "/home/cereal/omni-campaign/composite/s7/prep_b/scratch_dryrun5120/tap",
+      "--pair-by",
+      "depth-fraction",
+      "--arm",
+      "insert",
+      "--chimera-src",
+      "/home/cereal/omni-campaign/import/rq27b/tree_ef1ffb9",
+      "--mediafold-root",
+      "/home/cereal/omni-campaign/media",
+      "--time-reference-rel-tol",
+      "1e-05",
+      "--checkpoint-id",
+      "DRYRUN-S7-PBT",
+      "--parent-checkpoint-id",
+      "DRYRUN-TINY-CHILD",
+      "--min-free-gib",
+      "60",
+      "--overwrite",
+      "--charted-dtype",
+      "match"
+    ],
+    "name": "c16_install_media",
+    "recipe_command": "c16_install_media.py --child /home/cereal/omni-campaign/composite/s7/prep_b/scratch_dryrun5120/tiny_child --out /home/cereal/omni-campaign/composite/s7/prep_b/scratch_dryrun5120/out_PBT --blocks /home/cereal/omni-campaign/composite/s7/units/hy3d/hy3d_dit_L10 --tap-rows /home/cereal/omni-campaign/composite/s7/prep_b/scratch_dryrun5120/tap --pair-by depth-fraction --arm insert --chimera-src /home/cereal/omni-campaign/import/rq27b/tree_ef1ffb9 --mediafold-root /home/cereal/omni-campaign/media --time-reference-rel-tol 1e-05 --checkpoint-id DRYRUN-S7-PBT --parent-checkpoint-id DRYRUN-TINY-CHILD --min-free-gib 60 --overwrite --charted-dtype match",
+    "sha256": "05796780b0c54789ebd483073fde126e75b29cfd0b88444527fb362d19d8325d",
+    "version": "1.3.0"
+  },
+  "tree": {
+    "chimera_src": "/home/cereal/omni-campaign/import/rq27b/tree_ef1ffb9",
+    "commit": "ef1ffb9c3c1abd9ea79f1d4d5707ac5486dab9ab",
+    "commit_source": "COMMIT file (a declaration, not proof)",
+    "package_files": 65,
+    "package_sha256": "0929efb65f8f77f1d6cf6053446c397937369e691aed3602090a3acbed8f4e4a"
+  },
+  "warnings": []
+}

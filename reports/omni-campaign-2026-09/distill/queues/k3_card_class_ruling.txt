@@ -1,0 +1,7 @@
+k3-card-class-equivalence-2026-10-15
+by: Claude (lane k3plan) under the standing GO, 2026-10-15; not Cyril's words; written before any card-class or GPU6 1.3.0 result
+text: distill/STAGE_D_RULINGS_2026-10-12.md (entry k3-card-class-equivalence-2026-10-15) and distill/K3_ACCELERATION_PLAN_2026-10-14.md section 5
+gate (functional): a 93-layer bf16 review pass of the B2 review ids at the B2 geometry on the class, by the tool its passes use; parity (frozen 1.2.4 code, PARITY_THRESHOLDS unchanged) vs the B2 fp32 reference passes
+diagnostic (never a refusal, owner policy 2026-10-06): the same parity vs GPU6's bf16 review pass and vs the fold dump; bit-equality across classes is not required
+GPU6 1.3.0: bit-identity with 1.2.4 on GPU6 (k3-v130-gate, queue_gpu6.sh >= 1.4.0); any DIFFER keeps 1.2.4
+one pass = one card class, one tool sha, one group-token count (<pass dir>.geometry); P40s out of scope (MLA at T=4096 does not fit)

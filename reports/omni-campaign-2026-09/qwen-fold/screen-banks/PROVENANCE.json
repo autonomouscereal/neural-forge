@@ -1,0 +1,20 @@
+{
+  "purpose": "Review packs the qwen-fold evidence builder screens against that do not exist on the AI server. Copies, not sources: qf_evidence_build.py pins each sha256 in SCREEN_SOURCE_SHA256 and refuses a copy that has drifted from the pin.",
+  "copied_on": "2026-09-02",
+  "files": [
+    {
+      "file": "lfm2_extension_bank_prompts_v2.json",
+      "sha256": "340694a64f7e886ecf1576dd9245a1445d8e763036d842f3730c4c8ab5c9c592",
+      "bytes": 24105,
+      "copied_from": "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\research\\lfm2_extension_bank_prompts_v2.json",
+      "copied_from_sha256": "340694a64f7e886ecf1576dd9245a1445d8e763036d842f3730c4c8ab5c9c592"
+    },
+    {
+      "file": "lfm2_paraphrase_triplets_v1.json",
+      "sha256": "f9ac00e6dd5212f04a9f06d2a177c233562b5276617b14cbab0aa353ab846095",
+      "bytes": 14730,
+      "copied_from": "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\research\\lfm2_paraphrase_triplets_v1.json",
+      "copied_from_sha256": "f9ac00e6dd5212f04a9f06d2a177c233562b5276617b14cbab0aa353ab846095"
+    }
+  ]
+}

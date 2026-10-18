@@ -1,0 +1,16 @@
+{
+ "name": "omni1-check-gpu6-claude",
+ "owner": "claude (OMNI1 assembly lane, workflow subagent)",
+ "gpu_index": 6,
+ "gpu_uuid": "GPU-f5a09535-fc85-a027-50f7-734b344747dd",
+ "gpu_name": "Quadro RTX 8000",
+ "memory_used_mib_at_start": 5,
+ "started_utc": "2026-10-13T03:31:23Z",
+ "job": "s7_omni1_check.py 1.0.0 --omni1 /mnt/lexar/omni-campaign/omni1/OC02-F-Q38-27BU-OMNI1 (layer-major, one block on the GPU at a time, bf16)",
+ "log": "/home/cereal/omni-campaign/composite/s7/omni1/logs/omni1_check.log",
+ "cpu_threads": 8,
+ "nice": 15,
+ "status": "released",
+ "ended_utc": "2026-10-13T04:47:51Z",
+ "exit": 0
+}

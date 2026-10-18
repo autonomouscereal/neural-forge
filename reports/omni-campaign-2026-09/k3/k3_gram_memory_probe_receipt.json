@@ -1,0 +1,30 @@
+{
+ "detail": {
+  "new": {
+   "lambda_relative": 0.01,
+   "out_dim": 3584,
+   "peak_rss_gigabytes": 3.814,
+   "rss_after_build_gigabytes": 2.676,
+   "solution_sha_proxy": 20.16837292,
+   "update_scale": 0.99255182,
+   "variant": "new",
+   "width": 8192
+  },
+  "old": {
+   "lambda_relative": 0.01,
+   "out_dim": 3584,
+   "peak_rss_gigabytes": 7.461,
+   "rss_after_build_gigabytes": 2.673,
+   "solution_sha_proxy": 20.16837292,
+   "update_scale": 0.99255182,
+   "variant": "old",
+   "width": 8192
+  }
+ },
+ "new_peak_rss_gigabytes": 3.814,
+ "note": "measured VmHWM of two processes solving the same problem; the ratio is what the K = 65,536 rung's feasibility turns on and it is quadratic in width",
+ "old_peak_rss_gigabytes": 7.461,
+ "ratio": 1.956,
+ "same_answer": true,
+ "saved_gigabytes": 3.647
+}

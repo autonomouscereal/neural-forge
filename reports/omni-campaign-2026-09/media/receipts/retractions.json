@@ -1,0 +1,67 @@
+{
+  "kind": "media_lane_retractions",
+  "written_utc": "2026-09-02",
+  "why": "adversarial review 2026-09-02 found eight defects in the delivered media lane; the receipts listed here were produced by the defective code and are kept only as the record of what was measured, not as results",
+  "retractions": [
+    {
+      "receipt": "receipts/c15_audio_ladder/c15_ladder_receipt.json",
+      "rows_retracted": [
+        "ace_1.5_vae_ctx0 / linear",
+        "ace_1.5_vae_ctx0 / nonlinear"
+      ],
+      "rows_that_stand": [
+        "h3_audio_ctx0 / *",
+        "h3_audio_ctx2 / *"
+      ],
+      "reason": "ACE 1.5's AudioOobleckVAE emits ONE latent per stereo frame (channel_in_latent=false). The delivered rows were sampled with per_channel pairing, which broadcast that one latent to both channel rows: 6400 rows carried only 2739 unique latents and every sampled (clip,frame) channel pair had a bit-identical latent. The measured irreducible rel_l2 floor was 0.815 against a fitted 0.867, so the reported -12.51 dB gap measured the pairing, not absorption. The H3 audio rows are unaffected: that VAE has channel_in_latent=true and its latents are distinct per channel.",
+      "superseded_by": "receipts/c15_audio_ladder_v3/c15_ladder_receipt.json (pairing=stacked, d_raw 3840 <-> d_latent 64, 9600 rows over 96 clips)",
+      "fix": "mediafold/c15_pairs.py sample_audio_pairs now REFUSES per_channel on a joint latent unless allow_ambiguous_pairing=True, in which case ambiguity_floor() records the measured floor in geometry['ambiguity'] and c15_fit carries it into every score"
+    },
+    {
+      "receipt": "receipts/c15_video_ladder/c15_ladder_receipt.json",
+      "rows_retracted": [],
+      "reason": "NOT retracted; the numbers are unchanged. It is superseded only because its ladder rows carried meets_proposed_absorption_line=true with no flag saying the parent's own round-trip on that corpus (9.91 dB) is 13.76 dB BELOW the best linear map of its own latent width (23.67 dB), which makes the verdict uninformative.",
+      "superseded_by": "receipts/c15_video_ladder_v2/c15_ladder_receipt.json (same pairs, now emitting ceiling_below_linear_bound and verdict_caveat per row)"
+    },
+    {
+      "receipt": "receipts/c16_L12_latents/c16_receipt.json",
+      "rows_retracted": [
+        "arms_parent_block/*",
+        "transplant_write_strength",
+        "coreset/holdout_scores",
+        "charts/*/roundtrip_scores",
+        "charts/*/forward_scores"
+      ],
+      "reason": "four independent defects. (1) --skip-capture drove block 12 off proj_in, i.e. the LAYER-0 residual stream: parent_delta_norm 32874 vs parent_in_norm 1152 is a residual write 28.5x its own input, which a trained block does not do in distribution. (2) TransplantedBlock never passed position_embeddings, so every arm ran a sliding_attention block WITHOUT its rotary phase while the parent reference was computed WITH it. (3) the control arm zeroed every dim<2 parameter, which includes the five RMSNorm gains, so it was a DEAD block (rel_l2 0.0115) and the 6.298-vs-0.0115 contrast attributed nothing. (4) the 4x coreset selected 1536 channels from 1638 fit rows, at the interpolation threshold (fit 0.0951 vs holdout 0.3973).",
+      "stands": "the 4.00x parameter ratio on the MLP component (37,748,736 -> 9,437,184) is arithmetic and stands; only the quality numbers attached to it were retracted",
+      "superseded_by": "receipts/c16_L12_v2/c16_receipt.json (prefix shell through layers 0..11, rope threaded, norm-matched control, 3712 fit rows split by sequence)"
+    },
+    {
+      "receipt": "out/h3_0_v3 on the server (never packaged locally)",
+      "rows_retracted": [
+        "absorbed vs control comparison"
+      ],
+      "reason": "install_absorbed_interface used type_embed.weight[t].copy_(shared_delta) instead of the documented += , so after install every media type row was byte-identical and the bridge could not tell an audio token from a video token -- in the absorbed AND the control arm. That is a live explanation for the standing v3 result that absorbed and control both passed 12/13.",
+      "superseded_by": "receipts/h3_0_v5/h3_0_report.json (.add_ of a PER-TYPE bias; raw 11/13, absorbed 12/13, control 11/13)"
+    },
+    {
+      "receipt": "receipts/c16_L12_v2/c16_receipt.json",
+      "rows_retracted": [
+        "coreset/holdout_scores",
+        "coreset/fit_scores",
+        "coreset/split_by"
+      ],
+      "reason": "the coreset holdout was grouped by DiT batch row, not by clip. A batch row is a contiguous 256-row window of the pair corpus and an ACE clip is 100 rows, so a batch row spans 3-4 clips and holding out whole batch rows still leaves those clips in the fit. Measured on this run's own window (receipts/c16_L12_v3/holdout_leak_probe.json): 251 of 896 held-out rows (28.0%) share a clip with the fit, 10 clips sit on both sides, and 259 of 3,712 fit rows touch a held-out clip. The run book's ~39% estimate was high. Decomposing this child on its own holdout with its weights off disk (receipts/c16_L12_v2/holdout_decomposition.json) reproduces the reported 0.6172911570 exactly and splits it into leaked rows 0.6023 / clean rows 0.6232, so the leak was flattering the number by ~0.021 rel_l2 on 28% of the rows.",
+      "stands": "the compression arithmetic (ace_dit_block.mlp 37,748,736 -> 9,437,184 = exactly 4.00x; whole block 1.8177x) and the capture provenance. Only the fit/holdout SCORES are withdrawn.",
+      "superseded_by": "receipts/c16_L12_v4/c16_receipt.json (clip-ALIGNED window: --batch 96 --length 100 --row-offset 0, one whole clip per batch row, holdout rel_l2 0.5442 / cos 0.8415 on 950 rows). receipts/c16_L12_v3/ is the intermediate clip-GROUPED run on the same window as v2 and is kept only because it is the paired-capture control.",
+      "fix": "mediafold/c16_capture.py carries clip_index through latent_stimulus and owns the grouping decision in coreset_row_groups; mediafold/c16_transplant.py's coreset_block_mlp requires row_membership for a clip-named split and refuses when a fit row draws on a held-out clip"
+    },
+    {
+      "receipt": "receipts/c16_L12_v3/c16_receipt.json",
+      "rows_retracted": [],
+      "reason": "NOT retracted; the numbers are unchanged and reproduce bit-for-bit (three runs, identical capture sha 5fa8e171..., identical selection sha 01e679ca..., identical holdout 0.5537129992932392). What was retracted is the CLAIM made about them. The first delivery read 'grouped_by_clip -> 0/927 held-out rows leak' as 'the holdout is now honest'. That is a row-label statement. mlp_in at block 12 is the output of twelve DiT layers whose self-attention receptive field is the whole batch row (block 12 is sliding_attention with window 128 = the row's 128 tokens, and half the stack is full_attention outright), and this window's batch rows carry 3-4 clips each. Measured in receipts/c16_L12_v3/holdout_leak_probe.json: receptive_field_leak_fraction 1.0 -- ALL 927 held-out rows have an activation that is a function of a fit clip, and 1,583 of 3,589 fit rows (44.1%) reach a held-out clip. 0.5537 is a clean row-level split and is not an unseen-content error.",
+      "stands": "zero row-level clip overlap, the 4.00x component compression, and the paired-capture property: v2 and v3 share one bit-identical capture tensor, so the only difference between them is the split.",
+      "superseded_by": "receipts/c16_L12_v4/c16_receipt.json, whose window is clip-aligned (clips_per_batch_row_max 1) and whose leak probe reports receptive_field_leak_fraction 0.0 / activation_independence true on both groupings"
+    }
+  ]
+}

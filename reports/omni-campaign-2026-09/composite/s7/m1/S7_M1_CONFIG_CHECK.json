@@ -1,0 +1,399 @@
+{
+ "c16_sha256": "5353a27b67330cc521adf080ae723ae33832801670ac92d8b7977ecb8b608832",
+ "chimera_tree": "/home/cereal/omni-campaign/import/rq27b/tree_ef1ffb9",
+ "config": "/mnt/lexar/omni-campaign/s3-native-v2-3a25a459-4347-416d-a58a-2cb3c8e738fd/actual/native-s3-text-stage/native/config.json",
+ "config_sha256": "e2cdb6979a01deca3f09e762482e16b86543a9375d8ff6b13305035c598fa18b",
+ "hidden": 5120,
+ "installed_parameters_total": 591437129,
+ "num_layers": 64,
+ "units": {
+  "ace_dit_L12": {
+   "chart_parameters": 20973568,
+   "chart_shapes": {
+    "chart_in.bias": [
+     2048
+    ],
+    "chart_in.weight": [
+     2048,
+     5120
+    ],
+    "chart_out.weight": [
+     5120,
+     2048
+    ]
+   },
+   "chart_source": "container",
+   "dir": "/home/cereal/omni-campaign/composite/s7/units/ace/ace_dit_L12",
+   "dropped_chart_keys": [],
+   "files": {
+    "charted_block.json": "48238025b6b2bd999a9143866f0b6a28cd579c4d9815697fc4a516148994ae10",
+    "charted_block.safetensors": "94c4f10f55fa3e09380376e6997cdffe3e3458e660cd422463d7eb90458ab7f5",
+    "charts.safetensors": "ae084950a1a8f42847692dfdce6cf3ce684d7735f59accaec62590de9761074f",
+    "time_reference.safetensors": "0d1ae9939364f80a2dc9a074273397b196137995d094c508acedcd64bca0a727"
+   },
+   "installed_parameters": 102811904,
+   "pairing": {
+    "candidates": [
+     3,
+     7,
+     11,
+     15,
+     19,
+     23,
+     27,
+     31,
+     35,
+     39,
+     43,
+     47,
+     51,
+     55,
+     59,
+     63
+    ],
+    "insert_after": 31,
+    "rule": "depth-fraction -> nearest gated_gqa refinement layer",
+    "source_depth_fraction": 0.5217391304347826,
+    "trunk_depth_fraction": 0.49206349206349204
+   },
+   "spec_mlp_parameters": 9437184,
+   "tensor_sha256_check": {
+    "charted_block.safetensors": {
+     "declared": 24,
+     "verified": true
+    },
+    "charts.safetensors": {
+     "declared": 3,
+     "verified": true
+    },
+    "time_reference.safetensors": {
+     "declared": 2,
+     "verified": true
+    }
+   },
+   "time_reference": {
+    "rel_l2": 1.1816756995131072e-07,
+    "sigma": [
+     0.5
+    ],
+    "tolerance_rel_l2": 1e-05,
+    "verified": true
+   },
+   "type_ids": [
+    4
+   ],
+   "write_strength": {
+    "forward": 4,
+    "host_norm_median": 118.74187469482422,
+    "measured": true,
+    "p95": 0.22504279017448425,
+    "rows": 50,
+    "write_over_host_norm_median": 0.1611691266298294
+   }
+  },
+  "h3_dit_L25_curve6": {
+   "chart_parameters": 55055616,
+   "chart_shapes": {
+    "chart_in.bias": [
+     5376
+    ],
+    "chart_in.weight": [
+     5376,
+     5120
+    ],
+    "chart_out.weight": [
+     5120,
+     5376
+    ]
+   },
+   "chart_source": "container",
+   "dir": "/home/cereal/omni-campaign/composite/s7/units/h3/h3_dit_L25_curve6",
+   "dropped_chart_keys": [],
+   "files": {
+    "charted_block.json": "c0ca26716f8d18144e7a257510c4c67c1c65934cfc5c1254444dc086e4353fd2",
+    "charted_block.safetensors": "8f1adfe2768513c721c9c77e52f729264883930d6af72b50fdc0f58df9cbfabf",
+    "charts.safetensors": "7222f554e5de25f60f3c2515aa6ab7cb3a665c9ba34162052f22053196a0b8bf",
+    "time_reference.safetensors": "d09fbd3501ff329a69a4be7824f5d4d3bd1e341f185e5037a818b7ed4d9bd3b0"
+   },
+   "installed_parameters": 267889176,
+   "pairing": {
+    "candidates": [
+     3,
+     7,
+     11,
+     15,
+     19,
+     23,
+     27,
+     31,
+     35,
+     39,
+     43,
+     47,
+     51,
+     55,
+     59,
+     63
+    ],
+    "insert_after": 31,
+    "rule": "depth-fraction -> nearest gated_gqa refinement layer",
+    "source_depth_fraction": 0.5102040816326531,
+    "trunk_depth_fraction": 0.49206349206349204
+   },
+   "spec_mlp_parameters": 57802752,
+   "tensor_sha256_check": {
+    "charted_block.safetensors": {
+     "declared": 15,
+     "verified": true
+    },
+    "charts.safetensors": {
+     "declared": 3,
+     "verified": true
+    },
+    "time_reference.safetensors": {
+     "declared": 3,
+     "verified": true
+    }
+   },
+   "type_ids": [
+    2,
+    3
+   ],
+   "write_strength": {
+    "measured": false,
+    "why": "H3 needs explicit h3_thw_v1 source positions per row; not constructed in this check"
+   }
+  },
+  "hy3d_dit_L10": {
+   "chart_parameters": 20973568,
+   "chart_shapes": {
+    "chart_in.bias": [
+     2048
+    ],
+    "chart_in.weight": [
+     2048,
+     5120
+    ],
+    "chart_out.weight": [
+     5120,
+     2048
+    ]
+   },
+   "chart_source": "container",
+   "dir": "/home/cereal/omni-campaign/composite/s7/units/hy3d/hy3d_dit_L10",
+   "dropped_chart_keys": [],
+   "files": {
+    "charted_block.json": "c5ae82e27963e043f47a9669e3a352fca38161ac43b4ee89622b0b8eb7cb3ab1",
+    "charted_block.safetensors": "58574fe6255d924a651d910ed941115da1d1aabaf5f1c4f8afba1e81e8b5d817",
+    "charts.safetensors": "af2c6b7f0be690c2493da4fc4312040d5b47851a14c8c6c251f9bb9d4d6a0138",
+    "time_reference.safetensors": null
+   },
+   "installed_parameters": 46156031,
+   "pairing": {
+    "candidates": [
+     3,
+     7,
+     11,
+     15,
+     19,
+     23,
+     27,
+     31,
+     35,
+     39,
+     43,
+     47,
+     51,
+     55,
+     59,
+     63
+    ],
+    "insert_after": 31,
+    "rule": "depth-fraction -> nearest gated_gqa refinement layer",
+    "source_depth_fraction": 0.5,
+    "trunk_depth_fraction": 0.49206349206349204
+   },
+   "spec_mlp_parameters": 8388607,
+   "tensor_sha256_check": {
+    "charted_block.safetensors": {
+     "declared": 18,
+     "verified": true
+    },
+    "charts.safetensors": {
+     "declared": 3,
+     "verified": true
+    }
+   },
+   "type_ids": [
+    7
+   ],
+   "write_strength": {
+    "forward": 2,
+    "host_norm_median": 113.7733383178711,
+    "measured": true,
+    "p95": 0.014345770701766014,
+    "rows": 4096,
+    "write_over_host_norm_median": 0.012716500088572502
+   }
+  },
+  "qimg_mmdit_L30_img": {
+   "chart_parameters": 31460352,
+   "chart_shapes": {
+    "chart_in.bias": [
+     3072
+    ],
+    "chart_in.weight": [
+     3072,
+     5120
+    ],
+    "chart_out.weight": [
+     5120,
+     3072
+    ]
+   },
+   "chart_source": "container",
+   "dir": "/home/cereal/omni-campaign/composite/s7/units/qimg/qimg_mmdit_L30_img",
+   "dropped_chart_keys": [],
+   "files": {
+    "charted_block.json": "a793b69972743c5731318d1739916911b07919504d86d4458aec2fd968e562ef",
+    "charted_block.safetensors": "e15a5b754e1d9456865ba64a13a0aa4a13491b2f28d9aca040529c666bcd9c0b",
+    "charts.safetensors": "87ee5e23f72763249256640ce4f843a3ee38738f0a9a51ce5f47adb5cb4d2e03",
+    "time_reference.safetensors": "d1ef99406661806b2ee9c70d5ac702b380458b8cbe3f9c2c478cfdfa7b2c816e"
+   },
+   "installed_parameters": 154985727,
+   "pairing": {
+    "candidates": [
+     3,
+     7,
+     11,
+     15,
+     19,
+     23,
+     27,
+     31,
+     35,
+     39,
+     43,
+     47,
+     51,
+     55,
+     59,
+     63
+    ],
+    "insert_after": 31,
+    "rule": "depth-fraction -> nearest gated_gqa refinement layer",
+    "source_depth_fraction": 0.5084745762711864,
+    "trunk_depth_fraction": 0.49206349206349204
+   },
+   "spec_mlp_parameters": 18874367,
+   "tensor_sha256_check": {
+    "charted_block.safetensors": {
+     "declared": 21,
+     "verified": true
+    },
+    "charts.safetensors": {
+     "declared": 3,
+     "verified": true
+    },
+    "time_reference.safetensors": {
+     "declared": 2,
+     "verified": true
+    }
+   },
+   "time_reference": {
+    "rel_l2": 9.86726362839363e-08,
+    "sigma": [
+     0.15000000596046448,
+     0.3499999940395355,
+     0.6499999761581421,
+     0.8999999761581421
+    ],
+    "tolerance_rel_l2": 0.0021,
+    "verified": true
+   },
+   "type_ids": [
+    1
+   ],
+   "write_strength": {
+    "forward": 24,
+    "host_norm_median": 140.55386352539062,
+    "measured": true,
+    "p95": 0.22804169356822968,
+    "rows": 1024,
+    "write_over_host_norm_median": 0.133255273103714
+   }
+  },
+  "qvl32_vit_L13": {
+   "chart_parameters": 11797632,
+   "chart_shapes": {
+    "chart_in.bias": [
+     1152
+    ],
+    "chart_in.weight": [
+     1152,
+     5120
+    ],
+    "chart_out.weight": [
+     5120,
+     1152
+    ]
+   },
+   "chart_source": "container",
+   "dir": "/home/cereal/omni-campaign/composite/s7/units/qvl32/qvl32_vit_L13",
+   "dropped_chart_keys": [],
+   "files": {
+    "charted_block.json": "ea0b2de8c4e2ece640ab976e10db13c8fc7efec371a77430f4383742cccd5b1c",
+    "charted_block.safetensors": "42e07a077b2f0a43f6279fb311e35ed216b83c9ddf9179c89c638d27791876bb",
+    "charts.safetensors": "8cb1db4af70c28fde7024da8041ca37adf0f80db057553a9410cbff3a94f949b",
+    "time_reference.safetensors": null
+   },
+   "installed_parameters": 19594291,
+   "pairing": {
+    "candidates": [
+     3,
+     7,
+     11,
+     15,
+     19,
+     23,
+     27,
+     31,
+     35,
+     39,
+     43,
+     47,
+     51,
+     55,
+     59,
+     63
+    ],
+    "insert_after": 31,
+    "rule": "depth-fraction -> nearest gated_gqa refinement layer",
+    "source_depth_fraction": 0.5,
+    "trunk_depth_fraction": 0.49206349206349204
+   },
+   "spec_mlp_parameters": 2479027,
+   "tensor_sha256_check": {
+    "charted_block.safetensors": {
+     "declared": 16,
+     "verified": true
+    },
+    "charts.safetensors": {
+     "declared": 3,
+     "verified": true
+    }
+   },
+   "type_ids": [
+    6
+   ],
+   "write_strength": {
+    "forward": 8,
+    "host_norm_median": 90.56712341308594,
+    "measured": true,
+    "p95": 0.23021119832992554,
+    "rows": 784,
+    "write_over_host_norm_median": 0.17136891186237335
+   }
+  }
+ }
+}

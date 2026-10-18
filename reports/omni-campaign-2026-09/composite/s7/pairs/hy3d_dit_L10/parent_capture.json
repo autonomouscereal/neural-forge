@@ -1,0 +1,253 @@
+{
+ "block0_check": {
+  "block0_capture": "/mnt/lexar/omni-campaign/hy3d-native-4983c53b-7eee-4f49-980f-ab3788f5db69/initial-gpu4-attempt2/capture-block0/block-00/capture.safetensors",
+  "checked": true,
+  "per_sample": [
+   {
+    "object_sha256": "34d5dfd3698fa14a79d1e575f02727b5db4499980e5b9dd56d3b96edf6599504",
+    "rel_l2_row0_vs_time_token": 0.0,
+    "rel_l2_x_embedder_vs_rows1": 0.00020742983906529844,
+    "same_object_as_block10_capture": true
+   },
+   {
+    "object_sha256": "e3e12a9180cd7fc2f46987e5605b13fdb57c236adee3160a1d5e1de9dc0bedc4",
+    "rel_l2_row0_vs_time_token": 0.0,
+    "rel_l2_x_embedder_vs_rows1": 0.0002074145304504782,
+    "same_object_as_block10_capture": true
+   },
+   {
+    "object_sha256": "69b8237ac685cb9df47c3127bc4221ff7620bc5f0cd9f00f44dbeb19c579f673",
+    "rel_l2_row0_vs_time_token": 0.0,
+    "rel_l2_x_embedder_vs_rows1": 0.00020730389223899692,
+    "same_object_as_block10_capture": true
+   },
+   {
+    "object_sha256": "e8e123ea7684654ffc2060977ae560a1e4bc3c04af1b4e1addba5c362c47c283",
+    "rel_l2_row0_vs_time_token": 0.0,
+    "rel_l2_x_embedder_vs_rows1": 0.00020742557535413653,
+    "same_object_as_block10_capture": true
+   }
+  ]
+ },
+ "capability_claim": "none; parent-side pair rows for a chart fit, a diagnostic input",
+ "capture": {
+  "capture_run": "/mnt/lexar/omni-campaign/hy3d-native-4983c53b-7eee-4f49-980f-ab3788f5db69/dense-child-blocks/dense-child-block-10-1c1709d9-8afb-47f0-931f-35e01f90f125/capture-block10/capture-run.json",
+  "capture_run_sha256": "0c5876628385530362f5f5cef73678fd1b13c7c484fde7f7c084c438c0456c5a",
+  "file": "/mnt/lexar/omni-campaign/hy3d-native-4983c53b-7eee-4f49-980f-ab3788f5db69/dense-child-blocks/dense-child-block-10-1c1709d9-8afb-47f0-931f-35e01f90f125/capture-block10/block-10/capture.safetensors",
+  "sha256": "17bbe9697b1e4e6e4c3d8c5875e4bf97f016704920ba33dece4e4abfd492ca07"
+ },
+ "created_at_utc": "2026-10-10T22:20:38Z",
+ "deviations": [
+  "the image-conditioned parent (DINO cross-attention) is paired with the image's CAPTION on the trunk side",
+  "the time token is paired at ONE sigma (0.5) only: 4 time rows (2 fit + 2 held objects); the chart's map of the trunk time row at other sigmas is an extrapolation",
+  "16,384 latent rows at one sigma (0.5): the only per-token block-10 capture on the box"
+ ],
+ "feature": {
+  "layout": "dit_latent_input row (the x_embedder input); the time row has none",
+  "p_src": "model.x_embedder.weight [2048, 64] + bias",
+  "width": 64
+ },
+ "file": "/home/cereal/omni-campaign/composite/s7/pairs/hy3d_dit_L10/parent_capture.safetensors",
+ "file_sha256": "d0493c597d89501d1bfd48b3ec18232a242dcc78456abc244195fbd68aa83db9",
+ "forwards": [
+  {
+   "conditioning_sha256": "ba2fc7c12315da429967cb9bcc62c7870925672a95bb1f9d7def66caace94160",
+   "group": 0,
+   "held": false,
+   "index": 0,
+   "object_sha256": "34d5dfd3698fa14a79d1e575f02727b5db4499980e5b9dd56d3b96edf6599504",
+   "prompt": "A high-quality studio photograph of a small painted tin toy robot standing upright on two broad rectangular feet. It has a silver cylindrical head, two round dark eyes, a square blue torso and simple red articulated arms hanging at its sides. Its full body is visible in a slightly turned pose against a plain light gray backdrop. The metal has subtle scratches and realistic highlights without heavy rust. Softbox lighting, believable joints and balanced proportions, no extra limbs, no text and no recognizable franchise.",
+   "rows": 4097,
+   "sample": "sample-0000.safetensors",
+   "seed": 2026090780,
+   "sigma": 0.5,
+   "split": "fit",
+   "time_rows": 1
+  },
+  {
+   "conditioning_sha256": "3b785e4131459d98cd37755130269c3dc2a8d0796a7cb39d694b73ad923442b6",
+   "group": 1,
+   "held": false,
+   "index": 1,
+   "object_sha256": "e3e12a9180cd7fc2f46987e5605b13fdb57c236adee3160a1d5e1de9dc0bedc4",
+   "prompt": "A museum-style photograph of one handmade white ceramic bird sculpture with a rounded body, a short beak and a smoothly raised tail. It rests securely on two simple integrated feet on a pale oak shelf. Three-quarter view reveals the entire object and a softly speckled matte glaze with minor handmade irregularities. A warm gray plaster wall fills the uncluttered background. Gentle directional window light casts one short shadow beneath the sculpture. Restrained composition, plausible solid construction, no second bird, flowers, text or decorative labels.",
+   "rows": 4097,
+   "sample": "sample-0001.safetensors",
+   "seed": 2026090781,
+   "sigma": 0.5,
+   "split": "fit",
+   "time_rows": 1
+  },
+  {
+   "conditioning_sha256": "e2a93fb4723fefdc9903e7c41cefe09af426b1d9b3a08041b769714df33d7bde",
+   "group": 2,
+   "held": true,
+   "index": 2,
+   "object_sha256": "69b8237ac685cb9df47c3127bc4221ff7620bc5f0cd9f00f44dbeb19c579f673",
+   "prompt": "A studio still-life photograph of a tall transparent pale amber glass pitcher standing alone on a dark blue cloth-covered table. The pitcher has a wide circular base, a narrow neck, a clear curved handle and a small pouring lip. A small amount of water rests at the bottom, with physically plausible refraction and controlled soft reflections. Side light from a large window outlines the complete silhouette against a muted gray background. Careful material detail, stable contact shadow, no hands, logos, fruit or additional vessels.",
+   "rows": 4097,
+   "sample": "sample-0002.safetensors",
+   "seed": 2026090782,
+   "sigma": 0.5,
+   "split": "held",
+   "time_rows": 1
+  },
+  {
+   "conditioning_sha256": "3d3b3a47030bafb6d22a6c51b21e056d62ad37cb4cbd58cba3977ae8d0fef4e5",
+   "group": 3,
+   "held": true,
+   "index": 3,
+   "object_sha256": "e8e123ea7684654ffc2060977ae560a1e4bc3c04af1b4e1addba5c362c47c283",
+   "prompt": "A realistic photograph of a small carved basalt turtle sculpture displayed on a low sandstone pedestal. The complete animal is visible from above and to the front, including a domed segmented shell, four broad short feet, a small head and a tapered tail. Fine tool marks and subtle variations in dark stone texture are visible without excessive gloss. Diffuse gallery lighting creates gentle shadows and a neutral warm background. The sculpture is a single solid object with believable proportions, no lettering, people or additional artifacts.",
+   "rows": 4097,
+   "sample": "sample-0003.safetensors",
+   "seed": 2026090783,
+   "sigma": 0.5,
+   "split": "held",
+   "time_rows": 1
+  }
+ ],
+ "groups": 4,
+ "held_groups": [
+  2,
+  3
+ ],
+ "holdout": "by object: the capture's own fit/held split (2 + 2); each object's time row goes with its object",
+ "parent": {
+  "block": 10,
+  "dtype": "fp16 as captured",
+  "rows": "block_input[:, 0:]: row 0 = the parent's evolved TIME TOKEN (kept, first in each forward, time_row=True), rows 1: = latent tokens",
+  "width": 2048
+ },
+ "parent_row_stats": {
+  "rms": 3.114448070526123,
+  "row_norm_median": 138.9180908203125
+ },
+ "positions": "volume thwr_v1: (z, y, x) of latent_xyz min-max normalised to [0,1] over the capture, r = 0; time row TIME_ROW_POSITION",
+ "rows": 16388,
+ "rows_by_type": {
+  "7": 16388
+ },
+ "rows_fit": 8194,
+ "rows_held": 8194,
+ "rows_time": 4,
+ "rows_time_held": 2,
+ "samples": [
+  {
+   "file": "/mnt/lexar/omni-campaign/hy3d-native-4983c53b-7eee-4f49-980f-ab3788f5db69/dense-child-blocks/dense-child-block-10-1c1709d9-8afb-47f0-931f-35e01f90f125/capture-block10/sample-0000.safetensors",
+   "sha256": "816617a9a79fff4ec98fa514ed9a06c3a3e572f92e438cfc9d87faa7e0ac7ac7"
+  },
+  {
+   "file": "/mnt/lexar/omni-campaign/hy3d-native-4983c53b-7eee-4f49-980f-ab3788f5db69/dense-child-blocks/dense-child-block-10-1c1709d9-8afb-47f0-931f-35e01f90f125/capture-block10/sample-0001.safetensors",
+   "sha256": "e992c5a5496a54fa9553f5066250389de901fe36df1706df0e1451bf95357bd3"
+  },
+  {
+   "file": "/mnt/lexar/omni-campaign/hy3d-native-4983c53b-7eee-4f49-980f-ab3788f5db69/dense-child-blocks/dense-child-block-10-1c1709d9-8afb-47f0-931f-35e01f90f125/capture-block10/sample-0002.safetensors",
+   "sha256": "c16f9229ac213f35021f555b518a76d3f62c67798339111aa8f0d94db8ddfb95"
+  },
+  {
+   "file": "/mnt/lexar/omni-campaign/hy3d-native-4983c53b-7eee-4f49-980f-ab3788f5db69/dense-child-blocks/dense-child-block-10-1c1709d9-8afb-47f0-931f-35e01f90f125/capture-block10/sample-0003.safetensors",
+   "sha256": "a7a70215484cf117fda164b480e21d578650bd607b427851276ad4bd2f03ac6a"
+  }
+ ],
+ "schema": "omni-campaign.s7_parent_pairs.v1",
+ "shapes": {
+  "feature_width": [
+   16388
+  ],
+  "features": [
+   16388,
+   64
+  ],
+  "forward": [
+   16388
+  ],
+  "group": [
+   16388
+  ],
+  "held": [
+   16388
+  ],
+  "parent_rows": [
+   16388,
+   2048
+  ],
+  "positions": [
+   16388,
+   4
+  ],
+  "sigma": [
+   16388
+  ],
+  "time_row": [
+   16388
+  ],
+  "token": [
+   16388
+  ],
+  "type_ids": [
+   16388
+  ]
+ },
+ "source": "Codex hy3d-native dense-child capture of block 10 (4 objects x 4096 latent tokens, one sigma each)",
+ "tensor_sha256": {
+  "feature_width": "71bf4f71857dd6527d30294943f1feae9fc0bfea55796c7c24bdbc6b60b4e888",
+  "features": "ed567ca035b452ba8c0797f69b5bfe657a9586a8fa673bed4673a0536cc4eeb8",
+  "forward": "b7f1c015c179d5ea2af808ec1bff4278b385073d8fba693dc53360aac5f050f5",
+  "group": "b7f1c015c179d5ea2af808ec1bff4278b385073d8fba693dc53360aac5f050f5",
+  "held": "6ffb6a9a711ef169262bc5dfc7a1dff230ae8c0d913cfa2be907e5ee343afe3c",
+  "parent_rows": "fbcc2329b5968ea723315ae7b1ace9a4ef0514e12d2140425175e9de03dddde2",
+  "positions": "d4240e8dab08b572e2d433ea2a50de3abe23b27897c6d1db7eff5c6531c84ac6",
+  "sigma": "c8bffa077715d2949cf7c0cb9613edbd11d2569d208cbfdab0677860e12d02d9",
+  "time_row": "eeb71613020b24513129d5d2b9f343b735f5f025421cfef2629dc8363941ac0a",
+  "token": "ea2cb81e427b0faeb6f4e324b6c428e1b2b39f9f38fa1f064a944f5032f379a8",
+  "type_ids": "29e761c0e06c4feae8c829ca634f760dd705e7ea38c3543b6a6c0d20a420eb0c"
+ },
+ "time_token": {
+  "contract": "runtime_requirements.hy3d_time_token_row of the hy3d_dit_L10 unit (s7_unit_build >= 1.2.0)",
+  "kept": true,
+  "layout": "each forward = [1 time row | 4096 latent rows], all type 7, time row FIRST",
+  "per_sample_diagnostics": [
+   {
+    "cos_row0_vs_latent_mean": 0.13333304226398468,
+    "latent_row_norm_median": 136.901123046875,
+    "row0_norm": 313.5507507324219,
+    "sample": "sample-0000.safetensors"
+   },
+   {
+    "cos_row0_vs_latent_mean": 0.125540092587471,
+    "latent_row_norm_median": 137.01425170898438,
+    "row0_norm": 318.62335205078125,
+    "sample": "sample-0001.safetensors"
+   },
+   {
+    "cos_row0_vs_latent_mean": 0.10821745544672012,
+    "latent_row_norm_median": 140.58541870117188,
+    "row0_norm": 318.6072082519531,
+    "sample": "sample-0002.safetensors"
+   },
+   {
+    "cos_row0_vs_latent_mean": 0.11131596565246582,
+    "latent_row_norm_median": 140.5608673095703,
+    "row0_norm": 312.6348571777344,
+    "sample": "sample-0003.safetensors"
+   }
+  ],
+  "time_row_features": "zeros, feature_width 0",
+  "time_row_parent_row": "block_input[s, 0] (the time token after blocks 0..9, what block 10 self-attends over)",
+  "time_row_position": [
+   -1.0,
+   -1.0,
+   -1.0,
+   -1.0
+  ],
+  "time_row_sigma": "the segment sigma (the same value as its latent rows)"
+ },
+ "tool": {
+  "name": "s7_pairs_parent",
+  "sha256": "4339b1952d6c84c112e311afc25a36a505f66888d833aa0fcd0924d5986d6ca6",
+  "version": "1.1.0"
+ },
+ "trunk_prompt": "the caption (QIMG prompt) of the conditioning image the parent saw through DINO",
+ "unit": "hy3d_dit_L10"
+}

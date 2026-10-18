@@ -1,0 +1,343 @@
+{
+  "argv": {
+    "ckpt": "/models/checkpoints/hunyuan_3d_v2.1.safetensors",
+    "count": 16,
+    "device": "cuda:0",
+    "eps": 0.01,
+    "holdout_fraction": 0.25,
+    "meshes_dir": "/meshes",
+    "out": "/out",
+    "probe_points": 8192,
+    "seed": 20261010,
+    "sharp_points": 40960,
+    "uniform_points": 40960
+  },
+  "ckpt": {
+    "path": "/models/checkpoints/hunyuan_3d_v2.1.safetensors",
+    "sha256": "5f21e98a6cb99b13b5e224abaee33929570fff7af2b6a0060001559a04ba9d72",
+    "vae_tensors": {
+      "checkpoint_vae_tensors": 410,
+      "not_in_module": [],
+      "not_in_module_count": 0,
+      "pre_kl": "attached from checkpoint vae.pre_kl.* (128, 1024) (absent from ComfyUI ShapeVAE)",
+      "value_mismatch_count": 0,
+      "value_mismatch_first": []
+    }
+  },
+  "convention": "logit>0 inside",
+  "kind": "c15_volume_probes",
+  "lane": "M2 C15 volume band (2026-10-10)",
+  "latent_space": {
+    "dit": "vae * Hunyuan3Dv2_1.scale_factor (1.0039506158752403)",
+    "vae": "posterior mean of pre_kl(encoder(pc, feats))"
+  },
+  "per_mesh": [
+    {
+      "accuracy_logit_gt0_inside": 0.88287353515625,
+      "accuracy_logit_lt0_inside": 0.11712646484375,
+      "faces": 30000,
+      "file": "/meshes/bestiary_ash_conjurer_00001_.glb",
+      "index": 0,
+      "latent_rms": 0.6492483019828796,
+      "latent_shape": [
+        1,
+        4096,
+        64
+      ],
+      "posterior_std_rms": 0.7513341903686523,
+      "psnr_sigmoid_gt0_inside_db": 8.787384942399273,
+      "psnr_sigmoid_lt0_inside_db": 3.623617949037473,
+      "seconds": 4.27,
+      "sha256": "7fee5bc35ad4c3ae0e65ccb6042aeeecf6b43e5ae9e8dd701dd08f49d3b93a1d"
+    },
+    {
+      "accuracy_logit_gt0_inside": 0.936279296875,
+      "accuracy_logit_lt0_inside": 0.063720703125,
+      "faces": 30000,
+      "file": "/meshes/bestiary_ash_conjurer_00004_.glb",
+      "index": 1,
+      "latent_rms": 0.7851952314376831,
+      "latent_shape": [
+        1,
+        4096,
+        64
+      ],
+      "posterior_std_rms": 0.5862693190574646,
+      "psnr_sigmoid_gt0_inside_db": 8.77485216762575,
+      "psnr_sigmoid_lt0_inside_db": 3.655580108134497,
+      "seconds": 1.87,
+      "sha256": "cbeb4d84ad7706f7e40b8ba5ab471f52ded0fdf0bbe0b52f2a4b086e645223cd"
+    },
+    {
+      "accuracy_logit_gt0_inside": 0.998291015625,
+      "accuracy_logit_lt0_inside": 0.001708984375,
+      "faces": 30000,
+      "file": "/meshes/bestiary_bile_goblin_00001_.glb",
+      "index": 2,
+      "latent_rms": 0.6340576410293579,
+      "latent_shape": [
+        1,
+        4096,
+        64
+      ],
+      "posterior_std_rms": 0.7755778431892395,
+      "psnr_sigmoid_gt0_inside_db": 11.287187950286818,
+      "psnr_sigmoid_lt0_inside_db": 2.7544110355565343,
+      "seconds": 2.16,
+      "sha256": "2534599ebccdbbdbd5acb9fb3288d2713c6d95fbba0a7bbb25c2fb18a6fe8f96"
+    },
+    {
+      "accuracy_logit_gt0_inside": 0.71624755859375,
+      "accuracy_logit_lt0_inside": 0.28375244140625,
+      "faces": 30000,
+      "file": "/meshes/bestiary_bone_wyrm_00001_.glb",
+      "index": 3,
+      "latent_rms": 0.6584377884864807,
+      "latent_shape": [
+        1,
+        4096,
+        64
+      ],
+      "posterior_std_rms": 0.7474879622459412,
+      "psnr_sigmoid_gt0_inside_db": 8.182454787143552,
+      "psnr_sigmoid_lt0_inside_db": 3.8661652077029576,
+      "seconds": 2.05,
+      "sha256": "3f149cc4ae6d2f2ad50f398175769495f59746e1dd225ab4a16399e0109732a7"
+    },
+    {
+      "accuracy_logit_gt0_inside": 0.88299560546875,
+      "accuracy_logit_lt0_inside": 0.11700439453125,
+      "faces": 30000,
+      "file": "/meshes/bestiary_cathedral_colossus_00001_.glb",
+      "index": 4,
+      "latent_rms": 0.7559800148010254,
+      "latent_shape": [
+        1,
+        4096,
+        64
+      ],
+      "posterior_std_rms": 0.6129139065742493,
+      "psnr_sigmoid_gt0_inside_db": 8.758335919663613,
+      "psnr_sigmoid_lt0_inside_db": 3.545461608977776,
+      "seconds": 2.22,
+      "sha256": "f7c12faf734625d6e3ca233741c5f81aa805cd678c6b0e1416b5fdac2618db12"
+    },
+    {
+      "accuracy_logit_gt0_inside": 0.9154052734375,
+      "accuracy_logit_lt0_inside": 0.0845947265625,
+      "faces": 30000,
+      "file": "/meshes/bestiary_ember_drake_00001_.glb",
+      "index": 5,
+      "latent_rms": 0.5289261937141418,
+      "latent_shape": [
+        1,
+        4096,
+        64
+      ],
+      "posterior_std_rms": 0.8461450934410095,
+      "psnr_sigmoid_gt0_inside_db": 8.777439729026042,
+      "psnr_sigmoid_lt0_inside_db": 3.598097209239169,
+      "seconds": 2.18,
+      "sha256": "5d888194d57d601b8b46bdee2ec139bfbd243fdc66eba2ffb0eb5514272b4c49"
+    },
+    {
+      "accuracy_logit_gt0_inside": 0.91943359375,
+      "accuracy_logit_lt0_inside": 0.08056640625,
+      "faces": 30000,
+      "file": "/meshes/bestiary_graft_surgeon_unit_00001_.glb",
+      "index": 6,
+      "latent_rms": 0.7104368209838867,
+      "latent_shape": [
+        1,
+        4096,
+        64
+      ],
+      "posterior_std_rms": 0.6806259751319885,
+      "psnr_sigmoid_gt0_inside_db": 9.560863109283481,
+      "psnr_sigmoid_lt0_inside_db": 3.242772868431381,
+      "seconds": 2.34,
+      "sha256": "9661f84a412b3e68e23f9707f8941314bf8f3005585f2a0bf7731648b48bd4a8"
+    },
+    {
+      "accuracy_logit_gt0_inside": 0.96221923828125,
+      "accuracy_logit_lt0_inside": 0.03778076171875,
+      "faces": 30000,
+      "file": "/meshes/bestiary_gravefield_rat_00001_.glb",
+      "index": 7,
+      "latent_rms": 0.5284545421600342,
+      "latent_shape": [
+        1,
+        4096,
+        64
+      ],
+      "posterior_std_rms": 0.8396526575088501,
+      "psnr_sigmoid_gt0_inside_db": 8.695019941644146,
+      "psnr_sigmoid_lt0_inside_db": 3.656173107524295,
+      "seconds": 2.05,
+      "sha256": "20c74360e7f4ed4d9698fd211fb80d17ff8ba82e584e38e773290526aac02a4f"
+    },
+    {
+      "accuracy_logit_gt0_inside": 0.9173583984375,
+      "accuracy_logit_lt0_inside": 0.0826416015625,
+      "faces": 30000,
+      "file": "/meshes/bestiary_hook_goblin_00002_.glb",
+      "index": 8,
+      "latent_rms": 0.597285807132721,
+      "latent_shape": [
+        1,
+        4096,
+        64
+      ],
+      "posterior_std_rms": 0.786601722240448,
+      "psnr_sigmoid_gt0_inside_db": 8.212247387475253,
+      "psnr_sigmoid_lt0_inside_db": 3.86826689964052,
+      "seconds": 2.39,
+      "sha256": "1ea3d9a01c984d20c6f0db1ebd8758ca0df21e65edeb0d0ab52ad6d69853d2f8"
+    },
+    {
+      "accuracy_logit_gt0_inside": 0.96563720703125,
+      "accuracy_logit_lt0_inside": 0.03436279296875,
+      "faces": 30000,
+      "file": "/meshes/bestiary_mire_serpent_00001_.glb",
+      "index": 9,
+      "latent_rms": 0.4540686011314392,
+      "latent_shape": [
+        1,
+        4096,
+        64
+      ],
+      "posterior_std_rms": 0.87423175573349,
+      "psnr_sigmoid_gt0_inside_db": 9.001990495664325,
+      "psnr_sigmoid_lt0_inside_db": 3.538031050968302,
+      "seconds": 2.0,
+      "sha256": "85aa615a83dbdc49e9528a176f1d0f1d98eb84634eefbbdf84db26620358161c"
+    },
+    {
+      "accuracy_logit_gt0_inside": 0.928955078125,
+      "accuracy_logit_lt0_inside": 0.071044921875,
+      "faces": 30000,
+      "file": "/meshes/bestiary_orc_ravager_00001_.glb",
+      "index": 10,
+      "latent_rms": 0.4566795527935028,
+      "latent_shape": [
+        1,
+        4096,
+        64
+      ],
+      "posterior_std_rms": 0.885765790939331,
+      "psnr_sigmoid_gt0_inside_db": 8.284360400924541,
+      "psnr_sigmoid_lt0_inside_db": 3.9039405971512995,
+      "seconds": 1.99,
+      "sha256": "7ddb8bd82a41ee86727efb0b3a26cfe018bf0c62d58319c3937315f7e58bfabe"
+    },
+    {
+      "accuracy_logit_gt0_inside": 0.95654296875,
+      "accuracy_logit_lt0_inside": 0.04345703125,
+      "faces": 30000,
+      "file": "/meshes/bestiary_ossuary_spider_00001_.glb",
+      "index": 11,
+      "latent_rms": 0.49105334281921387,
+      "latent_shape": [
+        1,
+        4096,
+        64
+      ],
+      "posterior_std_rms": 0.8673672080039978,
+      "psnr_sigmoid_gt0_inside_db": 8.496162422002968,
+      "psnr_sigmoid_lt0_inside_db": 3.738547073488157,
+      "seconds": 2.62,
+      "sha256": "22a3dfbeae6a0abab89f9aa05b08b907b858457e55ee365e17e54cb9ae66b9ad"
+    },
+    {
+      "accuracy_logit_gt0_inside": 0.84405517578125,
+      "accuracy_logit_lt0_inside": 0.15594482421875,
+      "faces": 30000,
+      "file": "/meshes/bestiary_relay_sentinel_00001_.glb",
+      "index": 12,
+      "latent_rms": 0.30898040533065796,
+      "latent_shape": [
+        1,
+        4096,
+        64
+      ],
+      "posterior_std_rms": 0.9405025839805603,
+      "psnr_sigmoid_gt0_inside_db": 7.044741397278277,
+      "psnr_sigmoid_lt0_inside_db": 4.632260977346193,
+      "seconds": 2.63,
+      "sha256": "8f807c3215823fe1703bdfc56122413a40835348c5c56d2edded3825c01eafac"
+    },
+    {
+      "accuracy_logit_gt0_inside": 0.97998046875,
+      "accuracy_logit_lt0_inside": 0.02001953125,
+      "faces": 30000,
+      "file": "/meshes/bestiary_scrap_goblin_00001_.glb",
+      "index": 13,
+      "latent_rms": 0.6141476631164551,
+      "latent_shape": [
+        1,
+        4096,
+        64
+      ],
+      "posterior_std_rms": 0.7869696617126465,
+      "psnr_sigmoid_gt0_inside_db": 10.106161902254032,
+      "psnr_sigmoid_lt0_inside_db": 3.0913945232421036,
+      "seconds": 2.18,
+      "sha256": "9e0dee9fca80588e2ac942e1f39a53ad643892e6f1ae538a22bedec235ad3ff2"
+    },
+    {
+      "accuracy_logit_gt0_inside": 0.9337158203125,
+      "accuracy_logit_lt0_inside": 0.0662841796875,
+      "faces": 30000,
+      "file": "/meshes/bestiary_stitchback_hound_00001_.glb",
+      "index": 14,
+      "latent_rms": 0.467160165309906,
+      "latent_shape": [
+        1,
+        4096,
+        64
+      ],
+      "posterior_std_rms": 0.8691001534461975,
+      "psnr_sigmoid_gt0_inside_db": 8.288305446980166,
+      "psnr_sigmoid_lt0_inside_db": 3.849533697800271,
+      "seconds": 2.15,
+      "sha256": "22f641086f3163cc0e47d33f0832273ad51d438bfac00e7263b1717dec772f72"
+    },
+    {
+      "accuracy_logit_gt0_inside": 0.92724609375,
+      "accuracy_logit_lt0_inside": 0.07275390625,
+      "faces": 30000,
+      "file": "/meshes/bestiary_tower_husk_00001_.glb",
+      "index": 15,
+      "latent_rms": 0.7490010261535645,
+      "latent_shape": [
+        1,
+        4096,
+        64
+      ],
+      "posterior_std_rms": 0.6412690877914429,
+      "psnr_sigmoid_gt0_inside_db": 9.511262890109412,
+      "psnr_sigmoid_lt0_inside_db": 3.308110023722218,
+      "seconds": 2.26,
+      "sha256": "a07e30d1934d82fec592a0895756b5c8c5a25ab3049d90591128f948cf0ed017"
+    }
+  ],
+  "probe_rule": "p +/- eps*n, eps 0.01, labels outside 0 / inside 1, 8192 surface samples per mesh",
+  "raw_rung": "not applicable: the ShapeVAE is a perceiver over point sets; no local raw row pairs with one latent token",
+  "runtime_patches": [
+    "comfy.ldm.hunyuan3d.vae.fps replaced in-process by an identical FPS whose final torch.arange lives on the points' device (the shipped one raises on CUDA)",
+    "numpy default_rng seeded for load_surface_sharpedge"
+  ],
+  "summary": {
+    "holdout_mean_psnr_db": 8.883359228021668,
+    "holdout_meshes": [
+      4,
+      6,
+      8,
+      9
+    ],
+    "mean_accuracy": 0.9167022705078125,
+    "mean_psnr_db": 8.860548180610103,
+    "meshes": 16
+  },
+  "volume_file_sha256": "3aa98534325c0ba48c3f0472cde958009eae71347e932ec6392da89a6020e932"
+}

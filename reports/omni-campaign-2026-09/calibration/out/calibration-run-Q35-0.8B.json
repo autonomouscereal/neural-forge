@@ -1,0 +1,116 @@
+{
+ "decode_path_agree": true,
+ "dossier": "/home/cereal/omni-campaign/calibration/out/oc-dossier-Q35-0.8B.json",
+ "dossier_file_sha256": "830dbb3e0b1a6f1cc6754180c249a1885ad5fe6c0d824943a7d0f1ae49753ca7",
+ "dossier_sha256": "445efcec5780e7531b030f55360016a69dcc60c0ec057025567f0e6766bd7555",
+ "download_log": {
+  "bytes": 1627,
+  "decides_nothing": "a download log says [done] when its loop exited; the disk says whether the shards are whole.  The disk decides.",
+  "last_lines": [
+   "Fetching 13 files:   8%|\u258a         | 1/13 [00:00<00:04,  2.56it/s]",
+   "Fetching 13 files:  46%|\u2588\u2588\u2588\u2588\u258c     | 6/13 [00:00<00:00, 12.04it/s]",
+   "Fetching 13 files:  46%|\u2588\u2588\u2588\u2588\u258c     | 6/13 [00:12<00:00, 12.04it/s]",
+   "Fetching 13 files:  54%|\u2588\u2588\u2588\u2588\u2588\u258d    | 7/13 [00:30<00:36,  6.11s/it]",
+   "Fetching 13 files: 100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 13/13 [00:30<00:00,  2.36s/it]",
+   "[done] Qwen/Qwen3.5-0.8B in 32s -> /home/cereal/models/Qwen3.5-0.8B"
+  ],
+  "path": "/home/cereal/hf-downloads/dl_qwen35_4b_now.log",
+  "present": true
+ },
+ "emit_zero_floor_passed": true,
+ "first_three_cases": [
+  {
+   "generated_tokens": 41,
+   "id": "conversation-natural-greeting",
+   "response_verbatim": "It sounds like you've had a really productive and engaging day! Did you tackle any big projects, explore new hobbies, or just unwind with a good conversation?\n\nWhat was the highlight of your day?",
+   "termination": "complete"
+  },
+  {
+   "generated_tokens": 81,
+   "id": "instruction-three-actions",
+   "response_verbatim": "1. Set a specific timer for 15 minutes and mark the end time on your phone to create a mental cue for the task.\n2. Write down the exact steps of the task on a piece of paper or in your digital notes app before you start.\n3. Perform the task immediately after you finish the timer, then immediately start the next task to avoid the \"forgetting loop.\"",
+   "termination": "complete"
+  },
+  {
+   "generated_tokens": 483,
+   "id": "explanation-seasons",
+   "response_verbatim": "Hello! Let's talk about the seasons! \ud83c\udf0d\u2728\n\nImagine Earth is a big, round ball of blue and green. It has a special magic trick called the **tilt of its axis**. This tilt isn't random; it's like a spinning top that's always pointing in the same direction, but tilted at a weird angle.\n\nHere is the story of why the seasons happen:\n\n1.  **The Tilt:** Think of Earth spinning on its axis like a top. If you tilt it 23.5 degrees, it's not perfectly straight up or down.\n2.  **The Sun's Path:** The Sun is a tiny ball of hot energy. As Earth spins, the Sun's rays hit the Earth at different angles.\n    *   **Summer:** When the Sun is high in the sky, it hits the **Tropics** (the belt of hot weather). The Earth is tilted *towards* the Sun, so the Sun's rays are strong and hit the ground for a long time. This is when the days are long and the days are short.\n    *   **Winter:** When the Earth is tilted *away* from the Sun, the Sun's rays are weak. The days are short, and the nights are long. This is when the days are short and the days are long.\n\nSo, the seasons aren't caused by the Sun being closer or farther away! \ud83c\udf1e\u2744\ufe0f\n\n*   **Summer** happens because the Earth is tilted **towards** the Sun.\n*   **Winter** happens because the Earth is tilted **away** from the Sun.\n\nThe distance between Earth and the Sun doesn't matter! The tilt is the key. \ud83c\udf1f\ud83c\udf21\ufe0f\n\nNow, let's correct the common idea that summer happens because Earth is much closer to the Sun!\n\n\u274c **The Common Idea:** \"Summer happens because Earth is closer to the Sun.\"\n\u2705 **The Truth:** \"Summer happens because Earth is tilted **towards** the Sun.\"\n\nThe closer Earth is to the Sun, the hotter it gets! But the tilt is what makes the seasons change. Without the tilt, Earth would just spin in a circle, and the Sun would always be at the same spot, so there would be no seasons! \ud83c\udf0d\ud83d\udcc9",
+   "termination": "complete"
+  }
+ ],
+ "label": "Q35-0.8B",
+ "landing": {
+  "architecture": "Qwen3_5ForConditionalGeneration",
+  "config_ok": true,
+  "exists": true,
+  "index_ok": true,
+  "landed": true,
+  "model_directory": "/home/cereal/models/Qwen3.5-0.8B",
+  "shards_expected": 1,
+  "shards_present": 1,
+  "shards_undersized": [],
+  "why_not": []
+ },
+ "lane_digest": "a96e949e8f671fff8d49465aaeac437147f323b47c7237f15b77b806b8952b18",
+ "lane_digest_validity": {
+  "bank_file_sha256": "0ee6bf14cef51bafc26990db44e5038771426c620c0381285c0cd5571e92786b",
+  "compute_architecture": "sm86 NVIDIA GeForce RTX 3090",
+  "decode_path": "manual argmax loop with use_cache",
+  "dtype": "bfloat16",
+  "maximum_new_tokens": 1024,
+  "note": "the omni analogue of the LFM2 parent-lane anchor 865f006e...  It is valid ONLY for this exact tuple; any element moving moves the digest and a moved lane grades nothing.",
+  "prompt_surface_sha256": "0b429e4c2ed1244798364c3a0e58021eac1c0d8c0ba7169d55a7e10ae01da7d2",
+  "runtime": "hf-transformers",
+  "transformers_version": "5.12.1"
+ },
+ "schema": "neural-forge-omni-parent-calibration-run-v1",
+ "steps": [
+  {
+   "label": "bank-v1",
+   "result": {
+    "cases": 16,
+    "decode_path_agree": true,
+    "dossier_sha256": "445efcec5780e7531b030f55360016a69dcc60c0ec057025567f0e6766bd7555",
+    "emit_zero_floor_passed": true,
+    "file_sha256": "830dbb3e0b1a6f1cc6754180c249a1885ad5fe6c0d824943a7d0f1ae49753ca7",
+    "is_random_init": false,
+    "lane_digest": "a96e949e8f671fff8d49465aaeac437147f323b47c7237f15b77b806b8952b18",
+    "out": "/home/cereal/omni-campaign/calibration/out/oc-dossier-Q35-0.8B.json"
+   },
+   "seconds": 368.56,
+   "stderr_tail": [
+    "[transformers] The fast path is not available because one of the required library is not installed. Falling back to torch implementation. To install follow https://github.com/fla-org/flash-linear-attention#installation and https://github.com/Dao-AILab/causal-conv1d",
+    "",
+    "Loading weights:   0%|          | 0/473 [00:00<?, ?it/s]",
+    "Loading weights:  60%|\u2588\u2588\u2588\u2588\u2588\u2588    | 285/473 [00:00<00:00, 2835.08it/s]",
+    "Loading weights: 100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 473/473 [00:00<00:00, 2799.94it/s]",
+    "[transformers] The attention mask and the pad token id were not set. As a consequence, you may observe unexpected behavior. Please pass your input's `attention_mask` to obtain reliable results.",
+    "[transformers] Setting `pad_token_id` to `eos_token_id`:248044 for open-end generation.",
+    "[transformers] The attention mask is not set and cannot be inferred from input because pad token is same as eos token. As a consequence, you may observe unexpected behavior. Please pass your input's `attention_mask` to obtain reliable results."
+   ]
+  },
+  {
+   "label": "assess-v1",
+   "result": {
+    "anomalies": 0,
+    "assessment_json": "/home/cereal/omni-campaign/calibration/out/assessment-Q35-0.8B.json",
+    "assessment_json_sha256": "cf023f2922901406fe7eb953f73129d2482f9c490830d3ff76bacbd4a36a4144",
+    "canonical_three_box": {
+     "artifact_miss": 0,
+     "content_miss": 0,
+     "read_required": 15,
+     "rule": "signal / 15 is the canonical intelligence count.  A machine cannot fill the signal box; it can only say which misses are artifacts once a reader has called them misses.",
+     "signal": 0
+    },
+    "column_a": 11,
+    "column_b": 11,
+    "is_upper_bound": true,
+    "scoring_sheet": "/home/cereal/omni-campaign/calibration/out/SCORING-SHEET-Q35-0.8B.md",
+    "scoring_sheet_sha256": "4ae3c207369e7fe69d4635cec3486f14c71907388847fc4de0e8ee804aab33da"
+   },
+   "seconds": 0.36,
+   "stderr_tail": []
+  }
+ ],
+ "used_random_init_bed": false
+}

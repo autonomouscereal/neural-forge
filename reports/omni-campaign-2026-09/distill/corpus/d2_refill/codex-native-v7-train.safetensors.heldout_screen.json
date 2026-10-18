@@ -1,0 +1,711 @@
+{
+ "argv": [
+  "/home/cereal/omni-campaign/distill/tools/d2_refill_build.py",
+  "codex-native",
+  "--pack",
+  "v7"
+ ],
+ "corpus": "/home/cereal/omni-campaign/distill/corpus/d2_refill/codex-native-v7-train.safetensors",
+ "corpus_sha256": "2dba23e59542c6e8793c5a5b18a1eb3d767feb4337fe8d648d975052769db7f2",
+ "counts": {
+  "dropped_by_family": {
+   "schema_upper": 28
+  },
+  "dropped_rows": 28,
+  "dropped_supervised": 5106,
+  "routes": {
+   "tool_call": 28,
+   "tool_multiturn": 28,
+   "tool_parallel": 28,
+   "tool_result": 28,
+   "tool_retry": 28
+  },
+  "rows": 140,
+  "rows_with_expected_calls": 0,
+  "selection": {
+   "rows": 168,
+   "supervised": 26634,
+   "tokens": 113026
+  },
+  "supervised": 21528,
+  "tokens": 94249,
+  "width": 817
+ },
+ "decisions_sha256": "c8d47f22784d265a2e9239f9274c062298d25278497ba21d01102aa45274d90d",
+ "dropped_by_screen": [
+  {
+   "family": "schema_upper",
+   "hits": [
+    {
+     "item": "tool-seed-a0000031b58a660129f28140",
+     "role": "assistant",
+     "rule": "ngram13",
+     "source": "heldout:corpus-tool-v3"
+    }
+   ],
+   "route": "tool_schema",
+   "row_id": "tool-seed-24fc536eaf248e62e3d7e45a",
+   "source_row": 0
+  },
+  {
+   "family": "schema_upper",
+   "hits": [
+    {
+     "item": "tool-seed-a0000031b58a660129f28140",
+     "role": "assistant",
+     "rule": "ngram13",
+     "source": "heldout:corpus-tool-v3"
+    }
+   ],
+   "route": "tool_schema",
+   "row_id": "tool-seed-ae8e0adeff8d0c233eee8c54",
+   "source_row": 6
+  },
+  {
+   "family": "schema_upper",
+   "hits": [
+    {
+     "item": "tool-seed-a0000031b58a660129f28140",
+     "role": "assistant",
+     "rule": "ngram13",
+     "source": "heldout:corpus-tool-v3"
+    }
+   ],
+   "route": "tool_schema",
+   "row_id": "tool-seed-72ec5d4a35aea6283166b1dd",
+   "source_row": 12
+  },
+  {
+   "family": "schema_upper",
+   "hits": [
+    {
+     "item": "tool-seed-a0000031b58a660129f28140",
+     "role": "assistant",
+     "rule": "ngram13",
+     "source": "heldout:corpus-tool-v3"
+    }
+   ],
+   "route": "tool_schema",
+   "row_id": "tool-seed-013c043d5d23c340bef4ff18",
+   "source_row": 18
+  },
+  {
+   "family": "schema_upper",
+   "hits": [
+    {
+     "item": "tool-seed-a0000031b58a660129f28140",
+     "role": "assistant",
+     "rule": "ngram13",
+     "source": "heldout:corpus-tool-v3"
+    }
+   ],
+   "route": "tool_schema",
+   "row_id": "tool-seed-39b920e5d63fe20438c652cb",
+   "source_row": 24
+  },
+  {
+   "family": "schema_upper",
+   "hits": [
+    {
+     "item": "tool-seed-a0000031b58a660129f28140",
+     "role": "assistant",
+     "rule": "ngram13",
+     "source": "heldout:corpus-tool-v3"
+    }
+   ],
+   "route": "tool_schema",
+   "row_id": "tool-seed-198ecfec1be9163dffc067bc",
+   "source_row": 30
+  },
+  {
+   "family": "schema_upper",
+   "hits": [
+    {
+     "item": "tool-seed-a0000031b58a660129f28140",
+     "role": "assistant",
+     "rule": "ngram13",
+     "source": "heldout:corpus-tool-v3"
+    }
+   ],
+   "route": "tool_schema",
+   "row_id": "tool-seed-5eb6b5d88b663bb5334e685b",
+   "source_row": 36
+  },
+  {
+   "family": "schema_upper",
+   "hits": [
+    {
+     "item": "tool-seed-a0000031b58a660129f28140",
+     "role": "assistant",
+     "rule": "ngram13",
+     "source": "heldout:corpus-tool-v3"
+    }
+   ],
+   "route": "tool_schema",
+   "row_id": "tool-seed-c45356add409d27f4b18b64a",
+   "source_row": 42
+  },
+  {
+   "family": "schema_upper",
+   "hits": [
+    {
+     "item": "tool-seed-a0000031b58a660129f28140",
+     "role": "assistant",
+     "rule": "ngram13",
+     "source": "heldout:corpus-tool-v3"
+    }
+   ],
+   "route": "tool_schema",
+   "row_id": "tool-seed-42d4d2e3382df84f0f5627d3",
+   "source_row": 48
+  },
+  {
+   "family": "schema_upper",
+   "hits": [
+    {
+     "item": "tool-seed-a0000031b58a660129f28140",
+     "role": "assistant",
+     "rule": "ngram13",
+     "source": "heldout:corpus-tool-v3"
+    }
+   ],
+   "route": "tool_schema",
+   "row_id": "tool-seed-03569cebdb522218ddd0a7da",
+   "source_row": 54
+  },
+  {
+   "family": "schema_upper",
+   "hits": [
+    {
+     "item": "tool-seed-a0000031b58a660129f28140",
+     "role": "assistant",
+     "rule": "ngram13",
+     "source": "heldout:corpus-tool-v3"
+    }
+   ],
+   "route": "tool_schema",
+   "row_id": "tool-seed-fc874c37492c197bb3448553",
+   "source_row": 60
+  },
+  {
+   "family": "schema_upper",
+   "hits": [
+    {
+     "item": "tool-seed-a0000031b58a660129f28140",
+     "role": "assistant",
+     "rule": "ngram13",
+     "source": "heldout:corpus-tool-v3"
+    }
+   ],
+   "route": "tool_schema",
+   "row_id": "tool-seed-a144fc490b37363604eca571",
+   "source_row": 66
+  },
+  {
+   "family": "schema_upper",
+   "hits": [
+    {
+     "item": "tool-seed-a0000031b58a660129f28140",
+     "role": "assistant",
+     "rule": "ngram13",
+     "source": "heldout:corpus-tool-v3"
+    }
+   ],
+   "route": "tool_schema",
+   "row_id": "tool-seed-1723b36944eb11dc92c2713d",
+   "source_row": 72
+  },
+  {
+   "family": "schema_upper",
+   "hits": [
+    {
+     "item": "tool-seed-a0000031b58a660129f28140",
+     "role": "assistant",
+     "rule": "ngram13",
+     "source": "heldout:corpus-tool-v3"
+    }
+   ],
+   "route": "tool_schema",
+   "row_id": "tool-seed-bac7ef7d6e7f679680eb5b24",
+   "source_row": 78
+  },
+  {
+   "family": "schema_upper",
+   "hits": [
+    {
+     "item": "tool-seed-a0000031b58a660129f28140",
+     "role": "assistant",
+     "rule": "ngram13",
+     "source": "heldout:corpus-tool-v3"
+    }
+   ],
+   "route": "tool_schema",
+   "row_id": "tool-seed-308ddcce44177882960fc6d7",
+   "source_row": 84
+  },
+  {
+   "family": "schema_upper",
+   "hits": [
+    {
+     "item": "tool-seed-a0000031b58a660129f28140",
+     "role": "assistant",
+     "rule": "ngram13",
+     "source": "heldout:corpus-tool-v3"
+    }
+   ],
+   "route": "tool_schema",
+   "row_id": "tool-seed-a086ebf7c7538e02ec6036d9",
+   "source_row": 90
+  },
+  {
+   "family": "schema_upper",
+   "hits": [
+    {
+     "item": "tool-seed-a0000031b58a660129f28140",
+     "role": "assistant",
+     "rule": "ngram13",
+     "source": "heldout:corpus-tool-v3"
+    }
+   ],
+   "route": "tool_schema",
+   "row_id": "tool-seed-6562d37a5d970067e4a2a035",
+   "source_row": 96
+  },
+  {
+   "family": "schema_upper",
+   "hits": [
+    {
+     "item": "tool-seed-a0000031b58a660129f28140",
+     "role": "assistant",
+     "rule": "ngram13",
+     "source": "heldout:corpus-tool-v3"
+    }
+   ],
+   "route": "tool_schema",
+   "row_id": "tool-seed-9e5d1a4d285530ee3c507600",
+   "source_row": 102
+  },
+  {
+   "family": "schema_upper",
+   "hits": [
+    {
+     "item": "tool-seed-a0000031b58a660129f28140",
+     "role": "assistant",
+     "rule": "ngram13",
+     "source": "heldout:corpus-tool-v3"
+    }
+   ],
+   "route": "tool_schema",
+   "row_id": "tool-seed-c94a6ca452d766dace0a2a9b",
+   "source_row": 108
+  },
+  {
+   "family": "schema_upper",
+   "hits": [
+    {
+     "item": "tool-seed-a0000031b58a660129f28140",
+     "role": "assistant",
+     "rule": "ngram13",
+     "source": "heldout:corpus-tool-v3"
+    }
+   ],
+   "route": "tool_schema",
+   "row_id": "tool-seed-9f4e749a6e71c2b4536da3fb",
+   "source_row": 114
+  },
+  {
+   "family": "schema_upper",
+   "hits": [
+    {
+     "item": "tool-seed-a0000031b58a660129f28140",
+     "role": "assistant",
+     "rule": "ngram13",
+     "source": "heldout:corpus-tool-v3"
+    }
+   ],
+   "route": "tool_schema",
+   "row_id": "tool-seed-84aac58bb09f871bf93250fe",
+   "source_row": 120
+  },
+  {
+   "family": "schema_upper",
+   "hits": [
+    {
+     "item": "tool-seed-a0000031b58a660129f28140",
+     "role": "assistant",
+     "rule": "ngram13",
+     "source": "heldout:corpus-tool-v3"
+    }
+   ],
+   "route": "tool_schema",
+   "row_id": "tool-seed-80827389dbc004338fdb5986",
+   "source_row": 126
+  },
+  {
+   "family": "schema_upper",
+   "hits": [
+    {
+     "item": "tool-seed-a0000031b58a660129f28140",
+     "role": "assistant",
+     "rule": "ngram13",
+     "source": "heldout:corpus-tool-v3"
+    }
+   ],
+   "route": "tool_schema",
+   "row_id": "tool-seed-8dfe4e0b0f0c33df67a17e35",
+   "source_row": 132
+  },
+  {
+   "family": "schema_upper",
+   "hits": [
+    {
+     "item": "tool-seed-a0000031b58a660129f28140",
+     "role": "assistant",
+     "rule": "ngram13",
+     "source": "heldout:corpus-tool-v3"
+    }
+   ],
+   "route": "tool_schema",
+   "row_id": "tool-seed-bd99d09fa7476761944185d4",
+   "source_row": 138
+  },
+  {
+   "family": "schema_upper",
+   "hits": [
+    {
+     "item": "tool-seed-a0000031b58a660129f28140",
+     "role": "assistant",
+     "rule": "ngram13",
+     "source": "heldout:corpus-tool-v3"
+    }
+   ],
+   "route": "tool_schema",
+   "row_id": "tool-seed-4bd1e1d21f3a76f941195107",
+   "source_row": 144
+  },
+  {
+   "family": "schema_upper",
+   "hits": [
+    {
+     "item": "tool-seed-a0000031b58a660129f28140",
+     "role": "assistant",
+     "rule": "ngram13",
+     "source": "heldout:corpus-tool-v3"
+    }
+   ],
+   "route": "tool_schema",
+   "row_id": "tool-seed-72668c9e8d7a68b0f195af93",
+   "source_row": 150
+  },
+  {
+   "family": "schema_upper",
+   "hits": [
+    {
+     "item": "tool-seed-a0000031b58a660129f28140",
+     "role": "assistant",
+     "rule": "ngram13",
+     "source": "heldout:corpus-tool-v3"
+    }
+   ],
+   "route": "tool_schema",
+   "row_id": "tool-seed-245cbc9f90b9d89bfaacb7ce",
+   "source_row": 156
+  },
+  {
+   "family": "schema_upper",
+   "hits": [
+    {
+     "item": "tool-seed-a0000031b58a660129f28140",
+     "role": "assistant",
+     "rule": "ngram13",
+     "source": "heldout:corpus-tool-v3"
+    }
+   ],
+   "route": "tool_schema",
+   "row_id": "tool-seed-750586e6f02e0e51e22a7e55",
+   "source_row": 162
+  }
+ ],
+ "excluded_id_hits": 0,
+ "excluded_id_rule": "row_id not a codex_heldout_id / BFCL-62 uid / twin; group not a held-out recovery group; no registry origin (not already a D2 registry document); not a BFCL-native C2 row",
+ "hits_in_corpus": 0,
+ "ngram": 13,
+ "rank": 3,
+ "rule_id": "D2-X1-refill",
+ "schema": "omni-d2x1-refill-screen-v1",
+ "screen": {
+  "corpus_tool": {
+   "built_at_utc": "2026-10-15T05:27:48Z",
+   "host": "cereal-X10DRG",
+   "path": "/home/cereal/omni-campaign/distill/tools/distill_corpus_build.py",
+   "python": "3.12.3",
+   "sha256": "696559136fb4698c6b92de47ed320c993aba5c3a065a13f18e78cd5c24a7ab94",
+   "tool": "distill_corpus_build",
+   "version": "1.0.1"
+  },
+  "index": {
+   "exact_item_min_words": 4,
+   "exact_keys": 10340,
+   "items_by_source": {
+    "combined_oct13_v1": 12156,
+    "heldout:corpus-schema-v2": 10316,
+    "heldout:corpus-tool-v3": 2856
+   },
+   "literal_codes": 0,
+   "media_digests": 0,
+   "ngram": 13,
+   "ngram_count": 1754256,
+   "short_item_min_words": 1000000000,
+   "short_items": 0
+  },
+  "inputs": {
+   "bfcl62": {
+    "calls_file": null,
+    "path": "/home/cereal/omni-campaign/distill/corpus/holdouts/bfcl62_rids.json",
+    "rids": 62,
+    "sha256": "538678aacbdd1e9dfe83253b30d2276f4da3d3349724c7e7c78a3cbf5d594cb0",
+    "twin_ids": 16,
+    "with_expected_calls": 62
+   },
+   "decisions": {
+    "path": "/home/cereal/omni-campaign/distill/queues/D2_DECISIONS_2026-10-15.json",
+    "sha256": "c8d47f22784d265a2e9239f9274c062298d25278497ba21d01102aa45274d90d"
+   },
+   "heldout_packs": [
+    {
+     "manifest_sha256": "5aee591bb50be43e366ce8f8b9b064d2fc213ac4559353b4d36da4d4f58d7f68",
+     "name": "original_short_validation",
+     "rows": 2465
+    },
+    {
+     "manifest_sha256": "a3aacff47757eba8d52568e7d795165125e71e4ceef532aa6da8e63443385d86",
+     "name": "original_short_test",
+     "rows": 2517
+    },
+    {
+     "manifest_sha256": "22c0adff5a0c71309f898f626859becbfb28bbddabf026ad21ec2f41b205668c",
+     "name": "original_long_validation",
+     "rows": 41
+    },
+    {
+     "manifest_sha256": "f1db36519de37b24ca40740a157b85c56c3a0310672386a1edf8b1c526ba2831",
+     "name": "original_long_test",
+     "rows": 32
+    },
+    {
+     "manifest_sha256": "38cedf361d608d2089691d5dae338a4c16b2e7f666f3f0ae4ff40780b972f0bb",
+     "name": "executed_tools_validation",
+     "rows": 168
+    },
+    {
+     "manifest_sha256": "f98ec7e40da29b0a6aa879ec6e619a35023f987493325dc0e2bb552e4bd002ae",
+     "name": "executed_tools_test",
+     "rows": 168
+    }
+   ],
+   "heldout_records": [
+    {
+     "path": "/home/cereal/omni-campaign/distill/codex-preparation-01a1326f-20261013/corpus-schema-v2/validation.jsonl",
+     "sha256": "ffba4ea37346b1fa26a7816fa356e16f711f118b6364e4738a5caa0d431b36c4"
+    },
+    {
+     "path": "/home/cereal/omni-campaign/distill/codex-preparation-01a1326f-20261013/corpus-schema-v2/test.jsonl",
+     "sha256": "8544046b39b9457e3c7fbead9839718567f0599ba6989de071610a63badb9151"
+    },
+    {
+     "path": "/home/cereal/omni-campaign/distill/codex-preparation-01a1326f-20261013/corpus-tool-v3/validation.jsonl",
+     "sha256": "61526c6239c3892afa36bf407b480953b18d5694272121b3a9bf219238d7cb02"
+    },
+    {
+     "path": "/home/cereal/omni-campaign/distill/codex-preparation-01a1326f-20261013/corpus-tool-v3/test.jsonl",
+     "sha256": "9ac970fa341d390453a46d85fc8739c26534ba9a6fd9d744dd6def155849e065"
+    }
+   ],
+   "heldout_rids": {
+    "path": "/home/cereal/omni-campaign/distill/corpus/d2_masks_v2/heldout_rids.json",
+    "rids": 5055,
+    "sha256": "d69ddb6b8fdb3a877ac204be97fd2b509122c95098fec6b480e6d4ba93e4bfa2"
+   },
+   "tasks274": {
+    "path": "/mnt/lexar/omni-campaign/distill/d2/inputs/codex/combined_oct13_v1.tasks.jsonl",
+    "sha256": "3795f333998627bb3b2d6fd460c19228469b2286284dfaadf30c5e12d23713f8",
+    "tasks": 274
+   }
+  },
+  "review_surface": {
+   "index": {
+    "exact_item_min_words": 4,
+    "exact_keys": 671,
+    "items_by_source": {
+     "bank_v1": 104,
+     "bank_v2": 822,
+     "bank_v2_haystack": 9,
+     "export_parity_bank": 45,
+     "extension_bank_v2": 304,
+     "needle_codes": 10,
+     "needle_sets": 3,
+     "paraphrase_triplets_v1": 229,
+     "probe64_pack": 360,
+     "probe_pack": 12,
+     "rq_prompts": 8,
+     "smoke_pack": 7
+    },
+    "literal_codes": 10,
+    "media_digests": 5,
+    "ngram": 13,
+    "ngram_count": 508323,
+    "short_item_min_words": 5,
+    "short_items": 153
+   },
+   "rules": "every ReviewIndex rule (exact, 13-gram, short item, literal), as finalize",
+   "sources": [
+    {
+     "items": 104,
+     "name": "bank_v1",
+     "path": "/home/cereal/omni-campaign/calibration/banks/lfm2_semantic_whole_response_prompts_v1.json",
+     "role": "frozen review bank v1",
+     "sha256": "0ee6bf14cef51bafc26990db44e5038771426c620c0381285c0cd5571e92786b"
+    },
+    {
+     "items": 822,
+     "name": "bank_v2",
+     "path": "/home/cereal/omni-campaign/calibration/banks/omni_review_bank_v2_draft.json",
+     "role": "review bank v2 draft (text, vision, long-context, media-out lanes)",
+     "sha256": "f26f36bf31cb2a062c3e75e9f1567b379ea886e6022e2afb93b572a269f4a20b"
+    },
+    {
+     "items": 9,
+     "name": "bank_v2_haystack",
+     "path": "/home/cereal/omni-campaign/calibration/banks/omni_review_bank_v2_draft.json",
+     "role": "materialised long-context haystacks (oc-filler-v1, digest-checked)"
+    },
+    {
+     "case_ids": [
+      "vis-ocr-receipt-total-A",
+      "vis-count-shapes-B",
+      "vis-chart-trend-B",
+      "vis-scene-relation-A",
+      "vis-grid-cell-select-A",
+      "av-clip-what-said-and-shown-A",
+      "av-clip-what-said-and-shown-B",
+      "av-gen-kettle-A",
+      "img-gen-shelf-B",
+      "music-gen-two-bar-A"
+     ],
+     "items": 10,
+     "name": "s8_media_prompts",
+     "role": "S8 media prompts = bank v2 media-out / media-in cases (inside bank_v2 strings)"
+    },
+    {
+     "files": {
+      "vis-chart-trend-B.png": "44572311e986594a04f5b769d23bdba9b7ece6ea1d46bccafc465825efe4346b",
+      "vis-count-shapes-B.png": "ccef22a777339235a046f387232fba877d7947d89fb5abc8c7f4b5097889d924",
+      "vis-grid-cell-select-A.png": "64707d7204e3e5e835b7fd8ebac910e262ebd90ce5774b548d42e529a3133193",
+      "vis-ocr-receipt-total-A.png": "1ab615028be6aea5103360149a5f521ff26121af9437b1037108dc15fc47419e",
+      "vis-scene-relation-A.png": "2f16b6b01e1dd5b6a5a067159499a12bce6c7d8535c49a0eb0a21af3a2a1401b"
+     },
+     "items": 5,
+     "name": "bank_v2_assets",
+     "path": "/home/cereal/omni-campaign/calibration/banks/assets",
+     "role": "vision-card images (S8 vision cards)"
+    },
+    {
+     "items": 12,
+     "name": "probe_pack",
+     "path": "/home/cereal/omni-campaign/calibration/banks/matrix_campaign_probe_prompts_v1.json",
+     "role": "sealed probe/smoke pack",
+     "sha256": "6230f878be9287a9abf4ad129d586fc22346867897858b9f1a4f0b75d1f82f2e"
+    },
+    {
+     "items": 7,
+     "name": "smoke_pack",
+     "path": "/home/cereal/omni-campaign/calibration/banks/matrix_campaign_smoke_prompts_v1.json",
+     "role": "sealed probe/smoke pack",
+     "sha256": "82ebf70a1606ec8a57c4daa31218fe1d376a91f211246c78716615ca66d2ceca"
+    },
+    {
+     "items": 8,
+     "name": "rq_prompts",
+     "path": "/home/cereal/omni-campaign/import/rq27b/tree_ef1ffb9/scripts/import_receipt_qwen35.py",
+     "role": "R-Q 8 prompts / 210 positions (PROMPT_PACK, read by AST)",
+     "sha256": "3776719772812dc43c43421dcc15eae81daad819fe3e1ffbc9af6f58414b12eb"
+    },
+    {
+     "items": 360,
+     "name": "probe64_pack",
+     "path": "/home/cereal/omni-campaign/distill/tools/screen_sources/lfm2_on_policy_fit_prompts_v1.json",
+     "role": "64-prompt free-run probe source (all 120 prompts; any seeded 64-draw is a subset)",
+     "sha256": "e85000326c5c39ae683506d69bc7e8edf3557845dc3b06e562f5ba6c23fe436f"
+    },
+    {
+     "items": 3,
+     "name": "needle_sets",
+     "path": "/home/cereal/omni-campaign/export/llama_probe.py",
+     "role": "export envelope needle templates (llama_probe.py)",
+     "sha256": "1b82118c867d58fa50d042d0a5706712deea0e4c48e2c495353fd65e2de2d503"
+    },
+    {
+     "items": 10,
+     "name": "needle_codes",
+     "path": "/home/cereal/omni-campaign/export/envelope_bench.py",
+     "role": "export envelope needle codes (envelope_bench.py NEEDLE_CODES), literal containment",
+     "sha256": "51071b65e03564964d918e2a0932a2457671f8ed2669777b93cf43b9e497de3f"
+    },
+    {
+     "items": 45,
+     "name": "export_parity_bank",
+     "path": "/home/cereal/omni-campaign/export/parity_bank.json",
+     "role": "export fidelity prompts (probe surface)",
+     "sha256": "49bb3102609980fae56b8445f47b5437e55ebd0d267ab5d655796145e870d49f"
+    },
+    {
+     "items": 304,
+     "name": "extension_bank_v2",
+     "path": "/home/cereal/omni-campaign/qwen-fold/screen-banks/lfm2_extension_bank_prompts_v2.json",
+     "role": "qwen-fold screen bank",
+     "sha256": "340694a64f7e886ecf1576dd9245a1445d8e763036d842f3730c4c8ab5c9c592"
+    },
+    {
+     "items": 229,
+     "name": "paraphrase_triplets_v1",
+     "path": "/home/cereal/omni-campaign/qwen-fold/screen-banks/lfm2_paraphrase_triplets_v1.json",
+     "role": "qwen-fold screen bank",
+     "sha256": "f9ac00e6dd5212f04a9f06d2a177c233562b5276617b14cbab0aa353ab846095"
+    },
+    {
+     "exists_at_screen_time": true,
+     "name": "composite_s8",
+     "note": "absent at screen time: S8 media prompts are the bank v2 media cases; re-run `screen` if step 1 adds stimuli",
+     "path": "/home/cereal/omni-campaign/composite/s8",
+     "role": "S8 stimuli directory"
+    }
+   ]
+  },
+  "rules": "distill_corpus_build.ReviewIndex(ngram=13, short items off): exact normalised text (>= its exact_min words) or any shared word 13-gram",
+  "surface": "held-out side: every message content of every role and every tool call of the 5,391 records, every string of the 274 tasks and each task as canonical JSON (BFCL-62 included); candidate side: every message and tool call, a system message left out only as the one scaffold text of its pack"
+ },
+ "source": "refill-codex-v7-train",
+ "split": "train",
+ "system_scaffold": {
+  "held_out_rows_opening_with_it": 336,
+  "left_out_of_candidate_screen": true,
+  "sha256": "20c80c4eb26e9846e46ecffe42c5913bdf031e4888fded662e08592ae8d21cb1"
+ },
+ "tool": {
+  "name": "d2_refill_build",
+  "path": "/home/cereal/omni-campaign/distill/tools/d2_refill_build.py",
+  "sha256": "36f53c9a5817d455b413adc08061c594b914562bbca0cf238942cf77380a0bd9",
+  "version": "1.0.3"
+ },
+ "twin_rule": "bfcl62_holdout.same_answer against the 62 tasks' expected calls: 0 rows carry expected calls, 0 twins",
+ "utc": "2026-10-15T05:27:48Z",
+ "verified": {
+  "admission": "accepted rows only; holdouts require distinct --split outputs; no truncated conversations",
+  "cross_split_groups": [],
+  "quarantined_count": 0,
+  "rule": "Codex native train rows that passed Codex's admission",
+  "source_verified_rows": 140,
+  "split": "train"
+ },
+ "verified_rows_only": true
+}

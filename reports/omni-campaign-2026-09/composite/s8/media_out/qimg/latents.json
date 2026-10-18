@@ -1,0 +1,267 @@
+{
+ "schema": "omni-campaign.s8_media_latents.v1",
+ "modality": "qimg",
+ "file": "/home/cereal/omni-campaign/composite/s8/media_out/qimg/latents.safetensors",
+ "sha256": "99d9d43f5becfdcae8d56baadf052908de2c586eabebd2fe93d653a9e1b23cd4",
+ "keys": {
+  "qimg_s015.clean": [
+   1,
+   16,
+   1,
+   64,
+   64
+  ],
+  "qimg_s015.x_t": [
+   1,
+   16,
+   1,
+   64,
+   64
+  ],
+  "qimg_s015.parent_raw": [
+   1,
+   16,
+   1,
+   64,
+   64
+  ],
+  "qimg_s015.x0_parent": [
+   1,
+   16,
+   1,
+   64,
+   64
+  ],
+  "qimg_s015.raw_omni_final": [
+   1,
+   16,
+   1,
+   64,
+   64
+  ],
+  "qimg_s015.x0_omni_final": [
+   1,
+   16,
+   1,
+   64,
+   64
+  ],
+  "qimg_s015.raw_omni_site": [
+   1,
+   16,
+   1,
+   64,
+   64
+  ],
+  "qimg_s015.x0_omni_site": [
+   1,
+   16,
+   1,
+   64,
+   64
+  ],
+  "qimg_s035.clean": [
+   1,
+   16,
+   1,
+   64,
+   64
+  ],
+  "qimg_s035.x_t": [
+   1,
+   16,
+   1,
+   64,
+   64
+  ],
+  "qimg_s035.parent_raw": [
+   1,
+   16,
+   1,
+   64,
+   64
+  ],
+  "qimg_s035.x0_parent": [
+   1,
+   16,
+   1,
+   64,
+   64
+  ],
+  "qimg_s035.raw_omni_final": [
+   1,
+   16,
+   1,
+   64,
+   64
+  ],
+  "qimg_s035.x0_omni_final": [
+   1,
+   16,
+   1,
+   64,
+   64
+  ],
+  "qimg_s035.raw_omni_site": [
+   1,
+   16,
+   1,
+   64,
+   64
+  ],
+  "qimg_s035.x0_omni_site": [
+   1,
+   16,
+   1,
+   64,
+   64
+  ],
+  "qimg_s065.clean": [
+   1,
+   16,
+   1,
+   64,
+   64
+  ],
+  "qimg_s065.x_t": [
+   1,
+   16,
+   1,
+   64,
+   64
+  ],
+  "qimg_s065.parent_raw": [
+   1,
+   16,
+   1,
+   64,
+   64
+  ],
+  "qimg_s065.x0_parent": [
+   1,
+   16,
+   1,
+   64,
+   64
+  ],
+  "qimg_s065.raw_omni_final": [
+   1,
+   16,
+   1,
+   64,
+   64
+  ],
+  "qimg_s065.x0_omni_final": [
+   1,
+   16,
+   1,
+   64,
+   64
+  ],
+  "qimg_s065.raw_omni_site": [
+   1,
+   16,
+   1,
+   64,
+   64
+  ],
+  "qimg_s065.x0_omni_site": [
+   1,
+   16,
+   1,
+   64,
+   64
+  ],
+  "qimg_s090.clean": [
+   1,
+   16,
+   1,
+   64,
+   64
+  ],
+  "qimg_s090.x_t": [
+   1,
+   16,
+   1,
+   64,
+   64
+  ],
+  "qimg_s090.parent_raw": [
+   1,
+   16,
+   1,
+   64,
+   64
+  ],
+  "qimg_s090.x0_parent": [
+   1,
+   16,
+   1,
+   64,
+   64
+  ],
+  "qimg_s090.raw_omni_final": [
+   1,
+   16,
+   1,
+   64,
+   64
+  ],
+  "qimg_s090.x0_omni_final": [
+   1,
+   16,
+   1,
+   64,
+   64
+  ],
+  "qimg_s090.raw_omni_site": [
+   1,
+   16,
+   1,
+   64,
+   64
+  ],
+  "qimg_s090.x0_omni_site": [
+   1,
+   16,
+   1,
+   64,
+   64
+  ]
+ },
+ "space": "the parent's DiT latent space; decode = vae.decode(latent_format.process_out(x))",
+ "segments": [
+  {
+   "segment": "qimg_s015",
+   "sigma": 0.15000000596046448,
+   "layout": {
+    "latent": "[1, 16, 1, 64, 64] Qwen-Image DiT space = Wan21.process_in(VAE latent)",
+    "image": "/mnt/lexar/omni-campaign/qimg-broad-calibration-sep07/batch1/b1_held_glass_pitcher.png"
+   }
+  },
+  {
+   "segment": "qimg_s035",
+   "sigma": 0.3499999940395355,
+   "layout": {
+    "latent": "[1, 16, 1, 64, 64] Qwen-Image DiT space = Wan21.process_in(VAE latent)",
+    "image": "/mnt/lexar/omni-campaign/qimg-broad-calibration-sep07/batch1/b1_held_glass_pitcher.png"
+   }
+  },
+  {
+   "segment": "qimg_s065",
+   "sigma": 0.6499999761581421,
+   "layout": {
+    "latent": "[1, 16, 1, 64, 64] Qwen-Image DiT space = Wan21.process_in(VAE latent)",
+    "image": "/mnt/lexar/omni-campaign/qimg-broad-calibration-sep07/batch1/b1_held_glass_pitcher.png"
+   }
+  },
+  {
+   "segment": "qimg_s090",
+   "sigma": 0.8999999761581421,
+   "layout": {
+    "latent": "[1, 16, 1, 64, 64] Qwen-Image DiT space = Wan21.process_in(VAE latent)",
+    "image": "/mnt/lexar/omni-campaign/qimg-broad-calibration-sep07/batch1/b1_held_glass_pitcher.png"
+   }
+  }
+ ]
+}

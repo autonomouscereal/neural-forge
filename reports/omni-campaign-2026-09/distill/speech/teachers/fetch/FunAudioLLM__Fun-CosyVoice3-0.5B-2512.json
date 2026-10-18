@@ -1,0 +1,235 @@
+{
+ "schema": "omni-campaign.speech-fetch-receipt.v1",
+ "tool": "speech_fetch.py",
+ "tool_version": "1.0.0",
+ "tool_sha256": "b332b36f3808a05d29c1912553ca9b32e1f27c1aa366b0357f986eab82d96735",
+ "repo": "FunAudioLLM/Fun-CosyVoice3-0.5B-2512",
+ "revision": "29e01c4e8d000f4bcd70751be16fa94bf3d85a18",
+ "dest": "/mnt/lexar/models/FunAudioLLM/Fun-CosyVoice3-0.5B-2512",
+ "api_url": "https://huggingface.co/api/models/FunAudioLLM/Fun-CosyVoice3-0.5B-2512/revision/29e01c4e8d000f4bcd70751be16fa94bf3d85a18?blobs=true",
+ "api_sha256": "5446ddc74c64cf38899337cc6650ec1fc4bc8a3212a7b443eb97345126d26ec0",
+ "api_last_modified": "2026-02-03T07:58:17.000Z",
+ "api_created_at": "2025-12-11T04:00:59.000Z",
+ "gated": false,
+ "private": false,
+ "licence": {
+  "card_license": "apache-2.0",
+  "card_license_name": null,
+  "card_license_link": null,
+  "files": []
+ },
+ "pipeline_tag": "text-to-speech",
+ "library_name": null,
+ "files": [
+  {
+   "path": ".gitattributes",
+   "size": 1574,
+   "sha256": "42828f8bf9e62763376589790ddf6eccc6bde9b761acd2700dc4a383ade92c33",
+   "git_blob_sha1": "cb90d04a72c0b51e3a115db0a9342dd88af903a4",
+   "lfs": false,
+   "verified_against": "blobId",
+   "source": "download",
+   "seconds": 0.56
+  },
+  {
+   "path": "CosyVoice-BlankEN/config.json",
+   "size": 659,
+   "sha256": "168aa1bd401abc3bc262ba15ba4e499627a8b4e006e9d050b47c22de20660185",
+   "git_blob_sha1": "463b055262b6c66c4629a74a4b300bfe2ed31d3c",
+   "lfs": false,
+   "verified_against": "blobId",
+   "source": "download",
+   "seconds": 0.46
+  },
+  {
+   "path": "CosyVoice-BlankEN/generation_config.json",
+   "size": 242,
+   "sha256": "e558847a8b4402616f1273797b015104dc266fe4b520056fca88823ba8f8ebe6",
+   "git_blob_sha1": "dfc11073787daf1b0f9c0f1499487ab5f4c93738",
+   "lfs": false,
+   "verified_against": "blobId",
+   "source": "download",
+   "seconds": 0.52
+  },
+  {
+   "path": "CosyVoice-BlankEN/merges.txt",
+   "size": 1402109,
+   "sha256": "ac8ff86a72bee70828fbc1119bc4398c6f3a9a6e490d7b0dbe917be025478bd0",
+   "git_blob_sha1": "90d3d82d027eadcc6a5e77c38eb82d43fc51b53b",
+   "lfs": false,
+   "verified_against": "blobId",
+   "source": "download",
+   "seconds": 0.87
+  },
+  {
+   "path": "CosyVoice-BlankEN/model.safetensors",
+   "size": 988097824,
+   "sha256": "130282af0dfa9fe5840737cc49a0d339d06075f83c5a315c3372c9a0740d0b96",
+   "git_blob_sha1": "daefb7ce1d50d82641ece0e297ee035585fb87cb",
+   "lfs": true,
+   "verified_against": "lfs.sha256",
+   "source": "download",
+   "seconds": 43.74
+  },
+  {
+   "path": "CosyVoice-BlankEN/tokenizer_config.json",
+   "size": 1287,
+   "sha256": "482bd979881423375ca5414e4e0d94cd7c5349dbb17fffd46b4d36d71e62a1bc",
+   "git_blob_sha1": "ff55d7b9eb1384e5d4d7e75dc0f564c1a8833d6e",
+   "lfs": false,
+   "verified_against": "blobId",
+   "source": "download",
+   "seconds": 0.54
+  },
+  {
+   "path": "CosyVoice-BlankEN/vocab.json",
+   "size": 2776833,
+   "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
+   "git_blob_sha1": "4783fe10ac3adce15ac8f358ef5462739852c569",
+   "lfs": false,
+   "verified_against": "blobId",
+   "source": "download",
+   "seconds": 0.74
+  },
+  {
+   "path": "README.md",
+   "size": 11982,
+   "sha256": "d4ec0fe1342b60a424ce1cd8971c670d26be38068a96148bcb6a1b8a334c3088",
+   "git_blob_sha1": "d816a921470cff1b6926d31c89e4ec7dea185f32",
+   "lfs": false,
+   "verified_against": "blobId",
+   "source": "download",
+   "seconds": 0.45
+  },
+  {
+   "path": "asset/dingding.png",
+   "size": 122824,
+   "sha256": "7f04815e2e676d31b089af6fa270135f3214f2193d5e0ad98b491d007d48f1c6",
+   "git_blob_sha1": "b7a955e32779a8693ac313963c4779544da2ca5d",
+   "lfs": true,
+   "verified_against": "lfs.sha256",
+   "source": "download",
+   "seconds": 0.96
+  },
+  {
+   "path": "campplus.onnx",
+   "size": 28303423,
+   "sha256": "a6ac6a63997761ae2997373e2ee1c47040854b4b759ea41ec48e4e42df0f4d73",
+   "git_blob_sha1": "d0678e51f871c8365a1bf60606f6358619af4cb6",
+   "lfs": true,
+   "verified_against": "lfs.sha256",
+   "source": "download",
+   "seconds": 2.86
+  },
+  {
+   "path": "config.json",
+   "size": 2,
+   "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+   "git_blob_sha1": "9e26dfeeb6e641a33dae4961196235bdb965b21b",
+   "lfs": false,
+   "verified_against": "blobId",
+   "source": "download",
+   "seconds": 0.46
+  },
+  {
+   "path": "configuration.json",
+   "size": 47,
+   "sha256": "c502b6328c67638b401df8dd05de89e9e8d1cff9cd0ada10dfbdbe13556c20de",
+   "git_blob_sha1": "5e812fae901c12933ac69ebf3eb79d0eb49bbab4",
+   "lfs": false,
+   "verified_against": "blobId",
+   "source": "download",
+   "seconds": 0.6
+  },
+  {
+   "path": "cosyvoice3.yaml",
+   "size": 6934,
+   "sha256": "f5a6b2c6f05139d0f18861a1fe506f751e787026b77c05f7e8fef9f8a4405965",
+   "git_blob_sha1": "2eda7e5007d99f6b17fbe7bd751cf54e3cde29ea",
+   "lfs": false,
+   "verified_against": "blobId",
+   "source": "download",
+   "seconds": 0.66
+  },
+  {
+   "path": "flow.decoder.estimator.fp32.onnx",
+   "size": 1326216933,
+   "sha256": "9b51b9533a55937762b262bf2cf9c6220ce40760f76d6532cb16a6a6d84059a8",
+   "git_blob_sha1": "94dd283b72804c6e8694a2371596d9c1897c635d",
+   "lfs": true,
+   "verified_against": "lfs.sha256",
+   "source": "download",
+   "seconds": 68.83
+  },
+  {
+   "path": "flow.pt",
+   "size": 1329116148,
+   "sha256": "a6fab32a7825e5b0bc855ddd948f8db9370b0a786fbc249caa4595e95b608e4b",
+   "git_blob_sha1": "43d8464e617f1a1f7cc948213633a0d8eb51e3a1",
+   "lfs": true,
+   "verified_against": "lfs.sha256",
+   "source": "download",
+   "seconds": 53.16
+  },
+  {
+   "path": "hift.pt",
+   "size": 83202622,
+   "sha256": "b279d7641eb97ae55b3b540cfba4f953c26492a2df758328a89a4d007ab87a65",
+   "git_blob_sha1": "ce2f9e7c406606e329e431b5a37af64741138057",
+   "lfs": true,
+   "verified_against": "lfs.sha256",
+   "source": "download",
+   "seconds": 9.36
+  },
+  {
+   "path": "llm.pt",
+   "size": 2024669519,
+   "sha256": "69f43bd545131c30e98947fb360ea8b4dc9916d8e83dded7757c7ea4f5a24970",
+   "git_blob_sha1": "dc53c03ea73610eded51ed27b97a109ae6b61bcb",
+   "lfs": true,
+   "verified_against": "lfs.sha256",
+   "source": "download",
+   "seconds": 62.16
+  },
+  {
+   "path": "llm.rl.pt",
+   "size": 2024682701,
+   "sha256": "74d34b01a80c7154670ae75ac372d1b1712c78bceae9f467eb9f1f6f61ec764f",
+   "git_blob_sha1": "f9b8428860e9e5ca222ea6099625f85487cc4fd6",
+   "lfs": true,
+   "verified_against": "lfs.sha256",
+   "source": "download",
+   "seconds": 62.43
+  },
+  {
+   "path": "speech_tokenizer_v3.batch.onnx",
+   "size": 969451579,
+   "sha256": "b156b8a7bbff436585e153f4637b9a368009005ac66efa108a6c8bfb34e5ee43",
+   "git_blob_sha1": "6a291ed97eb59bacd464712c56ef89343295ebb6",
+   "lfs": true,
+   "verified_against": "lfs.sha256",
+   "source": "download",
+   "seconds": 26.09
+  },
+  {
+   "path": "speech_tokenizer_v3.onnx",
+   "size": 969451503,
+   "sha256": "23236a74175dbdda47afc66dbadd5bcb41303c467a57c261cb8539ad9db9208d",
+   "git_blob_sha1": "6ae7265eec7570de42e208abb9bad7a6170003eb",
+   "lfs": true,
+   "verified_against": "lfs.sha256",
+   "source": "download",
+   "seconds": 26.6
+  }
+ ],
+ "file_count": 20,
+ "total_bytes": 9747516745,
+ "downloaded_bytes": 9747516745,
+ "seed": null,
+ "started_utc": "2026-10-15T03:16:24Z",
+ "finished_utc": "2026-10-15T03:18:11Z",
+ "seconds": 106.6,
+ "download_mb_per_s": 91.4,
+ "errors": [],
+ "complete": true
+}

@@ -1,0 +1,119 @@
+{
+  "argv": [
+    "/tools/m3_qimg_time_reference_fp32.py",
+    "--parent",
+    "/parent/qwen_image_fp8_e4m3fn.safetensors",
+    "--block",
+    "30",
+    "--out",
+    "/out",
+    "--captures",
+    "/capture/b1_fit_bicycle_sigma00.safetensors",
+    "/capture/b1_fit_bicycle_sigma01.safetensors",
+    "/capture/b1_fit_bicycle_sigma02.safetensors",
+    "/capture/b1_fit_bicycle_sigma03.safetensors"
+  ],
+  "captures": [
+    {
+      "file": "/capture/b1_fit_bicycle_sigma00.safetensors",
+      "sha256": "912cd80ec0c75231b7f4ce46be93cac21bf5d80139016cb52f2c01c7778ea56a"
+    },
+    {
+      "file": "/capture/b1_fit_bicycle_sigma01.safetensors",
+      "sha256": "ddd243b60fe2d3fdc1e29dc03a098144d74aecacc6f5ab191966a32682c3e9c8"
+    },
+    {
+      "file": "/capture/b1_fit_bicycle_sigma02.safetensors",
+      "sha256": "2202f3c6e320959729e9e0dc90c79d4e2e7a69e9db85b1db015128bcd31f5e73"
+    },
+    {
+      "file": "/capture/b1_fit_bicycle_sigma03.safetensors",
+      "sha256": "228b3afda71112d9da5a38e506cf039d426e25806681b0f251a6340cec6ae6b7"
+    }
+  ],
+  "compute": {
+    "device": "cpu",
+    "dtype": "float32",
+    "threads": 8,
+    "torch": "2.10.0+cu130",
+    "widening": "parent F8_E4M3 -> F32 (exact, round-trip checked)"
+  },
+  "convention": {
+    "chunk_order": "img_mod output viewed [6, width] = (shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp)",
+    "timestep": "the capture's sigma, passed as ComfyUI passes it; Timesteps(num_channels=256, flip_sin_to_cos=True, downscale_freq_shift=0, scale=1000)"
+  },
+  "diagnostic_bf16_capture_vs_fp32_reference": {
+    "max_abs": 6.3123779296875,
+    "note": "BF16 rounding of the captured img_modulation; recorded, not a gate",
+    "rel_l2": 0.002038831589743495
+  },
+  "parent_code": {
+    "comfyui_version": "0.37.0",
+    "model_py_sha256": "14c805af8da13d31094c2c704e413cc282ef43f4afe17f77de9070bdca301f28",
+    "module": "comfy.ldm.qwen_image.model.QwenTimestepProjEmbeddings + img_mod Sequential(SiLU, Linear)"
+  },
+  "parent_file": "/parent/qwen_image_fp8_e4m3fn.safetensors",
+  "parent_file_bytes": 20430635136,
+  "parent_file_sha256": "not computed (pass --hash-parent-file)",
+  "parent_tensors": {
+    "time_text_embed.timestep_embedder.linear_1.bias": {
+      "dtype": "torch.float8_e4m3fn",
+      "sha256_raw_bytes": "4ff50e0389d90235d83a13c583eb5b4ced4f5998d7789c9b9e36dae4919a9fb3",
+      "shape": [
+        3072
+      ]
+    },
+    "time_text_embed.timestep_embedder.linear_1.weight": {
+      "dtype": "torch.float8_e4m3fn",
+      "sha256_raw_bytes": "3e27fcafb2ac5685dfd03f9ceeb6ae911701edb1ed9de90449c73fa5509693df",
+      "shape": [
+        3072,
+        256
+      ]
+    },
+    "time_text_embed.timestep_embedder.linear_2.bias": {
+      "dtype": "torch.float8_e4m3fn",
+      "sha256_raw_bytes": "c5cc1185711bf15faebd21b9852c32221ea652ea3a76e5de365b948929c32286",
+      "shape": [
+        3072
+      ]
+    },
+    "time_text_embed.timestep_embedder.linear_2.weight": {
+      "dtype": "torch.float8_e4m3fn",
+      "sha256_raw_bytes": "3e98b34d55d613bef6d7bf241b3165139432186053000b7fdcdd39112f9235d8",
+      "shape": [
+        3072,
+        3072
+      ]
+    },
+    "transformer_blocks.30.img_mod.1.bias": {
+      "dtype": "torch.float8_e4m3fn",
+      "sha256_raw_bytes": "7b14fedcb5728ccc0d64796a9f13ed0442254e98be47722838dd9656a8bc83ed",
+      "shape": [
+        18432
+      ]
+    },
+    "transformer_blocks.30.img_mod.1.weight": {
+      "dtype": "torch.float8_e4m3fn",
+      "sha256_raw_bytes": "02ca2d3627e360e0b3ee3a8297dda45f678ee030e6d9a083241ec03573b37369",
+      "shape": [
+        18432,
+        3072
+      ]
+    }
+  },
+  "reference": {
+    "file": "time_reference.safetensors",
+    "modulation_norm": 37020.32421875,
+    "sha256": "d1ef99406661806b2ee9c70d5ac702b380458b8cbe3f9c2c478cfdfa7b2c816e"
+  },
+  "sigma": [
+    0.15000000596046448,
+    0.3499999940395355,
+    0.6499999761581421,
+    0.8999999761581421
+  ],
+  "tool": "m3_qimg_time_reference_fp32",
+  "tool_sha256": "470ebf44f3723969721db942c01821216ffaf438947977da0f0b7e35c8040bbb",
+  "tool_version": "1.0.0"
+}

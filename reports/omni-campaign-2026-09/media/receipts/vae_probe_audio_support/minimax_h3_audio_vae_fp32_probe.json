@@ -1,0 +1,150 @@
+{
+  "schema": "chimera_omni.media_fold.receipt.v1",
+  "created_at_utc": "2026-09-02T10:28:27.305676+00:00",
+  "kind": "c15_vae_probe",
+  "vae": "/opt/ComfyUI/models/vae/minimax_h3_audio_vae_fp32.safetensors",
+  "vae_file_sha256": "8e505d95dd1561d47abd43d4238fd40d9bb1ae9e147ed0a4cba778d76ae4db48",
+  "vae_bytes": 605254808,
+  "expected_profile": {
+    "modality": "audio",
+    "class": "comfy.ldm.minimax.audio_vae.MiniMaxH3AudioVAE",
+    "latent_channels": 32,
+    "channels": 2,
+    "sample_rate_hz": 32000,
+    "hop_samples": 800,
+    "channel_in_latent": true,
+    "sd_py_lines": "965-985"
+  },
+  "geometry": {
+    "name": "minimax_h3_audio_vae_fp32.safetensors",
+    "modality": "audio",
+    "latent_channels": 32,
+    "sample_rate_hz": 32000,
+    "hop_samples": 800,
+    "channels": 2,
+    "channel_in_latent": true,
+    "spatial_stride": 0,
+    "temporal_stride": 0,
+    "frame_rate_hz": 40.0,
+    "notes": {
+      "kind": "comfy",
+      "path": "/opt/ComfyUI/models/vae/minimax_h3_audio_vae_fp32.safetensors",
+      "comfy_kitchen_stubbed": true,
+      "forced_cpu": true,
+      "expected_class": "comfy.ldm.minimax.audio_vae.MiniMaxH3AudioVAE",
+      "sd_py_lines": "965-985",
+      "latent_dim": 2,
+      "first_stage_class": "MiniMaxH3AudioVAE",
+      "vae_dtype": "torch.float32",
+      "device": "cpu",
+      "posterior": "mean",
+      "path_mode": "direct",
+      "crop_input": true,
+      "downscale_ratio": 800,
+      "upscale_ratio": 800
+    }
+  },
+  "load_seconds": 10.703,
+  "posterior": "mean",
+  "posterior_mean_available": false,
+  "measurement": {
+    "raw_shape": [
+      2,
+      2,
+      32000
+    ],
+    "requested_frames": 40,
+    "latent_shape": [
+      2,
+      32,
+      2,
+      40
+    ],
+    "latent_dtype": "torch.float32",
+    "latent_mean": 0.05145248770713806,
+    "latent_std": 0.5243055820465088,
+    "latent_absmax": 2.1146812438964844,
+    "reconstruction_shape": [
+      2,
+      2,
+      32000
+    ],
+    "encode_deterministic": true,
+    "encode_repeat_max_delta": 0.0,
+    "roundtrip_psnr_db": 32.874986762982516,
+    "roundtrip_si_sdr_db": 16.839248835397,
+    "encode_seconds": 4.031,
+    "decode_seconds": 7.753,
+    "samples_per_latent_frame_measured": 800.0,
+    "temporal_support": {
+      "frames": 12,
+      "hop_samples": 800,
+      "latent_frames": 12,
+      "amplitude": 0.25,
+      "owner_per_frame": [
+        0,
+        0,
+        2,
+        4,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11
+      ],
+      "owner_is_monotonic": true,
+      "influence_by_offset": {
+        "-6": 0.006899602308526873,
+        "-5": 0.01181810382790453,
+        "-4": 0.02210564172576019,
+        "-3": 0.050527885824901045,
+        "-2": 0.14971661320143914,
+        "-1": 0.35928667025092675,
+        "0": 1.0,
+        "1": 0.6404844986332552,
+        "2": 0.27474417624252007,
+        "3": 0.08404805748431118,
+        "4": 0.03415416751190681,
+        "5": 0.01835348361234908,
+        "6": 0.011324811321386616
+      },
+      "support_threshold": 0.1,
+      "support_offsets": [
+        "-2",
+        "-1",
+        "0",
+        "1",
+        "2"
+      ],
+      "support_width": 5,
+      "meaning": "support_width 1 justifies context=0; a wider support is what a +/-K context row is for. Measured, not asserted."
+    }
+  },
+  "runs_h3_generation": false,
+  "runtime": {
+    "python": "3.10.12 (main, Sep 11 2024, 15:47:36) [GCC 11.4.0]",
+    "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.35",
+    "cwd": "/opt/ComfyUI",
+    "torch": "2.6.0+cu124",
+    "torch_cuda": "12.4",
+    "cuda_available": false,
+    "nvidia_smi": null
+  },
+  "argv": {
+    "vae": "/opt/ComfyUI/models/vae/minimax_h3_audio_vae_fp32.safetensors",
+    "out": "/work/media/out/vae_probe_support",
+    "device": "cpu",
+    "clips": 2,
+    "seconds": 1.0,
+    "size": 64,
+    "frame_counts": "5,9,17,22",
+    "seed": 20260901,
+    "support_frames": 0,
+    "audio_support_frames": 12,
+    "posterior": "mean",
+    "path_mode": "direct"
+  }
+}

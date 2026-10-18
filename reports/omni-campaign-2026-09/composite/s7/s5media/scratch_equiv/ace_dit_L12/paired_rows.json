@@ -1,0 +1,165 @@
+{
+ "argv": {
+  "bridge_sample": 4096,
+  "chimera_src": "/home/cereal/omni-campaign/import/rq27b/tree_ef1ffb9",
+  "device": "cuda:0",
+  "dtype": "bfloat16",
+  "insert_after": 31,
+  "interface": "/home/cereal/omni-campaign/composite/s7/interface_latent",
+  "interface_c11": "/home/cereal/omni-campaign/composite/s7/interface_latent/c11",
+  "max_batch_tokens": 12288,
+  "max_forwards": 0,
+  "model": "/mnt/lexar/omni-campaign/s3-native-v2-3a25a459-4347-416d-a58a-2cb3c8e738fd/actual/native-s3-text-stage/native",
+  "out": "/home/cereal/omni-campaign/composite/s7/s5media/scratch_equiv",
+  "pairs": "/home/cereal/omni-campaign/composite/s7/pairs",
+  "stream_blocks": true,
+  "tokenizer": "/mnt/lexar/omni-campaign/s3-native-v2-3a25a459-4347-416d-a58a-2cb3c8e738fd/actual/native-s3-text-stage/tokenizer/tokenizer.json",
+  "unit": "ace_dit_L12",
+  "units_root": "/home/cereal/omni-campaign/composite/s7/units"
+ },
+ "batches": 4,
+ "capability_claim": "none; host rows for a chart fit",
+ "chimera_tree": {
+  "commit": "ef1ffb9c3c1abd9ea79f1d4d5707ac5486dab9ab",
+  "commit_source": "COMMIT file",
+  "src": "/home/cereal/omni-campaign/import/rq27b/tree_ef1ffb9/src",
+  "tree": "/home/cereal/omni-campaign/import/rq27b/tree_ef1ffb9"
+ },
+ "created_at_utc": "2026-10-13T00:44:11Z",
+ "cuda_peak_gib": 8.140149593353271,
+ "diagnostics": {
+  "bridge_row_norm_median": 71.55422973632812,
+  "causal_prompt_check": {
+   "max_abs_diff_prompt_rows_with_vs_without_media": 0.5,
+   "prompt_row_norm_median": 86.81609344482422,
+   "prompt_tokens": 6
+  },
+  "content_share_pre_norm_median_per_batch": {
+   "max": 0.6976083517074585,
+   "median": 0.6924818754196167,
+   "min": 0.6779531240463257
+  },
+  "host_row_norm_median": 114.5987319946289,
+  "parent_row_norm_median": 2457.378662109375,
+  "time_row_host_norm": null,
+  "time_row_parent_norm": null
+ },
+ "file": "/home/cereal/omni-campaign/composite/s7/s5media/scratch_equiv/ace_dit_L12/paired_rows.safetensors",
+ "file_sha256": "364bc395aea1f0647011c6e74e3c5991d005b2bcda8abc1adf5a84a35f481a81",
+ "forwards": 768,
+ "interface": {
+  "companions": [
+   "/home/cereal/omni-campaign/composite/s7/interface_latent/companions.json"
+  ],
+  "companions_sha256": [
+   "929083f864be12a25c160632575900fc5dadfe74e46dd6c18e20744651b6d60d"
+  ],
+  "entries": [
+   {
+    "feature_band": [
+     0,
+     384
+    ],
+    "name": "music_ace",
+    "preconditions": {
+     "type_affine[type, scale half] nonzero": 0,
+     "type_feature_scale[type, band] nonzero": 0
+    },
+    "previous_band_norm": 10.325429916381836,
+    "rows_file": "/home/cereal/omni-campaign/composite/s7/interface_latent/music_ace/composed_interface.safetensors",
+    "rows_sha256": "e70b833f3124fe4b331cb6d20ab920f834cfa8cc431557eec6f47c504ee017ed",
+    "type_embed_delta_norm": 5.279660224914551,
+    "type_id": 4,
+    "written_band_norm": 72.47503662109375
+   }
+  ],
+  "selected_by": [
+   "unit"
+  ]
+ },
+ "pairs": {
+  "file": "/home/cereal/omni-campaign/composite/s7/pairs/ace_dit_L12/parent_capture.safetensors",
+  "json_sha256": "8778d4f0f2c269886b9a80cb180325fad239f9d6292c1ca84a8ca41b2cf25d61",
+  "sha256": "408b5ce9f5ad07e60f0d5d4ba33e80eafe15a22ba0048ff31e2f405e711d3066"
+ },
+ "rows": 38400,
+ "rows_held": 7600,
+ "rows_time": 0,
+ "schema": "omni-campaign.s7_host_rows.v1",
+ "seconds": 256.9708032608032,
+ "sequence_layout": {
+  "add_special_tokens": false,
+  "noise_levels": "per-row sigma",
+  "order": "[prompt tokens | media rows]",
+  "placeholder_band": "media",
+  "placeholder_token_id": 248832,
+  "tokenizer": "/mnt/lexar/omni-campaign/s3-native-v2-3a25a459-4347-416d-a58a-2cb3c8e738fd/actual/native-s3-text-stage/tokenizer/tokenizer.json",
+  "tokenizer_sha256": "06b9509352d2af50381ab2247e083b80d32d5c0aba91c272ca9ff729b6a0e523"
+ },
+ "time_rows": {
+  "forwards": 768,
+  "required": false,
+  "time_rows": 0,
+  "unit_requirement": null
+ },
+ "tool": {
+  "engine": {
+   "class": "StreamedChimera",
+   "module": "/home/cereal/omni-campaign/composite/tools/run_omni_frozen_review.py",
+   "sha256": "f42cc50f52f5e99ebea35319930946c41b75792c1da904c4a8b72879d1c3e023"
+  },
+  "name": "s7_host_rows",
+  "sha256": "ca0afe87389e958c554570dd93cb32f0cd36d2f7da383b3dba62ad3915253d08",
+  "version": "1.3.0"
+ },
+ "trunk": {
+  "block_kinds": [
+   "kda",
+   "kda",
+   "kda",
+   "gated_gqa",
+   "kda",
+   "kda",
+   "kda",
+   "gated_gqa",
+   "kda",
+   "kda",
+   "kda",
+   "gated_gqa",
+   "kda",
+   "kda",
+   "kda",
+   "gated_gqa",
+   "kda",
+   "kda",
+   "kda",
+   "gated_gqa",
+   "kda",
+   "kda",
+   "kda",
+   "gated_gqa",
+   "kda",
+   "kda",
+   "kda",
+   "gated_gqa",
+   "kda",
+   "kda",
+   "kda",
+   "gated_gqa"
+  ],
+  "block_loads": 32,
+  "block_residency": "streamed (layer-major: one block on the device at a time; block i is applied to every batch and to the prompt-only causal row, then freed, before block i+1 is built)",
+  "blocks_run": [
+   0,
+   31
+  ],
+  "config_sha256": "e2cdb6979a01deca3f09e762482e16b86543a9375d8ff6b13305035c598fa18b",
+  "device": "cuda:0",
+  "directory": "/mnt/lexar/omni-campaign/s3-native-v2-3a25a459-4347-416d-a58a-2cb3c8e738fd/actual/native-s3-text-stage/native",
+  "dtype": "bfloat16",
+  "host_site": "block 31 OUTPUT (the residual the charted block inserted after layer 31 reads)",
+  "index_sha256": "6298233adb6141d72e2f90172b6c4e0d68df0a24b62db52dccea06d6ff8968a1",
+  "s3_native_receipt_sha256": "d20bc0590cec84a67407439b5aa6f35c3cab621b48ce2a2c9546a4bf27a193c9"
+ },
+ "unit": "ace_dit_L12"
+}

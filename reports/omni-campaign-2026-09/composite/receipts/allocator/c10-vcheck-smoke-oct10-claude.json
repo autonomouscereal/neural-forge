@@ -1,0 +1,4 @@
+{"schema": "omni-campaign.host-venv-gpu-claim.v1", "name": "c10-vcheck-smoke-oct10-claude", "owner": "claude", "kind": "host-venv",
+ "gpu_index": 0, "gpu_uuid": "GPU-4ead7f3a-cc79-fa5b-de42-ef024e27f561", "gpu_used_mib_at_start": 24, "pid": 2756373,
+ "started_utc": "2026-10-10T08:2xZ (launch within this minute range)", "log": "/home/cereal/c10-rehearsal-oct10/vcheck_smoke.log",
+ "command": "/home/cereal/c10-rehearsal-oct10/vcheck_smoke.py (identity child == trunk, 8 R-Q prompts, bf16)", "release": "process exit"}

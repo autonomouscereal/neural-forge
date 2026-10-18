@@ -1,0 +1,162 @@
+{
+ "created_by": "claude, lane infra, card X-T2 (2026-10-14); Codex reviews",
+ "about": "Stage D lane registry. Plan: STAGE_D_RECONCILED_PLAN_2026-10-14.md sections 7.1 (lanes), 7.2 (this file), 7.4 (locks, takeover). Read with `python3 $OC/distill/tools/lanes.py show`; the owner heartbeats its lane (`lanes.py heartbeat --lane L --agent A ...`); lanes with a probe are heartbeated every 10 min by cron (`lanes.py pulse`) while their process lives.",
+ "rules": {
+  "write": "lane owner only (heartbeat); a takeover writes a takeover receipt (lanes.py takeover)",
+  "takeover": "only if Cyril says so (--cyril, verbatim) or the lane is transferable and its heartbeat (or registration, if it never had one) is older than 6 h; before acting: session.py sync, read the newest STATE and this file, check the live process (systemctl, docker ps, nvidia-smi, pgrep) and NEVER relaunch anything that may still be alive; after: post the five-line hand-off on Relay",
+  "gpu": "a GPU process starts only from the owning lane's queue/launcher under flock on $Q/gpu<N>.lock (P40s also a p40.claims line) and its own MemAvailable gate; it waits, never competes. GPU5: never.",
+  "emergency_stop": "host MemAvailable < 8 GiB or a thermal abort: either agent may stop the offending process, then writes a stop receipt and posts it on Relay at once",
+  "heartbeat_fields": "heartbeat_utc / heartbeat_by / heartbeat_source (cli, pulse, takeover, or a queue VERSION string)"
+ },
+ "lanes": [
+  {
+   "lane": "L-D1",
+   "owner": "claude",
+   "scope": "Hardened D1 to seal and register: claude-d1-hardened.service (d1_hardened_launch 1.2.0, d1_hardened_entry 1.2.0, d1_trunk_recovery 1.3.1), resumed from canonical L00-L10 (SHA256SUMS 6cfb7ef9...), successor-v2 ids 917/62; then seal, clone-pre-D2, ledger register OMNI1D1",
+   "lock_paths": ["/home/cereal/omni-campaign/distill/queues/gpu0.lock", "/home/cereal/omni-campaign/distill/queues/gpu4.lock"],
+   "status": "running: prefix replay L00-L10, then new rungs L11..L63; last rung ETA 2026-10-15 17:00-19:00Z, registered 20:00-22:00Z (EST)",
+   "transferable": false,
+   "transferable_reason": "a live GPU0+GPU4 lineage under systemd that runs to its last rung unattended and restarts itself; a second launch would fork the lineage (the D1 r5/r6 lesson). Seal and registration move to Codex only on Cyril's word.",
+   "units": ["claude-d1-hardened.service (system manager, MainPID 125746 at 17:48:03Z)"],
+   "next_command": "after the last rung: the D1 seal (verify, apply delta to clone-pre-D1, s7, register, bank v1) per STATE_2026-10-14_WAVE3 section 4",
+   "do_not_touch": "claude-d1-hardened.service, GPU0, GPU4, gpu0.lock, gpu4.lock, /mnt/lexar/omni-campaign/distill/d1/run-OMNI1D1-hardened-claude-20261014/, the canonical rung dir",
+   "last_receipt_path": "/mnt/lexar/omni-campaign/distill/d1/run-OMNI1D1-hardened-claude-20261014/trainer/d1_receipt.json",
+   "probe": {
+    "checks": [
+     {"kind": "systemd_unit", "unit": "claude-d1-hardened.service"},
+     {"kind": "file_fresh", "path": "/mnt/lexar/omni-campaign/distill/d1/run-OMNI1D1-hardened-claude-20261014/runtime-status.json", "max_age_s": 1800}
+    ],
+    "receipt_globs": ["/mnt/lexar/omni-campaign/distill/d1/run-OMNI1D1-hardened-claude-20261014/trainer/d1_receipt.json"],
+    "detail": {"path": "/mnt/lexar/omni-campaign/distill/d1/run-OMNI1D1-hardened-claude-20261014/runtime-status.json", "mode": "json_keys", "keys": ["state", "progress", "heartbeat_at", "waiting_on"]}
+   }
+  },
+  {
+   "lane": "L-K3",
+   "owner": "claude",
+   "scope": "queue_gpu6.sh 1.3.0 ($Q/gpu6.sh, pid 107948 + thermal watcher): B2 bf16 review pass, fold-identity gate, fp32 reference pass, parity, K3 passes 0-3, k3-probe, H3 (ruled), j6; frozen k3_teacher_cache 1.2.4 2aae4dc3...",
+   "lock_paths": ["/home/cereal/omni-campaign/distill/queues/gpu6.lock"],
+   "status": "running: B2 bf16 review pass at L92/93 (2026-10-14 19:49Z); next the identity gate (waits MemAvailable >= 70 GiB), then the fp32 pass; B2 verdict 2026-10-15 10:00-13:00Z (EST)",
+   "transferable": false,
+   "transferable_reason": "one frozen-tool chain (B2 -> identity -> K3 passes) on GPU6 that resumes by itself; a takeover risks a second K3 lineage on a different tool or card. Codex takes it only on Cyril's word.",
+   "lock_note": "queue 1.3.0 takes no gpu6.lock itself; a lanes.py hold-lock bridge holds $Q/gpu6.lock while pid 107948 lives. queue_gpu6.sh 1.3.1 (staged in tools/, not installed) takes it itself and heartbeats this lane.",
+   "next_command": "none needed: the queue runs unattended; read $Q/gpu6.status and $Q/logs/gpu6/",
+   "do_not_touch": "pid 107948 / 108316 (queue 1.3.0), the B2 / identity / K3 processes it starts, GPU6, $Q/frozen/*, $Q/gpu6.sh, the K3 state dirs under /mnt/lexar/omni-campaign/scratch/k3cache-state",
+   "last_receipt_path": "/home/cereal/omni-campaign/distill/parity/k3cache-2026-10-14-b2-geometry-diag/b2_geometry_verdict.json",
+   "probe": {
+    "checks": [
+     {"kind": "pid_cmdline", "match": "bash /home/cereal/omni-campaign/distill/queues/gpu6.sh"}
+    ],
+    "receipt_globs": [
+     "/home/cereal/omni-campaign/distill/parity/k3cache-2026-10-14-b2-geometry-diag/*.json",
+     "/home/cereal/omni-campaign/distill/parity/k3cache-2026-10-14-b2-gpu6/*.json",
+     "/mnt/lexar/omni-campaign/distill/parity/k3cache-2026-10-14-b2-gpu6/*.json",
+     "/mnt/lexar/omni-campaign/distill/parity/k3cache-2026-10-14-b2-gpu6/*/manifest.json",
+     "/mnt/lexar/omni-campaign/distill/parity/k3cache-2026-10-14-b2-gpu6/identity/*.json",
+     "/mnt/lexar/omni-campaign/teacher_cache/k3/*/*/manifest.json"
+    ],
+    "detail": {"path": "/home/cereal/omni-campaign/distill/queues/gpu6.status", "mode": "last_line"}
+   }
+  },
+  {
+   "lane": "L-TOOL",
+   "owner": "claude",
+   "scope": "tool-call self-gen (toolcall_selfgen 1.1.0, llama-server parent Q4_K_M on GPU1+GPU2), then finalize (+ Codex 274-task 13-gram screen), export, C1/C2 bf16 rescore (qtext_teacher_cache build-text), BFCL-native 506 copy, toolcall_bank",
+   "lock_paths": ["/home/cereal/omni-campaign/distill/queues/p40.claims"],
+   "status": "running: 456,443 of 1,500,000 tokens, eta 6.9 h (2026-10-14 19:46Z)",
+   "transferable": true,
+   "transferable_reason": "the sampler runs unattended; finalize / export / rescore are steps an agent must start, and either agent can run them from the receipts if Claude is out",
+   "next_command": "when progress.json reaches the token target: toolcall_selfgen.py finalize, then export (run_toolcall_export_2026-10-14.sh), then release GPU1/GPU2 in p40.claims",
+   "do_not_touch": "pids of run_toolcall_selfgen_2026-10-14.sh / toolcall_selfgen.py run / the two llama-servers (ports 18321, 18322), GPU1, GPU2",
+   "last_receipt_path": "/home/cereal/omni-campaign/distill/toolcall/receipts/eog_probe_toolcall.json",
+   "probe": {
+    "checks": [
+     {"kind": "pid_cmdline", "match": "toolcall_selfgen.py run"},
+     {"kind": "file_fresh", "path": "/home/cereal/omni-campaign/distill/toolcall/run-q38-q4km-2026-10-14/progress.json", "max_age_s": 1800}
+    ],
+    "receipt_globs": ["/home/cereal/omni-campaign/distill/toolcall/receipts/*.json"],
+    "detail": {"path": "/home/cereal/omni-campaign/distill/toolcall/run-q38-q4km-2026-10-14/progress.json", "mode": "json_keys", "keys": ["accepted", "rejected", "accepted_tokens", "token_target", "eta_hours", "updated_utc"]}
+   }
+  },
+  {
+   "lane": "L-TRAIN",
+   "owner": "claude",
+   "scope": "streamed_kd_trainer 1.3.4 (D2-T1 + D2-T5), D2-M1/M2 masks and BFCL-native copy, D2/D3/D4 drivers, prereg A2/A3 + check-prereg, ledger registration",
+   "lock_paths": [],
+   "status": "CPU engineering; trainer 1.3.4 not started; A2 waits for the C1/C2 cache shas. GPU0/4/6 only through their queues after the D1 seal.",
+   "transferable": true,
+   "transferable_reason": "code and documents with no live process; if Claude is out > 6 h Codex may continue under the takeover rule (ledger steps still follow CHECKPOINT_POLICY.md)",
+   "next_command": "card D2-T1: port Codex's streamed_supervision_patch into streamed_kd_trainer 1.3.4 (plan section 4, D2)",
+   "do_not_touch": "the sealed teacher caches; streamed_kd_trainer.py 1.3.3 while a run uses it",
+   "last_receipt_path": "/home/cereal/omni-campaign/distill/PREREGISTRATION_OMNI_STAGE_D_v1.md"
+  },
+  {
+   "lane": "L-K3ACC",
+   "owner": "claude",
+   "scope": "K3 acceleration plan (the other Claude workflow): k3_accel_profile 1.0.0, k3_teacher_cache_v130 parity on GPU3; GPU3 only while claimed in p40.claims",
+   "lock_paths": ["/home/cereal/omni-campaign/distill/queues/p40.claims"],
+   "status": "idle: GPU3 released 2026-10-14T19:41:49Z (job k3-v130-parity); distill/K3_ACCELERATION_PLAN_2026-10-14.md not written yet",
+   "transferable": true,
+   "transferable_reason": "measurement work with receipts on disk; no live process between runs",
+   "next_command": "write the K3 acceleration plan from runs/v130-20261014T192239Z and runs/20261014T18*Z",
+   "do_not_touch": "GPU6 and the frozen K3 tool (the B2/K3 chain belongs to L-K3)",
+   "last_receipt_path": "/mnt/lexar/omni-campaign/scratch/k3accel/runs/v130-20261014T192239Z/driver.log"
+  },
+  {
+   "lane": "L-DATA",
+   "owner": "codex",
+   "scope": "corpus repair, splits/quarantine, BFCL and tool-seed maintenance, rid lists (the BFCL-62 rid list for A2 3a)",
+   "lock_paths": [],
+   "status": "registered by Claude (X-T2); awaiting Codex's first heartbeat",
+   "transferable": true,
+   "transferable_reason": "CPU data work (nice 15, CUDA_VISIBLE_DEVICES=) whose state is in files",
+   "next_command": "deliver the BFCL-62 rid list (69 packed rows) for A2 item 3(a)",
+   "do_not_touch": "Claude's sealed caches and $OC/distill/corpus/text/documents.jsonl (read-only for this lane)",
+   "last_receipt_path": "/home/cereal/omni-campaign/distill/codex-preparation-01a1326f-20261013/d1-source-successor-v2/manifest.json"
+  },
+  {
+   "lane": "L-SPEECH-DATA",
+   "owner": "codex",
+   "scope": "E1 Pascal speech venv, E2 speech_corpus_build, E3 speech_teacher_cache, E5 A3 speech text, C-s0..C-s4 data steps (speech proposal section 4.1)",
+   "lock_paths": ["/home/cereal/omni-campaign/distill/queues/p40.claims", "/home/cereal/omni-campaign/distill/queues/gpu3.lock"],
+   "status": "registered by Claude (X-T2); awaiting Codex's first heartbeat",
+   "transferable": true,
+   "transferable_reason": "CPU tooling plus claimed P40 runs with receipts on disk",
+   "next_command": "E1-E3; C-s0 P40 rate probe under a GPU3 p40.claims line and $Q/gpu3.lock, MemAvailable >= 40 GiB",
+   "do_not_touch": "GPU5 (never), GPU1/GPU2 while L-TOOL claims them",
+   "last_receipt_path": "/home/cereal/omni-campaign/distill/codex-preparation-01a1326f-20261013/speech-teachers-v1/completion.json"
+  },
+  {
+   "lane": "L-MEDIA-DATA",
+   "owner": "codex",
+   "scope": "H3 / HY3D / image-edit / temporal-video adapters as specs and tests for d3_hybrid_module",
+   "lock_paths": [],
+   "status": "registered by Claude (X-T2); awaiting Codex's first heartbeat",
+   "transferable": true,
+   "transferable_reason": "CPU specs and tests",
+   "next_command": "owner sets on first heartbeat",
+   "do_not_touch": "d3_hybrid_module.py (Claude integrates; Codex specifies)"
+  },
+  {
+   "lane": "L-FOLD",
+   "owner": "codex",
+   "scope": "folding audit, folding_retention.py, folding backlog (may cite Claude's K3 L2 receipts)",
+   "lock_paths": [],
+   "status": "registered by Claude (X-T2); awaiting Codex's first heartbeat",
+   "transferable": true,
+   "transferable_reason": "CPU analysis; a GPU only by request to the card's owner",
+   "next_command": "owner sets on first heartbeat",
+   "do_not_touch": "any GPU without the owning lane's agreement"
+  },
+  {
+   "lane": "L-NATIVE",
+   "owner": "codex",
+   "scope": "native control rows (NativeControlRowAdapter, rows 248320-248336), v29 entrypoint; parked",
+   "lock_paths": [],
+   "status": "parked until after stage T; only if Cyril wants the native torch protocol as a deliverable",
+   "transferable": false,
+   "transferable_reason": "parked by the plan; un-parking is Cyril's decision",
+   "next_command": "none (parked)",
+   "do_not_touch": "OMNI1's zero control band [248320, 248337)"
+  }
+ ]
+}

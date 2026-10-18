@@ -1,0 +1,568 @@
+{
+ "cache": "/home/cereal/omni-campaign/k3/testwork/cache/T256/L01/tensors.safetensors",
+ "device": "cpu",
+ "devices": [
+  {
+   "capability": "sm86",
+   "index": 0,
+   "name": "NVIDIA GeForce RTX 3090",
+   "total_GB": 25.3
+  },
+  {
+   "capability": "sm86",
+   "index": 1,
+   "name": "NVIDIA GeForce RTX 3090",
+   "total_GB": 25.3
+  },
+  {
+   "capability": "sm75",
+   "index": 2,
+   "name": "Quadro RTX 8000",
+   "total_GB": 47.6
+  },
+  {
+   "capability": "sm61",
+   "index": 3,
+   "name": "Tesla P40",
+   "total_GB": 25.6
+  },
+  {
+   "capability": "sm61",
+   "index": 4,
+   "name": "Tesla P40",
+   "total_GB": 25.6
+  },
+  {
+   "capability": "sm61",
+   "index": 5,
+   "name": "Tesla P40",
+   "total_GB": 25.6
+  },
+  {
+   "capability": "sm61",
+   "index": 6,
+   "name": "Tesla P40",
+   "total_GB": 25.6
+  }
+ ],
+ "features": {
+  "refit_design": "psi = dense SiTU channel output on every fit token",
+  "selection": "phi = router-mass-weighted SiTU channel output",
+  "target": "y_lat, the PRE-norm fp32 routed accumulator"
+ },
+ "layer": 1,
+ "model_dir": "/home/cereal/omni-campaign/k3/testwork/synthetic-k3",
+ "read": {
+  "MB_per_s": 103.3,
+  "gigabytes": 0.0,
+  "seconds": 0.0,
+  "shards": [
+   {
+    "MB_per_s": 111.3,
+    "gigabytes": 0.0,
+    "seconds": 0.0,
+    "shard": "model-00003-of-00003.safetensors",
+    "tensors": 70
+   }
+  ],
+  "tensors": 70
+ },
+ "rungs": {
+  "128": {
+   "check_tokens": 57,
+   "fit_tokens": 171,
+   "form_E_path": "/home/cereal/omni-campaign/k3/testwork/folds/L01_K128_formE.safetensors",
+   "form_E_sha256": "73cf7aff3fc4eca3018dd803db763e43287b06bf5cc49bb7c7e6305501d7ebce",
+   "form_M_parameters": {
+    "merged_ffn_parameters": 49152,
+    "merged_ffn_width": 256,
+    "note": "form M is larger than form E; it exists for standard-export children only (D-b2)"
+   },
+   "form_M_path": "/home/cereal/omni-campaign/k3/testwork/folds/L01_K128_formM.safetensors",
+   "form_M_sha256": "ec5aac0ab33e20f3d97dfcedb5a2e6b04a2648a2daccbb9ccf33f38a727cdccb",
+   "held_tokens": 85,
+   "heldout": {
+    "routed_write_heldout": {
+     "cos": 0.45945456624031067,
+     "cos_p05": 0.0759720504283905,
+     "relL2": 0.878486692905426
+    },
+    "y_lat_heldout": {
+     "cos": 0.472152978181839,
+     "cos_p05": 0.0903276801109314,
+     "relL2": 0.8601577877998352
+    }
+   },
+   "installed_tensor_sha256": {
+    "w1_s": "3a00cbdf681b764fa58085f4d991bb41300fbcc7683eae8ca231f1ebc8571175",
+    "w2p": "959c818cd3b4d9dd970e55660945a6047114e2f3b5327b186960d65c8cb5ff1e",
+    "w3_s": "debaf6a02e179ed3c4fe36ad0b58e5f876f9f3291468dcd9733ea19d36702bf8"
+   },
+   "k_pool": 256,
+   "layer": 1,
+   "parameters": {
+    "child_moe_total": 40992,
+    "child_routed_dense_parameters": 12288,
+    "moe_net_ratio": 1.912,
+    "parent_moe_total": 78376,
+    "parent_routed_expert_parameters": 49152,
+    "quantization": "none -- forbidden in a fold; the packed parent is only a storage format",
+    "routed_component_ratio": 4.0,
+    "router_parameters_deleted": 520,
+    "verbatim_common_parameters": 28704
+   },
+   "ridge": {
+    "channel_token_count_mean": 46.734375,
+    "free_solve_update_scale": 9.845696960771097,
+    "ladder": [
+     {
+      "check_sse": 0.03985916618938576,
+      "lambda_relative": 1e-06,
+      "update_scale": 9.845696960771097
+     },
+     {
+      "check_sse": 0.0394158550511879,
+      "lambda_relative": 1e-05,
+      "update_scale": 9.814542260574113
+     },
+     {
+      "check_sse": 0.035871062705726015,
+      "lambda_relative": 0.0001,
+      "update_scale": 9.523349176011918
+     },
+     {
+      "check_sse": 0.023956112726242065,
+      "lambda_relative": 0.001,
+      "update_scale": 7.736438171366687
+     },
+     {
+      "check_sse": 0.012171568823420156,
+      "lambda_relative": 0.01,
+      "update_scale": 4.178594442262427
+     },
+     {
+      "check_sse": 0.006942356550563683,
+      "lambda_relative": 0.1,
+      "update_scale": 1.678126707383366
+     },
+     {
+      "check_sse": 0.004824878957648163,
+      "lambda_relative": 1.0,
+      "update_scale": 0.5406206468435786
+     },
+     {
+      "check_sse": 0.00422775950122626,
+      "lambda_relative": 10.0,
+      "update_scale": 0.13360579497496755
+     },
+     {
+      "check_sse": 0.0042488049566900485,
+      "lambda_relative": 100.0,
+      "update_scale": 0.01946454700897319
+     }
+    ],
+    "lambda_law_would_have_picked": 1.0,
+    "lambda_relative": 10.0,
+    "lambda_selected_on": "internal fit split",
+    "prior_mass_mean": 0.13574450754979897,
+    "update_scale": 0.13360579497496755
+   },
+   "rung_requested": 128,
+   "seconds": 0.9,
+   "stage1": {
+    "expert_mass_total": 170.984375,
+    "experts_with_channels": 8,
+    "k_pool_requested": 256,
+    "k_pool_selected": 257,
+    "per_expert_head": [
+     {
+      "allocated": 34,
+      "expert": 0,
+      "rows": 47,
+      "selected": 34
+     },
+     {
+      "allocated": 29,
+      "expert": 1,
+      "rows": 38,
+      "selected": 29
+     },
+     {
+      "allocated": 28,
+      "expert": 2,
+      "rows": 36,
+      "selected": 28
+     },
+     {
+      "allocated": 55,
+      "expert": 3,
+      "rows": 77,
+      "selected": 55
+     },
+     {
+      "allocated": 29,
+      "expert": 4,
+      "rows": 36,
+      "selected": 29
+     },
+     {
+      "allocated": 30,
+      "expert": 5,
+      "rows": 40,
+      "selected": 30
+     },
+     {
+      "allocated": 37,
+      "expert": 6,
+      "rows": 48,
+      "selected": 37
+     },
+     {
+      "allocated": 15,
+      "expert": 7,
+      "rows": 20,
+      "selected": 15
+     }
+    ],
+    "rank_starved_experts": 0
+   },
+   "stage2": {
+    "kept": 128,
+    "pool": 257
+   },
+   "tokens": 256,
+   "width_installed": 128
+  },
+  "32": {
+   "check_tokens": 57,
+   "fit_tokens": 171,
+   "form_E_path": "/home/cereal/omni-campaign/k3/testwork/folds/L01_K32_formE.safetensors",
+   "form_E_sha256": "2547d2aeb27d74f1cfe54f8d77cabb9f751eb1b762995df3700c3d5fdac2fdd7",
+   "form_M_parameters": {
+    "merged_ffn_parameters": 30720,
+    "merged_ffn_width": 160,
+    "note": "form M is larger than form E; it exists for standard-export children only (D-b2)"
+   },
+   "form_M_path": "/home/cereal/omni-campaign/k3/testwork/folds/L01_K32_formM.safetensors",
+   "form_M_sha256": "17387e94e63944f0121b45b20c1456fc3559994b236adaeefddbdcd30c03c416",
+   "held_tokens": 85,
+   "heldout": {
+    "routed_write_heldout": {
+     "cos": 0.3742276430130005,
+     "cos_p05": -0.12913711369037628,
+     "relL2": 0.9149432182312012
+    },
+    "y_lat_heldout": {
+     "cos": 0.3875107169151306,
+     "cos_p05": -0.11985104531049728,
+     "relL2": 0.8957200646400452
+    }
+   },
+   "installed_tensor_sha256": {
+    "w1_s": "fb607f1107fbf9c4c84b84f5460c5ff5815d6e4a544a90c0bfec5b170c5cbbc3",
+    "w2p": "7ca760b1ee2b74ef765edcaebebd35092bd8b8ab87f546bc1a42bffd5d8effa7",
+    "w3_s": "f163f2c559f9cecae06ad6cc67f0c7e679b15fde1f6ab59d7c74e4fe6c9380cf"
+   },
+   "k_pool": 64,
+   "layer": 1,
+   "parameters": {
+    "child_moe_total": 31776,
+    "child_routed_dense_parameters": 3072,
+    "moe_net_ratio": 2.467,
+    "parent_moe_total": 78376,
+    "parent_routed_expert_parameters": 49152,
+    "quantization": "none -- forbidden in a fold; the packed parent is only a storage format",
+    "routed_component_ratio": 16.0,
+    "router_parameters_deleted": 520,
+    "verbatim_common_parameters": 28704
+   },
+   "ridge": {
+    "channel_token_count_mean": 51.40625,
+    "free_solve_update_scale": 1.5163558106822665,
+    "ladder": [
+     {
+      "check_sse": 0.007168203288237241,
+      "lambda_relative": 1e-06,
+      "update_scale": 1.5163558106822665
+     },
+     {
+      "check_sse": 0.007167905884030983,
+      "lambda_relative": 1e-05,
+      "update_scale": 1.516270212586517
+     },
+     {
+      "check_sse": 0.007164936941604366,
+      "lambda_relative": 0.0001,
+      "update_scale": 1.515415259681364
+     },
+     {
+      "check_sse": 0.007135746846422909,
+      "lambda_relative": 0.001,
+      "update_scale": 1.506967047811895
+     },
+     {
+      "check_sse": 0.00688515693462932,
+      "lambda_relative": 0.01,
+      "update_scale": 1.431330215440277
+     },
+     {
+      "check_sse": 0.005815981386613993,
+      "lambda_relative": 0.1,
+      "update_scale": 1.049918677280027
+     },
+     {
+      "check_sse": 0.00464118321471156,
+      "lambda_relative": 1.0,
+      "update_scale": 0.4505237714104608
+     },
+     {
+      "check_sse": 0.004463165787853954,
+      "lambda_relative": 10.0,
+      "update_scale": 0.09704655006998238
+     },
+     {
+      "check_sse": 0.004522223620100384,
+      "lambda_relative": 100.0,
+      "update_scale": 0.011659750769032565
+     }
+    ],
+    "lambda_law_would_have_picked": 1.0,
+    "lambda_relative": 10.0,
+    "lambda_selected_on": "internal fit split",
+    "prior_mass_mean": 0.14919990405701755,
+    "update_scale": 0.09704655006998238
+   },
+   "rung_requested": 32,
+   "seconds": 0.1,
+   "stage1": {
+    "expert_mass_total": 170.984375,
+    "experts_with_channels": 8,
+    "k_pool_requested": 64,
+    "k_pool_selected": 64,
+    "per_expert_head": [
+     {
+      "allocated": 9,
+      "expert": 0,
+      "rows": 47,
+      "selected": 9
+     },
+     {
+      "allocated": 7,
+      "expert": 1,
+      "rows": 38,
+      "selected": 7
+     },
+     {
+      "allocated": 7,
+      "expert": 2,
+      "rows": 36,
+      "selected": 7
+     },
+     {
+      "allocated": 14,
+      "expert": 3,
+      "rows": 77,
+      "selected": 14
+     },
+     {
+      "allocated": 7,
+      "expert": 4,
+      "rows": 36,
+      "selected": 7
+     },
+     {
+      "allocated": 7,
+      "expert": 5,
+      "rows": 40,
+      "selected": 7
+     },
+     {
+      "allocated": 9,
+      "expert": 6,
+      "rows": 48,
+      "selected": 9
+     },
+     {
+      "allocated": 4,
+      "expert": 7,
+      "rows": 20,
+      "selected": 4
+     }
+    ],
+    "rank_starved_experts": 0
+   },
+   "stage2": {
+    "kept": 32,
+    "pool": 64
+   },
+   "tokens": 256,
+   "width_installed": 32
+  },
+  "64": {
+   "check_tokens": 57,
+   "fit_tokens": 171,
+   "form_E_path": "/home/cereal/omni-campaign/k3/testwork/folds/L01_K64_formE.safetensors",
+   "form_E_sha256": "291ee92b8a45c3426116248c6947be6a091f1670d2dcbb52877c90594128f89c",
+   "form_M_parameters": {
+    "merged_ffn_parameters": 36864,
+    "merged_ffn_width": 192,
+    "note": "form M is larger than form E; it exists for standard-export children only (D-b2)"
+   },
+   "form_M_path": "/home/cereal/omni-campaign/k3/testwork/folds/L01_K64_formM.safetensors",
+   "form_M_sha256": "a9722e4b98aa3abcb6ed5a213cfeec879bfb058a71df6588916f608e8419a1cc",
+   "held_tokens": 85,
+   "heldout": {
+    "routed_write_heldout": {
+     "cos": 0.44046419858932495,
+     "cos_p05": 0.03373848274350166,
+     "relL2": 0.8859991431236267
+    },
+    "y_lat_heldout": {
+     "cos": 0.45498836040496826,
+     "cos_p05": 0.06200374290347099,
+     "relL2": 0.8674867749214172
+    }
+   },
+   "installed_tensor_sha256": {
+    "w1_s": "71aba608ff977e1f8f13da56e0c6165497a40e9a1cf12bd2b53331ab9b7d5e66",
+    "w2p": "ded5614a2a89bf7b12f1c2b1f3aaa54e9a26684d01dec3b1c74cfb8c786a44e0",
+    "w3_s": "a47cf4ce6fc892593ddf83e62d03df6108d76cde2bf40fb1b9dbb319e7505d28"
+   },
+   "k_pool": 128,
+   "layer": 1,
+   "parameters": {
+    "child_moe_total": 34848,
+    "child_routed_dense_parameters": 6144,
+    "moe_net_ratio": 2.249,
+    "parent_moe_total": 78376,
+    "parent_routed_expert_parameters": 49152,
+    "quantization": "none -- forbidden in a fold; the packed parent is only a storage format",
+    "routed_component_ratio": 8.0,
+    "router_parameters_deleted": 520,
+    "verbatim_common_parameters": 28704
+   },
+   "ridge": {
+    "channel_token_count_mean": 48.875,
+    "free_solve_update_scale": 2.843486497179768,
+    "ladder": [
+     {
+      "check_sse": 0.011501368533638937,
+      "lambda_relative": 1e-06,
+      "update_scale": 2.843486497179768
+     },
+     {
+      "check_sse": 0.011497947982570911,
+      "lambda_relative": 1e-05,
+      "update_scale": 2.84302606190017
+     },
+     {
+      "check_sse": 0.011464002448683336,
+      "lambda_relative": 0.0001,
+      "update_scale": 2.838435339977403
+     },
+     {
+      "check_sse": 0.011148531007428426,
+      "lambda_relative": 0.001,
+      "update_scale": 2.793845437326385
+     },
+     {
+      "check_sse": 0.009306650698660091,
+      "lambda_relative": 0.01,
+      "update_scale": 2.446250610472253
+     },
+     {
+      "check_sse": 0.0062659572575263466,
+      "lambda_relative": 0.1,
+      "update_scale": 1.3797189616619787
+     },
+     {
+      "check_sse": 0.004642688738871098,
+      "lambda_relative": 1.0,
+      "update_scale": 0.4945952655256077
+     },
+     {
+      "check_sse": 0.004312898469218795,
+      "lambda_relative": 10.0,
+      "update_scale": 0.11471129668850107
+     },
+     {
+      "check_sse": 0.004370524175374901,
+      "lambda_relative": 100.0,
+      "update_scale": 0.014877172029706013
+     }
+    ],
+    "lambda_law_would_have_picked": 1.0,
+    "lambda_relative": 10.0,
+    "lambda_selected_on": "internal fit split",
+    "prior_mass_mean": 0.14198651230126097,
+    "update_scale": 0.11471129668850107
+   },
+   "rung_requested": 64,
+   "seconds": 0.1,
+   "stage1": {
+    "expert_mass_total": 170.984375,
+    "experts_with_channels": 8,
+    "k_pool_requested": 128,
+    "k_pool_selected": 127,
+    "per_expert_head": [
+     {
+      "allocated": 17,
+      "expert": 0,
+      "rows": 47,
+      "selected": 17
+     },
+     {
+      "allocated": 15,
+      "expert": 1,
+      "rows": 38,
+      "selected": 15
+     },
+     {
+      "allocated": 14,
+      "expert": 2,
+      "rows": 36,
+      "selected": 14
+     },
+     {
+      "allocated": 27,
+      "expert": 3,
+      "rows": 77,
+      "selected": 27
+     },
+     {
+      "allocated": 14,
+      "expert": 4,
+      "rows": 36,
+      "selected": 14
+     },
+     {
+      "allocated": 15,
+      "expert": 5,
+      "rows": 40,
+      "selected": 15
+     },
+     {
+      "allocated": 18,
+      "expert": 6,
+      "rows": 48,
+      "selected": 18
+     },
+     {
+      "allocated": 7,
+      "expert": 7,
+      "rows": 20,
+      "selected": 7
+     }
+    ],
+    "rank_starved_experts": 0
+   },
+   "stage2": {
+    "kept": 64,
+    "pool": 127
+   },
+   "tokens": 256,
+   "width_installed": 64
+  }
+ },
+ "torch": "2.11.0+cu128"
+}

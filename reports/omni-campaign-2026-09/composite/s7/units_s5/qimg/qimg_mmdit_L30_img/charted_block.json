@@ -1,0 +1,287 @@
+{
+ "accounting": {
+  "child_block_parameters": 123525375,
+  "child_mlp_parameters": 18874367,
+  "parent_block_parameters": 180163840,
+  "parent_mlp_parameters": 75512832,
+  "scope": "image stream only; Codex's dual-stream candidate counts 236,784,126 / 350,061,056 incl. the text stream"
+ },
+ "charts": {
+  "arms": [
+   "ridge",
+   "svd",
+   "procrustes"
+  ],
+  "chart_out_bias": "not written (c16 never installs it)",
+  "diagnostics_held": {
+   "forward": {
+    "cos": 0.8139081151741493,
+    "cos_p05": 0.7187752715253777,
+    "r2": 0.49877050363006425,
+    "rel_l2": 0.6008314928990071,
+    "rows": 16384
+   },
+   "roundtrip": {
+    "cos": 0.9327755709360577,
+    "cos_p05": 0.8421160048547092,
+    "r2": 0.5974278032807485,
+    "rel_l2": 0.4114029196879023,
+    "rows": 16384
+   }
+  },
+  "file": "charts.safetensors",
+  "hidden": 5120,
+  "method": "ridge (mediafold.linalg.fit_ridge_linear, fp64) refitted on every paired row at the lambdas chosen by the c17 fit-split ladder",
+  "pairs": {
+   "holdout": "group split (see the pair receipt)",
+   "host_site": "block 31 OUTPUT (the residual the charted block inserted after layer 31 reads)",
+   "interface": [
+    "/home/cereal/omni-campaign/composite/s7/interface_latent/companions.json"
+   ],
+   "paired_rows": "/home/cereal/omni-campaign/composite/s7/tap_rows_s5/qimg_mmdit_L30_img/paired_rows.safetensors",
+   "paired_rows_json_sha256": "ca10590fe889c4705f65ef8391799e27349ccb49a57f60d8af9fc00f0dfbe5e4",
+   "paired_rows_sha256": "0202be177a75655450f83d0b4539dc69cb014218fcb97dcdf3ca1a60144666f5",
+   "parent_pairs": "/home/cereal/omni-campaign/composite/s7/pairs/qimg_mmdit_L30_img/parent_capture.safetensors",
+   "parent_pairs_sha256": "18ffac3b18b8ed1efcf6e811d4253628dcc3c65e653f1558fb2a68e469f606bc",
+   "rows": 65536,
+   "rows_held": 16384,
+   "trunk": "/home/cereal/omni-campaign/composite/c10/S5-C2K4352K3U/child"
+  },
+  "policy": "owner 2026-10-06: these numbers are diagnostics, never gates",
+  "producer": {
+   "lane": "S7-on-S5 media 2026-10-13",
+   "sha256": "c83c6f6ac12506e8110a4e16866fcc9d0b3b8e7d091170516e6bdd269a89c046",
+   "tool": "s7_chart_fit",
+   "version": "1.3.0"
+  },
+  "ridge_rel": {
+   "chart_in": 0.01,
+   "chart_out": 0.01
+  },
+  "sha256": "019a4097d4e14267a4025e66dcf3fdc8766e4226c0cc91bb420b9f4cb5b776e8",
+  "shapes": {
+   "chart_in.bias": [
+    3072
+   ],
+   "chart_in.weight": [
+    3072,
+    5120
+   ],
+   "chart_out.weight": [
+    5120,
+    3072
+   ]
+  },
+  "time_rows": null,
+  "trunk_label": "S5",
+  "valid_only_with": "the latent interface rows these host rows were captured under (s7/interface_latent) and the S5 trunk prefix 0..31 (/home/cereal/omni-campaign/composite/c10/S5-C2K4352K3U/child); any other trunk prefix needs a recapture"
+ },
+ "holdout": {
+  "note": "Codex's fold_receipt streams/diagnostics; not re-derived here"
+ },
+ "insert_after": null,
+ "provenance": {
+  "captures": [
+   {
+    "file": "/mnt/lexar/omni-campaign/qimg-broad-capture-sep07/run/capture_batch1/b1_fit_bicycle_sigma00.safetensors",
+    "sha256": "912cd80ec0c75231b7f4ce46be93cac21bf5d80139016cb52f2c01c7778ea56a"
+   },
+   {
+    "file": "/mnt/lexar/omni-campaign/qimg-broad-capture-sep07/run/capture_batch1/b1_fit_bicycle_sigma01.safetensors",
+    "sha256": "ddd243b60fe2d3fdc1e29dc03a098144d74aecacc6f5ab191966a32682c3e9c8"
+   },
+   {
+    "file": "/mnt/lexar/omni-campaign/qimg-broad-capture-sep07/run/capture_batch1/b1_fit_bicycle_sigma02.safetensors",
+    "sha256": "2202f3c6e320959729e9e0dc90c79d4e2e7a69e9db85b1db015128bcd31f5e73"
+   },
+   {
+    "file": "/mnt/lexar/omni-campaign/qimg-broad-capture-sep07/run/capture_batch1/b1_fit_bicycle_sigma03.safetensors",
+    "sha256": "228b3afda71112d9da5a38e506cf039d426e25806681b0f251a6340cec6ae6b7"
+   }
+  ],
+  "codex_receipt_accepted": false,
+  "codex_receipt_capability_claim": "none: measured MLP candidate is not installed, behaviorally accepted, or a media/all-source child proof",
+  "dropped_tensors": [
+   "transformer_blocks.30.attn.add_k_proj.bias",
+   "transformer_blocks.30.attn.add_k_proj.weight",
+   "transformer_blocks.30.attn.add_q_proj.bias",
+   "transformer_blocks.30.attn.add_q_proj.weight",
+   "transformer_blocks.30.attn.add_v_proj.bias",
+   "transformer_blocks.30.attn.add_v_proj.weight",
+   "transformer_blocks.30.attn.norm_added_k.weight",
+   "transformer_blocks.30.attn.norm_added_q.weight",
+   "transformer_blocks.30.attn.to_add_out.bias",
+   "transformer_blocks.30.attn.to_add_out.weight",
+   "transformer_blocks.30.txt_mlp.net.0.proj.bias",
+   "transformer_blocks.30.txt_mlp.net.0.proj.weight",
+   "transformer_blocks.30.txt_mlp.net.2.bias",
+   "transformer_blocks.30.txt_mlp.net.2.weight",
+   "transformer_blocks.30.txt_mod.1.bias",
+   "transformer_blocks.30.txt_mod.1.weight"
+  ],
+  "fold_receipt": "/mnt/lexar/omni-campaign/qimg-ownerpolicy-v4-ee1a6166-3e91-405d-8381-3e3ff4c91194/fold/fold_receipt.json",
+  "fold_receipt_sha256": "37ba4d69fbc99879c2a80057e0777cde90b0e2f23ab458367f9fb4ee0c0dfb59",
+  "selection": "/mnt/lexar/omni-campaign/qimg-ownerpolicy-v4-ee1a6166-3e91-405d-8381-3e3ff4c91194/fold/selection.safetensors",
+  "selection_sha256": "bb36ec919816cb87d49bcbf9c5b5f09cd279fdf61b3cc8d25b6536b87c76d008",
+  "source_candidate": "/mnt/lexar/omni-campaign/qimg-ownerpolicy-v4-ee1a6166-3e91-405d-8381-3e3ff4c91194/fold/folded_source_block_and_time.safetensors",
+  "source_candidate_sha256": "1103088bff61256ae24595c6bb948314c6564c819f65929df14cbdb68d4a4451",
+  "source_dtypes": {
+   "attn.k_norm.weight": "torch.float8_e4m3fn",
+   "attn.k_proj.bias": "torch.float8_e4m3fn",
+   "attn.k_proj.weight": "torch.float8_e4m3fn",
+   "attn.o_proj.bias": "torch.float8_e4m3fn",
+   "attn.o_proj.weight": "torch.float8_e4m3fn",
+   "attn.q_norm.weight": "torch.float8_e4m3fn",
+   "attn.q_proj.bias": "torch.float8_e4m3fn",
+   "attn.q_proj.weight": "torch.float8_e4m3fn",
+   "attn.v_proj.bias": "torch.float8_e4m3fn",
+   "attn.v_proj.weight": "torch.float8_e4m3fn",
+   "mlp.fc1.bias": "torch.float8_e4m3fn",
+   "mlp.fc1.weight": "torch.float8_e4m3fn",
+   "mlp.fc2.bias": "torch.bfloat16",
+   "mlp.fc2.weight": "torch.bfloat16",
+   "time_embed.linear_1.bias": "torch.float8_e4m3fn",
+   "time_embed.linear_1.weight": "torch.float8_e4m3fn",
+   "time_embed.linear_2.bias": "torch.float8_e4m3fn",
+   "time_embed.linear_2.weight": "torch.float8_e4m3fn",
+   "time_embed.time_proj.bias": "torch.float8_e4m3fn",
+   "time_embed.time_proj.weight": "torch.float8_e4m3fn"
+  }
+ },
+ "s7_unit": {
+  "built_by": "image-stream extraction from Codex's ownerpolicy-v4 candidate (read only)",
+  "canonical": {
+   "block_parameters_without_charts": 123525375,
+   "canonical_tensor_set": true,
+   "chart_parameters_at_hidden_5120": 31460352,
+   "installed_parameters_at_hidden_5120": 154985727,
+   "spec_mlp_parameter_count": 18874367
+  },
+  "charts_status": "PRESENT at hidden 5120 (lane S7-on-S5 media 2026-10-13, 2026-10-12); fitted on S5-trunk host rows under the latent interface set",
+  "component_4x": {
+   "meets_4x_component": true,
+   "mlp_compression_x": 4.000814014054087,
+   "mlp_ratio": 0.24994913447293302,
+   "rule": "c16 components(): child MLP / parent MLP <= 0.25 registers as --component",
+   "whole_block_ratio_recorded_only": 0.685628009482924
+  },
+  "deviations": [
+   "text stream (joint-attention partner) dropped",
+   "3-D RoPE dropped"
+  ],
+  "source": "QIMG",
+  "time_gate": {
+   "c16_default_tolerance": 1e-05,
+   "finite": true,
+   "max_abs": 0.000244140625,
+   "note": "unit time path vs the FP32 parent reference (the BF16 capture comparison is kept as a diagnostic)",
+   "passes_c16_default": true,
+   "reference_norm": 37020.32421875,
+   "rel_l2": 1.1680489109267e-07,
+   "shape": [
+    4,
+    6,
+    3072
+   ]
+  },
+  "tool": "s7_unit_build",
+  "tool_version": "1.3.0"
+ },
+ "schema": "chimera_omni.composite.charted_block.v1",
+ "spec": {
+  "attn_bias": true,
+  "chart_in_bias": true,
+  "component": "qimg.mmdit.block30.img_mlp",
+  "delta_scale": 1.0,
+  "head_dim": 128,
+  "heads": 24,
+  "kv_heads": 24,
+  "metadata": {
+   "converted_from": "/mnt/lexar/omni-campaign/qimg-ownerpolicy-v4-ee1a6166-3e91-405d-8381-3e3ff4c91194",
+   "layer_type": "mmdit_img_stream",
+   "rope": "3-D MM-RoPE dropped (rope_theta 0)",
+   "source_dtype": "F8_E4M3/BF16 widened exactly to BF16",
+   "text_stream": "dropped (trunk is the context)"
+  },
+  "mlp_kind": "gelu_tanh",
+  "mlp_width": 3071,
+  "modulation": "adaln6",
+  "norm_affine": false,
+  "norm_eps": 1e-06,
+  "norm_kind": "layer",
+  "qk_norm": true,
+  "rope_theta": 0.0,
+  "rung": "ownerpolicy-v4-candidate",
+  "sliding_window": 0,
+  "source": "qimg",
+  "source_depth_fraction": 0.5084745762711864,
+  "time_embed_r": false,
+  "time_factor": 1000.0,
+  "time_freq_dim": 256,
+  "time_hidden": 3072,
+  "type_ids": [
+   1
+  ],
+  "width": 3072
+ },
+ "tensor_sha256": {
+  "charted_block.safetensors": {
+   "attn.k_norm.weight": "9d795ab8b2fdd19eaccdc0ec0847de22087c34f8c19e1834f18bf988df828a09",
+   "attn.k_proj.bias": "c5db009ed15f21e962c07f9bfcb4a382f2b9a4f6a05d3bcf184bdc216aada074",
+   "attn.k_proj.weight": "d702268007c24f26e0d8eeb365b4ddea1d3ec1847faef8d621fb1dfa5f5b85dc",
+   "attn.o_proj.bias": "9691af5955a2c966d4adfbfb71a9f7638740d2c062a4758b0bd000050a408584",
+   "attn.o_proj.weight": "c8dcc8e20848aacdc1922fe8e71c8c0898fc6349007c6409115e08b9a29f715a",
+   "attn.q_norm.weight": "a3bf195c1af95982b0fb0a9835200fa2b1cd6f609584d0de71d93d915f43685d",
+   "attn.q_proj.bias": "d902165e6d29d4add649e6681c29d1efa8f1db16b99d60be9df05344122893b9",
+   "attn.q_proj.weight": "e56f6b780b9fed4b32bfb8d86129482ac2c25eecddceaaa7167926a80518daf8",
+   "attn.v_proj.bias": "2d7245d37f76cbaf81c40c41661c87b40ee387a6ba25f54b668ad0bf71f17da9",
+   "attn.v_proj.weight": "8757ff03acdb4848d7dbb78fed2b82431cdfd67c5e67283e300439550d89c310",
+   "mlp.fc1.bias": "6cc3933cd1dc20975b11cd6c355c031624d46475870bafe8025fb17513a19713",
+   "mlp.fc1.weight": "c7651890b3561e5d05ceb1d8d2082dd154aeb1fe746a2ba6ef53b0db96703e0e",
+   "mlp.fc2.bias": "9c7a0cdba0f6850f71b8be4f94942ec6f9dd081adb78e53acaa9ea662391d4c5",
+   "mlp.fc2.weight": "a77eb57063da9d0183ff0b39d9db3ca6b16df4c98a792cc453e807e00dac9000",
+   "scale_shift_table": "958c1427d3083f8af86692895e8b1f36f0e6a5da896b9d5e62ce17046516c076",
+   "time_embed.linear_1.bias": "ae5c4572403210bad33ff69277e0c45d9e297bb7211c55319cb79395737dd34f",
+   "time_embed.linear_1.weight": "4f5a4b7349a7d71fd0e2345eab5a346f46951e91a68ff3e761e71965779c1668",
+   "time_embed.linear_2.bias": "7c29f3fc3be6f1a5d500af8d9ed684395cbc281dc86774d76e5f850254b79ce5",
+   "time_embed.linear_2.weight": "78b719af54be44bde7570115bff80e2acd46759b5b1beff292794926b466f7fc",
+   "time_embed.time_proj.bias": "d3ae3ae19d034ab8f371ce7d5b8925361d6108f818c1a4eb3cb78842698cf387",
+   "time_embed.time_proj.weight": "5646d1de888102035add75372f020f15369a07a92662ae3218ee54bc608be5ca"
+  },
+  "charts.safetensors": {
+   "chart_in.bias": "264ce10c7a0679deb94f22230e4f04cee3a152550b8e66e84b2c155648aa6991",
+   "chart_in.weight": "1a3b572168769756b67ef58ea170a50283c1c89a7201cce7d736ce62b30c0404",
+   "chart_out.weight": "a4748736bdf9f1aa5a34c74f480fc3b978d8e0e4265bf61cfadd46c9afc1158d"
+  },
+  "time_reference.safetensors": {
+   "modulation": "05c3f8f33ef70d4913efe04b4ebd72095d172770c36960a0e0c948ce93da1984",
+   "sigma": "6cfaa80c819e9236dc334532ef656cb3534ab070f548d71a7c614df8ee772e94"
+  }
+ },
+ "time_reference": {
+  "bf16_capture_gate_diagnostic": {
+   "finite": true,
+   "max_abs": 6.3121337890625,
+   "note": "captured img_modulation is BF16; the rebuilt FP32 path is compared against the bf16-rounded capture, so ~1e-3 is the rounding floor, not a path mismatch (a wrong sinusoid/chunk order gives O(1))",
+   "reference_norm": 37023.265625,
+   "rel_l2": 0.002038632519543171,
+   "shape": [
+    4,
+    6,
+    3072
+   ]
+  },
+  "conversion_rel_l2": 1.1680489109267e-07,
+  "file": "/home/cereal/omni-campaign/composite/s7/m3/qimg_time_ref_fp32/time_reference.safetensors",
+  "receipt": "/home/cereal/omni-campaign/composite/s7/m3/qimg_time_ref_fp32/time_reference_receipt.json",
+  "receipt_sha256": "c642e9fc6351e7243cb1909b2c82972e805cf5e195f08d6625d7e9648eace22c",
+  "sha256": "d1ef99406661806b2ee9c70d5ac702b380458b8cbe3f9c2c478cfdfa7b2c816e",
+  "sigma": [
+   0.15000000596046448,
+   0.3499999940395355,
+   0.6499999761581421,
+   0.8999999761581421
+  ],
+  "source": "FP32 parent time path (ComfyUI QwenTimestepProjEmbeddings + transformer_blocks.30.img_mod) at the capture sigma"
+ }
+}

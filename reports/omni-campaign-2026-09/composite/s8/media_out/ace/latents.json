@@ -1,0 +1,155 @@
+{
+ "schema": "omni-campaign.s8_media_latents.v1",
+ "modality": "ace",
+ "file": "/home/cereal/omni-campaign/composite/s8/media_out/ace/latents.safetensors",
+ "sha256": "15917bcdd70a8aa9516e588aa7d0e2eaf62cb1dce55dd55f29ae1f49a0d75805",
+ "keys": {
+  "ace_s030.clean": [
+   1,
+   64,
+   100
+  ],
+  "ace_s030.x_t": [
+   1,
+   64,
+   100
+  ],
+  "ace_s030.parent_raw": [
+   1,
+   64,
+   100
+  ],
+  "ace_s030.x0_parent": [
+   1,
+   64,
+   100
+  ],
+  "ace_s030.raw_omni_final": [
+   1,
+   64,
+   100
+  ],
+  "ace_s030.x0_omni_final": [
+   1,
+   64,
+   100
+  ],
+  "ace_s030.raw_omni_site": [
+   1,
+   64,
+   100
+  ],
+  "ace_s030.x0_omni_site": [
+   1,
+   64,
+   100
+  ],
+  "ace_s050.clean": [
+   1,
+   64,
+   100
+  ],
+  "ace_s050.x_t": [
+   1,
+   64,
+   100
+  ],
+  "ace_s050.parent_raw": [
+   1,
+   64,
+   100
+  ],
+  "ace_s050.x0_parent": [
+   1,
+   64,
+   100
+  ],
+  "ace_s050.raw_omni_final": [
+   1,
+   64,
+   100
+  ],
+  "ace_s050.x0_omni_final": [
+   1,
+   64,
+   100
+  ],
+  "ace_s050.raw_omni_site": [
+   1,
+   64,
+   100
+  ],
+  "ace_s050.x0_omni_site": [
+   1,
+   64,
+   100
+  ],
+  "ace_s075.clean": [
+   1,
+   64,
+   100
+  ],
+  "ace_s075.x_t": [
+   1,
+   64,
+   100
+  ],
+  "ace_s075.parent_raw": [
+   1,
+   64,
+   100
+  ],
+  "ace_s075.x0_parent": [
+   1,
+   64,
+   100
+  ],
+  "ace_s075.raw_omni_final": [
+   1,
+   64,
+   100
+  ],
+  "ace_s075.x0_omni_final": [
+   1,
+   64,
+   100
+  ],
+  "ace_s075.raw_omni_site": [
+   1,
+   64,
+   100
+  ],
+  "ace_s075.x0_omni_site": [
+   1,
+   64,
+   100
+  ]
+ },
+ "space": "the parent's DiT latent space; decode = vae.decode(latent_format.process_out(x))",
+ "segments": [
+  {
+   "segment": "ace_s030",
+   "sigma": 0.3,
+   "layout": {
+    "latent": "[1, 64, 100] ACE-1.5 VAE latent (ACEAudio15: DiT space = VAE space)",
+    "frames": 100
+   }
+  },
+  {
+   "segment": "ace_s050",
+   "sigma": 0.5,
+   "layout": {
+    "latent": "[1, 64, 100] ACE-1.5 VAE latent (ACEAudio15: DiT space = VAE space)",
+    "frames": 100
+   }
+  },
+  {
+   "segment": "ace_s075",
+   "sigma": 0.75,
+   "layout": {
+    "latent": "[1, 64, 100] ACE-1.5 VAE latent (ACEAudio15: DiT space = VAE space)",
+    "frames": 100
+   }
+  }
+ ]
+}

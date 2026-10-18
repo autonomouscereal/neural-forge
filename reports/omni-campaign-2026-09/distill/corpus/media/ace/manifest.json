@@ -1,0 +1,4181 @@
+{
+ "schema": "neural-forge-omni-distill-corpus-v1/media/ace",
+ "identity": {
+  "tool": "distill_corpus_build",
+  "version": "1.0.1",
+  "path": "/home/cereal/omni-campaign/distill/tools/distill_corpus_build.py",
+  "sha256": "696559136fb4698c6b92de47ed320c993aba5c3a065a13f18e78cd5c24a7ab94",
+  "host": "cereal-X10DRG",
+  "python": "3.12.3",
+  "built_at_utc": "2026-10-13T01:35:44Z"
+ },
+ "items_file": {
+  "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/items.jsonl",
+  "sha256": "bcd97f6714d2ccd6fcdcd68d64b8a72a87e4e74b7ddc3ec9d99893a215b57c8d",
+  "items": 1024
+ },
+ "items": 1024,
+ "target": 1024,
+ "shortfall": 0,
+ "by_tier": {
+  "jamendo_tags": 132,
+  "descriptor_caption": 1,
+  "ace_prompt_v9_base": 891
+ },
+ "padded_short_sources": 1,
+ "failures": [],
+ "failure_count": 0,
+ "clip_spec": {
+  "seconds": 12.52,
+  "basis": "313 Oobleck latent frames per clip in the design's D4 arithmetic at 25 latent frames/s",
+  "transform": "centred window, apad to full length, FLAC at the source rate"
+ },
+ "note": "v9_base music rows are ACE-generated (music_tts_ace_fast_main): teacher-family rollouts, kept and labelled",
+ "excluded": {
+  "ltx_suspect_v9_base_video_rows": 7,
+  "eval_split_and_screened_rows": "never in pool"
+ },
+ "provenance": {
+  "registry": "curated master shard registry (MASTER_SHARD_INDEX_POINTER.json, 631 entries / 94,318 rows / 640 shards, walked 2026-09-02)",
+  "registry_notes": "row-inspected curation May-Aug 2026; transforms of OpenThoughts3 (Apache-2.0), OpenCodeReasoning-2 / OpenMathReasoning (CC-BY-4.0), Nemotron-SFT-Agentic-v2, memory-trace rewrites (STAGE_D_FACTS); 'trained_*' states refer to the dead omnicoder -- every row is untrained for Chimera; licences cleared by Cyril 2026-10-12",
+  "by_dataset": {
+   "jason_v73_audio_music_tts_speech_sound_20260607T142532Z_append1530": {
+    "rows": 1,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "https://creativecommons.org/licenses/by/4.0/": 1
+    },
+    "license_tiers": {
+     "attribution": 1
+    },
+    "source_datasets": {
+     "operator/procedural-audio-music-sound-2026": 1
+    }
+   },
+   "v36_addenda_gated_4964": {
+    "rows": 132,
+    "training_status": "trained_addenda_complete",
+    "licenses": {
+     "http://creativecommons.org/licenses/by-sa/3.0/": 100,
+     "http://creativecommons.org/licenses/by/3.0/": 20,
+     "http://creativecommons.org/licenses/by-sa/2.0/fr/": 6,
+     "http://creativecommons.org/licenses/by-sa/2.0/de/": 5,
+     "http://creativecommons.org/licenses/by-sa/2.5/br/": 1
+    },
+    "license_tiers": {
+     "attribution_sharealike": 112,
+     "attribution": 20
+    },
+    "source_datasets": {
+     "amaai-lab/JamendoMaxCaps": 132
+    }
+   },
+   "v9_base_validated_28025": {
+    "rows": 891,
+    "training_status": "trained_base",
+    "licenses": {},
+    "license_tiers": {},
+    "source_datasets": {}
+   }
+  }
+ },
+ "clip_files": [
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0000.flac",
+   "sha256": "61b0a8b703c8e4af1eaf3f6f943cb52a81e5ca3118b4f26c6e217d68f01eb2ae"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0001.flac",
+   "sha256": "f84f4342ad68f9e24c9077192c3d62f7eb6b0f6e637a2eaca1dc5e88b7d08e7f"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0002.flac",
+   "sha256": "6893b941adc0b01fde27d391581f79899ca6ae070017b43a6e77cd3ef1fa2ce0"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0003.flac",
+   "sha256": "7214190ce8fd8484535ee96f2e260a60a73f7b16c8c39c3dd321d6310f0ff317"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0004.flac",
+   "sha256": "023a279cb347db877ce7d31b7e6fbcfe21226126b15fe75c486fb49cfe1fff8e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0005.flac",
+   "sha256": "b62dba75cad5a985ece58c30bbdc17dd9795559415556504fac550665158d880"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0006.flac",
+   "sha256": "ae88f88f1e95a4eea65b3d21279960970d2afd3e3742196889bb5d10fa38d3a5"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0007.flac",
+   "sha256": "35574066eddfb3b87993eb418c51d08bd72560022b4f4839b385f90182650026"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0008.flac",
+   "sha256": "65575384fa5b3a888d3233c73e6e7fb79008f73fae8712cf81d14020f34617f6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0009.flac",
+   "sha256": "23f364a677b228a005b53741da49e59786f409ccec62d5105c83dbc9c127fa1e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0010.flac",
+   "sha256": "4e893e22a78e8175de323028d4425305b54ca6f0bfaa903bb3bc32cd4c2556e8"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0011.flac",
+   "sha256": "454e8906a1437248dab6a6cf2dd64f51713b285cfbbe3ca6d463a1ae08b66b20"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0012.flac",
+   "sha256": "3e9c05dbddb75ee494629758ec69dedcdd466fcbf4fe2cd761c83d9c3da9792c"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0013.flac",
+   "sha256": "70523095643086eab9c53c14fa6fe022c46b40d3292f56a2af95772ce4a843c1"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0014.flac",
+   "sha256": "5e6b36c339a80ea0aaadf969deed55d8930dd730e03268a8c1f7b8af036e5f83"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0015.flac",
+   "sha256": "c7e6fed05516a458ab7f7cb49017a511bfe89966d525607da66fb206690185f2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0016.flac",
+   "sha256": "8f0f926a2689561767841f1e1dc51b3b4676cd4f999db99874f33f79ca840fc4"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0017.flac",
+   "sha256": "d1afc73f97974f20ede50d5367c54894f18ccbf6c8401b1ff36bd4f485fd7ab8"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0018.flac",
+   "sha256": "153e8e3fc01cfe78febfaf28d1ac50c67037b5c257f27f520b239b72b1528c6d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0019.flac",
+   "sha256": "edf47edef38c0687989463ebf67e0886b04d847526af3783cca9953fb1cd761e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0020.flac",
+   "sha256": "b4eeddf7f0079a7f2519ffd3ff80f795751793007b2f235c6cc0729053066aa6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0021.flac",
+   "sha256": "32bff3fba1bb29826b3266ec30d161a1312bad20448dc89e596323429ac48c2b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0022.flac",
+   "sha256": "85e87bdd696ca4b8d01cc13d89ad8b5c12d0b0489d505b21202b1d9f24bbac6b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0023.flac",
+   "sha256": "c346a9d0385a49c2dbc56baaaf6a9fcf4fcd88c95d404a2f3eab8d59483ebeb7"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0024.flac",
+   "sha256": "c6d0873b48d795360f1b323e86f1716987e3ca8bdf2951c738dc386f24f6fea3"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0025.flac",
+   "sha256": "11332e648a5d127d2e39939a28835a049bb2eb5589cfa6f5676a741f7b1da913"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0026.flac",
+   "sha256": "c00febd1f6444ef1dc2157390995bc6f919842ba84cdee01e55ec2b368384f27"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0027.flac",
+   "sha256": "ca9b749a8db4810db054fc9b299a921c0571d4d3e6548a220dd7b0ca2a9fa3f9"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0028.flac",
+   "sha256": "8978d53dcb65d46b3966a34790b3c6e8a96fdf48fb21451444b424e5cd7bba01"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0029.flac",
+   "sha256": "5636ede2991494491373d9cb3f4655bad19f783ff5805e50a471557f27d5ff87"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0030.flac",
+   "sha256": "db880b5ed54dc9da07ae5ff4ed3362c9724e3d2ff8ab38975482a7a786b1fe52"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0031.flac",
+   "sha256": "42cd8ea1e898f9f8ec130985c873ead59f7669fd10b800aa31402c82347205bc"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0032.flac",
+   "sha256": "9bcfff251b45fc08183660f7f770982cbc755180b24d955015f9f376b61c6b2e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0033.flac",
+   "sha256": "a26219e076c9215b24ea6c1a7048468c57b1949951b6c38eaef204e2cd118af2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0034.flac",
+   "sha256": "6ad8cd0874a7e6007908a0394a6cf1ae85d6c9e651c3e130487f3a85d2a69bf8"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0035.flac",
+   "sha256": "e16d9fef014ad903a51e0bfa31fbe1dc23e31b1187a5d350eebcdf6e04e11663"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0036.flac",
+   "sha256": "d9151b12b9e03f1d5f4e385a605ce3055c4932c9a582d4378091e75fcf2bc5f8"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0037.flac",
+   "sha256": "17d3ee51c47b03279e33d873d0ef42b3e5543cd1849a004fe3c2a94c5a8428c6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0038.flac",
+   "sha256": "74e4de060952f2cdcdb6c9fad409567a6f40a588c9eab269e3d9ce449446366f"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0039.flac",
+   "sha256": "f9faf8f5035f0976b85c3b8ad7a7e432268901bc60f38ec0978cabef1d95fbee"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0040.flac",
+   "sha256": "246facf4d6a5e9a3a7dea6e17f0690b66bfc446e9b99725d241844aa3af38997"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0041.flac",
+   "sha256": "93a0bd9c0fcc98347a9171711fb62b66ee03e358afdd0e008d8d44f3e2c00e48"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0042.flac",
+   "sha256": "47a38765d5596307a6eed4c77ad02e04a4a684089d565e124549d974685fa0bc"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0043.flac",
+   "sha256": "a75d2cddc1722d5fce14c07cc0cabbb09f428709a5a9938f979adab45e975de8"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0044.flac",
+   "sha256": "f64ce3ed20afe454d88ac0079f30478ba09d0bccd604b5fc214b80a7a7ce6498"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0045.flac",
+   "sha256": "332b8f2c86193a799d7dcdb8c4266d10b1084a29b84297b162bcbfb33a36f9c4"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0046.flac",
+   "sha256": "6b94bd46e96df268135383a743c040c2ff68b02dd1148bee7191e50bc8f6cefc"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0047.flac",
+   "sha256": "9ee775609935a18156417dd9142c0bba17b4e82ec46a389e61d9647279bcb8b2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0048.flac",
+   "sha256": "fcc5b49d0cac142ce1968c7de5f5d85a6687da6e39f9c43c4574cdd163cbb0e3"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0049.flac",
+   "sha256": "8fb6fa1d8c2b10088519c09e7bf4208fa3181286c6f75ff44963545a2ca41620"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0050.flac",
+   "sha256": "531e75e77110ad2af671272d085ac0e58f7dc123d01f33eaa5f1c3b39d8ecf79"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0051.flac",
+   "sha256": "3ac84889482f92f2c5f821ab24820502c7ab665692158d0f423243e4074aeea2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0052.flac",
+   "sha256": "939ad677fd1cae9993ec6c60971401d5434a90c62935e764dfbe44fc3744d412"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0053.flac",
+   "sha256": "13dfbe9d7aeb553b30a4c86a75c1ee06613891f61d5154b47cab72d1fcbfe533"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0054.flac",
+   "sha256": "9942a171baeb80423d077f2a25a9ce40266916468ebcfa81aa3538c5cd80ea0e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0055.flac",
+   "sha256": "2f822ef94261bd658b3c8c8b2ff646c9b68901102df047dc56673e2348446fe1"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0056.flac",
+   "sha256": "5288ceb7580056d572ed34db60c0a1e7a9bda3a8d256a2ccdeda24c77572877e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0057.flac",
+   "sha256": "f78abd1e52d466141121b6526eae2c7df293c08a042f026783382b720d7e7a97"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0058.flac",
+   "sha256": "37193059ef2caa93050585c6d23adba35051778b6c958f5d317b0840c68a38d2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0059.flac",
+   "sha256": "14d3c0b9712823628e7e6e7bb5fbdf727b393e004066bef5cc42562811210a53"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0060.flac",
+   "sha256": "7f6d7a554b9388f07b754a82d12dd502dcecf9dee08a8d74f1306f0a1884362d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0061.flac",
+   "sha256": "46bfa177ef93a9d52ee6fa4b4113ab3e85d2ba9b86b009c673b0d6de928faa04"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0062.flac",
+   "sha256": "34e2f622c15a31ac5580564c0b37121222872cbb0d180b6957214a798bafad86"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0063.flac",
+   "sha256": "5709d7669d8b5225f7d62c87d2df6516fa06deb9ac0704e3a4de9ed9a68a6d28"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0064.flac",
+   "sha256": "4ac390604491c09550b4635dc209721a69adfb744ebec9fb9398a25e9cd71c15"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0065.flac",
+   "sha256": "1dd5cebe35f3c92d50a8c46f04b3268e8aab34a1066d5fadf3b36a2e3d5db105"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0066.flac",
+   "sha256": "921a2c2aadb76fa4ff04e7dc3b042c94033ea7d026a72706564c0d6f87e0cf3d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0067.flac",
+   "sha256": "dff3862bcb38bfa53f7abea522de2a8b7c2ecafbb5d12d90e6304fe71c5081e2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0068.flac",
+   "sha256": "0e1ef66d2088c5de828a5fb89885a1bbd38ac18d38c8e3ed19f166f93b131a3c"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0069.flac",
+   "sha256": "628a871a00008464e6917938616d970557fb9649853815e94a8f1b25488a2949"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0070.flac",
+   "sha256": "fcb09dfc9b53765634b6f8debbd791f2554dd74fa30b32c047de8fee686958ca"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0071.flac",
+   "sha256": "e8123531b77a8fef991bd45a119ce0c4c08a1cb183b53591a29be1169a7fcd4a"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0072.flac",
+   "sha256": "db322591b5d4ff4dcd81c7513248f0c0b2e187ae0e043ce99acfcbc5378f72f4"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0073.flac",
+   "sha256": "9ec6d5c97ced040b9ef7d778dd8e409966448a00970dab18b6195ae747ed1dca"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0074.flac",
+   "sha256": "adac4927bd70fddd1e9506527ad7fb944801e2c25f9aeb06120d966b754db28e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0075.flac",
+   "sha256": "4d27e24c9f94fe1979117e75ff210c4f30147cae8f5b30b5b10091859e0cd62c"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0076.flac",
+   "sha256": "35fa640c3715a74fa3b95b691762147989a7a781909195fdc8b4270995dd75db"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0077.flac",
+   "sha256": "b5ddd5fe0120f6052b4f3a87caf94af4b2a65904714f0a3c68c6a923dad43aee"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0078.flac",
+   "sha256": "bf6726b49fe13faed613eead2765a6c5363580459930792e64e8e24f7ccae8e1"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0079.flac",
+   "sha256": "330f21429d8e9da63455ca26b81a4540b6234e7333056f3f9949669fafc6dbc1"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0080.flac",
+   "sha256": "732cb1b5c66625b3530369721c71685301a83d0434a676af5aa9d73cf6a55e4a"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0081.flac",
+   "sha256": "3ac116b4a4f29b3b89012c38ad444918c609de9847107b58fb253728c04303d5"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0082.flac",
+   "sha256": "8f5271c5ed860328f9a44bc1c039ff8b19b089a8455068059392749e37cde076"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0083.flac",
+   "sha256": "36e7bb1cad825af9074a2cceddbe1af056cfe4c15d8864bc09727beb64dd2794"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0084.flac",
+   "sha256": "b07f184de16755bb89ce21f0637feeb7468f1a4f7f603c69754e563688764fce"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0085.flac",
+   "sha256": "b010e4e223e65ae9d711396b61bf5fdd41f961f4e6623a28b24373c41f097f05"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0086.flac",
+   "sha256": "3ff13c3c83facff022128589ebefd4e08068ba5e995470685ebffe57fd9ed8c4"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0087.flac",
+   "sha256": "56fdc0072426a82650ee33f1584a859ca8ee1fed6e9eab85036303769623393a"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0088.flac",
+   "sha256": "993eaa48cf9fe287e409e17706bdbcde6152f771b4a7e4feb8b8d6f6f303f4d2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0089.flac",
+   "sha256": "30e9e3f7e0f3f45ed2149bbe9f412bfc59e5c086dc5f2ca71f426e3f60891195"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0090.flac",
+   "sha256": "b0640d09e0777b1f987e749be04820f1284b8548616900289a5408651578121b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0091.flac",
+   "sha256": "9608f4393e1d129c524ffed52ce34fcfa696c2b64a4fa74c6bcbaf52ae394d8d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0092.flac",
+   "sha256": "b88ed04a74a8abd5d866278f8b5e7427b0e400374f1e9217c46db15b9ae48788"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0093.flac",
+   "sha256": "e3d44865a3f1c4b402b86a6b647055a7910972513964c9162d32649d2a982d46"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0094.flac",
+   "sha256": "ef15d56ea136a7ecb70c2290104564a6f99af7bc6e15add9ebeb546fbb388733"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0095.flac",
+   "sha256": "1c3bd136432b6892ae17bffaecbb193740a5eeeca3ad2d1dfbfa54301629a607"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0096.flac",
+   "sha256": "ae35ba519a486b93b973cd6fbbc54bae044d04ec24f17ed90c010fc1ab8d58f7"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0097.flac",
+   "sha256": "a1d2ce53d80c1a871843f32b5524497f5f398259a65d1edad1bf81cd0daf5db2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0098.flac",
+   "sha256": "767cfd829b9aff1c39da16b811cf07a1833188687088371b7707fde55d365d65"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0099.flac",
+   "sha256": "9e51494361da2e13a50e2c8f59c172b37fb3c92cd5336fbda5cbd1f19b698ad2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0100.flac",
+   "sha256": "d462375b6d01bfcee4360e8ab1ff0444b799cfcebc292f7cc4170b6fc6ad5e44"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0101.flac",
+   "sha256": "ed8674652c0154fe99023e8e84173e4787d4635c7637706155188a0edf192dfb"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0102.flac",
+   "sha256": "5c67d353a243f8d653d9a8aa63b4a4ba882574108a88b99b8846b1a18e76fb61"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0103.flac",
+   "sha256": "7ece1bc670e693f3bb8a5d44c0f12280746320773358bec73281503046c078e0"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0104.flac",
+   "sha256": "3434bd26521d06a36483844094303482faa23460fdfced4cce36d4260f912156"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0105.flac",
+   "sha256": "e24261577fab628a6d9e0bd1e59fa16b27724f8676143b93d14b1e8fb4d10796"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0106.flac",
+   "sha256": "fe550d5ea52b58cb73ca1681afe05f096a74eaf4dd55b590358446165bdf0abb"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0107.flac",
+   "sha256": "156dda5e3bd6d3b990dea70d4e27f473c275088594b98bf8edb395f7b5c932f1"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0108.flac",
+   "sha256": "65009f7f6c465b7f382040acd1dc01dd5294fd39f25fb3cd25364d2baead0f45"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0109.flac",
+   "sha256": "070cd82871ad5ad21e3fcadc9be8c7b06043b4ea0cbe9b92ee8d225bdeb37d20"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0110.flac",
+   "sha256": "8c5628f322067723b4c577d1b4d3b32ee731fec3f27f1b1df187cf2bfd231589"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0111.flac",
+   "sha256": "dd6604cd002ef286d6194c100d3f4cd287a93dea8eac36ab14fac1ab704eeeeb"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0112.flac",
+   "sha256": "60b38e63cb7ad90ef129fea8cfcd4158a37d63cefb50844fa151e2a4747e705c"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0113.flac",
+   "sha256": "7e57eae6ab277c50b62e0aca404c0401ed8c27c1b271834eab0234ed61d209ed"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0114.flac",
+   "sha256": "a848275c94e47417986564234f45d669813552bdbdb6d025e961534306fdc988"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0115.flac",
+   "sha256": "494cd660e43baa6182234e152ed6759cde1c19662817e0d9d9648d9f9ab58b1f"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0116.flac",
+   "sha256": "f2b4ca6d22017b83f9a19171f14edc8c6a9016bbe3c98f8aac81547780af90a9"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0117.flac",
+   "sha256": "e67e5929634fb3af64182276174d4c5fc2e102843141a708d71d0c4c1eb749b8"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0118.flac",
+   "sha256": "78d6d089d7a1684faa146d60ebe57bd279fb429f43d7275839660d745c3cb22d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0119.flac",
+   "sha256": "685527e412dc1bd666de505fed142296233599832b152d10dcdbac3e7d772daf"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0120.flac",
+   "sha256": "aa07de456cf555b9d2ac2e369463c398b80a208f1eeb55442cabd3147dcc6ce4"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0121.flac",
+   "sha256": "ee0e1de84421dfdf6d7058a2d387982faf21bea6e83705201b8183838bb5796e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0122.flac",
+   "sha256": "b19b9ffcac0fdd3503909d2dfc358f3574afffcd8a7d863fcebe894df46eabe6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0123.flac",
+   "sha256": "66794a8e89a0be5f024774d7e3ea5f889bac9f660c9c2dd001544ff8efe84cde"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0124.flac",
+   "sha256": "fdcd0cdc61c5fb084abe3629186841fdf652f4922ab8a32771eb8c87b82306cb"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0125.flac",
+   "sha256": "1c50ffae545fb6c1e340e3e68eee9e14b64bed07a721b4b9a63eecf500352234"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0126.flac",
+   "sha256": "f833a640d01567635bed2fd48d061ab1e5d0a419c374908a6280e4d5dddc87e6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0127.flac",
+   "sha256": "67b1aa3c7b37d0ca388e06e2f946212323b912a14ce71867837eb5476bc33af9"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0128.flac",
+   "sha256": "5e7b9f4357fdefdf023322269b53235cc107cfcca968d9808485116da6c92597"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0129.flac",
+   "sha256": "9feb67c464e3cf25d826cda0c718ad8cbb9a273fe2b9887f1a2d1bd060d101e7"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0130.flac",
+   "sha256": "489b9890b3028a43600be91d13eac6626e47ac9c433675db9ddf05c533c57d5e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0131.flac",
+   "sha256": "5cbc2a7bea1623c3ad7af992a0bd5b9f02b282b413f7145eef0c4a14d1b032d7"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0132.flac",
+   "sha256": "ada17071de9ab213b2a8d5cd9aa72939f465af22e1b710cfe9836ce570855791"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0133.flac",
+   "sha256": "8619b0b2d5d1c29ee81b6718849241677a30d58afa00aa172d5081f4c8ebdc9f"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0134.flac",
+   "sha256": "d144edba05e84e2713a7e59187e92e85606e5175bee17ae6ba6f74faa4919cbf"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0135.flac",
+   "sha256": "1e98b310780f30bfa6a41a12cf3c8fd698c6016c2276427d86d286a2576ea52c"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0136.flac",
+   "sha256": "d617e935fdeca4aed0e781113dd941f2ccf48583b6ac21a0ff2dbdbc9d990c71"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0137.flac",
+   "sha256": "2f253a9bc5bc3c50b8ca864a9eff0e3cd1e3677938870d7275d3e3dd6e2e8657"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0138.flac",
+   "sha256": "f600025b853b1716d24731107f3ddddb58390f625787405ecc870b53f1ee442e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0139.flac",
+   "sha256": "81dada0ff57f3a905b200deffd7b49197ad2a8bda37a9e15a787237ec462280b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0140.flac",
+   "sha256": "d1756924b961272ccf68185b2132ed195360a0e18ee2b36da5a00e54dc09de0b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0141.flac",
+   "sha256": "47bff631f41738dfa6572a31a7bae26f667be7ea65fb1043d294b8f9e6d7fcba"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0142.flac",
+   "sha256": "dadd78372dca0febd50aab6ec0ce7c08f56c3458499a4c965f4972701af29af5"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0143.flac",
+   "sha256": "d785fc48351363c779523815402540cdd0792c7332760a506b5dc1533b1ae05f"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0144.flac",
+   "sha256": "b2c799d6d105e418382ff192cdfbcf778d9df481392e01d34c65ed1e9fec02b7"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0145.flac",
+   "sha256": "943e32f4921b304a27166270f34525c7bb1103ca6014276bdacf8ee5707603e3"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0146.flac",
+   "sha256": "f1a767e1ca1ee21eccdd41a31894af569aeee24be9c48f6ce58db13998db5493"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0147.flac",
+   "sha256": "7696fbe77dcc93467c4b44765394a2f3f874bdb2cce6bfe9b67b75f6e2aa4c32"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0148.flac",
+   "sha256": "9b9a9e7c36e075d933e4a9016d82c1207ce5d4d3bdbc709ded6a96b10482ffe2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0149.flac",
+   "sha256": "99fdd2926c170b014d28c57e93048e225c2316f99a00ad5f98d034e2b41465ea"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0150.flac",
+   "sha256": "bd72a44a43d8fa279b9234b9c48636d987351c83287bb4b5845b533732228bcf"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0151.flac",
+   "sha256": "cca5e519e8071529a06523e111c3be2a689b30a1d7587c1d624b692ecce09e45"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0152.flac",
+   "sha256": "b7db898ccca80fee4d1456af23468ad75904f642d5f986d8adf00c550729a525"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0153.flac",
+   "sha256": "3f1d2599067e611aa68a213794316c9420007e673d22cb1fcaa5e970689d497e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0154.flac",
+   "sha256": "4e8aa931d0eda75091d7252f43eb95bd038f00af206815642d4fcf83b92cf5ea"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0155.flac",
+   "sha256": "fcb09dfc9b53765634b6f8debbd791f2554dd74fa30b32c047de8fee686958ca"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0156.flac",
+   "sha256": "ae88f88f1e95a4eea65b3d21279960970d2afd3e3742196889bb5d10fa38d3a5"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0157.flac",
+   "sha256": "22888e9c464f1ce68c39edb4fcc1f758c5ea1c5477752bceea027bcb94895933"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0158.flac",
+   "sha256": "04ec802b6fa5b204ad471592dba8659c88e7330693c016c4e977ec127bcebe02"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0159.flac",
+   "sha256": "09b93900b68c363d4bb7885c7c6a740fd7fda1df13f228644cf16ec68566f61e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0160.flac",
+   "sha256": "052402d4084395675768a8a7016fc375f22de8f7925746eef4fc6538e0594892"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0161.flac",
+   "sha256": "e885106151bc9f0998b699047513198b278ec80b5e2378ec2637d7d21a18fa3c"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0162.flac",
+   "sha256": "1455c9cb569ec0fec23921260b20ceb3ce02b3eecbb573ad50f335b1dcc989c1"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0163.flac",
+   "sha256": "a9a1e7dc0bcbf13b787d3811307caab2fe11f1fff94be1ccb6ef12d502289411"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0164.flac",
+   "sha256": "8db15713d86cfab55519960e2414ceb33146c6695a73172e28944c64474410ad"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0165.flac",
+   "sha256": "c64f2416a4ed3ecffe5b98f5f63f0d0bd2192d79ba28fda1af961ce74cce2c31"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0166.flac",
+   "sha256": "6fb042b2851e612b87fd345565954c917bd2226d389547d3815cb1a6f3d98446"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0167.flac",
+   "sha256": "47d92c1dba13236f57271d26add686e7b6813ddce8247ff409ebe5d0debdb622"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0168.flac",
+   "sha256": "e1639b8289b6fb0e81f1142b72115274af466c7c14f0bd8f38ffc5a5b156ee7f"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0169.flac",
+   "sha256": "e20b633ffa4b5ee66946b4362335f8e76b3ecab9224e0f45cfd2b49f630308e0"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0170.flac",
+   "sha256": "e62d7a30ef28c2fde4a685ccf3114504b3aa4bbee3368c4e98fd5e7edcb7bedd"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0171.flac",
+   "sha256": "21af0550b9e9905237a7cd2b5aa387aed7ff7397bb9c566df032ebd174c740f8"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0172.flac",
+   "sha256": "425f2a718b4281f3a3525ae4dbe46fad9848078246dede96c44ae4761bdbdb8f"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0173.flac",
+   "sha256": "6fb61873e3fc5534e24d88ccad8ed2f3c3c9f06590b2bf9b1750244ee7c9207a"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0174.flac",
+   "sha256": "a3479e5a205932d6e20a931190890abcb78b1294e943ea1396b71dd70e4bc166"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0175.flac",
+   "sha256": "6f9244266ee042d2204b84a965b2218660e4411277d12647ec4490404e5fc1b8"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0176.flac",
+   "sha256": "0df2608d1b3b76015ab17bd00e4a4bb6c6fbe1a5fef0046e782dea4faec339b8"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0177.flac",
+   "sha256": "fb72ae3033b0c274a2e48a94edf7eb23b01727a55cee3ebafa2de28bbc29b33b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0178.flac",
+   "sha256": "605a96c3bbe058b741282f3d105917299d02b0c9c502f85bddd2b961d48c1a13"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0179.flac",
+   "sha256": "fb2e34df5599d067e46d67a5aec3c02f0d1debfedc796b4558bb609f09a710fb"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0180.flac",
+   "sha256": "9f0d57f8aaa2f0b4b2688589251b696f75e3814fb300a8b0148c1ab7e04c148b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0181.flac",
+   "sha256": "1c9fa72e593e015ee7f5dc3fc317a77e710a7383fee6baf1a7c71fdc617bf349"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0182.flac",
+   "sha256": "3ac116b4a4f29b3b89012c38ad444918c609de9847107b58fb253728c04303d5"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0183.flac",
+   "sha256": "ded5ae97240162a52e4c3858e485c89b6b92045e1015dec869b034226e31d046"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0184.flac",
+   "sha256": "bddb8c40b4130c5c8a3641d32b8b41bf61c4a39e7b229cd139fea788592bbdc8"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0185.flac",
+   "sha256": "493502c6cae2b556463d826379d5f12c431bab98bbe7e15fea3fddd8718f5277"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0186.flac",
+   "sha256": "1e99fcd891ec47f9febb7b3b8bbd705f223d34037c42f53f711c416f816990c4"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0187.flac",
+   "sha256": "f88e25deb339909a97413ba8a0213fd341b6dc7b0e696b05e5523850d7f2fb2d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0188.flac",
+   "sha256": "e74732236d027700c22b016410b5e5b4fe368444ed0c118e9f267931b4772204"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0189.flac",
+   "sha256": "db322591b5d4ff4dcd81c7513248f0c0b2e187ae0e043ce99acfcbc5378f72f4"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0190.flac",
+   "sha256": "52cc8d61f233bc2ce42118e1a2dcb9dec38efa55c8ca393b4c1241ed8254797d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0191.flac",
+   "sha256": "28a6c75a241bce51eaa9c5b371f60529a830de7862430cacb23fa72891bbae53"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0192.flac",
+   "sha256": "9506c7a8a5f7d03c9cac287d8b0d25122230b2e41026b003261ad36863001aa4"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0193.flac",
+   "sha256": "cfb4a0d5b7d7dc85b65e0d97731c6a8a5c804e2c7f1104e35f7eeff2a68cc5f2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0194.flac",
+   "sha256": "edbe28668359d7031a97e10777ea8cb8347bdfb0d72e466bb6c03e32529464e2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0195.flac",
+   "sha256": "bd45fe93de0f2c0463c6275400f6787567a329ceb06e0777aea070503c383905"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0196.flac",
+   "sha256": "565a042e05f80013376e17bc9e82ad88460c1b726455736435be056f2ca3bea2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0197.flac",
+   "sha256": "66f078f7f95dd5bc045c7db401b658394f37bf64bdd32d6f8837a6e96bf2bfa2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0198.flac",
+   "sha256": "72e526616ec3215de7fe5011f4e5d9878553dfab28a723b7433d89479da523f4"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0199.flac",
+   "sha256": "5a5f67f2b5ad77fcdfd5ffebb9e8362e082ec5366e44f33ddab9ea998277e61d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0200.flac",
+   "sha256": "a1797d31d32f9294a17c1ea3e14a89ab4e45dc3a858f223397b835bb1128c0e6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0201.flac",
+   "sha256": "139aee02c54efecd8fafa80d70cb2b71c9f43a75a7795b090a8b418c637f2911"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0202.flac",
+   "sha256": "939ad677fd1cae9993ec6c60971401d5434a90c62935e764dfbe44fc3744d412"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0203.flac",
+   "sha256": "da9302f405ce4e25dd8d4bdfd449e0cdfbb64aae3d3846bff80042ed3e0e0da5"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0204.flac",
+   "sha256": "1210414c6927d7d354062fef8270c8e055762296de4cc7070747c8f963ac8800"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0205.flac",
+   "sha256": "1af25fb9be3a99deebbe76a25dc8626e9e792d1b4fc1356761faa406733ced2d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0206.flac",
+   "sha256": "f14763442b73bde955458a0de6ca9e5b36a9d0a8c209d83846529225141ebb0b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0207.flac",
+   "sha256": "8661d4f52b65bddf9be87ac93bcf9d88c0da8f79d2e7765542bad45cf2ca2338"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0208.flac",
+   "sha256": "b42efca35e163ddb6fcb9d2057378aa3ba39c1d11cd732d627e3e7a8a017b591"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0209.flac",
+   "sha256": "1282c15bb0825336f01b107c622bdd85de46535dfbee2c0264beb5cfae9d33ee"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0210.flac",
+   "sha256": "0321369a86e2c1f2f5e35f9eb97beff410858bb64414c0a4df69ccb54d69e565"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0211.flac",
+   "sha256": "df7ddd6e4d51264143481ef420c269e790bd9ab78d227b8f189bc561c4f5a882"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0212.flac",
+   "sha256": "30aeb2976cc9d634cebfb0b0d4dd0f2dd7d81487d3f9145dc440d06e2af4595c"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0213.flac",
+   "sha256": "c846100dff8b019d64cee46ed361ef15eee81518676fa8cbbe07d42b2affd653"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0214.flac",
+   "sha256": "7f0c998d6a7f2e9f4fa8cfd8ce82693664e0b6e1a9c067564fb4f861abbe63ac"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0215.flac",
+   "sha256": "1014a10b501a1da3cd7e5c00fec468b1537412515b7d945ec9e292c588460c2d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0216.flac",
+   "sha256": "a718d89f9085b87aae1e32423ecb1ef5756bfa825d54cfa4213aae6b30a66c6b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0217.flac",
+   "sha256": "a39b0c800c20280f062b3a047f5230301d4a03a8ea791542c22d2cbd7bb8a687"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0218.flac",
+   "sha256": "a385da7ce819a736045b5604d5d2bd213b25d6f2e556eced5e5aee97c8fd533e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0219.flac",
+   "sha256": "70f88b5eaa884ebca8ceb156bf9491078b3ef94ec055a9195df2a4e20b41e8e6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0220.flac",
+   "sha256": "7ece1bc670e693f3bb8a5d44c0f12280746320773358bec73281503046c078e0"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0221.flac",
+   "sha256": "aa629897decfcab4a34859c319771c00e44a9473732c3663ffbee097c370d8f2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0222.flac",
+   "sha256": "4117e3c581bef112a7f4d8a8394963899691df90705e0bfe01f06c9b2abea7e2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0223.flac",
+   "sha256": "17d3ee51c47b03279e33d873d0ef42b3e5543cd1849a004fe3c2a94c5a8428c6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0224.flac",
+   "sha256": "8cc738dc778e6e888f7e9c06982cf4f7e155d293aeeb7e3f906d4e1e87647d6a"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0225.flac",
+   "sha256": "ae21710babfca50ecdbd8ff2fda144db659e8358fa938ebf16431f199576df29"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0226.flac",
+   "sha256": "00bd3b202f3177efca1d182c6e1fcab3b8db9513b3c7850fde3a8c0a87b86048"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0227.flac",
+   "sha256": "cadcf66e9e5f4f21447473ebd657044c4bf28a7845688308b261e69b01a1d713"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0228.flac",
+   "sha256": "e64f83b8f9d54ecd9bd933e3ee1caaf85f01b2296e70da6675e4428d1fe1ed43"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0229.flac",
+   "sha256": "7a8dfe014f8732dd412e18825c29229a55e2c1138b98de5a6df764265640ee85"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0230.flac",
+   "sha256": "9a5496fa0f9da7d8acbb3c145029c0f0f381d8d003b33ce73dcaa1095476597f"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0231.flac",
+   "sha256": "437a449de9a3deb2ec82edd012bf8f623b6b59488596799730ca6a292c2249b8"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0232.flac",
+   "sha256": "f409c8ebf078d804ad92cfdb3ab5fdfeac57be010d2fd0f7ab1e54d1fa1bdce0"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0233.flac",
+   "sha256": "8c160a8dd78249e10a14fa6e49f3a7d0c4e566418592bd7bbc57f31383949c69"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0234.flac",
+   "sha256": "4aedc3405669f16f3bc8bbdfb044a27d8457e69114e945a9f661ec7a664c44f2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0235.flac",
+   "sha256": "c441953bb0995e212fe21343f071c5ed27628d29b3d240303078cfe666883aa1"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0236.flac",
+   "sha256": "1e38e960e6955c0c6faaa07b9024141a597f9b1142cacdf9ad861e27bfa7d1c4"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0237.flac",
+   "sha256": "34e2f622c15a31ac5580564c0b37121222872cbb0d180b6957214a798bafad86"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0238.flac",
+   "sha256": "6893b941adc0b01fde27d391581f79899ca6ae070017b43a6e77cd3ef1fa2ce0"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0239.flac",
+   "sha256": "153540526947577bab89ebf4297f50bf9f296297c3d59aa56f47518c433d8d49"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0240.flac",
+   "sha256": "d144fbdeecb3f796325737fcbba806b037b986fa7ed7040cd51c3d8be83610f9"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0241.flac",
+   "sha256": "f8055eb8f6bc0a4cb722bc78e81f42d2afda3225de89db854ef08715a9eedd8d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0242.flac",
+   "sha256": "e6bb5943ad7a576a119e4c2b461fa3d8e4bf055adcf46e9739ae1b528e989373"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0243.flac",
+   "sha256": "19b55bd97c3a5898d4264ad191fb913db7169c6804ac56c58e34119913655161"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0244.flac",
+   "sha256": "e052fa4039d647e999272606aae1440baf84aef9c2a8d686c0e0cd8270515d47"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0245.flac",
+   "sha256": "e6b8bcc07ab76bcafed055bb3ea682b7ad58788f4f8a31504a7d2839a5967c3d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0246.flac",
+   "sha256": "c44c05c978a85d06cb0ea9470d09c92d81e329cf8166c710834e5e3c89c24cc6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0247.flac",
+   "sha256": "19dc74ab15e68470cd19d3e7cdbbf70c4557a5cbfaa309a1e8f377183aa83169"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0248.flac",
+   "sha256": "0b0fe2c391a6cd0886948aa0b73ce216fb6a0aff3f630a0bf6800c1f34e1c3ce"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0249.flac",
+   "sha256": "ebf879cdeaf79028149b6c9027feabbf4a45bfaea99fd638e64114c7ac9d86c3"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0250.flac",
+   "sha256": "35aa74ba2c96179092106d40c95a80659fb429e08de2cf3e9d816b515e930bd5"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0251.flac",
+   "sha256": "0052e12f88f63a8c8d080ab96436140b0f328d7ecee4546a1266e1993f904fa8"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0252.flac",
+   "sha256": "9e77fb01555d22debccf495dee65a00dca3e4dbe221639ef7d1e8d342af62c05"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0253.flac",
+   "sha256": "672d6d9a45b82ee974c66f2a8dd0171102ee348d1083ac2d8a92ec4999336121"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0254.flac",
+   "sha256": "a75d2cddc1722d5fce14c07cc0cabbb09f428709a5a9938f979adab45e975de8"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0255.flac",
+   "sha256": "48b053d64831fd729cbf99b3442a5bf0ffbd443df74a365af576c637983c67cd"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0256.flac",
+   "sha256": "e31be69df5c4075eb36b2134f30b735858f8b7a5aa535fa6519faa2aac347d9e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0257.flac",
+   "sha256": "034f490e6b7a4d77f6a4b820323333b849e348e6bfe91ce30ac9b363e9b040c9"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0258.flac",
+   "sha256": "4c7a667ea7e16f4ef9862000758dae1ad72ec926c5cd0570b2e17a3501419c39"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0259.flac",
+   "sha256": "83936f5942e8041f336f639a70cb013dee0e9dde6e293924eb7f3b4ec74fc799"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0260.flac",
+   "sha256": "1099b8f7334b9f8798532ea81cdd9dbf43c6de7b4d1284eac2667340d0f63a78"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0261.flac",
+   "sha256": "a5344c6d2999fd2f3e5ca6607c9c224880d91d27e79105c690d2951c2f2d5e4b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0262.flac",
+   "sha256": "a5dcfcf058afc3637fb0b3cf2c0e0e471b8fcc5f00b8f1b14b70c1a0aab4972a"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0263.flac",
+   "sha256": "d01c5fc472168481267fd193d6159414828cef0daa3dc7f2e3aeaaafd862170f"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0264.flac",
+   "sha256": "f598e7d920bbf1cf313219deeaf2adfdf4ee514c7f35575c674b0ddf154375b5"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0265.flac",
+   "sha256": "3c774b2cd03f6b9e7f36403d1656c994a375d1f266997bb756ffa23a6abf654c"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0266.flac",
+   "sha256": "8d14a36d3b49a649f102a48c217251337bfcdedbba6255d09364e38cf71c564e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0267.flac",
+   "sha256": "b619ca631d7e6e25d855b635e1acd0ee0a038c41eaac937665c622053e67ea93"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0268.flac",
+   "sha256": "cd8079095ea1db0db1213525b850099ff094a6a331cf8bd881dfe22f9c587157"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0269.flac",
+   "sha256": "7b8abfe28292623191826b96cc3e93e299fc8c4286c8122668a57945263a46de"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0270.flac",
+   "sha256": "4b3159a492b5946896350b05bb584dbf78d8223781cb4f41616d59054d66ef12"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0271.flac",
+   "sha256": "8c8a9a87f26400451328d535ea527d628669aba2ef378517eff99dd0d9f4612b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0272.flac",
+   "sha256": "6ac7723c7ade01db270fe55051fb01983ceebed19cd7ccb6c0c1ca12499abbaf"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0273.flac",
+   "sha256": "e029b9a2fdd01d037b82bf1a8e074a5fb22bbc2c57d525762c21b6b0823a1103"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0274.flac",
+   "sha256": "238944470c1408b7586f89af95a47645b305a212214b5408a532ea1432d8b383"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0275.flac",
+   "sha256": "ce95f2a0fc158d4ee19d8efa80691dd6c4991f5dbf46c468b5742b794ecefb81"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0276.flac",
+   "sha256": "37bdd2b6d5b68eaf805cce1889e26285246530d87bae8dea3739d58b4f3fc56b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0277.flac",
+   "sha256": "6f8a2bab5e522662586304dd997e51576a8ea810c7710363cb6bcf506ea5fb09"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0278.flac",
+   "sha256": "4180e683fe47524b541ff5204a792710e4c28a4944a3d2b3573e6396ecb97c20"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0279.flac",
+   "sha256": "31c19f7fe7732a5ff517b9056dab58bc851f5e26da6654205b506790efc19ff0"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0280.flac",
+   "sha256": "344f1c73c9d04f0637b0a0566c3f6a48a56b2bb334163b7e6f2d0415809b315a"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0281.flac",
+   "sha256": "7a776615e7f735f7a34664361eba320d7a1705454aac8e957b193321b12ed418"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0282.flac",
+   "sha256": "85366a729659c72629d2be39a7b5bf1441dcb36ab9a64346505290ea07d808bf"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0283.flac",
+   "sha256": "d115afd1fd00f554b67538e05fcbbe06853ba7410626fe652f2db097210d36b1"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0284.flac",
+   "sha256": "69e74e36ea638745c539e9b4223ee2f5304f7809ca99eb885978d88a8c121732"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0285.flac",
+   "sha256": "b1a2116fc1834d078a2b57b96a75bc8ab78bb1cdf8971b1b29c2853fcb7f1665"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0286.flac",
+   "sha256": "0ea33666305e7370945ab717601db618301fad3f103e101599333ee325cf60d9"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0287.flac",
+   "sha256": "38320c02647d287b4485fa890efb63e3e9620bd3bc4ac629edb8e76cedcb0fa9"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0288.flac",
+   "sha256": "aa9a0cc1f8452b3cae869203cf9489d478cdb767621cb8d04a182abd3415cec6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0289.flac",
+   "sha256": "bb31a6928d114cb32a37c6f0c4be6875fbb8a11b3c49a86c9dd3c8875139bf3e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0290.flac",
+   "sha256": "c8160ca9ea43ab0c65e92378e98ba724c076b23afc90e6204d7ec6ebdcfce98d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0291.flac",
+   "sha256": "d8d0ee0e66dcb32baf00c193354f6ea645ec830f5aab77c45978cb32344982f6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0292.flac",
+   "sha256": "8066501e5147cd4c2f6afb35bf09ca2869334689404d32ada5877df1b30ddba4"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0293.flac",
+   "sha256": "24fd2e172ae8626ca77bf94cbbbaa61445993eb220f0e3396611df878bde6a0a"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0294.flac",
+   "sha256": "2f822ef94261bd658b3c8c8b2ff646c9b68901102df047dc56673e2348446fe1"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0295.flac",
+   "sha256": "e64de2970af0b897e340834dc16a73e6aad3b1c537bd8a3cf48b7bc991d19169"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0296.flac",
+   "sha256": "860037cfa4e44e9804cc3470538fc3c6c4503aa18e83aa06103dd35336ccede1"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0297.flac",
+   "sha256": "76aa14acc0cf31210867e2c25fb5ff62b688cf067ef46770555c49c1b3566bf3"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0298.flac",
+   "sha256": "2bacaed02212ef4e1937cf9114745a77d17950219a52b03b3c3a23aa840e5943"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0299.flac",
+   "sha256": "2cdb10f329a3e4e8790121c9890dfa47ca72d971c6edaebaebb7d1b2883d8228"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0300.flac",
+   "sha256": "cef4d926be4059469f6e39e1d3acc3e1b8477d2d7e3d63bb9e95aa6d2889fa98"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0301.flac",
+   "sha256": "ae010ba960a98d4841e683419ac92466ea3ddf56a61860bce903bfc93b8ff49d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0302.flac",
+   "sha256": "efc394838e0d09dcf6981315d5c450cc1f344e1ce493665c31c986380dfeeddb"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0303.flac",
+   "sha256": "9ec6d5c97ced040b9ef7d778dd8e409966448a00970dab18b6195ae747ed1dca"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0304.flac",
+   "sha256": "064d6c27debfb7eb965e43e26d952dfc238b1167b161f1efdcc4d8384f31f1d6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0305.flac",
+   "sha256": "78099a60568e84f04f116da8b5211e01a60eff468a44aa911b560f3ac74d25c3"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0306.flac",
+   "sha256": "6cd726ba3d1d3abf36bf48363a995ff6413700d18765d92125299bfc93809849"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0307.flac",
+   "sha256": "4537f61477746e489f1ea6981e23f5a3ec9fdb3563572cf1b2c7123d69944973"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0308.flac",
+   "sha256": "6ea841e315ce707477c61b1a7c41b2cdd003b8c6aa452578c90ebf60d8a56a06"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0309.flac",
+   "sha256": "6f1cc43d4cb841d84302792219b4b36d7e34453d7c041117effb325b2cf1ba13"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0310.flac",
+   "sha256": "11b4011b9a72d3fbfd7433914710c33e57c1ec2af64992557dd4ecf2ebeef869"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0311.flac",
+   "sha256": "7c6bcb57f678bcf70e3d68735754c0a221e055d80da638bc23b7c6cbca5b8d02"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0312.flac",
+   "sha256": "1d21333040d0a7a4b34137e99a7e2d28696dd5ebd6e9d1e440c4c9f2e32a1085"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0313.flac",
+   "sha256": "d5ebf228ab88743a41b84137a9bd0052154e3325196b596b6e160ceb0255cf7e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0314.flac",
+   "sha256": "d1822438199635a72325ba9d723936c2d94ce7e9987eb667b37e89b72f766d7e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0315.flac",
+   "sha256": "95bc872b4d285684de4fca0e03ee492531d7a52c3750053a4b03a05b6fba64bf"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0316.flac",
+   "sha256": "ed4bb8bbce3894e2d00686cd86f277d116fdca516d4e543b56983b23e7a1a350"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0317.flac",
+   "sha256": "fd4c387e0f82760982830bb66892d63f03472e5e9042b7ab155bd7394f1ce3fc"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0318.flac",
+   "sha256": "8fbc2017b9b9bc64aa140cb300ff256bce40d7aca55937d8e43761f18ae50659"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0319.flac",
+   "sha256": "628a871a00008464e6917938616d970557fb9649853815e94a8f1b25488a2949"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0320.flac",
+   "sha256": "e4c4d7ff2be3f666194181c5747568c03a5a83925b91f589747346a52327e353"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0321.flac",
+   "sha256": "4a63d568fe53240f24ee8f1faa908ee9d717f5046fc970b983471f2cfcae6029"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0322.flac",
+   "sha256": "8036977bde91921ea04bfa4d06308dde2c2bdb542718b454ce7cf71601fd4d74"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0323.flac",
+   "sha256": "b8c36c00b1933819e13c50fd29ed74b4888964e03be7cdcd8b88d24b8fd0fead"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0324.flac",
+   "sha256": "999e71a89eea635f9196f0a5c40fff15574a5fd0b4263026b3c550159f5e5b3e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0325.flac",
+   "sha256": "4c9a14992a4d59d1e0e905fd7071ca7db5aa2889b94b2c1f78fd862fbbb028e1"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0326.flac",
+   "sha256": "2bf6a349b427563944a4b4b3cc061ad6d5e2d0bce90afdb7a90a08be540998d5"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0327.flac",
+   "sha256": "59e98d607c5d2a061a29260e990ee845037c930cdd3d7cd398324051c391e6d2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0328.flac",
+   "sha256": "857053f8068c561a54b399887eebeca50b81a5c5f29f2830186ac80cc8056bb4"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0329.flac",
+   "sha256": "d0fe426f050db686e6042df95554be35835848a99344a398bb9e1f5cb15bcb28"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0330.flac",
+   "sha256": "7aafaf2f6348311188c04816a1009767efebb287ddfcb23d97bd260261eef352"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0331.flac",
+   "sha256": "4ac74876787a516bbf63b9890c1d7eec2397a67b4c07ae9d1b0564b8b04ce681"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0332.flac",
+   "sha256": "f6fdabf42b4312bda3003c4270e7ab7b2de81c118267194e72bbab71dcc833b9"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0333.flac",
+   "sha256": "c6d0873b48d795360f1b323e86f1716987e3ca8bdf2951c738dc386f24f6fea3"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0334.flac",
+   "sha256": "a95c62b55490011aee6b34d4a4f353e7c01f471be4943f6bc891f3a3a9cf36ea"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0335.flac",
+   "sha256": "7f9b01888e4d5b73ed7088bab42a5e98dbcd7de939209a08c09d9721b1bd4da9"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0336.flac",
+   "sha256": "5b002513e86127a3dfc3ff8deafa9a9fbc2c3411125dd6befcdc50c9e4178cf1"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0337.flac",
+   "sha256": "b0d93b20f2e56e220b603fc3f02219e5a0ac2c331a8630225be701704eb4406b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0338.flac",
+   "sha256": "f64ce3ed20afe454d88ac0079f30478ba09d0bccd604b5fc214b80a7a7ce6498"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0339.flac",
+   "sha256": "7fa663b87e5b29e2e4c3d52a886192c0ee4b52fd2d1d7cf16e9a96a412a7cc4d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0340.flac",
+   "sha256": "0be2a9499ef2c9b1591fe352f6dfe3ae3a28fd8d77b179a27db39405ff768da2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0341.flac",
+   "sha256": "1e65e2ab881d2853f9e3b5554acfc24a21f025f0cfa7ff2c8c194fdda17d7c94"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0342.flac",
+   "sha256": "5ed4fdd97ed11054f57f429b6230833a2e2248d53b00e38991a3c574e47a35e7"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0343.flac",
+   "sha256": "31acfd76c1a886b8331514f3c26bd5fcd598eca436bc8856fd9815948433637e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0344.flac",
+   "sha256": "1c0e4fcdcb4c2e718d624b8c804402eba8018cc06379a2ba21d47221d0b61008"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0345.flac",
+   "sha256": "62c0c319004a387c0c56eed0b2af29160b39efdad4211ce3ab9bb2905a8653b5"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0346.flac",
+   "sha256": "45ec0eb6aea2e1249a34f63bc13a23224c840b39e6cd7034c515c0d51931b8a3"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0347.flac",
+   "sha256": "b3352120a83bc69b616b10640519bf311e0e5895f484726eda23a0339b7d2ca6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0348.flac",
+   "sha256": "a8a573ed514f074bddfd6f7821e33bbf53936c3233ce0dec40621a23975d4755"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0349.flac",
+   "sha256": "6dc1847e95bf903af3f1c2a5c91dc6ec885b102845697d5efb756f623ccad1a7"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0350.flac",
+   "sha256": "87ff93b29e4177a014b916bbbe2f4ed18b1c5993ad398c6a6762b044eb73ab3b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0351.flac",
+   "sha256": "e387fb73b03bbd57a1543988c9f71ee94971a475e2624edf636c4bba9ef53e1a"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0352.flac",
+   "sha256": "655dea5f4f00ec3ef86921548bc73fe8fe08ab0167df39ed21042e5dfa7a1b7c"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0353.flac",
+   "sha256": "abd1ae0b51e55cdb6517987d0a4e4c2e252546a98107dc08b9ad9cf7dc866492"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0354.flac",
+   "sha256": "5577e44a77956e6e66572788d758e6ff7b71729954655412390c4d5a2288627f"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0355.flac",
+   "sha256": "9bcfff251b45fc08183660f7f770982cbc755180b24d955015f9f376b61c6b2e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0356.flac",
+   "sha256": "5aa02161293279fac7a9f548fb332831f168dd8ea793a169b41cee5ed2f0c7ae"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0357.flac",
+   "sha256": "b94298480b12156598a1c9952f7512a794cf89bf4090ce841425f41a1fb41228"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0358.flac",
+   "sha256": "a848275c94e47417986564234f45d669813552bdbdb6d025e961534306fdc988"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0359.flac",
+   "sha256": "8ef4cbb00e14820d9ea5f9e1f750e2b010a878b765768ec7fa90fb156399c028"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0360.flac",
+   "sha256": "f32b7c95c1cfa765f4bd548b1fb02535a5985a3d4db3133365c856d5b616a920"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0361.flac",
+   "sha256": "5c4f81930b7559d93097d455957ee8a1544a0c553d1f8e81185c4d5f9e4646fd"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0362.flac",
+   "sha256": "addebcacdf6eeb4f21e91e3056fd3032ca5fa8566c97de606d02809b4d6e2ee3"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0363.flac",
+   "sha256": "4e75b90d5fad998adf2eea66f2a239460280a7905dee6cb45604a1fe1fb0475f"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0364.flac",
+   "sha256": "1b28635a33cd079c6845e8f657dea399abe9ae58f095aec274e2a278d25f8f01"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0365.flac",
+   "sha256": "7541d32f41b67b511da697ba41de7dee757bbb736e97a377f51bfc63f16c7c70"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0366.flac",
+   "sha256": "bb8294935a76f9f2c2a4bb464bdcdb936d69f10c07cd4105eeef99cb5a35924d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0367.flac",
+   "sha256": "c5f7dccda6fd7426375d623094a039c496a7798460e9dff5347ec43974b89c68"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0368.flac",
+   "sha256": "a05b10b058c46afdc95a96183b7a5dc416f68fe43299dc020100e34480f45849"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0369.flac",
+   "sha256": "edffdf96b4c0caae367af769e77b1ba6b7bc145f6be1cd93dbc05c433c324997"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0370.flac",
+   "sha256": "d2ebcd488a7b74bbc4a3225bc0a63320b92ec11bcd8f8db91a6e5b60321d32d3"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0371.flac",
+   "sha256": "922d2c10e4c78b91925f31e95b621d1f48c7ca468217fb69f6754a0f251ee596"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0372.flac",
+   "sha256": "f0f01b8202698ce9f8a4eda4ebffa3ed065667fa57edff27fd29cc08849f8450"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0373.flac",
+   "sha256": "07c5a816f4a3cdfecc8e1ec6344b469ed2c972304d5878f484cd6a93a4b870ac"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0374.flac",
+   "sha256": "e2d267bf767ed271c2effa404d480e21aaab8f6969c5d748577fb1b98adbf3cb"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0375.flac",
+   "sha256": "14adb1ed90dbbece8d75013ddf4c675f9bed130a6bf9a8be9f07c2556e755ac7"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0376.flac",
+   "sha256": "5d55a54c0de825abd87455798ab77d7196968466ae662676651b0a8956d1c560"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0377.flac",
+   "sha256": "269417a6affc584bd7b0dcffd7ef52424817bcf05008046004384e3375657ce4"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0378.flac",
+   "sha256": "5871c731eff2e7a50fdd2aec19f8d517b012b54432022d1423d4c49163b22825"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0379.flac",
+   "sha256": "9043b372cf78d1a532c03f4d1f05c484ef71cd351c8107cf0189b3b36bf2022f"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0380.flac",
+   "sha256": "e2df62f9ebd72ee8a49e01b6514edd2d518c8fdb99617b23afd28c8e85105e00"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0381.flac",
+   "sha256": "5d31609d0bba5ac6f1d4a80b07b20184d0b473b9db99b4cb6feea350fd3ca6c0"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0382.flac",
+   "sha256": "9a10881b9570a0edbae34e543633bb540105b32dbf881ce19d6700c2e0d10710"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0383.flac",
+   "sha256": "4a164ecec45ea0810045efdb30262ce51a9cf1eb6b6e899b4638ed28e0d96192"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0384.flac",
+   "sha256": "77a16907d9d7d8e1ec31a4a58e3ae282c0bf3dff2a804d9d634af1ba96305b89"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0385.flac",
+   "sha256": "e55005e22b86d1a1c86d7226b7499e89cf02cf0df2075e54808ebfd56fc7b402"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0386.flac",
+   "sha256": "e92bc140efe831444b9e2297bfc581910c4ec7031a4ddbbb46bd982cdf27d55b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0387.flac",
+   "sha256": "6dcca4c157572156b2c6360022d5f894f085f1ed549c5e18154ba9c20c539517"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0388.flac",
+   "sha256": "edc30dc455ef8e72f6eff6ff1aa01b0bad1a2dea0e1958062387c15af6a6db16"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0389.flac",
+   "sha256": "d23367856407b5a4eee4b17a3e530f348c6f668ac8de63075d6f2b93c6624522"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0390.flac",
+   "sha256": "16d8d0f97b91fb533b3c63f7c497a69ef4d6ff4a5e3fda44f01f372aa596e684"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0391.flac",
+   "sha256": "3d87de322ef770ba1b7ab8502f4c17000d67531538f26be6ce30a6d142d38b95"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0392.flac",
+   "sha256": "edae8d35294d71d9810bfcc56dbbea6c57ec9211c751f1475e36bcdcc510939f"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0393.flac",
+   "sha256": "d52add1fc740c994fbc73c6224543256889d3ab0081498f5558233b5e79a72db"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0394.flac",
+   "sha256": "028a2547eac25a639f75f010fc28ef344afcf121b89cea21cbad0cf576fe16ac"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0395.flac",
+   "sha256": "30f48e8b052f6eef0179fd267ada91f8a8c6256083c3dcc41631a952585ea698"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0396.flac",
+   "sha256": "aacfdc778e711b28c80ac94271725f5e3211ea49fa8b63b44622d0a474be2953"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0397.flac",
+   "sha256": "d159744a344253984081b54866a45ef05a3c023c94babf8a2bec0fef40be454d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0398.flac",
+   "sha256": "be03dcca935c1e0cdc498b4781c5fa76c5d090cbd43f51d1b69c5d8b8801adbf"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0399.flac",
+   "sha256": "c3429e157e863c563a0b2390f0dd845cada4bf3fcacbe3ffa302b54e1e7ecd8b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0400.flac",
+   "sha256": "e9b7be248a0a571acf452d1ccd180717a1ab65579ce8af8b636e7b99fc360f0d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0401.flac",
+   "sha256": "c7831abc6cec9b64527d57384721748b0d1d108d42cfdf6352e658e887bce6de"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0402.flac",
+   "sha256": "8df0ffa4cc06ee3347a70aede3912e33a2c95193f8bc0e8cfa67361ef5be5f23"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0403.flac",
+   "sha256": "e2397962f66d1e4e465efdc3ff93b127503eab629db585f2903ec41baf23b648"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0404.flac",
+   "sha256": "da19185c026204184e40ec8e94b93ac353f998ab967ea6b45e1ff14dd2f935b3"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0405.flac",
+   "sha256": "5636ede2991494491373d9cb3f4655bad19f783ff5805e50a471557f27d5ff87"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0406.flac",
+   "sha256": "0a8ce1e8da5058d06ec81f521e675aff381c7d06e51ac3b91f7ba59c394bba41"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0407.flac",
+   "sha256": "b2f2b6cedbaf6f03492a1078a4012fa0528dc50ee5866a9acdfcb7591510261e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0408.flac",
+   "sha256": "4dcaa6cf382e9b816df7722e165d69db1691b081bf188d5699e519b9237fd2f4"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0409.flac",
+   "sha256": "f23d0cf2fa055fd0c3478935db49308666d9fd83444b74228578a93f67124925"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0410.flac",
+   "sha256": "9548c1c9b103ab66610df17f29656ce3bc8f97124103d03febc0d43557d3d887"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0411.flac",
+   "sha256": "c28a47ef1186601fc5db26ac47191c7a1e2fdbe0bd9eec2cec54983c18f62b25"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0412.flac",
+   "sha256": "1dad8126a7d7189af133b2f813a7f6855fcec03017e2556d1d2e3fa75c70ffe0"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0413.flac",
+   "sha256": "dc6d82420599e18215cf5413604bb4ce4e1a729d3a489ba9a8d69799e5aeb075"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0414.flac",
+   "sha256": "f40ddeaed6d67da156c81aa4904bb764621c2a563de92a5d9beeef587f9f1540"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0415.flac",
+   "sha256": "f337f086d9bf9af672ca7611fef66b9dd7606499912c7c6e1f09d2bb40d6e08c"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0416.flac",
+   "sha256": "ef184fb1b77b885011228b50f1440b10b34dfdedb0ea6db9eadd019d0fa84423"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0417.flac",
+   "sha256": "5d07ec6b09d03660b6cced0f9698928aae85c770322452a7232f0104bf2a8a5f"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0418.flac",
+   "sha256": "650b20017d0ae3e9b34c1d0e346d6915903ccb0731f85c0fb29adfde7f0f4f7e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0419.flac",
+   "sha256": "513fb64cb42dee58a31fbe5d6e6f050442951f40299ec7bb9bb16a589cf37105"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0420.flac",
+   "sha256": "b806382fb264fa7ca957ccfe08379c8edd7cb7bd7e8ddc4d5426cd350e6f3c1d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0421.flac",
+   "sha256": "51d653f04c30542700f89fd99ba889e6a8656e6e58f1a59b98158c896aaba386"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0422.flac",
+   "sha256": "9c787fb8383e0c44a4ab0b141a6a5372ab4c758ec702f2b788b553f35c4547bb"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0423.flac",
+   "sha256": "1f872d5b0981efb5b3ef0c931dca4fb9dc00b90417b7655fc4f4a6a945840895"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0424.flac",
+   "sha256": "6248cd207fdfca8340253d98852b4e0e1a82b9776a6d158a80a4badb50f5a4b6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0425.flac",
+   "sha256": "528e1179ff0d72c0e240e5f842b4210d0f120df7c70c7043606e163d874d911b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0426.flac",
+   "sha256": "4d444b1db695f99518f6842b1d139dc97d9eb4f3339517228092a478719ac5f6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0427.flac",
+   "sha256": "6a6f5b6a4afb99a516885450e70e60286ed6f094c8ab901e4fe75bd3884af47a"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0428.flac",
+   "sha256": "0bfb6dfb29f2ef5ca7e387cbbcc8aefddde8dbcd1634b143c78c0077ee5ffc47"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0429.flac",
+   "sha256": "e8123531b77a8fef991bd45a119ce0c4c08a1cb183b53591a29be1169a7fcd4a"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0430.flac",
+   "sha256": "a0d0e1cf06fe398d0812b106abd920756a1f28f22b360cbd1af39f5378600e9f"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0431.flac",
+   "sha256": "7c193327733345dc81b387f5f2c24986032e78d93d5406cda4ce7fbc7c3c9d8e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0432.flac",
+   "sha256": "daa32643197049d1acf210035e09519cc84927f9936e037eb33f8759712207ec"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0433.flac",
+   "sha256": "f9125690e59e39fc2373a865353e94d20db2ea0f87e342bbd996f11efed93584"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0434.flac",
+   "sha256": "1ab8a13af2d06ff41c886bbddc59fbf15fd6f04808a641f05a7649853663ebb1"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0435.flac",
+   "sha256": "b6708e503d4690b00a413c3a4066e131d9374d9d584a26432a305bd5c7edbc0b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0436.flac",
+   "sha256": "ee802467f89c6b0eabb087e249b925750f1a21cc4bea64f3e428300954d5a35a"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0437.flac",
+   "sha256": "2f9403bf9aec92f9202d66322301f29058d7ac9e045b7567d39da1f969970e03"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0438.flac",
+   "sha256": "c051af69c9cd3cfe5e0e4f58d9c8bfb355ee613614e18a0c8fe861cedf0944a0"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0439.flac",
+   "sha256": "cdc0707e250cf36843d38ca70a785825707845632c53c8252597adebfbd82293"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0440.flac",
+   "sha256": "62c288e629b925948bb7e12db9cc8948e7b33f495539b92d4416247b716dfa17"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0441.flac",
+   "sha256": "5d5ad8df0f02bf9d96e67371e72c6ccb61fd06a91077f8a9c6d530e6251315e1"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0442.flac",
+   "sha256": "4ba5777abb40cdd2872c1023365a067f7b8c2e44d0df28efde3f87d316133505"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0443.flac",
+   "sha256": "db3d17a892576df7b51f0376c4c876af0fec2893c23ac6d2c9c7a95653e149b7"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0444.flac",
+   "sha256": "f69d2e1df4e51f7ed8f6440e964772e8f1102151ac28d6a96b4265d580bc9f9e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0445.flac",
+   "sha256": "b817b235001f15b99210f9d02c22c12d546dd4674c66f252c3ec0cce559bb2a7"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0446.flac",
+   "sha256": "5afb3d766eb9e26a1b945b400d3f870a2942404be4afbbff27103b03977cc709"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0447.flac",
+   "sha256": "eaad24d91753b12208de00e836fa6937f0f058dc273853bf7b66e08e66bc5d22"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0448.flac",
+   "sha256": "6ef57c61f946c30e02d999258ff8c8f0674fed3c54131a0fbe66eaacd53578e3"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0449.flac",
+   "sha256": "4051c7cd6d5ce0c2635896f5ed64f3c3b7bb367de685dd60be63bb9811e506d5"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0450.flac",
+   "sha256": "e652a191378fa13e170e28820319ad3cc72cea81386de1fdf42b86ecea578dc1"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0451.flac",
+   "sha256": "b811f00d63cba13bbd9eac0d15e9b12052e6b221b086c0556f2861bb7d7db2bf"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0452.flac",
+   "sha256": "ff94244445f6f6412ca31f7f7fd351b119a6ae2f865e2f88c9c7bf8243d2b089"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0453.flac",
+   "sha256": "9e0f923ac73c1322749fe20db5df722475677bb93719fa1a0770047f255ca716"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0454.flac",
+   "sha256": "a6473baaf6c873e56fbee002b7ce8bca3d8cb11cc5b789f3b00bed9f518c9c62"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0455.flac",
+   "sha256": "35d668ee2ec3d2bca420d51ad9b4730f52aafd372384c747df48d47ea9d8ef01"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0456.flac",
+   "sha256": "a326bb64c670951db93a18ac170243d97ab884be50c2bad6c81f7d9b477ed822"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0457.flac",
+   "sha256": "e19d05a945ad083ca5347a38ee15d80af4fa4983a9c8c0c3541f7228090338eb"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0458.flac",
+   "sha256": "56417312ad8ab279dad428db5d400a7b7d27e6654b392a1c841a48ef3e9a7cfa"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0459.flac",
+   "sha256": "0bdb8f22ba6dcb527363f641d719e3dba714ad0bacdcddb9e4b83078fb56584f"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0460.flac",
+   "sha256": "d1983e7e37ab45300137b1497fe369a62f3e41bc79f494c4d245649f9427bfd4"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0461.flac",
+   "sha256": "fac485d3535f0bbafd8aa789f2c7ad013412e5da35b15f39178fa1bb74f5a7e1"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0462.flac",
+   "sha256": "4a1344fd773802bc181a4a85ad24bb7e539b46d04d7d0371e0e37df444e79031"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0463.flac",
+   "sha256": "30ab6f09f2207aec1d71fc5508abb707ae56aca1b5e78d607fcce78db5eb2471"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0464.flac",
+   "sha256": "a6873396e5d622e8ff8c00c78aee58263f338477d07a5e4d8279d215c3612c62"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0465.flac",
+   "sha256": "85e87bdd696ca4b8d01cc13d89ad8b5c12d0b0489d505b21202b1d9f24bbac6b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0466.flac",
+   "sha256": "f84f4342ad68f9e24c9077192c3d62f7eb6b0f6e637a2eaca1dc5e88b7d08e7f"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0467.flac",
+   "sha256": "67b1aa3c7b37d0ca388e06e2f946212323b912a14ce71867837eb5476bc33af9"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0468.flac",
+   "sha256": "e81a2662ee161fa2ca9c9a1c41fecd3238d98f61352a2fb7efd8903245d23af1"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0469.flac",
+   "sha256": "025da8cdc087c31d3c245ff6f893be8d466747f399bc16e7646ab68383dd8716"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0470.flac",
+   "sha256": "fa8a12add0b85dde9701e57a1a6955d6928e15ba5d26e3cd7271f220fa8f7041"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0471.flac",
+   "sha256": "928e829b90d267eb9c19085006f55b0e3a6b8b2d2adfcd5cf66aa711e5a07227"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0472.flac",
+   "sha256": "8dcf72912a71267e49ae490d087abbc068c0cff8df4f3bf3ea78be5084900771"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0473.flac",
+   "sha256": "88a3e4b150c12403fc553efaa301f454b0c9a383f1c767f0483402828ecc89fc"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0474.flac",
+   "sha256": "6234d3ead32cb089658fc793650539adb2f56ebebb1db80ccad182ca7d701c76"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0475.flac",
+   "sha256": "c3f93d37ff4958726aa2c588c540cdab2f5925cabfa1e18d5674b469bbedf115"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0476.flac",
+   "sha256": "7bda26319bff512f52b7547b994de4fb89c447783d86506a387fd125963dc780"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0477.flac",
+   "sha256": "196f13815fcbab2df32694b5121b6d5258769e51a27c2ae62e2bad5efa16e09f"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0478.flac",
+   "sha256": "76b585cb3388cd160ff8c7423041f03c5e7a698872a04c964681f60a33e74da8"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0479.flac",
+   "sha256": "8c6461cfc5cb0fff5bf12d9314d8059365234901c0a9338d6809735199a2ef0b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0480.flac",
+   "sha256": "d6fe73ac634051dcd23549714046c774073d4f50b6db2f8caebae04276a900f2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0481.flac",
+   "sha256": "2f3ec11bf30cebb6db8a52e78a2ff9e1f433c3c0c77e544f15f9a817d5469be4"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0482.flac",
+   "sha256": "3bc174922eae88163208818170184358026f384713d35453c81a4203a93092c2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0483.flac",
+   "sha256": "d1490e77c5dcf55769db1a3398b0b1e4a335de9725474e2b487e7d753b78932d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0484.flac",
+   "sha256": "182748b1ae1bf1b93cc47a312f014a2a0550a107e85e7e6c143aa9d4206c9d32"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0485.flac",
+   "sha256": "a6fe759408214c371e99814cdd1d7aa60959c031d48540ef3b5eae6a070fe116"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0486.flac",
+   "sha256": "07e53f5f6a8ca594b0d60b7c4beaee99cd5638a7096c13b892e09c732335ccd1"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0487.flac",
+   "sha256": "7d6ec70d722b13d577bb2bd819319e5ac576a4ee486f4ac992dcc2c842b88373"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0488.flac",
+   "sha256": "67161b79c0b763d366eab06e64ba36228283471f0b31167bdab02702fee7cbd3"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0489.flac",
+   "sha256": "a9308dc7e98eb72919d827b432a91ced03f9622ccb5637695d4ad64d41166a7e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0490.flac",
+   "sha256": "3e6787a7181243a13871465277fc3c90e6c7c7093c7d5677d3f27b1fed6482e9"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0491.flac",
+   "sha256": "fda4b1f3649bdfe6cc8e9a087cf93b23d588497dda98628ec1a9aa511b9b6dfb"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0492.flac",
+   "sha256": "330f21429d8e9da63455ca26b81a4540b6234e7333056f3f9949669fafc6dbc1"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0493.flac",
+   "sha256": "649f0aac179054e9cc54501e0f4104879dea381ae4618238ac39840266a77c11"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0494.flac",
+   "sha256": "81e875d6ad6deb4fc1d16f72571676b86c1d383fa816e41235420d7e76560f64"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0495.flac",
+   "sha256": "6a3e97e83b42435b4e4bd17b5471a20a480617bde4bca2326fdbebcbd0fa486f"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0496.flac",
+   "sha256": "82800619bc2a71118cce612381861fc314517c54c2329cdf070ffbf1bdb454f4"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0497.flac",
+   "sha256": "6d48b3d71588a96adebfe5aff827e9b0785617957325e1c1bb83a113d8fd5f39"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0498.flac",
+   "sha256": "a69717f4ec8619cc6b2ed52bbb5f5cb304525912f9762a0a8fc9cf49666c53b2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0499.flac",
+   "sha256": "afcf5a6232bf46f79f7a5e94bd8151dea9accd7f077a36c52d0cff2180da6a2d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0500.flac",
+   "sha256": "bd564f0836fb7b805e74d7c9d3d623453a352d4d1c8c437ceec987c745fc9fb3"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0501.flac",
+   "sha256": "c8d9cfcc787dc7b98be8de3ea3589a517a96039141c12ffca988f2f66326438b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0502.flac",
+   "sha256": "6ce33e19f5ddbe0a3cb3b4be08bc11c6ac2bcfa402a056b913f9ee51ba686fe3"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0503.flac",
+   "sha256": "e734c34ddcf40c2b01fbddd0647740e8b711a188cfd9ecdbe39996f20537d5cd"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0504.flac",
+   "sha256": "f8e5996129ef3879a5fb0b291d0af3b649f136bfbdb5d2ff80f969ef1f3cee12"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0505.flac",
+   "sha256": "add6f5a1e132955fd6a0335f169e15ca4bfa68aa030726284fc3440ba9691822"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0506.flac",
+   "sha256": "c19436e0541bc4597fe1c907c9bce7cb210c4f428a6a99482ca0de5b45d2efb6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0507.flac",
+   "sha256": "6a0cfdf8c925214debaee62d4a7aef70486462dfb98ed744f694fd1026f9515e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0508.flac",
+   "sha256": "7f8dbcce46214be25552fc580d3f1d524a1ce67a843d461e21c6cbbdfbb4331f"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0509.flac",
+   "sha256": "07658054fd915fdba2566ef832c77a9543d3fb255a3d46d951533dc99646d6a6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0510.flac",
+   "sha256": "b493b0fc2b44778cdda6b7312f902a9579838cc0ca8d5ab0fe4e50221d6b7f16"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0511.flac",
+   "sha256": "a7669355e2096287494d164339a9964253aab8bcfed368f3467f31e8394249b0"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0512.flac",
+   "sha256": "6ff6d442c3bf91ab5c0c6b8e0e661e5f9e528b233f169cac69f20fbf25b6b882"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0513.flac",
+   "sha256": "1b9166dbaf8de2ea0efd5428b76d1f2f870d64ba641a7ecf8c2f8d478240cee0"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0514.flac",
+   "sha256": "e343b110f6861488e98d55e0d652ae67901ddeeb5a0c72aa1818661622160b42"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0515.flac",
+   "sha256": "d39c9948a3586aba68467eec5151a9bb375cd6fedcc9b7c65c9e1fa640e0bad7"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0516.flac",
+   "sha256": "a8e6fbcb80e407b828e1af0747ddccb590578c56d9bb4c980f05c87a63960000"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0517.flac",
+   "sha256": "930812eb0fe20fe707207b67f54e28b3e2f450ccbf943948a699ade17c35cfd8"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0518.flac",
+   "sha256": "ce5e777e236293762e9272869782067be6262a493cc92b102ae6d9f06df87bd3"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0519.flac",
+   "sha256": "26f04b8d4aba96a597fa1c7db18f0a4e7b7a24a028748eda6a59c63c628591b1"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0520.flac",
+   "sha256": "5b0700911aff4169cb6acfa7be4dc5f69d3c6f915e03af27cbaa9e4c4c9b2d57"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0521.flac",
+   "sha256": "43f962208cd252051ad83cd0e04e59ee5c4376fbdb41054e3633f6ac6bc72592"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0522.flac",
+   "sha256": "23f364a677b228a005b53741da49e59786f409ccec62d5105c83dbc9c127fa1e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0523.flac",
+   "sha256": "60c036efabdda10b34c7c3e4254b17d550128654c6e659c539b8a9a65366eb99"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0524.flac",
+   "sha256": "eb36d7185587f0d1b75420b149edbf880d47d1c8be898d6e6b93e2c760fd30e6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0525.flac",
+   "sha256": "f3cb699d560535836c5d7ae33d4c5db805af388d3088e7695ad978fd8827ca0c"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0526.flac",
+   "sha256": "45a512b56a88d858561be035f61e7dccd5fa5a43b591dc1c69b15b3e82f66fdd"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0527.flac",
+   "sha256": "124a1bd1f4f3edafd8ab4d52e800ec414f180be65c8571f420b28acaf9db7085"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0528.flac",
+   "sha256": "8550e33c176520c6995a19b8311d9fa693e432236342cce18af7887fc9fd4bc0"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0529.flac",
+   "sha256": "65b9909d55edd57053f4b80fbc747659f75d87241d988065c959c68bd1b33722"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0530.flac",
+   "sha256": "d8eb1c3c0340abb97a9e5a43813493c7af7e73eaee4feee611c9424cef553226"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0531.flac",
+   "sha256": "a15a36825bf31ac0576655b5502438fd72a866cb42dd0dea5400c89191286b66"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0532.flac",
+   "sha256": "14d3c0b9712823628e7e6e7bb5fbdf727b393e004066bef5cc42562811210a53"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0533.flac",
+   "sha256": "ca9b749a8db4810db054fc9b299a921c0571d4d3e6548a220dd7b0ca2a9fa3f9"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0534.flac",
+   "sha256": "458c003225d9c6b44cfbb8b5a0b823aa7d758db7ccc4efbd4d5b969ab7702738"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0535.flac",
+   "sha256": "1369a0b47ac7752cedc1c0e8e0c9fd6aa781e08058ad291553f5d3cdffdfd2bd"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0536.flac",
+   "sha256": "b0cbf96fdab8f6cce0cd770cfced524ccb8f2c6caa6fe0d55a795681885ef2e2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0537.flac",
+   "sha256": "d2fb378b9b7c06bf996041eefdab410d40541fc0f26468f781743fabc6785f4d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0538.flac",
+   "sha256": "703794459860dc3ea95ecbab2c5777f45bc8fd0f11a4f3cc2c6743e22f4dd0ac"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0539.flac",
+   "sha256": "b211dff3135b9aa5c40bd9e77e819ae7a9f1b488a8fa2ba536cd6d2242ba3afb"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0540.flac",
+   "sha256": "3fa309ea9ed547768940f4b4ef0f9a94e2016181974207bc8d01a3c51aff50bb"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0541.flac",
+   "sha256": "ae0e2c51aa206cafb3b2731276ac0cc9ceaa5a60bbf71f4bc3aca13127d87f99"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0542.flac",
+   "sha256": "e3d44865a3f1c4b402b86a6b647055a7910972513964c9162d32649d2a982d46"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0543.flac",
+   "sha256": "5f9299df9b7fed1d28c3ba78cdac40e50bb096e20ca309373aeb25572db72b0b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0544.flac",
+   "sha256": "60a119529f926892eef11088fd0c147c6d3710f38f6689829f362aa5998b1769"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0545.flac",
+   "sha256": "a6706653bc68191f595481fba44e73688dc706e37de656875c947568b58aab24"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0546.flac",
+   "sha256": "71e95afce68d626636b67c3349278f403d0166384f7f962bd1d417db82e0467d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0547.flac",
+   "sha256": "e09ce76268a108ac827d9f84b80e0f6bd4bb1f3ac9019118735848f9978a81bf"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0548.flac",
+   "sha256": "7af003952693cee7d576d76336bee61d6459322529e691727bfc2967565e7857"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0549.flac",
+   "sha256": "35ce7abc604d8b76c31d8118177a4c812c1ccc510b5b56a07dd6bcc30343428f"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0550.flac",
+   "sha256": "9173816236299008587c7a2dabfc6adb678b14482558c7ef72c19cfad290354e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0551.flac",
+   "sha256": "33596bcba2e62de7cc94d840cdfbb9f2e889a6b49d92983b1a5fcff8986a3ec6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0552.flac",
+   "sha256": "65009f7f6c465b7f382040acd1dc01dd5294fd39f25fb3cd25364d2baead0f45"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0553.flac",
+   "sha256": "e23a7d9278c323e5987a9ba2fa3586556b7575ca03695fa95b16153a03f1c7cb"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0554.flac",
+   "sha256": "d4c2f71dc0cf8982a3a980367aee16e36b492706c84dac6ebea4d3f9d84ec61c"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0555.flac",
+   "sha256": "5e9620df08dd66653a1b3a87fdb529b09130c0391020d63825ca1875b547065d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0556.flac",
+   "sha256": "c4e42e00cb1e26aaf8a64a8a5868a68c552f808b63021dca9983ede5f2478e29"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0557.flac",
+   "sha256": "de088a86a48f6866c70d5046952ce395ef5b0bfb86ca5ec8b293e3a9fe76a3ea"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0558.flac",
+   "sha256": "d47256e02d1e6fe8e3a9be22aebae33a484e85629c27b7b502ab4e42ce612a70"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0559.flac",
+   "sha256": "675b39a6ea1017ddec475df04ca91d6a1485945f505f4f816a1f660380764f39"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0560.flac",
+   "sha256": "d5b2ca1d64f414eaa0a349a2d5e14921be0ec273725e14b36f5168a9ab608b92"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0561.flac",
+   "sha256": "cba257a9cd9880fbb3e68640184e199c906b255d9d29dac7ffb207633067a629"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0562.flac",
+   "sha256": "c0904473d82c7f3883f6a3265d5c9938a02001a21d7bb4bd7bbfb35589881b75"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0563.flac",
+   "sha256": "3a2d8f7ac2460ca4f5ec3931d430615cf6beebb9914f46c4cad89ed741eee7f2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0564.flac",
+   "sha256": "3fd447fc824c0043f1c7008381d99fa298ca255ed978107683682683f9b3a32b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0565.flac",
+   "sha256": "bbdea7525bcc57b4e4e2dffe85631df89a8dd49cc2b2bff20c9c89004dfb914b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0566.flac",
+   "sha256": "4ff23b263fa35c1c85b1893cc4aec302ebdb950b36202150117f805204e36da5"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0567.flac",
+   "sha256": "56fdc0072426a82650ee33f1584a859ca8ee1fed6e9eab85036303769623393a"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0568.flac",
+   "sha256": "02e9924bc093d784ff1240ac511aecbab8c88c1b01ecdefb1852c34487669127"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0569.flac",
+   "sha256": "7e9777c3a632a1ac14000471e3ae1299182039262b9afe9528e27158a77b47fc"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0570.flac",
+   "sha256": "4012d864382f523d1a8cb7e3ce0682daedac95370faf91318a2fdb50fa593b2e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0571.flac",
+   "sha256": "a36528ada1e9c4872011b1dc8586dd4e70d2e90313e40fb5836f8dfb49eff180"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0572.flac",
+   "sha256": "b635927e21fe914030b115557bd8ea09a39d7509643dc5c475b9ac3cc688869f"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0573.flac",
+   "sha256": "72dd2eeedac388aac4879fa681c85e1526ead4c7bfa81b13ccff2ad1c4ab30d8"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0574.flac",
+   "sha256": "a817865d4131dd013f3c1b4bb546719c4ae74a33395a185b9fdbb864031c7d0a"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0575.flac",
+   "sha256": "1bdcf7417f520b559d4c99617a35e844f172a115acdc818d1014258f12a2d33e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0576.flac",
+   "sha256": "da1842736fc7239daac347f24697e9fc0327dc585f9c1c4c82d7098cff465a32"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0577.flac",
+   "sha256": "a8286f075bc5e7b21ce9bab3944f810745b7cb6ae4c9b4fbaa4ddf6894858181"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0578.flac",
+   "sha256": "0e47f391b558b6c62f98919bcd0de93213d815ddc27f179d340685ab8b79ab47"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0579.flac",
+   "sha256": "9293beb9741ad48069eb567c638c8d9dbe2c7356fbc25812cc31c3f76688227b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0580.flac",
+   "sha256": "5b24c9abc93289ec2755515399ff589bd3da029c9100726cda7023a7e2411091"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0581.flac",
+   "sha256": "6e548c4910f1daa56d0b4cad3ed4f6c9bcded83e06dffa34710d72dc60ed46ee"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0582.flac",
+   "sha256": "bf55ccc769d48400cb3b43c8304a0c24e8e6c8aac30318ffdc2cb2fe624e1e11"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0583.flac",
+   "sha256": "d55e6fd23498e78257742f53f032f10e29cd5c58ff1b22f953ba96675fcc7b2d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0584.flac",
+   "sha256": "ecc31d69b1938ab30fee6ef1d6b209e42f856adabd76d1a9466cd62f6e6a0cbf"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0585.flac",
+   "sha256": "494cd660e43baa6182234e152ed6759cde1c19662817e0d9d9648d9f9ab58b1f"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0586.flac",
+   "sha256": "69b1778778b630f5fcec89899cc65de64d55078d8f2fb93fcbc964c54e373cd9"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0587.flac",
+   "sha256": "aee83c1c0e3a3172941d56eeb8bab077df5590fc4afb4bd8fc814297ff833c9d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0588.flac",
+   "sha256": "6328c3589e918a6bd9e4d4d117068358411307c39a3c7bbcac38d124f75fcd92"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0589.flac",
+   "sha256": "426ece26700fddd32fa49e1ed49b8c0043183d3989ffd4a0f0051b7f5043a5fe"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0590.flac",
+   "sha256": "84837af3a6d2789c68f79be7709d2e22f7b88e6c173b9836174b2fa08071be94"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0591.flac",
+   "sha256": "de5b42053295ac60d2c09f5444c6ebe8fc7dd9a860116bed6c9df216fe368bdd"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0592.flac",
+   "sha256": "737bd587e0288258d8598bca149e8ad17b6f51d8adbc0f488744284960c197ad"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0593.flac",
+   "sha256": "73903829028907585d5bc17fd227cbc7a4951cfd634cc7a4386892d19918e319"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0594.flac",
+   "sha256": "1381bbe5a48c00f4eb6d137030258670247fb6e0587ecf7351e3de9a591d554a"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0595.flac",
+   "sha256": "3923a9db8ad60be13aabef5deb7555cfef3b13020d1430f5b1cf0a950e11ebcc"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0596.flac",
+   "sha256": "e313bb0f256a1bb62c04463e4d2338d390252841eaf5af61d2188fdae7eec2b6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0597.flac",
+   "sha256": "3a4088c5901b4d51d4515b68f0982aecb19ef1180225e8c195ccdb805ace1058"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0598.flac",
+   "sha256": "9098f21c8c365b615bf5220384ea32210a6429041ba7cbfcaad0568a6ef83e49"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0599.flac",
+   "sha256": "ef15d56ea136a7ecb70c2290104564a6f99af7bc6e15add9ebeb546fbb388733"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0600.flac",
+   "sha256": "45536e28bf20cf36225bbc259ec488560500638300f14e794b622fb5cd6ac73a"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0601.flac",
+   "sha256": "a0b441ea3b00097ad1c129ac161e9fa5d78ac051ee8cafcdf126a9bc78d01645"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0602.flac",
+   "sha256": "6130942be653bcf70f75541eaaac4729f2eaa934e00bdc9ab66dfac388b760a4"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0603.flac",
+   "sha256": "3f61a71b76c285faa485d80bf3bdd4839159b2c24628154ffc67a634b4f5e3f2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0604.flac",
+   "sha256": "b15804b279f2100cc35541c7e1c1841926fd69791169669e068ac5e5bd501a7b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0605.flac",
+   "sha256": "d7978f6b808c92bf4c268e403c658b1001a0efa7a4551867d9db92b2eae7ba1c"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0606.flac",
+   "sha256": "e3b15ac753f311c67ae42491e47beb5680c5df5a7a8f5feeb9861ea805096aa6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0607.flac",
+   "sha256": "99c93ff4f5860bda162d97d6b0a2bb2565475a0d96219c07d31fbf3fbd1209bb"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0608.flac",
+   "sha256": "e4a77c91f2790bc67a11f44b01b66670354188881f578cbba9c86de45953ab55"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0609.flac",
+   "sha256": "3e55d1c1b4977ae5c1d609ac7142a7188cc38e67ef1545965b04f8ae664dc396"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0610.flac",
+   "sha256": "c14fd0702ede4e3e0e90d0bf2c463a44c4ce18366887f4e1e5c611017a27d3aa"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0611.flac",
+   "sha256": "e6812fbc7bd6edaba03dff1502b86d4cc4cf6fc44b7cda94ef38acc5259dbdb0"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0612.flac",
+   "sha256": "310e3a42010f13e1c23fb2e5f8f82fec808b9a8b54cc71e97d43fcf9047cae36"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0613.flac",
+   "sha256": "5e7b9f4357fdefdf023322269b53235cc107cfcca968d9808485116da6c92597"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0614.flac",
+   "sha256": "3dc38136286c05f7015e46d124198aac3b3e2fe85fab4563cf31cdff2a93a4f8"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0615.flac",
+   "sha256": "c33ffb0facabdcff66b7c7671e04860b6ab1a6c1f9373faf046c10e50e8da1a8"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0616.flac",
+   "sha256": "3078ba41ee4cf25bc4ea8524a207450b881cde870e5221186dbc665aa7148af5"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0617.flac",
+   "sha256": "2c30871ae63132fbc1430635f8fbf626832e512d488a62a5d4b24385d0f56221"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0618.flac",
+   "sha256": "c332202ff1a51aadb9c2cdf5d927be85d5104b71dd3145a96d0c0bdb75bcaddb"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0619.flac",
+   "sha256": "a14be0ef73a1f40ecf265e13db5246c8a3b65dd53ae1d957e80b54c4980f5631"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0620.flac",
+   "sha256": "0ada49e6e002450e8a455c3fa05c0692ea474227cfff659247220b02cbc75961"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0621.flac",
+   "sha256": "10cd795d3c66f2bfd57a465ce0ecb53cfc37c154a1e9dc4aca0784a30f98ef3d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0622.flac",
+   "sha256": "aa256e9e96b9daefc103213a8efaaed6c0493cf0d2c6ad71f7ca71a4efee3e95"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0623.flac",
+   "sha256": "1cc77e7374d01cea889dd95dd66b9cadebfd9365bb420be9e94cc0722597f62d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0624.flac",
+   "sha256": "03ecfd93de6d8b94cf6ff13d9734cc2b1255e6d2e842eabc4d265c5b12271d95"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0625.flac",
+   "sha256": "453ec12c6862c3022a6a1c2d66e2738a04218476ad38acaea15eb848c683d88b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0626.flac",
+   "sha256": "ad20b6c479a29bd119d4b67d6162ea6ab468e9648649c15a7b678c1c757b0de0"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0627.flac",
+   "sha256": "d74e0a023315c50b3f41870f16acecc47816f0db883540e59d7829b12be99edd"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0628.flac",
+   "sha256": "b762cf2f2fdd80f5b8f58af3cb43ac7dc42ac8a0f2b949fda57085161e3cc853"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0629.flac",
+   "sha256": "c2980efb0034b7c71602297c72d0b13dad8fa19dccfd9e1e3942d32a0b013c44"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0630.flac",
+   "sha256": "6a902dedcf7ca4bcd460636ef04a1031cd629ee60e141481ec7bddf85de0410d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0631.flac",
+   "sha256": "e56a8b0b3ab6e07ea271f134a4d4b99db6a2d463a6d37c36f909744829cb505f"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0632.flac",
+   "sha256": "095b96a242a429adf5efe3d561b536590127cf603703669ffedd45ee9b624c21"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0633.flac",
+   "sha256": "9622fec49595df0de98035a89af112686cc5b9cfb00200723ffe0b1a89212af1"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0634.flac",
+   "sha256": "36aed9484a00e302b3bac835416d8d39ca63028286b804123dacc3165e3b86c6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0635.flac",
+   "sha256": "da88cc5d1849be603afe024fca83df4eaef48a6e40fad9647560c71325406094"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0636.flac",
+   "sha256": "09d124cdcab4e95f687b95c281ea559cb6eee7c3cb4185f2c979446b5527469b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0637.flac",
+   "sha256": "f8128c58b9cb3ce1185452df009681aeeb8148e6d08808dac923f78242a58f58"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0638.flac",
+   "sha256": "355a6229eb9d1ffa3a78eff0eddcbf8f98515f8420ee9104b6f4174d302d5dce"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0639.flac",
+   "sha256": "c346a9d0385a49c2dbc56baaaf6a9fcf4fcd88c95d404a2f3eab8d59483ebeb7"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0640.flac",
+   "sha256": "a6f69c8260ad67a820adb7e8a1a855c4b02d838f1807e4f77012a2a98ee29d06"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0641.flac",
+   "sha256": "5082e76cf2adc48fee2e7278054e5cb655cce21c1d302affe7bda6d6c2f65c45"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0642.flac",
+   "sha256": "2c898e999891a1bbe35b57ff7740e68dc417de8c8030af33daf282139a1386f6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0643.flac",
+   "sha256": "14685a80cb334f5268d32615e20b5971f221c16bfb4a52b20af27995257914eb"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0644.flac",
+   "sha256": "f7e7f1a1e8ec058358e85028cdc1055feca7e4c4cd81026e3f6f64ab37a4a0f5"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0645.flac",
+   "sha256": "01f47b3e11c99a3b7e579169fe1f96f3f17703ccb5266472b76f7a94fe1396c3"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0646.flac",
+   "sha256": "44f70da922b63c95e73db5e52d1bc537d2c27ac0d0ca0b640e9ee9ad1df0441d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0647.flac",
+   "sha256": "94089284c885c38f0f0b6771c5fe9695138079b55135b12df03e1b7756e2875d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0648.flac",
+   "sha256": "f80dbced585132625d68e4c4b4c9df06e1df273c0b4633b86c2536e5ae1dcf0c"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0649.flac",
+   "sha256": "b3f7196eac48588b8365e136afc09c380d35e93ab7a3c4750fe674df5a274e17"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0650.flac",
+   "sha256": "6b94bd46e96df268135383a743c040c2ff68b02dd1148bee7191e50bc8f6cefc"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0651.flac",
+   "sha256": "3e3ad8bf7544a15549d5627bdd7111c4b08d63eee06326d2fa2f6ef56c9040d6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0652.flac",
+   "sha256": "3e9a98aeb8306195f0b73f65086727ea9016a9bcdd16733c6781c8295e28f625"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0653.flac",
+   "sha256": "ce4d528c7786e675b896ad1525d2f768edc43b73fd1403659c67b29dd0632b6b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0654.flac",
+   "sha256": "b6c1cc67fb04b226db23673fc2c3e0fbad72ab88ab24c419e1e6438542d0eb20"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0655.flac",
+   "sha256": "ac907065c8ce1eb15ee61ac0ba08baf51274732ede549acd99ff2264c5f89026"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0656.flac",
+   "sha256": "b2e8c103a7a875cfc5763a973828a9745299223fcf010a441df7639f59892d9f"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0657.flac",
+   "sha256": "4fabc5e36da89fc95446f319ab1143ef0f0dbb44e36d26d21d6c7ba9f7066dec"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0658.flac",
+   "sha256": "8d166a074e873e3407fa7db5c151c43f52f1b5e71359518cad1b674a1ac36dcb"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0659.flac",
+   "sha256": "c252ecc7284b1a0d199d7e5fa7405699bb8eb64f4b346a2242f098ce8176ea64"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0660.flac",
+   "sha256": "39ec809e52310b17802b46810600ec069ddad01294991d5df72ebb0a61ac5af8"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0661.flac",
+   "sha256": "bf6726b49fe13faed613eead2765a6c5363580459930792e64e8e24f7ccae8e1"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0662.flac",
+   "sha256": "8f5271c5ed860328f9a44bc1c039ff8b19b089a8455068059392749e37cde076"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0663.flac",
+   "sha256": "4fb7987a61e992d1f465da3b22bf240c75fcb1be9dac3b3ba5772d9bd20ec3d3"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0664.flac",
+   "sha256": "37a31293994e263584c00e3f08c28c5dc2137c88d90f1cba807a200c5cdd269b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0665.flac",
+   "sha256": "69545a9c7fcc935640045dcd33f99fcbf86d404a1267695932bd42e4082da85d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0666.flac",
+   "sha256": "ead8c8ad4f5750845c1692442e2ddd35fab1cad24c9d2876bcb33432bdd948f7"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0667.flac",
+   "sha256": "df185f4e899e8c8f0bb171577e6083769b90cc23f3753ffaa8560480a3e777d6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0668.flac",
+   "sha256": "868f0439fa11d4fd2cbb872f0c1ab7fc0e6337ef7997dbec2c937bb4efa00c09"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0669.flac",
+   "sha256": "0df2818d5df95b3ad714aefc9a3657272ef2a94c81f2de18dd3234ef0014ad9c"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0670.flac",
+   "sha256": "02ac47b167898b7f5b0158e1468264888fd3e9d323a5717369a16013773354c8"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0671.flac",
+   "sha256": "a47f09d74b2f6d1d1ba04c336f49a62c4a3d023bc47a4fc63a9b8d9fc1b7daf7"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0672.flac",
+   "sha256": "52ecace0066318ed75c32be17b6009eedb223ec741f511c7f779fa8fcc429049"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0673.flac",
+   "sha256": "3146dadc2e692afcff39e34bf15c3392f1c47c343cca4e74ab02a40a5beb291a"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0674.flac",
+   "sha256": "82bb23227187ce4c4472fddd4f8ca1bf837f602dc80232f5a71b84591cb19ec5"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0675.flac",
+   "sha256": "56517f316cc17d851d794688ec09c312a6d0fee79e85bec386fe04f03bdaa02f"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0676.flac",
+   "sha256": "ae7661b5708def1ac6bb86b4c150056d4c83a7849d02b18a0a0a71ce306ea944"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0677.flac",
+   "sha256": "76de06856b66c047ed9ae3e972604e1ba7a7b50725c26889f2da9d8f1379ec09"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0678.flac",
+   "sha256": "852dfc871c1707549e34e500f89dbf7cd4e79a4fbdba7bdd0ff09ab195cecb8b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0679.flac",
+   "sha256": "b92c3beabf26766cb19b2446d9e96ed59554bbd55d9393e7825c553dcc271b82"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0680.flac",
+   "sha256": "f2b4ca6d22017b83f9a19171f14edc8c6a9016bbe3c98f8aac81547780af90a9"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0681.flac",
+   "sha256": "21f4da23ef85adef2f0e7a80566891ca147906d84d1fc59b33156869f7a955bb"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0682.flac",
+   "sha256": "d254db712f6a37e8fe8b2c7c7777264e2beae7a680e86205aa5d9f79678895c9"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0683.flac",
+   "sha256": "0e98469825e71c44f917201b66771ed6002961eb4825e34f9e67cfda762509d2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0684.flac",
+   "sha256": "28c5fc553cb8f48c02eb3d8a1f44a14ef68c68efea58fd54b69f418b023e99e4"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0685.flac",
+   "sha256": "653301de145f4d62d10c4fd92ec024cab6233d214eee8a3b37b120bbf8e1c88a"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0686.flac",
+   "sha256": "e0d90c4a1d396feb72b7cdfa1d400a25b58d3d457f9b4be3167ad1044eaefbbd"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0687.flac",
+   "sha256": "4ace162dcef004013e930af4077f915f59e1f11d9ad8bc8f8debd2b3adeadf95"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0688.flac",
+   "sha256": "3af93f44a49f110e71f976e0526887e77ae2bd3bcb4123738a733c34a5e0f21d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0689.flac",
+   "sha256": "0521c52d75901ffdaac19c4e154e87671914f05b01a63a2dea361a1da863db7b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0690.flac",
+   "sha256": "388f7ff3dc243c1cac235e8d3b626807a7a92299c3e456cac1b491750426d95c"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0691.flac",
+   "sha256": "fdb0dd92073b94b017830dde9b912ed90efcd7f9c439204b3c23a156a757dac2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0692.flac",
+   "sha256": "e95448ecff2b94577d9be3378f7dabd2ff45c6b0a2d8cd84a7d771f26ae7a237"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0693.flac",
+   "sha256": "2624ef84ee5ecf735ccc0a1caff894dbfa00ed4a3a959665a492b2c75714796d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0694.flac",
+   "sha256": "dda322106286d937ef7eb25d680a9a6e07c6929d795cbec9bfcc4a4f87792945"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0695.flac",
+   "sha256": "55532e28aca71b54bb85d7bd231396753e9f91a587861b02f37cf008e3ac445c"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0696.flac",
+   "sha256": "5c67d353a243f8d653d9a8aa63b4a4ba882574108a88b99b8846b1a18e76fb61"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0697.flac",
+   "sha256": "9c0dfbbc35ad87b08a839d3b17128c9000c920655f295ed5ba516b604f1698e5"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0698.flac",
+   "sha256": "ddfedb7a3d9c45e5acfec66b655bb31187b9059f1e841fc33c47ff87f9ec7dd8"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0699.flac",
+   "sha256": "43161958a031a4910a5dadc7c1be038c29772a8320d01e5fcb6421c9115fcb1e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0700.flac",
+   "sha256": "4c45dab1cf9c555fe3fb6083809b4ce979c13656289cd248ae90e8cd0a7a687d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0701.flac",
+   "sha256": "cba89038710503ef9fdc942e3dd4e5ce4adc858e739d4ea2c797599e94eb6b0b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0702.flac",
+   "sha256": "680d5cf25e4e373d1c1ebd897b6ba3b1c0d34af88e0effdfc72347bd54b60035"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0703.flac",
+   "sha256": "32a7ccdda0d216ccd088d42c89eeff6df7b62e934b1d578e02de2ed30785eed3"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0704.flac",
+   "sha256": "ea5273a842e73ef87000fcf96126fdf54f5210532267162eb630da378dc78da0"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0705.flac",
+   "sha256": "f4953efa51a1e3183c85d3353e777a7f009747f8835baba1b0360d68a6b3d54e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0706.flac",
+   "sha256": "0109ad8d5ba2f5cda99fbaffac0b674c1866d0718980209a6eb4cfd76a874722"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0707.flac",
+   "sha256": "6376bbc3d04478862ad83d4b7cd5efffeebf326be37ac7feab967764a0305c91"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0708.flac",
+   "sha256": "d3b96547ae62f78a85a457db16f9bb2777468c80f7e2611b7852291048a26c87"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0709.flac",
+   "sha256": "11b3174ca17a3ab0e7eecac12f0c8e3ec7c671010719b17cab9e863712f49d31"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0710.flac",
+   "sha256": "6079cf6312b5ba965bc1ed07dae6c564c0c765e4bb7c00bbf5f29964afeff48c"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0711.flac",
+   "sha256": "b07f184de16755bb89ce21f0637feeb7468f1a4f7f603c69754e563688764fce"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0712.flac",
+   "sha256": "dfe47f6359577fedce34442f2b1e1d00c33de006f3b1413a247d2bb7ffbea93e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0713.flac",
+   "sha256": "bcaa69dd3bde6eeff82606e2c50814180cfd54d6fe997e2f61cf5482d631a60a"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0714.flac",
+   "sha256": "2fc6699fe89bf7fd655429bf6d86c735e87ae8f24235c49cea061391f7a2a28a"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0715.flac",
+   "sha256": "159bba86519f2f6510e6c8aaccd9dbd3a78a843b2b1535d47a503e94fea6bad8"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0716.flac",
+   "sha256": "da6d6c31eab02ba71dff5b7a53fa0fde0117710ba58f36876e1c57903c568397"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0717.flac",
+   "sha256": "10605a041d55fbbe95d3bad4732e23b10c98fa6ba9ecbfd75932221e2f111173"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0718.flac",
+   "sha256": "cecbbd5ae698331561435a565c17f73b7e052818ccb0cfd3fa03b6bc89f361a3"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0719.flac",
+   "sha256": "44f9a170999a89c9370a5f01765a8221b352d35bfd7935e96a72c319c57305f2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0720.flac",
+   "sha256": "7d06013849ad7fef268db05f3670404e277d4207faca6a7c0dae0bfe3e7323a6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0721.flac",
+   "sha256": "9119e237fed5cf9b726b6b47d8737e3915bb2701ad9381b749c1a525882c4286"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0722.flac",
+   "sha256": "0c71472c91e1f1222c1cb95a973eccbf9e209f8ea7c0ed04ea80d5b6af328206"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0723.flac",
+   "sha256": "3bdf00b2460f32cbffa2495359f97b915b97dd35d28e604a2907323b984f848d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0724.flac",
+   "sha256": "38087c9abe9dcc9fed787731789926b595a782c50e0ac71902173f22bb6720d2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0725.flac",
+   "sha256": "5d138273f92e25242e6c8eb5d90aa1b2d0e27f03f93137de7f115df24f3fa2f2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0726.flac",
+   "sha256": "24e4cb4e84322ca3308de9b3d943cb2fffed908b443d1c2f31274e4806aa193f"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0727.flac",
+   "sha256": "38215821728c7ef7355f7ca3b7ad98808d7daf705953675e77b8215501be1e9b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0728.flac",
+   "sha256": "be20e6903aa2973bb219ad1bed50b8c598d069b2132f2efb13191356d465f1bf"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0729.flac",
+   "sha256": "40b3538d821d0b6c62fa9296ccb0022351bfdad6c0c380d8df9ba12deb6a713e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0730.flac",
+   "sha256": "38cd49a5f84de2619e58fc867a58edf9f333d08e4d09cf4002536ce51d257d4f"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0731.flac",
+   "sha256": "b3d151655f713120c74248203753b4d406df8a23ee169c188409edc753e31077"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0732.flac",
+   "sha256": "b6472220a80ba306ca4e2fc0ada0ebff6d26006f39b4a03289b79664583b2a99"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0733.flac",
+   "sha256": "c4ee994c422896b3f48901d5e3735d72c5ba170a877bfdecb7ca1aeb2b3d6a11"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0734.flac",
+   "sha256": "5d0ab7deef3e58b78e6f457b854bdc37aefa47166850fedf9628b7c30237d240"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0735.flac",
+   "sha256": "9f655d446d5194cf931383e168cc1eb75953851de93316fbe47f81f05d0b7fa1"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0736.flac",
+   "sha256": "d7ec4d4f31e7e322b8bdc888dc1089b4f568fc28495a39a99fb149066cd7694b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0737.flac",
+   "sha256": "e7cdf3b974a993c83b45dfa3560bc9453c99e75c296cbc7a0b4bf713830a316d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0738.flac",
+   "sha256": "8f39fe5a1499fe96fb004e3dade529db85bfd7875df6bf2836caf4cd280a8fd8"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0739.flac",
+   "sha256": "bb37beeccbb0c79e3d1a604168be47f0d50b8bbe6e38b4210f17c301fa1a7810"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0740.flac",
+   "sha256": "8c7d18df193d0d26572e1af47a5b978c6615f3e4536dcb2b4e6237d6c07de267"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0741.flac",
+   "sha256": "c48f3a2dcfca9fe2acd159deeb6eb0ac2a148c7c687d806f2de8b92d8cbd067a"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0742.flac",
+   "sha256": "da5ccd9956d818c6f81a01725bfed742f67287bf4d3d8e8bdf2685ab1a8033d8"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0743.flac",
+   "sha256": "d6a34305a84e43255ba892f3414d27df5daac27d6cf8d586e06003bbf1e0f9f2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0744.flac",
+   "sha256": "08cf58e95fec549de7a8609f2b58a0737d9ec37e1cde04ee3db5032d07a41718"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0745.flac",
+   "sha256": "c2e310df9ca186cd4f245ca6c64c74a2b6c7a1e2c3c83af87dfe4255572d32cb"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0746.flac",
+   "sha256": "13c12140c68fc1f7da75fefd7f18aae6a9d5fad3755a794735f08515ee07c9ea"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0747.flac",
+   "sha256": "475ac02dfe9bfe93d829c929c45839d1497757247d86e8b8e1e0fb37c2c7439a"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0748.flac",
+   "sha256": "ce844136eb3ec3c2b9ad07038b76af75acb140156aebcc807fcc4082af80f1a5"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0749.flac",
+   "sha256": "3efa0396b2172aaa9915756c44650d62c44250277e810837ce4bc95357738656"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0750.flac",
+   "sha256": "de88056342b6fce7aa8322276c4e95c7b3e623f0f6627dcd8f1b3bfe4a008167"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0751.flac",
+   "sha256": "44582f46fde14e7e4c85ee18e06e0ebf8b10c1387c8c43767774b26904d5cc07"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0752.flac",
+   "sha256": "146ff2038e0fc5f6a062900114ec7a81de1cc0dbeb36eb0f40f015e3a95a5f8d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0753.flac",
+   "sha256": "dcec1549f47ed81ee5a5eab2d8e6ccd832e89e164bfde871b3100755917522bf"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0754.flac",
+   "sha256": "3c5c61d5008ae625fc9c587bc54220b4cd25fc6640d4264d5ea5a2e94cbd3ce6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0755.flac",
+   "sha256": "0b8a8b76fb6ade4ce3c6164caa93d478dbbaaf80d9ed45b65d9544dd6bce2ffa"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0756.flac",
+   "sha256": "84d5d0760f07bd0387e3a74c4db505258a74b399f8346f772c5404762bf20b0d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0757.flac",
+   "sha256": "bbd6000476c1f18aeb39539b1bbdb0a40e18a4f67823413b9d0e42dbbe98cf2d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0758.flac",
+   "sha256": "cd7d070fc49700ed8593dc53e94d6fdd0a81accea4dfd8ca8689e4355045afc6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0759.flac",
+   "sha256": "ff841baaf7a5ed95ab02740baaf274b7881eb57b9d8c35981a368439a9e79f9c"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0760.flac",
+   "sha256": "13f89091fb3f68e451208acefc7cf5808e6b083803240554eb15a1f1e4d7d377"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0761.flac",
+   "sha256": "b70fdf198044207b0839a8a551e1a85aaa501a0a58bcb27361480a805b67265c"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0762.flac",
+   "sha256": "9061290b7917a0f75a15f399e9c22622e4363d1917f203d559bde25f81017d72"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0763.flac",
+   "sha256": "fc979264b9242217c0daf4ad2e8048482b3a801a7a28dc8f0e84557f84b60ab2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0764.flac",
+   "sha256": "6eb79cc53d0e8cdc3e2dd4a907fc942978d72d8ba4f3fbb0c90c2fbbdd20aa08"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0765.flac",
+   "sha256": "b24084dcf2a85abdf1aa0a08ce62a5b23e3d354c8213851c70f60b621b919110"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0766.flac",
+   "sha256": "16c09957c8760171eb7e6b03438372b461e8e4e0ff783b00ea17f75fcb030ae1"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0767.flac",
+   "sha256": "74480674949441e82fbb829a30589938dbc9c60187f3545cd41f07c572c623a5"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0768.flac",
+   "sha256": "ea367f81f26643fee1d0ae6244b86bc59f957af0aff3c5c0182dbe61853c37bb"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0769.flac",
+   "sha256": "5392907e559e2615a709c779431ae96b7848c7d88de562835770d580668d414d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0770.flac",
+   "sha256": "666a23b8d18f225e708f2779155b0a89684d5097ac1f33f134294841f3f7ad72"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0771.flac",
+   "sha256": "99d1e6efb7f3bb3d9288f23ce0a03d29de2c2e46ae14e481cb9be9c3af4726bf"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0772.flac",
+   "sha256": "6db5a7da904850a3d5c18a4a4565bf950d328101167449f2062d55dae4bfd006"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0773.flac",
+   "sha256": "de711f884bbeee7168b9ccf4c552489f7645c29d2785dccd54db6447911cd7a3"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0774.flac",
+   "sha256": "005d598462f37a073d31067da0c9cf39b3ac00c80923adccb1a4dfd5f8893ec1"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0775.flac",
+   "sha256": "e7e65e06e893bd2aa66327ed2ebd677ba9d760c2262245d11b2c19d15042591f"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0776.flac",
+   "sha256": "8fcf9aba01816c5c4d25d3e817b3ef6362df357a2b43c45b9021b4de532c9ed6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0777.flac",
+   "sha256": "67e70869b0587e37394cba0f4b2042a7bc1fb5580eaf4db7b1c4d2bc2a7c44a3"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0778.flac",
+   "sha256": "021b3d4d0494f4febbf8e4230c0e89e848c64d48bc352b918642a7c1de493a80"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0779.flac",
+   "sha256": "7b6276ac2ee6d75f2a04bf828585c68b013cbb360a89ba9a8b4017c1d362e720"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0780.flac",
+   "sha256": "fdccb37cb3da1c165e0add71c5d3481b2103c3b2c9837ceccb3a11dc2f64e7d6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0781.flac",
+   "sha256": "ea3ae278cc4173adf66b7ee22ba22646a14a524064a954a620d1f4f8b0559251"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0782.flac",
+   "sha256": "5e491b5cae7327e917df3fc5aa9bf8d66625edd697fd80d13a750c78ec46a695"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0783.flac",
+   "sha256": "0517f6f71dc3f06295d76800aca85cc358fe8c617b8745cb4e0ba7453b7f3313"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0784.flac",
+   "sha256": "3f4167b80587b0ff605efaad6cfbb5f7971d8b60d8d26555f25619e81cca3697"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0785.flac",
+   "sha256": "b2defa8f1b02cb609ca8a5810cea757cbe475988a389c9f93a0e8dcea77fe3ff"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0786.flac",
+   "sha256": "c9f68a84e602b2e86199b975a53e79d5be5084fa1cc42635fc1994d37ee09977"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0787.flac",
+   "sha256": "cf56e1ee32dc77e795c3b6ece5fdb0997675e5011e3fc1be3cc7421f2af57de9"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0788.flac",
+   "sha256": "d6fd58a15c523348fa0f7b5d76a06c93945622390a110c2c58313dacb5c101ae"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0789.flac",
+   "sha256": "50ab3813d309f55dd648efe03cafc576929d839a0e1c243a9e2b00f18db3078a"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0790.flac",
+   "sha256": "a221ba16642fd1e81d4e20697506f5cc3101a3ff9980467d6ab3d68b839a2b3a"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0791.flac",
+   "sha256": "7850ece922c48294823ed50407e496249c4ddcee95641e9a5912706eeaac5ae0"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0792.flac",
+   "sha256": "296309a300ca85d8f12914bbb51defce28dbe50ea3b353e8a812d64036303c55"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0793.flac",
+   "sha256": "b0eb701da48796f54d1f630b6509dbac40fce0dda6a1c7e7b75e85617c7ebb8e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0794.flac",
+   "sha256": "841584cccc198b6372bb9b47003c27028954cab105437b1fb04fa87377efea12"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0795.flac",
+   "sha256": "b15cda59865ba559f14a0cc0945a95895a5cd7c426de335016ccbdfe81c5bd0b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0796.flac",
+   "sha256": "52b84600d5122fce8eafc6e6bde81224cf28704818d74f6f2005f1c96fd882d6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0797.flac",
+   "sha256": "f70b717d3a1def3ce49e9294f0d1249c07fee593de3e576c8dffcdc9ba684e32"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0798.flac",
+   "sha256": "80d26c7897daf6ee6b57dbbdec89c233e615bf1605760513d568767acf547aac"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0799.flac",
+   "sha256": "a41d5fa418b2672d43a8805e54f868eccb6fc87425f553be5dac39d5292aeecc"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0800.flac",
+   "sha256": "45fc0359019367600ec8ed6a2941781c0a85c0ff690c010233adafa49a5bea19"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0801.flac",
+   "sha256": "dff3862bcb38bfa53f7abea522de2a8b7c2ecafbb5d12d90e6304fe71c5081e2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0802.flac",
+   "sha256": "c1229f99ff27327f30ba624c0f4123028bc75484de8f59d4bee18710ab3f9930"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0803.flac",
+   "sha256": "b176652b40871432899b59afc454378ae50a44542b0b166fe2fc17817cd46e71"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0804.flac",
+   "sha256": "87785cf15ee164b170c24c39c57a3bebc99b01907bd4dd0d9d9befc81c104d1d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0805.flac",
+   "sha256": "39eda6a44fe13438afc761eea3c914a553949cc381d2e9baf3105e22cb2117c2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0806.flac",
+   "sha256": "64d68f1f7587e2d62e7606c0271f8b79a8ef4e9e849214f3e0ca0202bfc00500"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0807.flac",
+   "sha256": "0774c54f5dcc3341796bdac60db9280d21092d508993c43b218c8a67b6e3ff5b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0808.flac",
+   "sha256": "dbbaaa606f28e6c437198d2ad79485c2f09751a3e1474f5d92a400aafb10d08c"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0809.flac",
+   "sha256": "0254071cdc2b425ae966072caa9be97b56d29ff965fbbd3bfc6bcf2e1bc4cd7a"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0810.flac",
+   "sha256": "989f75fc5fd9f16770a508e9a3f5ff1a498465324bbee5c108ee3b58971ef1dd"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0811.flac",
+   "sha256": "0468de1d9acb39f6b28eecc8b986882b1313b5ce2149c35996fcdfd200814ca5"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0812.flac",
+   "sha256": "e022a8adcb256cbad9d116a291ec4b0a8a333ad78d3dac61653b48a4c15cc4ae"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0813.flac",
+   "sha256": "f7b6813b756f57f735149cb405cac404439ed5d2bd82a6c2d7be53a93d355cf8"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0814.flac",
+   "sha256": "9658ee5fb7ca45c0c9c05340f531a8047a3f8be3377a6aff698aeb3fa1b12c4b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0815.flac",
+   "sha256": "29d0fca89414783ccd1b1bd14df3801f2b4b72f821b91c39c8dc91d721689e4f"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0816.flac",
+   "sha256": "becdae41b1253b93b244f4e63bcb53f8ea874aafb0127f37d5aae5a4f1cc82ed"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0817.flac",
+   "sha256": "a63312cb2442e36e7c75df952f5baf08bd6f951f5af03375d98508c3fadb0858"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0818.flac",
+   "sha256": "c980ecbc7e0902ac009c860348ce026ab7bae747b915c1c1bc553e69d871697d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0819.flac",
+   "sha256": "6eb9f095d2609e504d0872bdd3f1e46f6519b9cda0c129b9b5562131c2fe4c2d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0820.flac",
+   "sha256": "e926d35b13c771eb9c8eb36dcc5a8c2c3d9c5c7042ddfd5e4143b109e368a3c9"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0821.flac",
+   "sha256": "fd8d6e00782a2b0b6c0e4d7b56d712dec38e5ab475c611a3dfca1830cec76104"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0822.flac",
+   "sha256": "4f8e1540e05af50645fb34dc25bc6d1f688ac33a586065f69d9c66d3c7930101"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0823.flac",
+   "sha256": "a6d4bfaba85abdc092c27ef40a691de93095efde82f1b43a8bb1a5227c7fdfbc"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0824.flac",
+   "sha256": "3cad64aa1f48dd04a915131be8e6b0edc213814918c431b2bc4075eb4959a099"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0825.flac",
+   "sha256": "c129ce33807d48406da4999d5d9cfcb630e6ec7be205967c40a67a0e81603a53"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0826.flac",
+   "sha256": "69b7e19654117a0d326291edb7b5cbed83a1eaf7bb8b3047ec68136cb59057d9"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0827.flac",
+   "sha256": "fbdb58092cbe383bb6e2aa128a2008382cb8cdc3fe068619f919559726326a1a"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0828.flac",
+   "sha256": "ce053831520635884e8154843adc895e8f0fc7769676f5fe654d0d9fb0dd176b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0829.flac",
+   "sha256": "c6777d27d7792f9913ce0b514e24a73a3165f634375171902ceabcfcffc6aa9e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0830.flac",
+   "sha256": "c43e213ff2fcdf3ece276ea3c6420a10a9d1d4cd7df805aa4fadc8b7888196d8"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0831.flac",
+   "sha256": "9e4641d12ebf387c52d0e55f429d43518419a180d08e000519fbd47a08c83eba"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0832.flac",
+   "sha256": "4c7ad28e40c3058253eebf7d0a2be97b771d7dade29c6b585752895166140a2d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0833.flac",
+   "sha256": "62789bded3e260edd058d7edaa73668b103496a8220ce3da8e44f5870d1d519a"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0834.flac",
+   "sha256": "3dbef32b42bb2859041e43ec2dd6798bc562bb7fb710de0ea128bba2d4e95439"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0835.flac",
+   "sha256": "39e6a4db6d4c4bb3f46aa8d134c400ec0a26911c08bf56b922e6fd565ea6a31a"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0836.flac",
+   "sha256": "c138392deae2ef59be98c8a0d8be99388bad65420b790b9cbb6bfe76a2073d2f"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0837.flac",
+   "sha256": "8fb5a49eb17e8a13ac5250e3389d130b0635eac04891649dfdefd1cebaba9b37"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0838.flac",
+   "sha256": "dc695b56048bf9b72fb9d96567999821e408972ac8719e4fd0fa43824058d475"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0839.flac",
+   "sha256": "36e7bb1cad825af9074a2cceddbe1af056cfe4c15d8864bc09727beb64dd2794"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0840.flac",
+   "sha256": "14745fa3ea938858f7d73aea5dd56c536e13f06efbdd2dbb0ae55115e81527e9"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0841.flac",
+   "sha256": "07ec11850f2732fcc647715de1be373a1d3a8e6f7195739b5fa279195dcbc978"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0842.flac",
+   "sha256": "aa07de456cf555b9d2ac2e369463c398b80a208f1eeb55442cabd3147dcc6ce4"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0843.flac",
+   "sha256": "934fb94536fd5b34ea926575268f4638b2c5c373ae7f6e0bd6f3430e034e41d1"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0844.flac",
+   "sha256": "33e82d6758785b3bbc8f37584058121daa7bffa4d1bd31ee6d924f56cbd070fb"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0845.flac",
+   "sha256": "f88e6506f4cee0d2616aec9bd3bf33ced707b1b6830d2254b35b4c8145c12390"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0846.flac",
+   "sha256": "a6660df2fb9a0198bbea7bb999b2f62bf95ee8f0a8178d243af0ac0e7644a675"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0847.flac",
+   "sha256": "6054399a72a214f174b6b5bccae34580fa6378e0532f286edbc2bd5b5592a41d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0848.flac",
+   "sha256": "8a83cc9a41a69067f77e07af431243461cb93cf1ed9f24ecaf91b0baf6c5d678"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0849.flac",
+   "sha256": "fe5c8d138c366d734e89ba0d58e9a3192b6019ab5c68a37c5844cdc21eb693d3"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0850.flac",
+   "sha256": "e1a9f272cdcc98a169fb5341133df31df4e2f35bae6707f0e4cb0fa68f66127d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0851.flac",
+   "sha256": "4886c163f4e8cd541fdb8764eff1c34e5cbf3c622af4b75fbfb3219541b2fe2b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0852.flac",
+   "sha256": "009936cc86ab86c76debdf64abb6ba0500a945bbae06d9a6fc54dfe5779d1b27"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0853.flac",
+   "sha256": "826f14d0c9101cf8abdf93b2dc9be7187c6f3ddeb738ac2d900a968d44b90995"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0854.flac",
+   "sha256": "5af24765183701e84f35e214e2f6df76a5b63f5a6393e7e8937c5a9c3d8c5ff3"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0855.flac",
+   "sha256": "5715b709bab2fc77fd193a2929e3311c9b678c334f958435ef1ba66c4db26dfb"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0856.flac",
+   "sha256": "95cff69ffa3bcc26d3be7f53a1b734b7237f9f6a597d0d7a5ece29fd4daf596f"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0857.flac",
+   "sha256": "981f7ccbd2f187759f926a072b2a3ef1850fd376bbaf18a91567a6b0cadd9002"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0858.flac",
+   "sha256": "cfd3530b50b607db58b8fa3ea97a741ba4f82bb9d83c273c1c8066fe97348b7a"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0859.flac",
+   "sha256": "74aa42e80d2aac0003d4fa2996bde3bc282e35a40ecbd6136b53c9fb274ef7e7"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0860.flac",
+   "sha256": "2d12a9a1c015f59de25b9deef57aeb9c2c1c5d2572e1cb057ec4f84e0ddf5664"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0861.flac",
+   "sha256": "92625bf46047a8087ac964b3802de4c658962bff0fa4a3caef471f97f13647ce"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0862.flac",
+   "sha256": "4e602afbf5f5a36623c27925ddb7cc13319af309546d421569db150bb190c873"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0863.flac",
+   "sha256": "76e7e03e6549067985860413b998a3f5aacc9cead497b138e06fea98d7cff7dd"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0864.flac",
+   "sha256": "9e51494361da2e13a50e2c8f59c172b37fb3c92cd5336fbda5cbd1f19b698ad2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0865.flac",
+   "sha256": "070cd82871ad5ad21e3fcadc9be8c7b06043b4ea0cbe9b92ee8d225bdeb37d20"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0866.flac",
+   "sha256": "6fef3f587178d921c8b48b6c9ea0c04f1262d29a416bee9ee50b0f7cb3d08bb7"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0867.flac",
+   "sha256": "8b66a5177ca6cc7f55f5976e5e9a3ead6ffbd9ee894ca277048996c3dc121fe8"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0868.flac",
+   "sha256": "ccdc8e6dc053747c012946130134d3b172612d72106905da5c97d37bdb55f1c6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0869.flac",
+   "sha256": "6fa1478c8dadbb3d023f8231191fbf60168e2462812739ff86f85a82845d4bbd"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0870.flac",
+   "sha256": "cbaa3ebbdd75d3eaad43cbf81dc5aedd2269b552f13c6c17dd484bb561a118fc"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0871.flac",
+   "sha256": "bdbe410cacc7676df0ede90828926b0a55e7637e926b9f010601af06d72839c2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0872.flac",
+   "sha256": "767cfd829b9aff1c39da16b811cf07a1833188687088371b7707fde55d365d65"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0873.flac",
+   "sha256": "d43f340260103c09b0743fc0646be058145137ff02cc5bc1bf1cae0fff81d5ca"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0874.flac",
+   "sha256": "b3367a33e9e26b7f48ef627525fedfefffd9d4379e4f757702748d13e2f2a9fd"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0875.flac",
+   "sha256": "90c3b5ec4e52017f85973821017146251a3e5cf8b54adaf6579479d75d3a0afe"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0876.flac",
+   "sha256": "8f3c820a173ca0e1efb03021462734f5f146db985d44eec7cc18fb02dfb0a25e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0877.flac",
+   "sha256": "41e919ea5b593622eebe7454836e811283f28f52d4bbddf4f1c6874f16f689c8"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0878.flac",
+   "sha256": "2031c86f428a7d8ab2ecc63ea47e9c9b14efc3015c4d90e3503aa7e909aea213"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0879.flac",
+   "sha256": "775968924a9de9c1bb919015f292ea3754322d9ac59895384eb32f62986144cf"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0880.flac",
+   "sha256": "8978d53dcb65d46b3966a34790b3c6e8a96fdf48fb21451444b424e5cd7bba01"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0881.flac",
+   "sha256": "003aaf2d349683b44db0911042c039909232e0910d0f3136e8ebbee5383f2ca2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0882.flac",
+   "sha256": "92610b455ac8a08cb6a98cebef063d3574ccaf14cab530d82ea4405692dbb503"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0883.flac",
+   "sha256": "87bc360ce492bccb4661e647d740b26240a186ae40908a518a4533a8257ae3fe"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0884.flac",
+   "sha256": "dec93299338d470ad7cbdda6cf74e05a7141bae6c6214ab4aa5a4366071bfdb1"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0885.flac",
+   "sha256": "d9991621ee5454c31eeeaffe7375acdcccac77a9e4972ca69c52281be49f730c"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0886.flac",
+   "sha256": "77bfa7f61f7f5dd3977f233ba651e09912701cca23c1676b63d0c0ac379857c9"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0887.flac",
+   "sha256": "82c282a9751995118a06950e4ccfad58451622c55f646c919353143336f1f6bb"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0888.flac",
+   "sha256": "17a6f1e9e34cebe2770f83c8751d84cb1c54e45f8a8e8ef2e240b69f5efe2b90"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0889.flac",
+   "sha256": "5508607a22f71fa73816f3a906b6c79343c723a3b0eed19a63130092131e950d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0890.flac",
+   "sha256": "a693201e024e945252922dbc13113fab6587f3944e5d4b199768574d567557c5"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0891.flac",
+   "sha256": "e7d432804d29007bf8b87ea2afe64d32d56d4c3091fc5f375d439d6f6226ab85"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0892.flac",
+   "sha256": "57a060bb4457a78e64d8e28171b150be0de47b3aef3b7de626e306c50ea4e2ad"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0893.flac",
+   "sha256": "60e27eb89680ac0c9b9d7c14d83ecb106f5b12b3e858f1a7dd3d3994a837ba82"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0894.flac",
+   "sha256": "756e486ae95c13a3ae329330b1548d081d47aaaf3e94435654c381812ad2c955"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0895.flac",
+   "sha256": "e16e066f4a01d06356990e6eecf43f45e36dc3ebcbe18e2f0765d9493ec6265f"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0896.flac",
+   "sha256": "c83f7e7888b6e2221c0161a22be6540436fbc2779a6cf76643afd60864758bd7"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0897.flac",
+   "sha256": "2ef3f3a5bd7bf2acf5659bbc1a9e53bc8f679126a557be922e33746cd60fda64"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0898.flac",
+   "sha256": "bd3a5657ba77b5ffe55442794cdc28dee7bcd43125db3879a5d06a024ac8677a"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0899.flac",
+   "sha256": "5771ba34ac838653f4ac63ba8873f600bc90ab4279ba08f37390242579fb4712"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0900.flac",
+   "sha256": "13dfbe9d7aeb553b30a4c86a75c1ee06613891f61d5154b47cab72d1fcbfe533"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0901.flac",
+   "sha256": "9295ccb80d7ebf6e12ed3cd9bef35d3938fe74a0699770f2253c14b320eb3c2e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0902.flac",
+   "sha256": "904e628895d601d57aa33dc98a7e324ab9672da5b7eae365b877b51fb60d3216"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0903.flac",
+   "sha256": "b6c5bb31a65ef88743a82d835cfe12a9b4f85f75fd639a0b0c0ecd12b2b1c6f7"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0904.flac",
+   "sha256": "540de1f8c6cdfcae0da66bebb59866972862bab0497c0c88359abe625cdb5713"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0905.flac",
+   "sha256": "51d9ba40b49129c36512a64296a4c86af1b79726786c6de17feb28ac552755c2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0906.flac",
+   "sha256": "0e664baba04fe670222380d39726d5db411a06bbad28dff51f3796920dbd46b4"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0907.flac",
+   "sha256": "d3a4c7b35cfa60f214561fc8bee386079a119552c324cd177422660f750df29e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0908.flac",
+   "sha256": "bd18d9e9c4ddd5ec5045696b587b870035229068f88ff57a9c3a981f98ccb074"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0909.flac",
+   "sha256": "8ae1ad399af73699e1bae8bf94ab20d08c5fcb5fee06f4d6fd73d4305aec20e4"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0910.flac",
+   "sha256": "1e9ad9d09aca44eef2bc43f9810136059cf50ed66f6ec5ff3c9b6874d0ccce21"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0911.flac",
+   "sha256": "a4f5b6077a4f276340a821d6de503a3ac30482c85320b607d8c1ee5abb4481a1"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0912.flac",
+   "sha256": "5dce8d5215cdb0301f9fe1ed91e29ca6926cec31f094c9e97f02bbf8582a8f1c"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0913.flac",
+   "sha256": "01171a9f3b64d87a8c5cdafb6ba89ad62c7d904ff9c0c7c3714f0a74e941bdb2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0914.flac",
+   "sha256": "fdcd0cdc61c5fb084abe3629186841fdf652f4922ab8a32771eb8c87b82306cb"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0915.flac",
+   "sha256": "be34ce4116de647fc2b6dfe06f5cad9f851334c44b85983ff3538a0cfc7264b2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0916.flac",
+   "sha256": "e8292d6826501fa4fe07af6376e1a4e559276e5f71c774f466fcd08a9996725e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0917.flac",
+   "sha256": "6b9e24d9eadea1350fa81d97e91237f727c1522e486ea13936ce05690bed05cc"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0918.flac",
+   "sha256": "243ddf68f940717f010431767b03e4345b41a96e3023a9f4be10c5a777504d8e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0919.flac",
+   "sha256": "c997743e75e731bfd2a7845f5cfabcfd5d8160a55e752c5f6ebcddd69dc83767"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0920.flac",
+   "sha256": "d0dcf696248a4e72991bc6dc692f1dec7cd515b8c8c0a02946e037a477d4d5cf"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0921.flac",
+   "sha256": "371fc0fd271a62b7ddbee6bbdefb9e1c30256b9cf581abfc7d4661f4a0be888a"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0922.flac",
+   "sha256": "f12030606021ff4ea7dee01c3f46ff1988d9f2e3353fb93c7fa220aef8d5a2e1"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0923.flac",
+   "sha256": "8f16dce4251e558408101c0b57ec1b855e78728b7419ba192c2f8de2b33927ef"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0924.flac",
+   "sha256": "b785fefc27be9e9dc389365f451870576075b943fd72d73e48e6c8b7a801caf9"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0925.flac",
+   "sha256": "35aa8a2739b99067bf913d1b7454eda4226af5eb3a01e78fb0f9829e6be5b606"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0926.flac",
+   "sha256": "454e8906a1437248dab6a6cf2dd64f51713b285cfbbe3ca6d463a1ae08b66b20"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0927.flac",
+   "sha256": "3c66cce3f302d77000d0dbc4a3903a8a6153abb53409003554226b1a02b3d512"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0928.flac",
+   "sha256": "0a2a83957323f9e0500013d04c143e19d607497e6935f1072b842daa04fc0eae"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0929.flac",
+   "sha256": "41d625cca689baac4c46ba505e9150ccf23c285fe3796d683ef07e543fa4d40f"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0930.flac",
+   "sha256": "37193059ef2caa93050585c6d23adba35051778b6c958f5d317b0840c68a38d2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0931.flac",
+   "sha256": "a9fd049ae2d1a48d8cee873e64b06af922fd7677d42cac77bb8e033bc23081e9"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0932.flac",
+   "sha256": "e68993b3de164cdf627235289e57644afac80e83868cd76ed2d0d3f728935bc6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0933.flac",
+   "sha256": "a9e7328d1c5f409c61790355510a1c851d80a5ef78896f172bf061a178f70eed"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0934.flac",
+   "sha256": "5dfbb73b2460cda836e26638cb4f0fdfd3b9b45b69f794b38ac2902bdaa912f2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0935.flac",
+   "sha256": "35fa640c3715a74fa3b95b691762147989a7a781909195fdc8b4270995dd75db"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0936.flac",
+   "sha256": "4216f622e5270d6684e406bb8ac47abdcf6f756cf104a0254b01cf4095789a7f"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0937.flac",
+   "sha256": "94ca38db0decbbcc20d9f2e755f353def30f3254cbc974255f641c9418fd8201"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0938.flac",
+   "sha256": "1e2e5ba1a1fe11edb9296b0ea9642ff264a4ec00ea8cbbc389eb8e01988a1f63"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0939.flac",
+   "sha256": "d9122cc56c83a6eeebc3c1aafc03af49411f216abc0ffa8988c696ac277a33df"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0940.flac",
+   "sha256": "e58a10f52812ff576d92f0bd2fed848f48cd13e1da0302deca73e05d343d50be"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0941.flac",
+   "sha256": "de2ed7ab220e057c29a2521cd8ad272597820fb84d1cdf2b93da31ee74d7bed5"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0942.flac",
+   "sha256": "8d59dc4c4ae1bc87a1c73dbc16b36e47f1f27f0ff70baaa0190227afe7a1d9fb"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0943.flac",
+   "sha256": "56c4f7098e9cf107a065886093788e4beb4be5ab3f695989510c41939806524b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0944.flac",
+   "sha256": "81fdf6dac87f0f9f5840ec2dcdc96a0be9ee41370b14a045cbcbcfd913931c19"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0945.flac",
+   "sha256": "7b8c150a6662c47045b1cd41407a23b7907d373773ff72b6c011c88467ad1d5a"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0946.flac",
+   "sha256": "21eb78171edfc0e04762c85d10308ea394b07be10943a7540a04e8eb9e94ace9"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0947.flac",
+   "sha256": "1e282fdedf4416e76ba56985531f40792b8d2f89c7169f28e0c24b15b6b135be"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0948.flac",
+   "sha256": "23f107b6d93d93e8bc2854cfb4930960ee8d05a89f8329919b08f8a58db6cac6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0949.flac",
+   "sha256": "3e6bf596050d82943e4397fd57861bec67c0cc8cfe85da7b122bf6c727569300"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0950.flac",
+   "sha256": "c4cd424a1725c3a0f8a46cbc45e6f2bf6ea73651c87e9af54ce1ba985f8bde4a"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0951.flac",
+   "sha256": "b09ae14029e1b40181eae74475d866eb34e8d745920aabfcbfa6105afa5c83f6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0952.flac",
+   "sha256": "b864ffdaca58c67f2df3360a8124b1482cf69385504e9fe899a05ddaa3be5540"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0953.flac",
+   "sha256": "b010e4e223e65ae9d711396b61bf5fdd41f961f4e6623a28b24373c41f097f05"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0954.flac",
+   "sha256": "6c68efc2c300319775166b3783de8e15fdb85cac1619de8367ae307b232d8ca8"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0955.flac",
+   "sha256": "8131f45f9d9a3b8a9883f057392ec3f8db05668d2b093b54d5ba10cb8bc2f847"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0956.flac",
+   "sha256": "a5ad66a2c67555ceb31b3fdfacd58f02ccc433d3da6fb433f9ad89a4e886d831"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0957.flac",
+   "sha256": "14b5a850f94e60ea5e4d7f160e086f6fef40db0a41b0117e9a2d557f7d23ba21"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0958.flac",
+   "sha256": "434ceb1d7b02b63051349b335e148a2d22b50ba98950670d005b7e17059b6c44"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0959.flac",
+   "sha256": "783cfc3a241bba04ff62f1f3d2aff00b35ae5c707fe2287b0a5aa6b144140327"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0960.flac",
+   "sha256": "c102d2ea1dab87b57b110470828479611548737a2d0994670c50a8b0011bd411"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0961.flac",
+   "sha256": "39519ae3b7990c51b9f9dbb437a01661b248787d7ddac019839907449fd3a0b7"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0962.flac",
+   "sha256": "e67e5929634fb3af64182276174d4c5fc2e102843141a708d71d0c4c1eb749b8"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0963.flac",
+   "sha256": "a20e94d3666c462f51c71c1d9d89e86e8091f19b6529a4f6285a44282cb9d52f"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0964.flac",
+   "sha256": "0bedaee5e91b22ebe37ce01688e9cabd8fd362d3e988c1ba776fb93a372a16b8"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0965.flac",
+   "sha256": "d049e0c6c7cd1a03b37135d2d26071ab7df3810b9d1a81898a02d8590c2a774b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0966.flac",
+   "sha256": "87bd780247b0e3eacdc7bfb7669daeec59f958663c3128010b6f489c7a9490c2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0967.flac",
+   "sha256": "14b9d5190cddb7281a5edd7ecc19bae9c5c14a9628a5f63c720abf63a1447809"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0968.flac",
+   "sha256": "678eaf7d07fccd2932675e27d90c6af619ed50650fb829d3915932ac3fda8c74"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0969.flac",
+   "sha256": "4d7f6f9fe4cce2cad3ae6de4e9c06311a105a5344c5dc621b6a9c4d54476b631"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0970.flac",
+   "sha256": "2470b1b57de1aaa8be133530fe3d98da2a6c5c542bdaa257fdd808e5881dcb26"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0971.flac",
+   "sha256": "5df08310b2169dceb051dfbb4610da0b292daea19b62974e8a09275f9effd380"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0972.flac",
+   "sha256": "d5d71cb5247b648a5579f4cbae3b2e1096e00dd56cceab4e8d6fcf9267dd647b"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0973.flac",
+   "sha256": "890609fa19af6466259a5fa8f9ffc4cb7e25c710860f1aac580cfb5fc86eefbd"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0974.flac",
+   "sha256": "f8f0de91603e59c583a46fca60208e36589787642b49fd78ad2467e8083e7964"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0975.flac",
+   "sha256": "59ed5b6eccaa656ec4047d6d2a079422af87142c634d9196dfc28f8f09d40cc8"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0976.flac",
+   "sha256": "472a28464b8ada5f331da2c12ea00a6691aedb26afe48d1213d98cd476512b10"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0977.flac",
+   "sha256": "57ae4106d37ae6288d67791a1311164c2ba3219dcd8cb049026af59127d5761c"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0978.flac",
+   "sha256": "273673a6de2670b6fd6ec191b35dff2aff03a609e09063595a0351ac5214f518"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0979.flac",
+   "sha256": "d0995a5387105f92146d0c983a583f010bbb79576ce9d9555e48a2683573f82d"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0980.flac",
+   "sha256": "e892a08b753af5fe3e224e5711b0f9ef017f4e67d2c4cd70bc4ee75218983e79"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0981.flac",
+   "sha256": "6edf88e290a1de2d6e40d369dc065ac98689bb08522291ec1747956b24ddc159"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0982.flac",
+   "sha256": "957912c384bbfafe7187524726f3b608850272b379f63e76995e64726f6af5e6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0983.flac",
+   "sha256": "1fd16cd4eedaa5f894c3b1ae1c51c447791a8f0cbddd1389db8b93d4b03b7592"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0984.flac",
+   "sha256": "498c22927e7b3bbb56f97b9931af7192471dc2d376b901b7a77a67fbb9f54d76"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0985.flac",
+   "sha256": "f34a906739104913de1a0819127f9ddf5df33d9139d61c0f2923e34983f13662"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0986.flac",
+   "sha256": "7e290b66d2c75eaadf505911ad8d6321ef4e5009af2f6b85c14c73c035ee2583"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0987.flac",
+   "sha256": "e4990bc6a1db88281509978b6b4e99cef8581aa3e3424014009a107bcd5b7b95"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0988.flac",
+   "sha256": "f80ea749e5bdec8975422e10899d9ed17cc703f3a5b7b68685092e36ee5c9493"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0989.flac",
+   "sha256": "810ebaec156c07ac35d5c8017423df327ffe63bfd4ccd0c30f0223f90705aceb"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0990.flac",
+   "sha256": "620262c5f5370f06c7aa3c58665ac40b5b22e24d7347882ed92583eb747096db"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0991.flac",
+   "sha256": "e5d5dd7ab66b2e5f5f1eae5afa2e0f69649b2eabf9efc7e93d1e14bf4bd50d75"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0992.flac",
+   "sha256": "0642a5addddb38a61c350c7a697b9e8b72cd3663d46fdbbfde81846856820a85"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0993.flac",
+   "sha256": "01b1ccccac4e268bacb832dc2c52fdd3ba409625a88c3097a653df7907ebbbc0"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0994.flac",
+   "sha256": "12c6a829a27aa1281c9491ae1d52c91cfc2f6b2fe8af22ae60f7d4d7541a4809"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0995.flac",
+   "sha256": "e24261577fab628a6d9e0bd1e59fa16b27724f8676143b93d14b1e8fb4d10796"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0996.flac",
+   "sha256": "8f39fa64f169507a991f9bf81b14f22d8411d5de0b50dadb1e34859a722d7f37"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0997.flac",
+   "sha256": "08af33dcd892c0c424195376bf58bd2151009e5e46d1a1f65ebf422f43681af8"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0998.flac",
+   "sha256": "65575384fa5b3a888d3233c73e6e7fb79008f73fae8712cf81d14020f34617f6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-0999.flac",
+   "sha256": "e7a80def39b56cd2de0c182f626a123afcd3cbb5c584b43b16fb0cd764c38657"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-1000.flac",
+   "sha256": "ae35ba519a486b93b973cd6fbbc54bae044d04ec24f17ed90c010fc1ab8d58f7"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-1001.flac",
+   "sha256": "842cda6e4ae7da76ecc3a31b5b7f15c1b0acac49b5a72b2393aa5bc41d2cc8a3"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-1002.flac",
+   "sha256": "47a38765d5596307a6eed4c77ad02e04a4a684089d565e124549d974685fa0bc"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-1003.flac",
+   "sha256": "993eaa48cf9fe287e409e17706bdbcde6152f771b4a7e4feb8b8d6f6f303f4d2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-1004.flac",
+   "sha256": "674459ac22002fdfe63e69387ab98774c8021a347a9bd5496223675104942d7a"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-1005.flac",
+   "sha256": "fe9adadd420e7e885528a1899a0f194845b5af893b6c42f7ce45b53d028264ff"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-1006.flac",
+   "sha256": "d2b159b8c10b91e18d773a9caf7b02ca1360176ddf97b6cf5d8ddb29b150dd4e"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-1007.flac",
+   "sha256": "4a37e5e95694c6a6dd5f4839ccccdb3bae482491bb1320a2dafd31d2fed45ddd"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-1008.flac",
+   "sha256": "b62dba75cad5a985ece58c30bbdc17dd9795559415556504fac550665158d880"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-1009.flac",
+   "sha256": "b7a4889e6cbbc4cbc10c22c15df7b7378c9f91121de96f344b653fd578c078f0"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-1010.flac",
+   "sha256": "5096a88a073b623397f390379e9fe48d467e8903498707a5fc3744c5646c7ab0"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-1011.flac",
+   "sha256": "aef531b669189937bec4adf3d38cc5e09ae73b7c9f7096c1e5c9095fc185cd26"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-1012.flac",
+   "sha256": "18e0df7f22cf7b77caadf3060aca1392a3c43c42eae41c19b1fbdd3912591d5c"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-1013.flac",
+   "sha256": "cd1d9acf3990e5f2dcf7a3f768e1528a91071b1675d74366307e2306522737db"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-1014.flac",
+   "sha256": "526b062e6ddda76757ff83e3be47cd86821ab9e2e058d93257abde34d5671bad"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-1015.flac",
+   "sha256": "bd9c5942f45468e28ae3ad2eee2e660b86de84e7aaea3c2b866f3f96fbb7a840"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-1016.flac",
+   "sha256": "dd6604cd002ef286d6194c100d3f4cd287a93dea8eac36ab14fac1ab704eeeeb"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-1017.flac",
+   "sha256": "d10d2c9cf7058da5dba738a35456f9f7c6d55d98a59a6e9efb0ca26c25be3a06"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-1018.flac",
+   "sha256": "a4c85aece4a2be160ba3ed34d9cddcf769f2fe3efb2af7ca604372fd740d6d0c"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-1019.flac",
+   "sha256": "300398b27e76443419ffac986b8eee4a0cb5b41699029e960a63ee87d4bb4ce9"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-1020.flac",
+   "sha256": "421348cd20f64d3cbf36a38ef0a1acd5932e5d41283a6c6ec218e2ab4fb92b17"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-1021.flac",
+   "sha256": "bbc56de76e7dcce98b0e94896a6a083da2fbe75a974392b64976a490f3a45fa6"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-1022.flac",
+   "sha256": "49f30fddc7ae3f7265b43718215e4efaff87360a2d9b27dde8e225bc98afb9c2"
+  },
+  {
+   "path": "/home/cereal/omni-campaign/distill/corpus/media/ace/clips/ace-1023.flac",
+   "sha256": "09374c5aafa918481af2e09101314ec52f0f5da727e4c57cd6d12a81598a1afa"
+  }
+ ],
+ "manifest_sha256": "58eeb7c6eb3c5fce88a34f5b5852baee0bb031cdff1866c761ace11af02b3c08"
+}

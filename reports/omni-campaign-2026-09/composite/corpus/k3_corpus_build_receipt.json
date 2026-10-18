@@ -1,0 +1,756 @@
+{
+  "schema": "neural-forge-k3-corpus-build-receipt-v2",
+  "built_at_utc": "2026-09-03T06:30:42Z",
+  "host": "cereal-X10DRG",
+  "python": "3.12.3",
+  "builder": {
+    "path": "/home/cereal/omni-campaign/composite/tools/k3_corpus_build.py",
+    "sha256": "408efad785df147293eac7822b7580de7f83050ededf04ed2aea8ce8a3619c8f"
+  },
+  "arguments": {
+    "evidence": null,
+    "qwen_dir": "/home/cereal/models/Qwen3.8-27B-Uncensored",
+    "k3_dir": "/mnt/lexar/models/moonshotai/Kimi-K3",
+    "out_dir": "/home/cereal/omni-campaign/composite/corpus",
+    "append_bank_rows": true,
+    "review_sequence_length": 512,
+    "bank_v1": "/home/cereal/omni-campaign/calibration/banks/lfm2_semantic_whole_response_prompts_v1.json",
+    "bank_v2": "/home/cereal/omni-campaign/calibration/banks/omni_review_bank_v2_draft.json",
+    "probe": "/home/cereal/omni-campaign/calibration/banks/matrix_campaign_probe_prompts_v1.json",
+    "smoke": "/home/cereal/omni-campaign/calibration/banks/matrix_campaign_smoke_prompts_v1.json",
+    "bank_render": "qwen-chat",
+    "k3_bank_render": "k3-native",
+    "include_overlong": "skip",
+    "qwen_separator_id": null,
+    "k3_separator_id": null,
+    "k3_pad_id": null,
+    "allow_tokenizer_mismatch": false,
+    "allow_unpinned_tokenizer": false,
+    "allow_unpinned_k3_tokenizer": false,
+    "allow_share_read": false,
+    "no_share_read": false,
+    "qwen_fold_dir": "/home/cereal/omni-campaign/qwen-fold",
+    "calibration_dir": "/home/cereal/omni-campaign/calibration",
+    "chimera_src": null,
+    "force": false
+  },
+  "share_reads": {
+    "share_root": "/mnt/ai_data",
+    "allow_share_read": false,
+    "guarded_inputs": {
+      "evidence": "/home/cereal/omni-campaign/composite/corpus/omni-evidence-27b-v1.json",
+      "evidence_build_receipt": "/home/cereal/omni-campaign/composite/corpus/omni-evidence-27b-v1-build-receipt.json",
+      "qwen_dir": "/home/cereal/models/Qwen3.8-27B-Uncensored",
+      "k3_dir": "/mnt/lexar/models/moonshotai/Kimi-K3",
+      "qwen_fold_dir": "/home/cereal/omni-campaign/qwen-fold",
+      "chimera_src": "/home/cereal/omni-campaign/import/rq27b/tree_c5e6052/src",
+      "calibration_dir": "/home/cereal/omni-campaign/calibration",
+      "bank_v1": "/home/cereal/omni-campaign/calibration/banks/lfm2_semantic_whole_response_prompts_v1.json",
+      "bank_v2": "/home/cereal/omni-campaign/calibration/banks/omni_review_bank_v2_draft.json",
+      "probe": "/home/cereal/omni-campaign/calibration/banks/matrix_campaign_probe_prompts_v1.json",
+      "smoke": "/home/cereal/omni-campaign/calibration/banks/matrix_campaign_smoke_prompts_v1.json"
+    },
+    "inputs_on_share": []
+  },
+  "evidence": {
+    "manifest": "/home/cereal/omni-campaign/composite/corpus/omni-evidence-27b-v1.json",
+    "resolution": {
+      "resolved_from": "spec-path (lane copy identical)",
+      "spec_path": "/home/cereal/omni-campaign/composite/corpus/omni-evidence-27b-v1.json",
+      "lane_path": "/home/cereal/omni-campaign/qwen-fold/evidence/omni-evidence-27bu-v1.json"
+    },
+    "file_sha256": "a0a7f0da58e1d1b2ea19bc30e5187139c3618cff678ddabf44c27791b36dd124",
+    "manifest_sha256": "8a3422d89d245b79a152ffb1de44d077d39ec5574dc063bf4e8482a5107b4870",
+    "tokenizer_sha256": "06b9509352d2af50381ab2247e083b80d32d5c0aba91c272ca9ff729b6a0e523",
+    "source": "qf_evidence_build.py; curated master registry /mnt/ai_data/omnicoder_2026/datasets/MASTER_SHARD_INDEX_POINTER.json (631 entries / 94318 rows); routes text,code,math,tool,reasoning; packed by token-deficit interleave to 4096 tokens; screened against 6 review packs at 48-char containment; seed 20260902; receipt omni-evidence-27bu-v1-build-receipt.json",
+    "batches": 24,
+    "build_receipt": {
+      "path": "/home/cereal/omni-campaign/composite/corpus/omni-evidence-27b-v1-build-receipt.json",
+      "sha256": "5b4423e7b23ecd867b7bc814c82c8f9292a878345ae44bfcb488c936420c202e",
+      "manifest_sha256": "8a3422d89d245b79a152ffb1de44d077d39ec5574dc063bf4e8482a5107b4870",
+      "packing.padding_token_id": 248044,
+      "tokenizer.separator_id": 248044
+    }
+  },
+  "tokenizers": {
+    "qwen": {
+      "name": "qwen3_5",
+      "tokenizer_json": "/home/cereal/models/Qwen3.8-27B-Uncensored/tokenizer.json",
+      "tokenizer_json_sha256": "06b9509352d2af50381ab2247e083b80d32d5c0aba91c272ca9ff729b6a0e523",
+      "defined_rows": 248077,
+      "special_ids": 33,
+      "separator_id": 248044,
+      "separator_piece": "<|endoftext|>",
+      "pad_id": 248044,
+      "pad_note": "the manifest packer pads with its separator; real_lengths delimit the real tokens",
+      "special_render": "literal name bytes (separator excepted: structural, zero bytes)",
+      "separator_sources": {
+        "build_receipt": {
+          "path": "/home/cereal/omni-campaign/composite/corpus/omni-evidence-27b-v1-build-receipt.json",
+          "sha256": "5b4423e7b23ecd867b7bc814c82c8f9292a878345ae44bfcb488c936420c202e",
+          "manifest_sha256": "8a3422d89d245b79a152ffb1de44d077d39ec5574dc063bf4e8482a5107b4870",
+          "packing.padding_token_id": 248044,
+          "tokenizer.separator_id": 248044
+        },
+        "generation_config": {
+          "path": "/home/cereal/models/Qwen3.8-27B-Uncensored/generation_config.json",
+          "pad_token_id": 248044
+        },
+        "override": null,
+        "candidates": {
+          "build receipt packing.padding_token_id": 248044,
+          "build receipt tokenizer.separator_id": 248044,
+          "generation_config pad_token_id": 248044
+        },
+        "source": "build receipt packing.padding_token_id == build receipt tokenizer.separator_id == generation_config pad_token_id"
+      }
+    },
+    "k3": {
+      "name": "kimi_k3",
+      "tiktoken_model": "/mnt/lexar/models/moonshotai/Kimi-K3/tiktoken.model",
+      "tiktoken_model_sha256": "b6c497a7469b33ced9c38afb1ad6e47f03f5e5dc05f15930799210ec050c5103",
+      "tokenizer_config_sha256": "5d0803c94db9cd78763499e0956c95fd5a225c14a727e5a6cf5db3f96f010a6e",
+      "mergeable_ranks": 163584,
+      "vocab_size": 163840,
+      "reserved_specials": 256,
+      "separator_id": 163585,
+      "separator_name": "[EOS]",
+      "pad_id": 163839,
+      "pad_name": "[PAD]",
+      "eos_token_named_by_tokenizer_config": "[EOS]",
+      "pad_token_named_by_tokenizer_config": "[PAD]",
+      "encode": "tiktoken encode_ordinary (no special matching; markup is text)"
+    }
+  },
+  "tokenizer_check": {
+    "manifest_tokenizer_sha256": "06b9509352d2af50381ab2247e083b80d32d5c0aba91c272ca9ff729b6a0e523",
+    "parent_tokenizer_json": "/home/cereal/models/Qwen3.8-27B-Uncensored/tokenizer.json",
+    "parent_tokenizer_sha256": "06b9509352d2af50381ab2247e083b80d32d5c0aba91c272ca9ff729b6a0e523",
+    "matches": true,
+    "allow_mismatch": false,
+    "pinned_sha256": "06b9509352d2af50381ab2247e083b80d32d5c0aba91c272ca9ff729b6a0e523",
+    "pinned": true,
+    "allow_unpinned": false,
+    "statement": "the sealed stream was tokenized by the tokenizer this parent carries",
+    "k3_tiktoken_model_sha256": "b6c497a7469b33ced9c38afb1ad6e47f03f5e5dc05f15930799210ec050c5103",
+    "k3_pinned_sha256": "b6c497a7469b33ced9c38afb1ad6e47f03f5e5dc05f15930799210ec050c5103",
+    "k3_pinned": true,
+    "k3_allow_unpinned": false
+  },
+  "bank_inputs": {
+    "bank_v1": {
+      "path": "/home/cereal/omni-campaign/calibration/banks/lfm2_semantic_whole_response_prompts_v1.json",
+      "sha256": "0ee6bf14cef51bafc26990db44e5038771426c620c0381285c0cd5571e92786b",
+      "schema": "neural-forge-whole-response-review-prompts-v1",
+      "prompts": 16
+    },
+    "bank_v2": {
+      "path": "/home/cereal/omni-campaign/calibration/banks/omni_review_bank_v2_draft.json",
+      "sha256": "f26f36bf31cb2a062c3e75e9f1567b379ea886e6022e2afb93b572a269f4a20b",
+      "schema": "neural-forge-omni-review-bank-v2-draft",
+      "prompts": 40
+    },
+    "probe": {
+      "path": "/home/cereal/omni-campaign/calibration/banks/matrix_campaign_probe_prompts_v1.json",
+      "sha256": "6230f878be9287a9abf4ad129d586fc22346867897858b9f1a4f0b75d1f82f2e",
+      "schema": "neural-forge-matrix-prompt-set-v1",
+      "prompts": 8
+    },
+    "smoke": {
+      "path": "/home/cereal/omni-campaign/calibration/banks/matrix_campaign_smoke_prompts_v1.json",
+      "sha256": "82ebf70a1606ec8a57c4daa31218fe1d376a91f211246c78716615ca66d2ceca",
+      "schema": "neural-forge-matrix-prompt-set-v1",
+      "prompts": 3
+    }
+  },
+  "bank_render": {
+    "mode": "qwen-chat",
+    "chat_template_sha256": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041",
+    "enable_thinking": false,
+    "add_generation_prompt": true
+  },
+  "k3_bank_render": {
+    "mode": "k3-native",
+    "renderer": "tokenization_kimi.TikTokenTokenizer.apply_chat_template",
+    "thinking": false,
+    "add_generation_prompt": true,
+    "tokenization_kimi_sha256": "f28ea66e2d862a2a5814970b2ce40c2f7d8296ff09aed90a7e7def689b906944",
+    "encoding_k3_sha256": "b9cb7ae100fed34b9337f80dacee5abbf7e261fe9b74bc0e76366701d46f5333",
+    "statement": "K3-native: tokenization_kimi.TikTokenTokenizer.apply_chat_template(thinking=False, add_generation_prompt=True) with K3's own specials; the S2 logits on these rows are a K3-native baseline",
+    "raw_prompts": "not rendered here: a raw probe prompt has no chat markup and is identical to its paired review row"
+  },
+  "k3_review_render": {
+    "paired_review_rows": "qwen-chat markup as literal text (not K3-native): the parent's chat template spelled byte-for-byte on the K3 side with encode_ordinary; K3's own specials never appear",
+    "native_review_rows": "K3-native: tokenization_kimi.TikTokenTokenizer.apply_chat_template(thinking=False, add_generation_prompt=True) with K3's own specials; the S2 logits on these rows are a K3-native baseline",
+    "s2_bank_row_logits_are_k3_native_baseline": true
+  },
+  "skipped_review_prompts": [
+    {
+      "source": "bank_v2",
+      "id": "lc-8k-notice-select-A",
+      "reason": "prompt_tokens_target 8192 > review sequence_length 512"
+    },
+    {
+      "source": "bank_v2",
+      "id": "lc-8k-notice-select-B",
+      "reason": "prompt_tokens_target 8192 > review sequence_length 512"
+    },
+    {
+      "source": "bank_v2",
+      "id": "lc-8k-crossref-two-facts-B",
+      "reason": "prompt_tokens_target 8192 > review sequence_length 512"
+    },
+    {
+      "source": "bank_v2",
+      "id": "lc-32k-conflicting-updates-B",
+      "reason": "prompt_tokens_target 32768 > review sequence_length 512"
+    },
+    {
+      "source": "bank_v2",
+      "id": "lc-64k-notice-select-A",
+      "reason": "prompt_tokens_target 65536 > review sequence_length 512"
+    },
+    {
+      "source": "bank_v2",
+      "id": "lc-64k-notice-select-B",
+      "reason": "prompt_tokens_target 65536 > review sequence_length 512"
+    },
+    {
+      "source": "bank_v2",
+      "id": "lc-64k-summary-B",
+      "reason": "prompt_tokens_target 65536 > review sequence_length 512"
+    },
+    {
+      "source": "bank_v2",
+      "id": "lc-200k-notice-select-A",
+      "reason": "prompt_tokens_target 200000 > review sequence_length 512"
+    },
+    {
+      "source": "bank_v2",
+      "id": "lc-200k-notice-select-B",
+      "reason": "prompt_tokens_target 200000 > review sequence_length 512"
+    },
+    {
+      "source": "bank_v2",
+      "id": "vis-ocr-receipt-total-A",
+      "reason": "modality_in='text+image' is not a text case"
+    },
+    {
+      "source": "bank_v2",
+      "id": "vis-count-shapes-B",
+      "reason": "modality_in='text+image' is not a text case"
+    },
+    {
+      "source": "bank_v2",
+      "id": "vis-chart-trend-B",
+      "reason": "modality_in='text+image' is not a text case"
+    },
+    {
+      "source": "bank_v2",
+      "id": "vis-scene-relation-A",
+      "reason": "modality_in='text+image' is not a text case"
+    },
+    {
+      "source": "bank_v2",
+      "id": "vis-grid-cell-select-A",
+      "reason": "modality_in='text+image' is not a text case"
+    },
+    {
+      "source": "bank_v2",
+      "id": "av-clip-what-said-and-shown-A",
+      "reason": "modality_in='text+video+audio' is not a text case"
+    },
+    {
+      "source": "bank_v2",
+      "id": "av-clip-what-said-and-shown-B",
+      "reason": "modality_in='text+video+audio' is not a text case"
+    },
+    {
+      "source": "bank_v2",
+      "id": "av-gen-kettle-A",
+      "reason": "modality_out='video+audio': the answer is a media artifact, not a text case"
+    },
+    {
+      "source": "bank_v2",
+      "id": "img-gen-shelf-B",
+      "reason": "modality_out='image': the answer is a media artifact, not a text case"
+    },
+    {
+      "source": "bank_v2",
+      "id": "music-gen-two-bar-A",
+      "reason": "modality_out='audio': the answer is a media artifact, not a text case"
+    }
+  ],
+  "native_not_rendered": [
+    {
+      "source": "probe",
+      "id": "probe-0",
+      "reason": "raw prompt: no chat markup, identical to the paired review row"
+    },
+    {
+      "source": "probe",
+      "id": "probe-1",
+      "reason": "raw prompt: no chat markup, identical to the paired review row"
+    },
+    {
+      "source": "probe",
+      "id": "probe-2",
+      "reason": "raw prompt: no chat markup, identical to the paired review row"
+    },
+    {
+      "source": "probe",
+      "id": "probe-3",
+      "reason": "raw prompt: no chat markup, identical to the paired review row"
+    },
+    {
+      "source": "probe",
+      "id": "probe-4",
+      "reason": "raw prompt: no chat markup, identical to the paired review row"
+    },
+    {
+      "source": "probe",
+      "id": "probe-5",
+      "reason": "raw prompt: no chat markup, identical to the paired review row"
+    },
+    {
+      "source": "probe",
+      "id": "probe-6",
+      "reason": "raw prompt: no chat markup, identical to the paired review row"
+    },
+    {
+      "source": "probe",
+      "id": "probe-7",
+      "reason": "raw prompt: no chat markup, identical to the paired review row"
+    }
+  ],
+  "counts": {
+    "rows": 112,
+    "sequence_length": 4096,
+    "review_sequence_length": 512,
+    "rows_by_split": {
+      "fit": 18,
+      "held": 6,
+      "review": 88
+    },
+    "rows_by_source": {
+      "bank_v1": 32,
+      "bank_v2": 42,
+      "evidence": 24,
+      "probe": 8,
+      "smoke": 6
+    },
+    "rows_by_file": {
+      "k3_input_ids": 24,
+      "k3_review_input_ids": 48,
+      "k3_review_native_input_ids": 40
+    },
+    "evidence_rows": 24,
+    "review_rows": 48,
+    "review_native_rows": 40,
+    "skipped_review_prompts": 19,
+    "native_not_rendered": 8,
+    "k3_tokens_real_total": 98797,
+    "k3_tokens_real_min": 12,
+    "k3_tokens_real_max": 4024,
+    "k3_fit_tokens": 69743,
+    "k3_held_tokens": 23186,
+    "qwen_tokens_real_total": 98907,
+    "k3_rows_truncated": 0,
+    "k3_tokens_dropped_total": 0,
+    "dropped_trailing_partial_utf8_bytes_total": 0,
+    "k3_padding_tokens_total": 44563,
+    "k3_padding_fraction": 0.3108468191964286,
+    "review_rows_in_fit_split": 0,
+    "review_rows_in_evidence_file": 0
+  },
+  "pricing": {
+    "note": "S2 is priced per POSITION of each file it streams; the run book's single T=65,536 is replaced by these: the evidence file alone is what the folded-prefix fits see, the review files are one short extra batch each (logits only, no solve).",
+    "files": {
+      "k3_input_ids": {
+        "rows": 24,
+        "sequence_length": 4096,
+        "positions": 98304,
+        "k3_tokens_real": 92929,
+        "k3_padding_tokens": 5375,
+        "k3_padding_fraction": 0.054677327473958336,
+        "rows_by_split": {
+          "fit": 18,
+          "held": 6
+        }
+      },
+      "k3_review_input_ids": {
+        "rows": 48,
+        "sequence_length": 512,
+        "positions": 24576,
+        "k3_tokens_real": 3127,
+        "k3_padding_tokens": 21449,
+        "k3_padding_fraction": 0.8727620442708334,
+        "rows_by_split": {
+          "review": 48
+        }
+      },
+      "k3_review_native_input_ids": {
+        "rows": 40,
+        "sequence_length": 512,
+        "positions": 20480,
+        "k3_tokens_real": 2741,
+        "k3_padding_tokens": 17739,
+        "k3_padding_fraction": 0.866162109375,
+        "rows_by_split": {
+          "review": 40
+        }
+      }
+    },
+    "positions_total": 143360,
+    "evidence_positions": 98304,
+    "review_positions": 45056
+  },
+  "boundary_aggregate": {
+    "all": {
+      "rows": 72,
+      "aligned_pairs": 93237,
+      "qwen_tokens_real": 98907,
+      "k3_tokens_real": 96056,
+      "aligned_fraction_qwen": 0.942673420485911,
+      "aligned_fraction_k3": 0.9706525360206546,
+      "aligned_fraction": 0.942673420485911,
+      "min_row_aligned_fraction": 0.5365853658536586
+    },
+    "evidence": {
+      "rows": 24,
+      "aligned_pairs": 91049,
+      "qwen_tokens_real": 96475,
+      "k3_tokens_real": 92929,
+      "aligned_fraction_qwen": 0.9437574501166105,
+      "aligned_fraction_k3": 0.9797695014473415,
+      "aligned_fraction": 0.9437574501166105,
+      "min_row_aligned_fraction": 0.9174019607843137
+    },
+    "evidence_fit": {
+      "rows": 18,
+      "aligned_pairs": 68280,
+      "qwen_tokens_real": 72390,
+      "k3_tokens_real": 69743,
+      "aligned_fraction_qwen": 0.9432242022378782,
+      "aligned_fraction_k3": 0.9790229843855297,
+      "aligned_fraction": 0.9432242022378782,
+      "min_row_aligned_fraction": 0.9174019607843137
+    },
+    "evidence_held": {
+      "rows": 6,
+      "aligned_pairs": 22769,
+      "qwen_tokens_real": 24085,
+      "k3_tokens_real": 23186,
+      "aligned_fraction_qwen": 0.9453601826863193,
+      "aligned_fraction_k3": 0.9820150090571896,
+      "aligned_fraction": 0.9453601826863193,
+      "min_row_aligned_fraction": 0.9308823529411765
+    },
+    "review": {
+      "rows": 48,
+      "aligned_pairs": 2188,
+      "qwen_tokens_real": 2432,
+      "k3_tokens_real": 3127,
+      "aligned_fraction_qwen": 0.899671052631579,
+      "aligned_fraction_k3": 0.6997121842021107,
+      "aligned_fraction": 0.6997121842021107,
+      "min_row_aligned_fraction": 0.5365853658536586
+    }
+  },
+  "in_band_tensors": [
+    "input_ids",
+    "split",
+    "real_lengths",
+    "fit_mask",
+    "held_mask"
+  ],
+  "split_codes": {
+    "fit": 0,
+    "held": 1,
+    "review": 2
+  },
+  "outputs": {
+    "k3_input_ids": {
+      "path": "/home/cereal/omni-campaign/composite/corpus/k3_input_ids.safetensors",
+      "sha256": "bb3b16573665d049fdc6f1368182fbffb2aabee2b83eff771b9f35c5c839ed38",
+      "tensors": {
+        "input_ids": {
+          "shape": [
+            24,
+            4096
+          ],
+          "dtype": "int64"
+        },
+        "split": {
+          "shape": [
+            24
+          ],
+          "dtype": "int8"
+        },
+        "real_lengths": {
+          "shape": [
+            24
+          ],
+          "dtype": "int64"
+        },
+        "fit_mask": {
+          "shape": [
+            24,
+            4096
+          ],
+          "dtype": "bool"
+        },
+        "held_mask": {
+          "shape": [
+            24,
+            4096
+          ],
+          "dtype": "bool"
+        }
+      },
+      "input_ids_sha256": {
+        "int64": "cfd92b2eef67a8496857eec8807a515de06543890aa351e54199096f862f4c1e",
+        "fp32": "2764f28a6b35f071c5fa51ab31be9cd7b26a9bf6aa29a278a61495dac55e4acf"
+      },
+      "fit_mask_sha256": "0cf522e5b88e295e3a2c6a2fca6c2f1bbc0f1064d075b7246e5df70c2aac0019",
+      "shape": [
+        24,
+        4096
+      ],
+      "dtype": "int64",
+      "separator_id": 163585,
+      "pad_id": 163839,
+      "fit_mask_true": 69743,
+      "held_mask_true": 23186,
+      "role": "evidence"
+    },
+    "qwen_input_ids": {
+      "path": "/home/cereal/omni-campaign/composite/corpus/qwen_input_ids.safetensors",
+      "sha256": "e3ab5efec07fb402db2ebd3c05492221a48923465108d300d6b3614b2b68578f",
+      "tensors": {
+        "input_ids": {
+          "shape": [
+            24,
+            4096
+          ],
+          "dtype": "int64"
+        },
+        "split": {
+          "shape": [
+            24
+          ],
+          "dtype": "int8"
+        },
+        "real_lengths": {
+          "shape": [
+            24
+          ],
+          "dtype": "int64"
+        },
+        "fit_mask": {
+          "shape": [
+            24,
+            4096
+          ],
+          "dtype": "bool"
+        },
+        "held_mask": {
+          "shape": [
+            24,
+            4096
+          ],
+          "dtype": "bool"
+        }
+      },
+      "input_ids_sha256": {
+        "int64": "c2c892339e410c273b18c7868f48b316eb527f5e45ebbea877342be2dcbc97cf",
+        "fp32": "810a474faf445a43733bb484c0415264596039b22b5304d4e50b40257724c85a"
+      },
+      "fit_mask_sha256": "26f8e8881f16ba25c67bb8b1ed8d67e98fe09e9ed775adddda56e34c04b90d12",
+      "shape": [
+        24,
+        4096
+      ],
+      "dtype": "int64",
+      "separator_id": 248044,
+      "pad_id": 248044,
+      "fit_mask_true": 72390,
+      "held_mask_true": 24085,
+      "role": "evidence"
+    },
+    "k3_review_input_ids": {
+      "path": "/home/cereal/omni-campaign/composite/corpus/k3_review_input_ids.safetensors",
+      "sha256": "4b34c87d5d6a3aa9dceede2b21df991202614c5490ef9b6c8d75ac2a84ee8732",
+      "tensors": {
+        "input_ids": {
+          "shape": [
+            48,
+            512
+          ],
+          "dtype": "int64"
+        },
+        "split": {
+          "shape": [
+            48
+          ],
+          "dtype": "int8"
+        },
+        "real_lengths": {
+          "shape": [
+            48
+          ],
+          "dtype": "int64"
+        },
+        "fit_mask": {
+          "shape": [
+            48,
+            512
+          ],
+          "dtype": "bool"
+        },
+        "held_mask": {
+          "shape": [
+            48,
+            512
+          ],
+          "dtype": "bool"
+        }
+      },
+      "input_ids_sha256": {
+        "int64": "72da46c950076193c4bb17f0a421950259155fe1ebaa6e3b1540b279e465f419",
+        "fp32": "7898720413f1f120981794ef1ccdc8db30a822b0ebb9a1ed43dc4a400f554496"
+      },
+      "fit_mask_sha256": "de676bae28a480011d3d012db14bef539324e62a841a9627863c689bea168af3",
+      "shape": [
+        48,
+        512
+      ],
+      "dtype": "int64",
+      "separator_id": 163585,
+      "pad_id": 163839,
+      "fit_mask_true": 0,
+      "held_mask_true": 0,
+      "role": "review (masked)"
+    },
+    "qwen_review_input_ids": {
+      "path": "/home/cereal/omni-campaign/composite/corpus/qwen_review_input_ids.safetensors",
+      "sha256": "a7b6b12ec66d1c4c68a8357bb91390cc70379b2b88604a711481f00ccab847a3",
+      "tensors": {
+        "input_ids": {
+          "shape": [
+            48,
+            512
+          ],
+          "dtype": "int64"
+        },
+        "split": {
+          "shape": [
+            48
+          ],
+          "dtype": "int8"
+        },
+        "real_lengths": {
+          "shape": [
+            48
+          ],
+          "dtype": "int64"
+        },
+        "fit_mask": {
+          "shape": [
+            48,
+            512
+          ],
+          "dtype": "bool"
+        },
+        "held_mask": {
+          "shape": [
+            48,
+            512
+          ],
+          "dtype": "bool"
+        }
+      },
+      "input_ids_sha256": {
+        "int64": "c085d099f271a38d1dfecf2fa4093ba5a8cb6d5aa8a9e2ab7c556ab591f14cbe",
+        "fp32": "5b1bef15ddd9d49e50732132e141e57e9af1363078c34f0f4a09a0ce06ebc0ba"
+      },
+      "fit_mask_sha256": "de676bae28a480011d3d012db14bef539324e62a841a9627863c689bea168af3",
+      "shape": [
+        48,
+        512
+      ],
+      "dtype": "int64",
+      "separator_id": 248044,
+      "pad_id": 248044,
+      "fit_mask_true": 0,
+      "held_mask_true": 0,
+      "role": "review (masked)"
+    },
+    "k3_review_native_input_ids": {
+      "path": "/home/cereal/omni-campaign/composite/corpus/k3_review_native_input_ids.safetensors",
+      "sha256": "5c53c84f9587b6a356209849fb578ed7c339a644c6f510460daf82e0ac3e1de7",
+      "tensors": {
+        "input_ids": {
+          "shape": [
+            40,
+            512
+          ],
+          "dtype": "int64"
+        },
+        "split": {
+          "shape": [
+            40
+          ],
+          "dtype": "int8"
+        },
+        "real_lengths": {
+          "shape": [
+            40
+          ],
+          "dtype": "int64"
+        },
+        "fit_mask": {
+          "shape": [
+            40,
+            512
+          ],
+          "dtype": "bool"
+        },
+        "held_mask": {
+          "shape": [
+            40,
+            512
+          ],
+          "dtype": "bool"
+        }
+      },
+      "input_ids_sha256": {
+        "int64": "ed2d1f1cec0c7741b839c0796a987cd4e648ae4ac78b1094b2a30074f4ae43ff",
+        "fp32": "dddc18f0bd77b1e7f34dd6fe98baae33e4117ac982ebcc04b0516f342d1434d9"
+      },
+      "fit_mask_sha256": "cc61635da46b2c9974335ea37e0b5fd660a5c8a42a89b271fa7ec2ac4b8b26f6",
+      "shape": [
+        40,
+        512
+      ],
+      "dtype": "int64",
+      "separator_id": 163585,
+      "pad_id": 163839,
+      "fit_mask_true": 0,
+      "held_mask_true": 0,
+      "role": "review (masked)"
+    },
+    "row_meta": {
+      "path": "/home/cereal/omni-campaign/composite/corpus/row_meta.json",
+      "sha256": "2ff2725491e7730fe47d5ac38bc60009d1b695835c740878b5d6b5dbc40a6bf3",
+      "row_meta_sha256": "8c261a37607d697b533d78df21ea1da9274fcf1f95e9b4ffcbd6fab6ab8a5ddc"
+    },
+    "boundary_map": {
+      "path": "/home/cereal/omni-campaign/composite/corpus/boundary_map.json",
+      "sha256": "090e47a2e3153d3d91f7d747847d7a9c8d36b7c9de99daaa6a11d452d78d9c68",
+      "boundary_map_sha256": "3e5f61269291191879b9f0ac57bb11d067039c7b35e34303abe474509d08181c"
+    }
+  },
+  "wall_seconds": 55.786,
+  "receipt_sha256": "a5b2d5108549644702c02da346e8870255c1ff210f483c0dc1d8d9c065e6db58"
+}

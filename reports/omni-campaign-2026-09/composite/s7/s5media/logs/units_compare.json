@@ -1,0 +1,166 @@
+{
+ "s3_root": "/home/cereal/omni-campaign/composite/s7/units",
+ "rebuilt_root": "/home/cereal/omni-campaign/composite/s7/units_s5",
+ "units": {
+  "ace/ace_dit_L12": {
+   "files": {
+    "charted_block.safetensors": {
+     "sha256": "94c4f10f55fa3e09380376e6997cdffe3e3458e660cd422463d7eb90458ab7f5",
+     "identical": true,
+     "symlink_s3": false,
+     "symlink_rebuilt": false,
+     "target_rebuilt": null
+    },
+    "charts_host128.reference.safetensors": {
+     "sha256": "84002ea37c2e9e424d21edef06170da5ebfb970cd0004670c38ded301370e6ad",
+     "identical": true,
+     "symlink_s3": false,
+     "symlink_rebuilt": false,
+     "target_rebuilt": null
+    },
+    "time_reference.safetensors": {
+     "sha256": "0d1ae9939364f80a2dc9a074273397b196137995d094c508acedcd64bca0a727",
+     "identical": true,
+     "symlink_s3": false,
+     "symlink_rebuilt": false,
+     "target_rebuilt": null
+    }
+   },
+   "missing": [],
+   "mismatch": [],
+   "json_diffs": [
+    {
+     "key": "s7_unit.tool_version",
+     "s3_pre_m1": "1.0.0",
+     "rebuilt": "1.3.0"
+    }
+   ],
+   "json_hard_diffs": [],
+   "tensor_sha256_equal": true,
+   "spec_equal": true,
+   "accounting_equal": true,
+   "charted_block_json_sha256": "d2563489edb80906d2efa2b217f5df1e99c58b221c0096edd6c634e7d8341c0a",
+   "verdict": "IDENTICAL_BLOCK"
+  },
+  "h3/h3_dit_L25_curve6": {
+   "files": {
+    "charted_block.safetensors": {
+     "sha256": "8f1adfe2768513c721c9c77e52f729264883930d6af72b50fdc0f58df9cbfabf",
+     "identical": true,
+     "symlink_s3": true,
+     "symlink_rebuilt": true,
+     "target_rebuilt": "/home/cereal/omni-campaign/composite/media/h3-native-curve6-sep07/charted_block.safetensors"
+    },
+    "time_reference.safetensors": {
+     "sha256": "d09fbd3501ff329a69a4be7824f5d4d3bd1e341f185e5037a818b7ed4d9bd3b0",
+     "identical": true,
+     "symlink_s3": true,
+     "symlink_rebuilt": true,
+     "target_rebuilt": "/home/cereal/omni-campaign/composite/media/h3-native-curve6-sep07/time_reference.safetensors"
+    }
+   },
+   "missing": [],
+   "mismatch": [],
+   "json_diffs": [
+    {
+     "key": "s7_unit.tool_version",
+     "s3_pre_m1": "1.2.0",
+     "rebuilt": "1.3.0"
+    }
+   ],
+   "json_hard_diffs": [],
+   "tensor_sha256_equal": true,
+   "spec_equal": true,
+   "accounting_equal": true,
+   "charted_block_json_sha256": "42cda12f709acfdcdb89dfed7bfda161afcfaa120f84ffe4a03e20dc26776b93",
+   "verdict": "IDENTICAL_BLOCK"
+  },
+  "qimg/qimg_mmdit_L30_img": {
+   "files": {
+    "charted_block.safetensors": {
+     "sha256": "e15a5b754e1d9456865ba64a13a0aa4a13491b2f28d9aca040529c666bcd9c0b",
+     "identical": true,
+     "symlink_s3": false,
+     "symlink_rebuilt": false,
+     "target_rebuilt": null
+    },
+    "time_reference.safetensors": {
+     "sha256": "d1ef99406661806b2ee9c70d5ac702b380458b8cbe3f9c2c478cfdfa7b2c816e",
+     "identical": true,
+     "symlink_s3": false,
+     "symlink_rebuilt": false,
+     "target_rebuilt": null
+    }
+   },
+   "missing": [],
+   "mismatch": [],
+   "json_diffs": [
+    {
+     "key": "s7_unit.tool_version",
+     "s3_pre_m1": "1.2.0",
+     "rebuilt": "1.3.0"
+    }
+   ],
+   "json_hard_diffs": [],
+   "tensor_sha256_equal": true,
+   "spec_equal": true,
+   "accounting_equal": true,
+   "charted_block_json_sha256": "df18dc66386e9eba670cda6306d603a7e2178bdb6e2ba968bf39c778c673a23f",
+   "verdict": "IDENTICAL_BLOCK"
+  },
+  "hy3d/hy3d_dit_L10": {
+   "files": {
+    "charted_block.safetensors": {
+     "sha256": "58574fe6255d924a651d910ed941115da1d1aabaf5f1c4f8afba1e81e8b5d817",
+     "identical": true,
+     "symlink_s3": false,
+     "symlink_rebuilt": false,
+     "target_rebuilt": null
+    },
+    "hy3d_time_token_reference.safetensors": {
+     "sha256": "27642bfad438f0f397d6f54d2f1e0ad69c1d37812eedda38f9e6d0eea976b79f",
+     "identical": true,
+     "symlink_s3": false,
+     "symlink_rebuilt": false,
+     "target_rebuilt": null
+    }
+   },
+   "missing": [],
+   "mismatch": [],
+   "json_diffs": [],
+   "json_hard_diffs": [],
+   "tensor_sha256_equal": true,
+   "spec_equal": true,
+   "accounting_equal": true,
+   "charted_block_json_sha256": "c461702c5f2937e5c2c732a8e2b4af132b37ca080618129e2ec35d13a6470e3e",
+   "verdict": "IDENTICAL_BLOCK"
+  },
+  "qvl32/qvl32_vit_L13": {
+   "files": {
+    "charted_block.safetensors": {
+     "sha256": "42e07a077b2f0a43f6279fb311e35ed216b83c9ddf9179c89c638d27791876bb",
+     "identical": true,
+     "symlink_s3": false,
+     "symlink_rebuilt": false,
+     "target_rebuilt": null
+    }
+   },
+   "missing": [],
+   "mismatch": [],
+   "json_diffs": [
+    {
+     "key": "s7_unit.tool_version",
+     "s3_pre_m1": "1.2.0",
+     "rebuilt": "1.3.0"
+    }
+   ],
+   "json_hard_diffs": [],
+   "tensor_sha256_equal": true,
+   "spec_equal": true,
+   "accounting_equal": true,
+   "charted_block_json_sha256": "e1f76dd7548cadf970015906f4b3d5d4458448d4238214a18da65040e4d38b43",
+   "verdict": "IDENTICAL_BLOCK"
+  }
+ },
+ "verdict": "all five rebuilt blocks identical to the S3 units' blocks"
+}

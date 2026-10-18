@@ -1,0 +1,371 @@
+{
+ "schema": "neural-forge-omni-distill-corpus-v1/text-clean",
+ "repack_schema": "omni-d2-clean-repack-v1",
+ "identity": {
+  "tool": "d2_clean_repack",
+  "version": "1.0.1",
+  "path": "/home/cereal/omni-campaign/distill/tools/d2_clean_repack.py",
+  "sha256": "1d03d3e852e6d9d0dbcf501b79c0294124703692c87adb3ec8bca288bda26664",
+  "distill_corpus_build": {
+   "version": "1.0.1",
+   "sha256": "696559136fb4698c6b92de47ed320c993aba5c3a065a13f18e78cd5c24a7ab94"
+  },
+  "d2_mask_build": {
+   "version": "1.1.0",
+   "sha256": "a16ca993a7162349bc914d104d8dbc8f102b209941b12154099c46fa0e43de1d"
+  },
+  "built_at_utc": "2026-10-15T03:34:12Z"
+ },
+ "set": "(a) text, clean D2 version: registry text without any held-out document (D2-X1 clean)",
+ "decision": "Claude-lead 2026-10-15 (lane d2clean), upgrade over d2-codex-heldout-exclusion-2026-10-15's span mask",
+ "rule": "(one epoch, every non-held-out document exactly once, whole):\n  X           = the held-out rids (the six heldout_packs of the decisions file, joined to registry rids by the\n                d2_holdout_eos_audit rule) + the BFCL-62 source rids + the A2 3(a) text twin rids.\n  A (affected)= every sealed packed row holding a token of an X document (3,386 rows).  K = the other rows (1,497).\n                K rows are used AS THEY ARE: byte-identical, so their sealed Q38 cache rows stay valid.\n  re-pack     = every non-X document with any token in an A row, WHOLE (its tokens read from the sealed shards, never\n                re-tokenized), in the sealed allocation order (documents.jsonl `doc`, which keeps the route\n                interleave), stream-packed into rows of 4,096 exactly like `distill_corpus_build.stream_pack`: concatenated,\n                cut every 4,096 positions, a document may continue into the next row; the last row is right-padded\n                with the separator (doc_index -1, route 255, `real_lengths` < 4,096; qtext stores no padded position).\n                Shards of 256 rows, the sealed tensor names and metadata keys, plus provenance per document.\n  boundary    = a re-packed document that also has tokens in a K row (1,737 documents): it is trained once, whole, in\n                the re-pack; in its K row(s) its positions are loss-masked (all terms) and stay plain train-text context.\n  K-row mask  = every position of a K row that belongs (d2_mask_build POSITION CONVENTION: a document of global tokens\n                [s, e) owns positions [s-1, e-1)) to an X document or to a re-packed document.\nSo no held-out token is ever an input or a target, and no train document is trained twice.",
+ "sequence_length": 4096,
+ "rows": 3015,
+ "positions": 12349440,
+ "real_tokens": 12349164,
+ "pad_positions": 276,
+ "documents": 22970,
+ "documents_spanning_rows": 2876,
+ "route_table": {
+  "agentic_task": 0,
+  "agentic_trace": 1,
+  "arc_grid_reasoning": 2,
+  "broad_domain": 3,
+  "browser": 4,
+  "chemistry": 5,
+  "chemistry_science": 6,
+  "code": 7,
+  "code_and_metrics": 8,
+  "data_pipeline_design": 9,
+  "defensive_runbook": 10,
+  "finance": 11,
+  "finance_economics": 12,
+  "grid": 13,
+  "healthcare": 14,
+  "healthcare_workflow": 15,
+  "knowledge_qa": 16,
+  "long_context": 17,
+  "math": 18,
+  "ops_instruction": 19,
+  "ops_runbook": 20,
+  "reasoning": 21,
+  "reasoning_algorithmic": 22,
+  "research_instruction": 23,
+  "science": 24,
+  "science_reasoning": 25,
+  "sql_text": 26,
+  "structured_plan": 27,
+  "synthesis": 28,
+  "table": 29,
+  "terminal": 30,
+  "test_design": 31,
+  "text": 32,
+  "tool": 33,
+  "web_concept_reasoning": 34,
+  "web_domain_extraction": 35,
+  "web_knowledge": 36
+ },
+ "tensors": {
+  "input_ids": "int32 [rows, 4096]",
+  "route_ids": "uint8 [rows, 4096] (255 pad)",
+  "doc_index": "int32 [rows, 4096] (-1 pad)",
+  "real_lengths": "int32 [rows]"
+ },
+ "shards": [
+  {
+   "file": "text-clean-00000.safetensors",
+   "path": "/home/cereal/omni-campaign/distill/corpus/text_clean_v1/text-clean-00000.safetensors",
+   "sha256": "01d99603bd662630c157b5acee16781fa082dccfafb486ee3cf14f0fb854aa2a",
+   "rows": [
+    0,
+    256
+   ],
+   "row_offset": 0,
+   "tokens": 1048576
+  },
+  {
+   "file": "text-clean-00001.safetensors",
+   "path": "/home/cereal/omni-campaign/distill/corpus/text_clean_v1/text-clean-00001.safetensors",
+   "sha256": "1b5ecfc13a944ae69a921030e8bf7c96c836318dc70debf43921cadab6e3d6b5",
+   "rows": [
+    256,
+    512
+   ],
+   "row_offset": 256,
+   "tokens": 1048576
+  },
+  {
+   "file": "text-clean-00002.safetensors",
+   "path": "/home/cereal/omni-campaign/distill/corpus/text_clean_v1/text-clean-00002.safetensors",
+   "sha256": "36c04a2147fe139cc8786af76a2a322065846faba199bddaf1fba87bf98e6041",
+   "rows": [
+    512,
+    768
+   ],
+   "row_offset": 512,
+   "tokens": 1048576
+  },
+  {
+   "file": "text-clean-00003.safetensors",
+   "path": "/home/cereal/omni-campaign/distill/corpus/text_clean_v1/text-clean-00003.safetensors",
+   "sha256": "ee3d695861863e9cdf2f4de11a71afd7e5359d89986088f265ee962cee3c487b",
+   "rows": [
+    768,
+    1024
+   ],
+   "row_offset": 768,
+   "tokens": 1048576
+  },
+  {
+   "file": "text-clean-00004.safetensors",
+   "path": "/home/cereal/omni-campaign/distill/corpus/text_clean_v1/text-clean-00004.safetensors",
+   "sha256": "8064467308227fcf51615666b3ebca4ea9f5a5c0822c888a5f5d908dc35c2dd3",
+   "rows": [
+    1024,
+    1280
+   ],
+   "row_offset": 1024,
+   "tokens": 1048576
+  },
+  {
+   "file": "text-clean-00005.safetensors",
+   "path": "/home/cereal/omni-campaign/distill/corpus/text_clean_v1/text-clean-00005.safetensors",
+   "sha256": "be62d718eec641ed8e2f33d9d7152f7c73eea0a7ac3fe2f80a6ee776535b29a4",
+   "rows": [
+    1280,
+    1536
+   ],
+   "row_offset": 1280,
+   "tokens": 1048576
+  },
+  {
+   "file": "text-clean-00006.safetensors",
+   "path": "/home/cereal/omni-campaign/distill/corpus/text_clean_v1/text-clean-00006.safetensors",
+   "sha256": "c52ae817de504174ae1795d470755a5d7033479f25bee46c420c30db7cdd2be7",
+   "rows": [
+    1536,
+    1792
+   ],
+   "row_offset": 1536,
+   "tokens": 1048576
+  },
+  {
+   "file": "text-clean-00007.safetensors",
+   "path": "/home/cereal/omni-campaign/distill/corpus/text_clean_v1/text-clean-00007.safetensors",
+   "sha256": "f6d77e91f081d5bacbfc810925b76de528f066e9882bedbaa94f1315951574dd",
+   "rows": [
+    1792,
+    2048
+   ],
+   "row_offset": 1792,
+   "tokens": 1048576
+  },
+  {
+   "file": "text-clean-00008.safetensors",
+   "path": "/home/cereal/omni-campaign/distill/corpus/text_clean_v1/text-clean-00008.safetensors",
+   "sha256": "79abb869371198acb7dad0dc1e872f8db98e072f6e028cd55e39cfc95d9d1566",
+   "rows": [
+    2048,
+    2304
+   ],
+   "row_offset": 2048,
+   "tokens": 1048576
+  },
+  {
+   "file": "text-clean-00009.safetensors",
+   "path": "/home/cereal/omni-campaign/distill/corpus/text_clean_v1/text-clean-00009.safetensors",
+   "sha256": "d960ab6a1572eaeb3fd123d84c67fffd09f84ce678d442a63bd11ae40c2e5c1e",
+   "rows": [
+    2304,
+    2560
+   ],
+   "row_offset": 2304,
+   "tokens": 1048576
+  },
+  {
+   "file": "text-clean-00010.safetensors",
+   "path": "/home/cereal/omni-campaign/distill/corpus/text_clean_v1/text-clean-00010.safetensors",
+   "sha256": "18bee8fbc56f7de71400d8c1b65133014aea1c75ca7ae3bd4ed30ec56de05f1f",
+   "rows": [
+    2560,
+    2816
+   ],
+   "row_offset": 2560,
+   "tokens": 1048576
+  },
+  {
+   "file": "text-clean-00011.safetensors",
+   "path": "/home/cereal/omni-campaign/distill/corpus/text_clean_v1/text-clean-00011.safetensors",
+   "sha256": "9fbbb536ed0feb65e2518522ea4c6ceb8674c66e84b4a0babe4ba1a08e441b34",
+   "rows": [
+    2816,
+    3015
+   ],
+   "row_offset": 2816,
+   "tokens": 814828
+  }
+ ],
+ "documents_file": {
+  "path": "/home/cereal/omni-campaign/distill/corpus/text_clean_v1/documents.jsonl",
+  "sha256": "848cc07f2e1f4ca38c1008f051b8a067ac536f37fe345a8d300d190c9880779b"
+ },
+ "sealed_corpus": {
+  "manifest": "/home/cereal/omni-campaign/distill/corpus/text/manifest.json",
+  "manifest_sha256": "c42e508afad99008da54909b7f1e140d4748e338f6acff3de0b9a10a521173ff",
+  "use": "rows NOT in clean_exclude_rows.json, with clean_all_mask.json / clean_gt_mask.json; their sealed Q38 caches unchanged"
+ },
+ "masks": {
+  "clean_exclude_rows.json": {
+   "path": "/home/cereal/omni-campaign/distill/corpus/text_clean_v1/clean_exclude_rows.json",
+   "sha256": "40304d9d804ad312203a93af822026a748b1c168eb16a2220ebe4d17e545d996"
+  },
+  "clean_all_mask.json": {
+   "path": "/home/cereal/omni-campaign/distill/corpus/text_clean_v1/clean_all_mask.json",
+   "sha256": "7bc14ae22c79127a1d5b9f3a3829189288b98fef413f9b1669c6bc070a951b73"
+  },
+  "clean_gt_mask.json": {
+   "path": "/home/cereal/omni-campaign/distill/corpus/text_clean_v1/clean_gt_mask.json",
+   "sha256": "e3406d154ffcf1839fcd0359d04e45f4fb819fdfefae627092e09757fd35b3a3"
+  }
+ },
+ "counts": {
+  "heldout_ids": 5391,
+  "heldout_rids_joined": 5055,
+  "bfcl62_rids": 62,
+  "text_twin_rids": 7,
+  "x_rids": 5061,
+  "x_docs": 5061,
+  "x_tokens": 3180411,
+  "rows": 4883,
+  "positions": 20000768,
+  "affected_rows": 3386,
+  "kept_rows": 1497,
+  "kept_row_runs": 886,
+  "repack_docs": 22970,
+  "boundary_docs": 1737,
+  "repack_tokens": 12349164,
+  "boundary_tokens_in_kept_rows": 1660519,
+  "kept_whole_docs": 7954,
+  "kept_whole_tokens": 4471193,
+  "kept_row_all_mask_positions": 1660520,
+  "documents": 35985,
+  "real_tokens_sealed": 20000768,
+  "repack_rows": 3015,
+  "repack_files": 12,
+  "eos_flagged_docs_masked": 5498,
+  "a2_3b_docs": 692,
+  "a2_3c_docs": 8112,
+  "all_mask_positions_kept_rows": 1723659,
+  "all_mask_positions_repack": 181784,
+  "gt_mask_positions_kept_rows": 877616,
+  "gt_mask_positions_repack": 2402471,
+  "kd_positions_kept_rows": 4408053,
+  "kd_positions_repack": 12167380,
+  "kd_positions_clean_total": 16575433
+ },
+ "conservation": {
+  "x_tokens": 3180411,
+  "repack_tokens": 12349164,
+  "kept_whole_tokens": 4471193,
+  "sum": 20000768,
+  "sealed_real_tokens": 20000768,
+  "holds": true
+ },
+ "heldout": {
+  "packs": [
+   {
+    "name": "original_short_validation",
+    "manifest": "/home/cereal/omni-campaign/distill/codex-preparation-01a1326f-20261013/native-text-v3-validation/manifest.json",
+    "sha256": "5aee591bb50be43e366ce8f8b9b064d2fc213ac4559353b4d36da4d4f58d7f68",
+    "rows": 2465
+   },
+   {
+    "name": "original_short_test",
+    "manifest": "/home/cereal/omni-campaign/distill/codex-preparation-01a1326f-20261013/native-text-v3-test/manifest.json",
+    "sha256": "a3aacff47757eba8d52568e7d795165125e71e4ceef532aa6da8e63443385d86",
+    "rows": 2517
+   },
+   {
+    "name": "original_long_validation",
+    "manifest": "/home/cereal/omni-campaign/distill/codex-preparation-01a1326f-20261013/native-text-v4-validation/manifest.json",
+    "sha256": "22c0adff5a0c71309f898f626859becbfb28bbddabf026ad21ec2f41b205668c",
+    "rows": 41
+   },
+   {
+    "name": "original_long_test",
+    "manifest": "/home/cereal/omni-campaign/distill/codex-preparation-01a1326f-20261013/native-text-v4-test/manifest.json",
+    "sha256": "f1db36519de37b24ca40740a157b85c56c3a0310672386a1edf8b1c526ba2831",
+    "rows": 32
+   },
+   {
+    "name": "executed_tools_validation",
+    "manifest": "/home/cereal/omni-campaign/distill/codex-preparation-01a1326f-20261013/native-text-v7-validation/manifest.json",
+    "sha256": "38cedf361d608d2089691d5dae338a4c16b2e7f666f3f0ae4ff40780b972f0bb",
+    "rows": 168
+   },
+   {
+    "name": "executed_tools_test",
+    "manifest": "/home/cereal/omni-campaign/distill/codex-preparation-01a1326f-20261013/native-text-v7-test/manifest.json",
+    "sha256": "f98ec7e40da29b0a6aa879ec6e619a35023f987493325dc0e2bb552e4bd002ae",
+    "rows": 168
+   }
+  ],
+  "heldout_ids": 5391,
+  "joined_rids": 5055,
+  "unjoined_by_pack": {
+   "executed_tools_validation": 168,
+   "executed_tools_test": 168
+  }
+ },
+ "inputs": {
+  "decisions": {
+   "path": "/home/cereal/omni-campaign/distill/queues/D2_DECISIONS_2026-10-15.json",
+   "sha256": "c8d47f22784d265a2e9239f9274c062298d25278497ba21d01102aa45274d90d"
+  },
+  "sealed_manifest": {
+   "path": "/home/cereal/omni-campaign/distill/corpus/text/manifest.json",
+   "sha256": "3ba69171f0095848436719b890e43b2fe67d216a82c9cac529d84c899fe40204",
+   "manifest_sha256": "c42e508afad99008da54909b7f1e140d4748e338f6acff3de0b9a10a521173ff"
+  },
+  "documents": {
+   "path": "/home/cereal/omni-campaign/distill/corpus/text/documents.jsonl",
+   "sha256": "ce6ff058b175e7b0558917faaef737b7487b90e1854aa762571410fe43511fcf"
+  },
+  "rows_jsonl": {
+   "path": "/home/cereal/omni-campaign/distill/corpus/staging/rows.jsonl",
+   "sha256": "cf64d6f25b3b59dee2de8dacfbad65109ecce3bc7d293dc68137e0aeba25d1bd"
+  },
+  "bfcl62": {
+   "path": "/home/cereal/omni-campaign/distill/corpus/holdouts/bfcl62_rids.json",
+   "sha256": "538678aacbdd1e9dfe83253b30d2276f4da3d3349724c7e7c78a3cbf5d594cb0"
+  },
+  "v1_exclude_rows.json": {
+   "path": "/home/cereal/omni-campaign/distill/corpus/d2_masks_v1/exclude_rows.json",
+   "sha256": "55d9c51030f742a4f5969ae8abd736b4226727f24f57113941da51f12d85c864"
+  },
+  "v1_all_mask.json": {
+   "path": "/home/cereal/omni-campaign/distill/corpus/d2_masks_v1/all_mask.json",
+   "sha256": "23b0186e5104fc34c9437e4f3051059797caa36212f9c55ec1dbc0b7aabcf598"
+  },
+  "v1_gt_mask.json": {
+   "path": "/home/cereal/omni-campaign/distill/corpus/d2_masks_v1/gt_mask.json",
+   "sha256": "148bbebc3ab16e6469d271b41d088aabc36430714817f9106ce6d1cf8d4dfda2"
+  },
+  "eos_scores": {
+   "path": "/mnt/lexar/omni-campaign/research/data/quality-v1.0.4-registry-2026-10-15/scores.jsonl",
+   "sha256": "790cc9763ff2b0205f2560447bd26873f09da9a93a4dc4ba1ab5a4ef594ea003"
+  }
+ },
+ "post_pack_screen": {
+  "units_checked": 3015,
+  "units_hit": 0,
+  "hits": []
+ },
+ "cache": {
+  "teacher": "q38-27bu",
+  "root": "/mnt/lexar/omni-campaign/teacher_cache/qtext/q38-27bu",
+  "per_file": "one Q38 cache per text-clean file, <root>/<file sha256>, built by the frozen qtext_teacher_cache 1.0.5 (the sealed registry cache's tool, f2465a11)"
+ },
+ "wall_seconds": 28.42,
+ "manifest_sha256": "5f25c817fa06eb0030e32db6c88bfd50ee0233b9a2e6073cb3db096378cb8d52"
+}

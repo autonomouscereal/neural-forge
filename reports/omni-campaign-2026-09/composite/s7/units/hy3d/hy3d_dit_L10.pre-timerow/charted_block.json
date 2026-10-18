@@ -1,0 +1,224 @@
+{
+ "accounting": {
+  "child_block_parameters": 25182463,
+  "child_mlp_parameters": 8388607,
+  "parent_block_parameters": 50358528,
+  "parent_mlp_parameters": 33564672,
+  "scope": "self-attention + MLP; zero q/k/v bias rows (3 x width) are counted"
+ },
+ "charts": {
+  "chart_out_bias": "not written (c16 never installs it)",
+  "diagnostics_held": {
+   "forward": {
+    "cos": 0.4047869964640267,
+    "cos_p05": 0.2854161667540085,
+    "r2": 0.004761151905629979,
+    "rel_l2": 0.9314364997924796,
+    "rows": 8192
+   },
+   "roundtrip": {
+    "cos": 0.9626557665194778,
+    "cos_p05": 0.9263244932154541,
+    "r2": 0.6804453262498902,
+    "rel_l2": 0.28817934363993075,
+    "rows": 8192
+   }
+  },
+  "file": "charts.safetensors",
+  "hidden": 5120,
+  "method": "ridge (mediafold.linalg.fit_ridge_linear, fp64) refitted on every paired row at the lambdas chosen by the c17 fit-split ladder",
+  "pairs": {
+   "holdout": "group split (see the pair receipt)",
+   "host_site": "block 31 OUTPUT (the residual the charted block inserted after layer 31 reads)",
+   "interface": [
+    "/home/cereal/omni-campaign/composite/s7/interface_latent/companions.json"
+   ],
+   "paired_rows": "/home/cereal/omni-campaign/composite/s7/tap_rows_s3/hy3d_dit_L10/paired_rows.safetensors",
+   "paired_rows_sha256": "f5800bba0c2d70ff27b6bc791aef2472bfe642aaa73f0c92ba1ba79717d9dd51",
+   "parent_pairs": "/home/cereal/omni-campaign/composite/s7/pairs/hy3d_dit_L10/parent_capture.safetensors",
+   "rows": 16384,
+   "rows_held": 8192,
+   "trunk": "/mnt/lexar/omni-campaign/s3-native-v2-3a25a459-4347-416d-a58a-2cb3c8e738fd/actual/native-s3-text-stage/native"
+  },
+  "policy": "owner 2026-10-06: these numbers are diagnostics, never gates",
+  "producer": {
+   "lane": "M1 2026-10-10",
+   "sha256": "0e3e2a386a67861a048ab75e1973acf3dce3245dcd24ced682368413db165217",
+   "tool": "s7_chart_fit",
+   "version": "1.0.0"
+  },
+  "ridge_rel": {
+   "chart_in": 0.1,
+   "chart_out": 0.1
+  },
+  "sha256": "af2c6b7f0be690c2493da4fc4312040d5b47851a14c8c6c251f9bb9d4d6a0138",
+  "shapes": {
+   "chart_in.bias": [
+    2048
+   ],
+   "chart_in.weight": [
+    2048,
+    5120
+   ],
+   "chart_out.weight": [
+    5120,
+    2048
+   ]
+  },
+  "valid_only_with": "the latent interface rows these host rows were captured under (s7/interface_latent) and the S3 trunk prefix 0..31; S5 (C10 rewrites FFNs 0-31) needs a recapture"
+ },
+ "holdout": {
+  "note": "Codex fold_receipt candidate_diagnostics (block_output relL2 etc.); not re-derived here"
+ },
+ "insert_after": null,
+ "provenance": {
+  "dense_child": "/mnt/lexar/omni-campaign/hy3d-native-4983c53b-7eee-4f49-980f-ab3788f5db69/dense-child-blocks/dense-child-block-10-1c1709d9-8afb-47f0-931f-35e01f90f125/dense-child-block10/dense_child.safetensors",
+  "dense_child_fold_receipt": "/mnt/lexar/omni-campaign/hy3d-native-4983c53b-7eee-4f49-980f-ab3788f5db69/dense-child-blocks/dense-child-block-10-1c1709d9-8afb-47f0-931f-35e01f90f125/dense-child-block10/fold_receipt.json",
+  "dense_child_fold_receipt_sha256": "9bde4056ebc280ed9f4176be67f8981739a3eb70d463af7c0fd17201d6f6cda9",
+  "dense_child_sha256": "984d6b87c64ad97a61baa09573bfc08435ea197d0568198da012734396b897f6",
+  "dropped_tensors": [
+   "attn2.k_norm.weight",
+   "attn2.out_proj.bias",
+   "attn2.out_proj.weight",
+   "attn2.q_norm.weight",
+   "attn2.to_k.weight",
+   "attn2.to_q.weight",
+   "attn2.to_v.weight",
+   "norm2.bias",
+   "norm2.weight"
+  ],
+  "source_math_reference": "chimera-omni codex/validated docs/HY3D_NATIVE_COMPONENT.md",
+  "source_prefix": "model.blocks.10.",
+  "source_weights": "/home/cereal/comfyui/models/checkpoints/hunyuan_3d_v2.1.safetensors"
+ },
+ "runtime_requirements": {
+  "hy3d_time_token_row": {
+   "charted_block_effect": "an owned type-7 row like the latent rows: chart_in reads it, the block attends to it, and the block delta is written back to it (as the parent updates row 0)",
+   "installer_check": "none: c16 1.2.0 loads modulation-none containers without a time gate; this row is a runtime layout contract (R3 host rows + the S7 driver must emit it)",
+   "layout": "each volume segment = [1 time-token row | latent rows], all type_id 7, contiguous, time row FIRST",
+   "pairing": "R3 pairs the time row trunk state with the parent block-10 INPUT row 0 (the evolved time token), not with t_embedder(t); the block-0 token is shipped only as a reference",
+   "reference": "FP32 t_embedder(sigma) at sigma 0.00..1.00 step 0.05 = the block-0 time row; the block-10 row has evolved",
+   "reference_file": "hy3d_time_token_reference.safetensors",
+   "reference_tensor_sha256": {
+    "sigma": "67593671031424807e6a890361d58516beb0467f1bb8c63d6f3e1aa2b05e324d",
+    "time_token": "a5820bd69062019680649362d1bb1fd1bc22bc176e921db1bfb9b5e8e9934047"
+   },
+   "reference_weights": {
+    "dtype": "torch.float16",
+    "model.t_embedder.mlp.0.weight": [
+     8192,
+     2048
+    ],
+    "model.t_embedder.mlp.2.weight": [
+     2048,
+     8192
+    ]
+   },
+   "time_row_feature": "all zeros over native_feature_dim (no latent content)",
+   "time_row_noise_level": "the segment sigma in [0, 1] (the same value as its latent rows): the bridge noise_proj is then the only content-bearing input of that row",
+   "time_row_position": "thwr_v1 [-1, -1, -1, -1] (reserved: no latent row uses a negative coordinate)",
+   "what": "the parent time token: HunYuanDiTPlain prepends t_embedder(t) as sequence row 0 (x = cat([t, x_embedder(latents)], dim=1)); every block self-attends over it and updates it"
+  }
+ },
+ "s7_unit": {
+  "built_by": "parent F16 block tensors + Codex dense child MLP (read only)",
+  "canonical": {
+   "block_parameters_without_charts": 25182463,
+   "canonical_tensor_set": true,
+   "chart_parameters_at_hidden_5120": 20973568,
+   "installed_parameters_at_hidden_5120": 46156031,
+   "spec_mlp_parameter_count": 8388607
+  },
+  "charts_status": "PRESENT at hidden 5120 (lane M1, 2026-10-10); fitted on S3-trunk host rows under the latent interface set",
+  "component_4x": {
+   "meets_4x_component": true,
+   "mlp_compression_x": 4.001221180107734,
+   "mlp_ratio": 0.2499236995374184,
+   "rule": "c16 components(): child MLP / parent MLP <= 0.25 registers as --component",
+   "whole_block_ratio_recorded_only": 0.5000635244938056
+  },
+  "deviations": [
+   "cross-attention to DINO context dropped (structural, see structural_limitation_owner_decision)",
+   "zero q/k/v bias rows"
+  ],
+  "source": "HY3D",
+  "structural_limitation_owner_decision": {
+   "decision_needed_from": "Cyril",
+   "options": [
+    "accept the drop (conditioning reaches the volume rows only through the trunk context)",
+    "extend the charted kind with a conditioning chart (new model code in chimera-omni + c16; context rows would come from trunk text/image rows through a second [1024 x 5120] chart)"
+   ],
+   "what": "cross-attention attn2 to the DINO image conditioner (1370 x 1024 context rows) is dropped",
+   "why": "the charted block kind (chimera-omni modeling/charted.py) carries no conditioning input: a block reads only the trunk rows it owns (plus H3 text rows through the same chart); attn2.to_k/to_v expect 1024-wide DINO features, not trunk rows"
+  },
+  "time_token": "RESTORED as a runtime row: runtime_requirements.hy3d_time_token_row (the block sees it in self-attention)",
+  "tool": "s7_unit_build",
+  "tool_version": "1.2.0"
+ },
+ "schema": "chimera_omni.composite.charted_block.v1",
+ "spec": {
+  "attn_bias": true,
+  "chart_in_bias": true,
+  "component": "hy3d.dit.block10.mlp",
+  "delta_scale": 1.0,
+  "head_dim": 128,
+  "heads": 16,
+  "kv_heads": 16,
+  "metadata": {
+   "converted_from": "/mnt/lexar/omni-campaign/hy3d-native-4983c53b-7eee-4f49-980f-ab3788f5db69/dense-child-blocks/dense-child-block-10-1c1709d9-8afb-47f0-931f-35e01f90f125/dense-child-block10/dense_child.safetensors",
+   "cross_attention": "attn2 (DINO image context) dropped: the charted kind has no conditioning input (structural; owner decision)",
+   "layer_type": "hunyuandit_plain_dense",
+   "mlp_gelu": "exact (non-approximate) per HY3D_NATIVE_COMPONENT.md",
+   "qkv": "re-packed from source per-head (q|k|v) split",
+   "qkv_bias": "zero rows written (source q/k/v have no bias; out_proj does)",
+   "time": "time token = ROW 0 of the volume segment, an owned type-7 row (runtime_requirements.hy3d_time_token_row); the block attends to it exactly as the parent self-attention does (modulation none: HY3D has no adaLN)"
+  },
+  "mlp_kind": "gelu",
+  "mlp_width": 2047,
+  "modulation": "none",
+  "norm_affine": true,
+  "norm_eps": 1e-06,
+  "norm_kind": "layer",
+  "qk_norm": true,
+  "rope_theta": 0.0,
+  "rung": "hy3d-native-dense-child",
+  "sliding_window": 0,
+  "source": "hy3d",
+  "source_depth_fraction": 0.5,
+  "time_embed_r": false,
+  "time_factor": 1000.0,
+  "time_freq_dim": 256,
+  "time_hidden": 0,
+  "type_ids": [
+   7
+  ],
+  "width": 2048
+ },
+ "tensor_sha256": {
+  "charted_block.safetensors": {
+   "attn.k_norm.weight": "b7be1372a0ae4684b3413d8fb9822cc00e631b01c2c57004ebbe47d0137c8c36",
+   "attn.k_proj.bias": "e867d2f0d9e0bef6d61c934a69cdb87f47489bfc304c4024c7c9cec49aee9191",
+   "attn.k_proj.weight": "1bbf5637f044a7ed024c8f2de6696f26e92b1d175bb18f07b9ce574910daf3a1",
+   "attn.o_proj.bias": "14cfd4f44eabd45ed6f1280723d0dc0f3f63a73a1672852ac6a7ef6c8ce1f7c1",
+   "attn.o_proj.weight": "68f9897d0139f9600538023c09628eb215bf092f14b39a8a4a4eb8a1c50f93c1",
+   "attn.q_norm.weight": "b7be1372a0ae4684b3413d8fb9822cc00e631b01c2c57004ebbe47d0137c8c36",
+   "attn.q_proj.bias": "e867d2f0d9e0bef6d61c934a69cdb87f47489bfc304c4024c7c9cec49aee9191",
+   "attn.q_proj.weight": "bc59ce5d23715e939e9c626d36b27d7c868a05a517f0ddd798909b7de845095b",
+   "attn.v_proj.bias": "e867d2f0d9e0bef6d61c934a69cdb87f47489bfc304c4024c7c9cec49aee9191",
+   "attn.v_proj.weight": "5031b6e828fb20b29cd3f7ba64e76f9b7949361be8262bb29fd2deca77cfdff5",
+   "attn_norm.bias": "42f83a79f2aff771d7f38aa83cecf7ba1c52f82691eb895bdbcbc20e5ef71860",
+   "attn_norm.weight": "36f71deb83b12cb3fc014f7c21513746840523415db41ecfb9d12abf95d15ab6",
+   "mlp.fc1.bias": "e54e37e56c7cfc978176e981b001e0d247c584b1a4ae2b3ff2d737dba2a809de",
+   "mlp.fc1.weight": "fe73cfe53489a0f7fd6819616e5d8426a19e2455142cb2471fe7b8a7e634997a",
+   "mlp.fc2.bias": "c127e435b331b5ac647629c7888acb376acaad2173eb6b283bcdd0c6cc938ecf",
+   "mlp.fc2.weight": "57a1dbb4c800b9e1b40b998d89c755cff60cb85669e37151878a37246451014b",
+   "mlp_norm.bias": "e77ad8d47003bc0bcc88e916ef12c7a05d9775ca2f022646906261680e0869d6",
+   "mlp_norm.weight": "9044d3e777e360055d272a3e7e124b8ba1f8d501553c9b751762b12986a7ea4c"
+  },
+  "charts.safetensors": {
+   "chart_in.bias": "ec602b34d46858a11a6dfa895a9d7a099f022c840a3a24e4c30c19b0b7bafe30",
+   "chart_in.weight": "5143c98b5f9a886883a94c6b57f910acfc9a57e036c1003b81ccc3bb0d2b1480",
+   "chart_out.weight": "1e23dcc38cef7444c60ac0c85726cb952b741588f04807c5aae2fb674b089acb"
+  }
+ }
+}

@@ -1,0 +1,15 @@
+{
+ "schema": "omni-campaign.corpus-fetch-receipt.v1",
+ "name": "librispeech/test-clean",
+ "url": "https://www.openslr.org/resources/12/test-clean.tar.gz",
+ "licence": "CC BY 4.0 (openslr 12)",
+ "consent": "third_party_licensed",
+ "bytes": 346663984,
+ "sha256": "39fde525e59672dc6d1551919b1478f724438a95aa55f874b576be21967e6c23",
+ "md5_openslr": "32fa31d27d2e1cad72775fee3f4849a9",
+ "md5_verified": true,
+ "flac_count": 2620,
+ "speakers": 40,
+ "extracted": "/mnt/lexar/omni-campaign/corpus/external/librispeech/LibriSpeech/test-clean",
+ "finished_utc": "2026-10-15T00:13:33Z"
+}

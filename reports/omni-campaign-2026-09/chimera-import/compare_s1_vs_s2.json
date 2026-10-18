@@ -1,0 +1,38 @@
+{
+  "schema": "chimera_omni.behaviour_receipt.s1.compare",
+  "before": {
+    "label": "claude/omni-import S1 4be3b0a",
+    "path": "/home/cereal/omni-campaign/chimera-import-s1/receipt_s1_after.json"
+  },
+  "after": {
+    "label": "claude-omni-import-S2-59a5e6d",
+    "path": "/home/cereal/omni-campaign/chimera-import-s2/receipt_s1_style_after_s2.json"
+  },
+  "profiles": [
+    {
+      "profile": "k3_aligned_test_config",
+      "added_state_dict_entries": [],
+      "removed_state_dict_entries": [],
+      "changed_shared_state_dict_entries": [],
+      "logits_sha256_equal": true,
+      "cached_logits_sha256_equal": true,
+      "loss_equal": true,
+      "parameter_count_delta": 0,
+      "logits_sha256": "e1a6bb2d8a870c9ec8d616dae7c718b78b317980c7c839d8eefc13e9eef0fbeb",
+      "loss": 9.827261924743652
+    },
+    {
+      "profile": "small_test_config",
+      "added_state_dict_entries": [],
+      "removed_state_dict_entries": [],
+      "changed_shared_state_dict_entries": [],
+      "logits_sha256_equal": true,
+      "cached_logits_sha256_equal": true,
+      "loss_equal": true,
+      "parameter_count_delta": 0,
+      "logits_sha256": "75dc7855a2363629ade8ed3a9a3bd08e18bc9e1afbb4946e7e868b99864e1414",
+      "loss": 9.858162879943848
+    }
+  ],
+  "behaviour_preserved": true
+}

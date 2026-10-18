@@ -1,0 +1,35 @@
+{
+  "all_serialized_ledger_band_rows_verified_zero": true,
+  "all_serialized_tensor_hashes_verified": true,
+  "contiguous_offsets_exact_lengths_unique_header_keys": true,
+  "directory": "/home/cereal/omni-campaign/composite/s0/q38-27bu-chimera-bf16-sep04",
+  "dtypes": {
+    "BF16": 1011
+  },
+  "full_state_hash_reproduced": true,
+  "header_parameters": 27699193344,
+  "mode": "serialization-only-no-model-forward",
+  "music_codes_rows": 65536,
+  "peak_rss_bytes": 4329029632,
+  "receipt_sha256": "79c6b7f1eae3db24be7c5edd50533f4cdf48169ec18805d69e9b2d988c73d9ec",
+  "schema": "chimera.s0.serialization-verification.v1",
+  "shard_sha256": {
+    "model-00001-of-00014.safetensors": "449a73a4874b8a85e3e3f277612db330176c3245243dcf7ada5dbd281d452d17",
+    "model-00002-of-00014.safetensors": "9e5feca2879c5a0a4cff745590b1f9cf0aa04cb1e6b9ccb63038462166baeb18",
+    "model-00003-of-00014.safetensors": "5349241a54c301d8034c2a8eee3ed71d937ca4aa3627eb693e57a508d4498e02",
+    "model-00004-of-00014.safetensors": "36e940d0049208d6e104e3be3183c81477f989a423c42146f7b40ba977e0f869",
+    "model-00005-of-00014.safetensors": "e68aada902f958082a60965d3874d0acb015efd5941d78c85435e3104322279f",
+    "model-00006-of-00014.safetensors": "f856ae902dc636b26a5db429f0ca7e7c916cd2a382b64862caa39213e17d04a2",
+    "model-00007-of-00014.safetensors": "14db143d2e87b7e4269a3df82e38695e6bb3cf5671558db107b8c240486b2c63",
+    "model-00008-of-00014.safetensors": "ae85a9f29afc54943d73693bcf4a6112099fcdf5739114e46fb7227dc05f6c42",
+    "model-00009-of-00014.safetensors": "f1c4c8b25343cbb3f71b9144cb3f79d961ec386550cecf0ed8daa8917728596a",
+    "model-00010-of-00014.safetensors": "9f1363c1c7466523dacc8d44f897342021e5c704b6a989aca5969a9ca57b26b3",
+    "model-00011-of-00014.safetensors": "f74e5aaff05ec7b48009b2bbec950bfea913b7ec4909074e663e05e01a737430",
+    "model-00012-of-00014.safetensors": "073e09d01f4a95136037dc6d2ed359bec89df6ba5c80925216b471c049ebe119",
+    "model-00013-of-00014.safetensors": "16d931bd160471a52fa2fca96b38cb688beaf4e89930650ea65bd51f0f92a5c4",
+    "model-00014-of-00014.safetensors": "a0cf5dae7997133ae57b4bf23422d5231f5c8150ad46e497fa7f90e608ee55ce"
+  },
+  "state_sha256": "3fc569a683111ef447ef287af241ae42311a2ac5fa38522659c9b0fae734509e",
+  "tensor_count": 1011,
+  "wall_seconds": 443.74
+}

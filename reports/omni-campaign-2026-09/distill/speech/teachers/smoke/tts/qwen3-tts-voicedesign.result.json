@@ -1,0 +1,80 @@
+{
+ "schema": "omni-campaign.speech-teacher-smoke.tts.v1",
+ "tool_version": "1.0.0",
+ "model": "qwen3-tts-voicedesign",
+ "model_dir": "/mnt/lexar/models/Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+ "revision": "5ecdb67327fd37bb2e042aab12ff7391903235d3",
+ "device": "cpu",
+ "dtype": "float32",
+ "threads": 16,
+ "load_seconds": 30.4,
+ "rows": [
+  {
+   "index": 0,
+   "text": "The river rose overnight, so the ferry left an hour later than usual.",
+   "wav": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/tts/qwen3-tts-voicedesign-0.wav",
+   "sample_rate": 24000,
+   "audio_seconds": 5.36,
+   "seconds": 149.26,
+   "rtf": 27.848,
+   "peak_abs": 0.6257,
+   "finite": true,
+   "condition": {
+    "instruct": "A calm middle-aged man with a deep, warm voice, speaking slowly and clearly.",
+    "sample_rate": 24000
+   },
+   "sha256": "5eefcfeda4c16e93e472198fd8626da8f609f085e1ce3d4f3c2bd872d9151b38"
+  },
+  {
+   "index": 1,
+   "text": "Please set the oven to two hundred degrees and wait ten more minutes.",
+   "wav": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/tts/qwen3-tts-voicedesign-1.wav",
+   "sample_rate": 24000,
+   "audio_seconds": 3.36,
+   "seconds": 82.43,
+   "rtf": 24.534,
+   "peak_abs": 0.6809,
+   "finite": true,
+   "condition": {
+    "instruct": "A cheerful young woman with a bright voice, speaking at a brisk pace.",
+    "sample_rate": 24000
+   },
+   "sha256": "e412225ad140a27f3edaa26ede9d81ce6235fa1260d6799735f7b67cb7076e9c"
+  },
+  {
+   "index": 2,
+   "text": "She painted the old fence blue, then sat on the porch to watch it dry.",
+   "wav": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/tts/qwen3-tts-voicedesign-2.wav",
+   "sample_rate": 24000,
+   "audio_seconds": 5.76,
+   "seconds": 122.8,
+   "rtf": 21.32,
+   "peak_abs": 0.5467,
+   "finite": true,
+   "condition": {
+    "instruct": "An elderly woman with a soft, slightly husky voice, gentle and unhurried.",
+    "sample_rate": 24000
+   },
+   "sha256": "c4cf27dab6b3d44ec8c0e3b9f30515771c4fcf191cc2e3c8d4862fc5af2201f2"
+  },
+  {
+   "index": 3,
+   "text": "Our meeting moved to Thursday because the projector was broken again.",
+   "wav": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/tts/qwen3-tts-voicedesign-3.wav",
+   "sample_rate": 24000,
+   "audio_seconds": 3.44,
+   "seconds": 82.46,
+   "rtf": 23.972,
+   "peak_abs": 0.5983,
+   "finite": true,
+   "condition": {
+    "instruct": "A young man with a crisp, energetic newsreader delivery.",
+    "sample_rate": 24000
+   },
+   "sha256": "243776ecbe49431d986de2687cceb33447febe4225c118bc65857ddfa940f790"
+  }
+ ],
+ "peak_rss_gib": 11.32,
+ "torch": "2.6.0+cu118",
+ "finished_utc": "2026-10-15T01:12:21Z"
+}

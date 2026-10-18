@@ -1,0 +1,264 @@
+PARITY READ  tag=Q35-08B-IQ4XS-CHAT  bank=EXPORT-PB1  2026-09-02T10:12:49Z
+====================================================================================================
+
+[PB1-01] arithmetic  n_predict=48
+--- PROMPT ---
+<|im_start|>user
+Compute 47 * 23. Give only the number.
+Answer:<|im_end|>
+<|im_start|>assistant
+<think>
+
+</think>
+
+
+--- GGUF (llama-server) ---
+1381
+    [stop=eos predicted=5 pp=538.723040627148 tg=92.04501000989484]
+
+[PB1-02] arithmetic_multistep  n_predict=96
+--- PROMPT ---
+<|im_start|>user
+A train leaves at 09:15 and arrives at 13:40. How many minutes is the journey? Show the subtraction, then give the number.
+Answer:<|im_end|>
+<|im_start|>assistant
+<think>
+
+</think>
+
+
+--- GGUF (llama-server) ---
+To find the duration of the journey, we subtract the departure time from the arrival time.
+
+**Step 1: Convert times to minutes**
+*   Departure time: 09:15
+*   Arrival time: 13:40
+
+**Step 2: Perform the subtraction**
+We subtract the minutes from the arrival time to find the difference in minutes:
+$40 - 15 = 25$ minutes
+
+Now
+    [stop=limit predicted=96 pp=1099.7778879951697 tg=126.19972767427187]
+
+[PB1-03] retrieval  n_predict=48
+--- PROMPT ---
+<|im_start|>user
+Facts: the reactor coolant pump is model RX-88; the backup pump is model RX-42; the valve is model VV-19.
+Question: which model is the backup pump?
+Answer:<|im_end|>
+<|im_start|>assistant
+<think>
+
+</think>
+
+
+--- GGUF (llama-server) ---
+The backup pump is model **RX-42**.
+    [stop=eos predicted=12 pp=1347.0934745878808 tg=130.44148513559986]
+
+[PB1-04] instruction_following  n_predict=64
+--- PROMPT ---
+<|im_start|>user
+List exactly three primary colours, one per line, no other text.<|im_end|>
+<|im_start|>assistant
+<think>
+
+</think>
+
+
+--- GGUF (llama-server) ---
+Primary 1
+Primary 2
+Primary 3
+    [stop=eos predicted=12 pp=812.4746101684323 tg=133.07363811228996]
+
+[PB1-05] code  n_predict=128
+--- PROMPT ---
+<|im_start|>user
+Write a Python function named `second_largest` that returns the second largest distinct value in a list of integers, or None if there is no such value. Code only.<|im_end|>
+<|im_start|>assistant
+<think>
+
+</think>
+
+
+--- GGUF (llama-server) ---
+def second_largest(nums):
+    """
+    Returns the second largest distinct value in the list, or None if there is no such value.
+    
+    Parameters:
+        nums (list[int]): List of integers.
+        
+    Returns:
+        int or None: The second largest distinct value, or None if no such value exists.
+    """
+    if not nums:
+        return None
+    
+    # Sort the list in descending order
+    sorted_nums = sorted(nums, reverse=True)
+    
+    # Check if there are at least two distinct values
+    if len(sorted_nums) < 2:
+    [stop=limit predicted=128 pp=1054.3553850640465 tg=127.69363180798095]
+
+[PB1-06] code_reading  n_predict=64
+--- PROMPT ---
+<|im_start|>user
+What does this print?
+
+xs = [3, 1, 4, 1, 5]
+print(sum(sorted(set(xs))[:2]))
+
+Answer:<|im_end|>
+<|im_start|>assistant
+<think>
+
+</think>
+
+
+--- GGUF (llama-server) ---
+The expression evaluates to **1**.
+
+Here is the step-by-step breakdown:
+
+1.  **`set(xs)`**: Converts the list `xs` into a set. Since sets do not preserve order, the order of elements in the set is not guaranteed.
+    *   `set([3, 
+    [stop=limit predicted=64 pp=1274.66340919351 tg=133.73524666723273]
+
+[PB1-07] json_format  n_predict=96
+--- PROMPT ---
+<|im_start|>user
+Return a JSON object with keys "city" and "population" for Oslo (population 709000). JSON only.<|im_end|>
+<|im_start|>assistant
+<think>
+
+</think>
+
+
+--- GGUF (llama-server) ---
+{
+  "city": "Oslo",
+  "population": 709000
+}
+    [stop=eos predicted=25 pp=947.0369581172905 tg=132.57544371343818]
+
+[PB1-08] summarization  n_predict=128
+--- PROMPT ---
+<|im_start|>user
+Summarize in one sentence: The maintenance crew replaced the corroded intake valve, flushed the coolant loop, and recorded a pressure drop of 4 kPa, which the shift engineer attributed to the new gasket seating itself.
+Summary:<|im_end|>
+<|im_start|>assistant
+<think>
+
+</think>
+
+
+--- GGUF (llama-server) ---
+The maintenance crew successfully repaired the engine by replacing the corroded intake valve, flushing the coolant loop, and documenting a 4 kPa pressure drop attributed to the newly seated gasket.
+    [stop=eos predicted=38 pp=1414.558356329569 tg=135.39078537633148]
+
+[PB1-09] reasoning  n_predict=96
+--- PROMPT ---
+<|im_start|>user
+All gliders in hangar B are yellow. The glider named Kestrel is in hangar B. What colour is Kestrel? Answer in one sentence.
+Answer:<|im_end|>
+<|im_start|>assistant
+<think>
+
+</think>
+
+
+--- GGUF (llama-server) ---
+Kestrel is yellow because all gliders in hangar B are yellow and Kestrel is one of those gliders.
+    [stop=eos predicted=27 pp=1288.925551660136 tg=134.27532639233183]
+
+[PB1-10] long_form_start  n_predict=128
+--- PROMPT ---
+<|im_start|>user
+Explain what a KV cache is in a transformer, in two sentences.<|im_end|>
+<|im_start|>assistant
+<think>
+
+</think>
+
+
+--- GGUF (llama-server) ---
+A KV cache stores the key-value pairs that are currently being processed by the transformer, allowing the model to access these data efficiently during the forward pass.
+    [stop=eos predicted=31 pp=759.3014426727411 tg=135.78285605659428]
+
+[PB1-11] translation  n_predict=64
+--- PROMPT ---
+<|im_start|>user
+Translate to French, output only the translation: "The door is locked."<|im_end|>
+<|im_start|>assistant
+<think>
+
+</think>
+
+
+--- GGUF (llama-server) ---
+La porte est fermée.
+    [stop=eos predicted=7 pp=786.9884575026233 tg=134.69525199236728]
+
+[PB1-12] ordering  n_predict=64
+--- PROMPT ---
+<|im_start|>user
+Sort these numbers ascending and output them space separated on one line: 12 3 47 8 21<|im_end|>
+<|im_start|>assistant
+<think>
+
+</think>
+
+
+--- GGUF (llama-server) ---
+12 3 47 8 21
+    [stop=eos predicted=13 pp=1058.9382750452835 tg=134.58799250793507]
+
+[PB1-13] extraction  n_predict=64
+--- PROMPT ---
+<|im_start|>user
+Extract the date from this line and output it as YYYY-MM-DD only: "Invoice issued on the 4th of March, 2026, due in 30 days."<|im_end|>
+<|im_start|>assistant
+<think>
+
+</think>
+
+
+--- GGUF (llama-server) ---
+2026-03-04
+    [stop=eos predicted=11 pp=1332.2884012539184 tg=134.30209914180958]
+
+[PB1-14] negation  n_predict=64
+--- PROMPT ---
+<|im_start|>user
+Which of these is NOT a mammal: dolphin, bat, penguin, horse? Answer with one word.
+Answer:<|im_end|>
+<|im_start|>assistant
+<think>
+
+</think>
+
+
+--- GGUF (llama-server) ---
+horse
+    [stop=eos predicted=2 pp=1038.535118884941 tg=118.23126034523528]
+
+[PB1-15] greeting_termination  n_predict=48
+--- PROMPT ---
+<|im_start|>user
+Say hello in one short sentence and then stop.<|im_end|>
+<|im_start|>assistant
+<think>
+
+</think>
+
+
+--- GGUF (llama-server) ---
+Hello! I'm ready to help you with anything you need.
+    [stop=eos predicted=14 pp=679.1381119960487 tg=135.47734922934234]
+
+====================================================================================================
+SUMMARY: {"compared": 0, "exact_matches": 0, "gguf_errors": 0, "mean_char_prefix": null, "normalized_matches": 0, "prompts": 15}

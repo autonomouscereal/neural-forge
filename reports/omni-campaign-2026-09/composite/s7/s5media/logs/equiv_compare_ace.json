@@ -1,0 +1,70 @@
+{
+ "s3_resident_file": "/home/cereal/omni-campaign/composite/s7/tap_rows_s3/ace_dit_L12/paired_rows.safetensors",
+ "s3_streamed_file": "/home/cereal/omni-campaign/composite/s7/s5media/scratch_equiv/ace_dit_L12/paired_rows.safetensors",
+ "keys_resident": [
+  "bridge_rows_index",
+  "bridge_rows_sample",
+  "forward",
+  "group",
+  "held",
+  "host_rows",
+  "parent_rows",
+  "sigma",
+  "token",
+  "type_ids"
+ ],
+ "keys_streamed": [
+  "bridge_rows_index",
+  "bridge_rows_sample",
+  "forward",
+  "group",
+  "held",
+  "host_rows",
+  "parent_rows",
+  "sigma",
+  "time_row",
+  "token",
+  "type_ids"
+ ],
+ "per_key": {
+  "bridge_rows_index": {
+   "equal": true
+  },
+  "bridge_rows_sample": {
+   "equal": true,
+   "max_abs_diff": 0.0,
+   "rel_l2": 0.0
+  },
+  "forward": {
+   "equal": true
+  },
+  "group": {
+   "equal": true
+  },
+  "held": {
+   "equal": true
+  },
+  "host_rows": {
+   "equal": true,
+   "max_abs_diff": 0.0,
+   "rel_l2": 0.0
+  },
+  "parent_rows": {
+   "equal": true,
+   "max_abs_diff": 0.0,
+   "rel_l2": 0.0
+  },
+  "sigma": {
+   "equal": true,
+   "max_abs_diff": 0.0,
+   "rel_l2": 0.0
+  },
+  "token": {
+   "equal": true
+  },
+  "type_ids": {
+   "equal": true
+  }
+ },
+ "host_rows_bit_identical": true
+}

@@ -1,0 +1,1327 @@
+{
+ "schema": "neural-forge-omni-distill-corpus-v1/media/vit",
+ "identity": {
+  "tool": "distill_corpus_build",
+  "version": "1.0.1",
+  "path": "/home/cereal/omni-campaign/distill/tools/distill_corpus_build.py",
+  "sha256": "696559136fb4698c6b92de47ed320c993aba5c3a065a13f18e78cd5c24a7ab94",
+  "host": "cereal-X10DRG",
+  "python": "3.12.3",
+  "built_at_utc": "2026-10-13T01:33:57Z"
+ },
+ "items_file": {
+  "path": "/home/cereal/omni-campaign/distill/corpus/media/vit/items.jsonl",
+  "sha256": "02ef27ca11fbecce8fcbfc623e686690f25617781bd558e15b5172e3ece13be8",
+  "items": 7492
+ },
+ "items": 7492,
+ "note": "every usable distinct curated image (image + ocr routes, eval-split images excluded); the QVL32 ViT feature cache reads block-13 in/out on these",
+ "excluded": {
+  "ltx_suspect_v9_base_video_rows": 7,
+  "eval_split_and_screened_rows": "never in pool"
+ },
+ "provenance": {
+  "registry": "curated master shard registry (MASTER_SHARD_INDEX_POINTER.json, 631 entries / 94,318 rows / 640 shards, walked 2026-09-02)",
+  "registry_notes": "row-inspected curation May-Aug 2026; transforms of OpenThoughts3 (Apache-2.0), OpenCodeReasoning-2 / OpenMathReasoning (CC-BY-4.0), Nemotron-SFT-Agentic-v2, memory-trace rewrites (STAGE_D_FACTS); 'trained_*' states refer to the dead omnicoder -- every row is untrained for Chimera; licences cleared by Cyril 2026-10-12",
+  "by_dataset": {
+   "bounded_candidate_only_media_curated_20260607T195656Z_append_current": {
+    "rows": 60,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 60
+    },
+    "license_tiers": {
+     "internal_train_candidate": 60
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 60
+    }
+   },
+   "bounded_image_image_editing_ocr_video_media_flow_candidate_20260607T210520Z_candidateonly_append_current": {
+    "rows": 12,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 12
+    },
+    "license_tiers": {
+     "internal_train_candidate": 12
+    },
+    "source_datasets": {
+     "Omnicoder bounded visual OCR video media-flow candidate 2026": 12
+    }
+   },
+   "bounded_image_image_editing_ocr_video_media_flow_candidate_20260607T211054Z_candidateonly_append_current": {
+    "rows": 12,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 12
+    },
+    "license_tiers": {
+     "internal_train_candidate": 12
+    },
+    "source_datasets": {
+     "Omnicoder bounded visual OCR video media-flow candidate 2026": 12
+    }
+   },
+   "bounded_image_image_editing_ocr_video_media_flow_candidate_20260607T211558Z_candidateonly_append_current": {
+    "rows": 12,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 12
+    },
+    "license_tiers": {
+     "internal_train_candidate": 12
+    },
+    "source_datasets": {
+     "Omnicoder bounded visual OCR video media-flow candidate 2026": 12
+    }
+   },
+   "bounded_image_image_editing_ocr_video_media_flow_candidate_20260607T212319Z_candidateonly_append_current": {
+    "rows": 12,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 12
+    },
+    "license_tiers": {
+     "internal_train_candidate": 12
+    },
+    "source_datasets": {
+     "Omnicoder bounded visual OCR video media-flow candidate 2026": 12
+    }
+   },
+   "bounded_image_image_editing_ocr_video_media_flow_candidate_20260607T213136Z_candidateonly_append_current": {
+    "rows": 12,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 12
+    },
+    "license_tiers": {
+     "internal_train_candidate": 12
+    },
+    "source_datasets": {
+     "Omnicoder bounded visual OCR video media-flow candidate 2026": 12
+    }
+   },
+   "bounded_image_ocr_video_media_flow_candidate_20260607T191139Z_append_current": {
+    "rows": 59,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 59
+    },
+    "license_tiers": {
+     "internal_train_candidate": 59
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 59
+    }
+   },
+   "candidate_only_media_training_20260607T202510Z_append_current": {
+    "rows": 12,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 12
+    },
+    "license_tiers": {
+     "internal_train_candidate": 12
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 12
+    }
+   },
+   "candidate_only_media_training_20260607T203637Z_append_current": {
+    "rows": 12,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 12
+    },
+    "license_tiers": {
+     "internal_train_candidate": 12
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 12
+    }
+   },
+   "codex_bounded_visual_ocr_video_candidate_20260607T171956Z_append1727": {
+    "rows": 87,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 87
+    },
+    "license_tiers": {
+     "internal_train_candidate": 87
+    },
+    "source_datasets": {
+     "Omnicoder bounded visual OCR video sidecar candidate 2026": 87
+    }
+   },
+   "curie_bounded_media_ocr_video_image_editing_153002_append1540": {
+    "rows": 6,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 6
+    },
+    "license_tiers": {
+     "internal_train_candidate": 6
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 6
+    }
+   },
+   "curie_bounded_media_ocr_video_image_editing_20260607T151629Z_append1526": {
+    "rows": 5,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 5
+    },
+    "license_tiers": {
+     "internal_train_candidate": 5
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 5
+    }
+   },
+   "curie_bounded_visual_ocr_video_candidate_20260607T163844Z_append1642": {
+    "rows": 59,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 59
+    },
+    "license_tiers": {
+     "internal_train_candidate": 59
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 59
+    }
+   },
+   "goodall_broad_visual_document_20260607T052219Z": {
+    "rows": 44,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 44
+    },
+    "license_tiers": {
+     "internal_train_candidate": 44
+    },
+    "source_datasets": {
+     "Operator broad visual/document shard pass 2026": 44
+    }
+   },
+   "goodall_broad_visual_document_20260607T054635Z": {
+    "rows": 42,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 42
+    },
+    "license_tiers": {
+     "internal_train_candidate": 42
+    },
+    "source_datasets": {
+     "Operator broad visual/document shard pass 2026": 42
+    }
+   },
+   "goodall_broad_visual_document_20260607T055547Z": {
+    "rows": 44,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 44
+    },
+    "license_tiers": {
+     "internal_train_candidate": 44
+    },
+    "source_datasets": {
+     "Operator broad visual/document shard pass 2026": 44
+    }
+   },
+   "goodall_broad_visual_document_20260607T060601Z": {
+    "rows": 44,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 44
+    },
+    "license_tiers": {
+     "internal_train_candidate": 44
+    },
+    "source_datasets": {
+     "Operator broad visual/document shard pass 2026": 44
+    }
+   },
+   "goodall_broad_visual_document_20260607T062010Z": {
+    "rows": 45,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 45
+    },
+    "license_tiers": {
+     "internal_train_candidate": 45
+    },
+    "source_datasets": {
+     "Operator broad visual/document shard pass 2026": 45
+    }
+   },
+   "goodall_broad_visual_document_20260607T072650Z": {
+    "rows": 44,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 44
+    },
+    "license_tiers": {
+     "internal_train_candidate": 44
+    },
+    "source_datasets": {
+     "Operator broad visual/document shard pass 2026": 44
+    }
+   },
+   "goodall_broad_visual_document_20260607T073700Z": {
+    "rows": 44,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 44
+    },
+    "license_tiers": {
+     "internal_train_candidate": 44
+    },
+    "source_datasets": {
+     "Operator broad visual/document shard pass 2026": 44
+    }
+   },
+   "goodall_broad_visual_document_20260607T135038Z": {
+    "rows": 44,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 44
+    },
+    "license_tiers": {
+     "internal_train_candidate": 44
+    },
+    "source_datasets": {
+     "Operator broad visual/document shard pass 2026": 44
+    }
+   },
+   "goodall_broad_visual_document_20260607T141301Z_append1530": {
+    "rows": 45,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 45
+    },
+    "license_tiers": {
+     "internal_train_candidate": 45
+    },
+    "source_datasets": {
+     "Operator broad visual/document shard pass 2026": 45
+    }
+   },
+   "goodall_broad_visual_document_compact_ready_92_130940": {
+    "rows": 84,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 84
+    },
+    "license_tiers": {
+     "internal_train_candidate": 84
+    },
+    "source_datasets": {
+     "Operator broad visual/document shard pass 2026": 84
+    }
+   },
+   "goodall_broad_visual_document_compact_ready_92_133850": {
+    "rows": 82,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 82
+    },
+    "license_tiers": {
+     "internal_train_candidate": 82
+    },
+    "source_datasets": {
+     "Operator broad visual/document shard pass 2026": 82
+    }
+   },
+   "goodall_broad_visual_document_compact_ready_92_143000": {
+    "rows": 83,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 83
+    },
+    "license_tiers": {
+     "internal_train_candidate": 83
+    },
+    "source_datasets": {
+     "Operator broad visual/document shard pass 2026": 83
+    }
+   },
+   "goodall_broad_visual_document_compact_ready_92_145337": {
+    "rows": 83,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 83
+    },
+    "license_tiers": {
+     "internal_train_candidate": 83
+    },
+    "source_datasets": {
+     "Operator broad visual/document shard pass 2026": 83
+    }
+   },
+   "goodall_broad_visual_document_compact_ready_92_151519": {
+    "rows": 82,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 82
+    },
+    "license_tiers": {
+     "internal_train_candidate": 82
+    },
+    "source_datasets": {
+     "Operator broad visual/document shard pass 2026": 82
+    }
+   },
+   "goodall_broad_visual_document_compact_ready_92_155815": {
+    "rows": 84,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 84
+    },
+    "license_tiers": {
+     "internal_train_candidate": 84
+    },
+    "source_datasets": {
+     "Operator broad visual/document shard pass 2026": 84
+    }
+   },
+   "goodall_broad_visual_document_lowio_20260607T050539Z": {
+    "rows": 44,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 44
+    },
+    "license_tiers": {
+     "internal_train_candidate": 44
+    },
+    "source_datasets": {
+     "Operator broad visual/document shard pass 2026": 44
+    }
+   },
+   "goodall_broad_visual_document_lowio_20260607T081203Z": {
+    "rows": 44,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 44
+    },
+    "license_tiers": {
+     "internal_train_candidate": 44
+    },
+    "source_datasets": {
+     "Operator broad visual/document shard pass 2026": 44
+    }
+   },
+   "goodall_broad_visual_document_lowio_20260607T082738Z": {
+    "rows": 44,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 44
+    },
+    "license_tiers": {
+     "internal_train_candidate": 44
+    },
+    "source_datasets": {
+     "Operator broad visual/document shard pass 2026": 44
+    }
+   },
+   "goodall_broad_visual_document_lowio_20260607T083645Z": {
+    "rows": 42,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 42
+    },
+    "license_tiers": {
+     "internal_train_candidate": 42
+    },
+    "source_datasets": {
+     "Operator broad visual/document shard pass 2026": 42
+    }
+   },
+   "goodall_broad_visual_document_lowio_20260607T084506Z": {
+    "rows": 44,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 44
+    },
+    "license_tiers": {
+     "internal_train_candidate": 44
+    },
+    "source_datasets": {
+     "Operator broad visual/document shard pass 2026": 44
+    }
+   },
+   "goodall_broad_visual_document_lowio_20260607T085928Z": {
+    "rows": 44,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 44
+    },
+    "license_tiers": {
+     "internal_train_candidate": 44
+    },
+    "source_datasets": {
+     "Operator broad visual/document shard pass 2026": 44
+    }
+   },
+   "goodall_broad_visual_document_ready_184_155309": {
+    "rows": 159,
+    "training_status": "trained_v37_complete",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 159
+    },
+    "license_tiers": {
+     "internal_train_candidate": 159
+    },
+    "source_datasets": {
+     "Operator broad-domain visual document shard 2026": 159
+    }
+   },
+   "goodall_broad_visual_document_ready_208_003626": {
+    "rows": 178,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 178
+    },
+    "license_tiers": {
+     "internal_train_candidate": 178
+    },
+    "source_datasets": {
+     "Operator broad visual/document shard pass 2026": 178
+    }
+   },
+   "goodall_broad_visual_document_ready_208_011445": {
+    "rows": 177,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 177
+    },
+    "license_tiers": {
+     "internal_train_candidate": 177
+    },
+    "source_datasets": {
+     "Operator broad visual/document shard pass 2026": 177
+    }
+   },
+   "goodall_broad_visual_document_ready_208_162857": {
+    "rows": 176,
+    "training_status": "trained_v37_complete",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 176
+    },
+    "license_tiers": {
+     "internal_train_candidate": 176
+    },
+    "source_datasets": {
+     "Operator broad visual/document shard pass 2026": 176
+    }
+   },
+   "goodall_broad_visual_document_ready_208_165935": {
+    "rows": 177,
+    "training_status": "trained_v37_complete",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 177
+    },
+    "license_tiers": {
+     "internal_train_candidate": 177
+    },
+    "source_datasets": {
+     "Operator broad visual/document shard pass 2026": 177
+    }
+   },
+   "goodall_broad_visual_document_ready_208_173900": {
+    "rows": 177,
+    "training_status": "trained_v37_complete",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 177
+    },
+    "license_tiers": {
+     "internal_train_candidate": 177
+    },
+    "source_datasets": {
+     "Operator broad visual/document shard pass 2026": 177
+    }
+   },
+   "goodall_image_ocr_video_ready_152": {
+    "rows": 132,
+    "training_status": "trained_v37_complete",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 132
+    },
+    "license_tiers": {
+     "internal_train_candidate": 132
+    },
+    "source_datasets": {
+     "Operator procedural image OCR video shard 2026": 132
+    }
+   },
+   "goodall_image_ocr_video_ready_152_20260605T151440Z": {
+    "rows": 134,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 134
+    },
+    "license_tiers": {
+     "internal_train_candidate": 134
+    },
+    "source_datasets": {
+     "Operator procedural image OCR video shard 2026": 134
+    }
+   },
+   "goodall_image_ocr_video_ready_152_b": {
+    "rows": 131,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 131
+    },
+    "license_tiers": {
+     "internal_train_candidate": 131
+    },
+    "source_datasets": {
+     "Operator procedural image OCR video shard 2026": 131
+    }
+   },
+   "nash_bounded_media_ocr_video_20260607T050606Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_bounded_media_ocr_video_20260607T081241Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_bounded_media_ocr_video_20260607T082758Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_bounded_media_ocr_video_20260607T083704Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_bounded_media_ocr_video_20260607T084534Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_bounded_media_ocr_video_20260607T085947Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_bounded_media_ocr_video_20260607T090923Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_bounded_media_ocr_video_20260607T092145Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_bounded_media_ocr_video_20260607T094242Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_bounded_media_ocr_video_20260607T095028Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_bounded_media_ocr_video_20260607T100618Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_bounded_media_ocr_video_20260607T101340Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_bounded_media_ocr_video_20260607T102409Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_bounded_media_ocr_video_20260607T103417Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_bounded_media_ocr_video_20260607T105507Z": {
+    "rows": 2,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 2
+    },
+    "license_tiers": {
+     "internal_train_candidate": 2
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 2
+    }
+   },
+   "nash_bounded_media_ocr_video_20260607T111715Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_bounded_media_ocr_video_20260607T114526Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_bounded_media_ocr_video_20260607T122143Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_bounded_media_ocr_video_20260607T124349Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_bounded_media_ocr_video_20260607T125250Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_bounded_media_ocr_video_20260607T125923Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_bounded_media_ocr_video_20260607T130518Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_bounded_media_ocr_video_20260607T132318Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_bounded_media_ocr_video_20260607T141329Z_append1530": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_media_ocr_video_20260607T052233Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_media_ocr_video_20260607T054632Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_media_ocr_video_20260607T060557Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_media_ocr_video_20260607T062033Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_media_ocr_video_20260607T062900Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_media_ocr_video_20260607T064704Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_media_ocr_video_20260607T065307Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_media_ocr_video_20260607T070513Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_media_ocr_video_20260607T071748Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_media_ocr_video_20260607T072611Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_media_ocr_video_20260607T073702Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_media_ocr_video_20260607T075101Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_media_ocr_video_20260607T134024Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_media_ocr_video_20260607T135105Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_media_ocr_video_20260607T140304Z": {
+    "rows": 3,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 3
+    },
+    "license_tiers": {
+     "internal_train_candidate": 3
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 3
+    }
+   },
+   "nash_media_ocr_video_ready_14_012452": {
+    "rows": 12,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 12
+    },
+    "license_tiers": {
+     "internal_train_candidate": 12
+    },
+    "source_datasets": {
+     "Operator bounded media OCR video sidecar candidate 2026": 12
+    }
+   },
+   "nash_media_ocr_video_ready_14_130802": {
+    "rows": 11,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 11
+    },
+    "license_tiers": {
+     "internal_train_candidate": 11
+    },
+    "source_datasets": {
+     "Nash bounded media OCR video sidecar candidate 2026": 11
+    }
+   },
+   "nash_media_ocr_video_ready_14_133833": {
+    "rows": 12,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 12
+    },
+    "license_tiers": {
+     "internal_train_candidate": 12
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 12
+    }
+   },
+   "nash_media_ocr_video_ready_14_141240": {
+    "rows": 12,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 12
+    },
+    "license_tiers": {
+     "internal_train_candidate": 12
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 12
+    }
+   },
+   "nash_media_ocr_video_ready_14_144823": {
+    "rows": 12,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 12
+    },
+    "license_tiers": {
+     "internal_train_candidate": 12
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 12
+    }
+   },
+   "nash_media_ocr_video_ready_14_151533": {
+    "rows": 11,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 11
+    },
+    "license_tiers": {
+     "internal_train_candidate": 11
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 11
+    }
+   },
+   "nash_media_ocr_video_ready_14_155933": {
+    "rows": 12,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 12
+    },
+    "license_tiers": {
+     "internal_train_candidate": 12
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 12
+    }
+   },
+   "nash_media_ocr_video_ready_20_004244": {
+    "rows": 16,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 16
+    },
+    "license_tiers": {
+     "internal_train_candidate": 16
+    },
+    "source_datasets": {
+     "Operator bounded media OCR video sidecar candidate 2026": 16
+    }
+   },
+   "nash_media_ocr_video_sidecar_ready_100_153002": {
+    "rows": 80,
+    "training_status": "trained_v37_complete",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 80
+    },
+    "license_tiers": {
+     "internal_train_candidate": 80
+    },
+    "source_datasets": {
+     "Operator multimodal sidecar candidate 2026": 80
+    }
+   },
+   "nash_media_ocr_video_sidecar_ready_100_162641": {
+    "rows": 81,
+    "training_status": "trained_v37_complete",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 81
+    },
+    "license_tiers": {
+     "internal_train_candidate": 81
+    },
+    "source_datasets": {
+     "Operator multimodal sidecar candidate 2026": 81
+    }
+   },
+   "nash_media_ocr_video_sidecar_ready_100_165823": {
+    "rows": 81,
+    "training_status": "trained_v37_complete",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 81
+    },
+    "license_tiers": {
+     "internal_train_candidate": 81
+    },
+    "source_datasets": {
+     "Operator multimodal sidecar candidate 2026": 81
+    }
+   },
+   "nash_media_ocr_video_sidecar_ready_100_173205": {
+    "rows": 81,
+    "training_status": "trained_v37_complete",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 81
+    },
+    "license_tiers": {
+     "internal_train_candidate": 81
+    },
+    "source_datasets": {
+     "Operator multimodal sidecar candidate 2026": 81
+    }
+   },
+   "nash_multimodal_sidecar_ready_100_20260605T140058Z": {
+    "rows": 81,
+    "training_status": "trained_v37_complete",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 81
+    },
+    "license_tiers": {
+     "internal_train_candidate": 81
+    },
+    "source_datasets": {
+     "Operator multimodal sidecar candidate 2026": 81
+    }
+   },
+   "native_media_pointeronly_candidate_20260607T155424Z_append1559": {
+    "rows": 58,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 58
+    },
+    "license_tiers": {
+     "internal_train_candidate": 58
+    },
+    "source_datasets": {
+     "Omnicoder bounded media OCR video sidecar candidate 2026": 58
+    }
+   },
+   "omnicoder_bounded_visual_ocr_video_candidate_20260607T162908Z_append1636": {
+    "rows": 58,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 58
+    },
+    "license_tiers": {
+     "project_owned_permissive": 58
+    },
+    "source_datasets": {
+     "Omnicoder bounded visual OCR video sidecar candidate 2026": 58
+    }
+   },
+   "omnicoder_candidate_img_ocr_video_20260607T175934Z_append_current": {
+    "rows": 35,
+    "training_status": "ready_untrained_candidate",
+    "licenses": {
+     "{'basis': 'local procedural generation with no third-party media inputs', 'id': 'CC0-1.0', 'name': 'Creative Commons Zero 1.0 Universal'}": 35
+    },
+    "license_tiers": {},
+    "source_datasets": {}
+   },
+   "v36_addenda_gated_4964": {
+    "rows": 2089,
+    "training_status": "trained_addenda_complete",
+    "licenses": {
+     "local_operator_procedural_asset_2026": 2089
+    },
+    "license_tiers": {
+     "internal_train_candidate": 2089
+    },
+    "source_datasets": {
+     "Operator multimodal sidecar candidate 2026": 2089
+    }
+   },
+   "v9_base_validated_28025": {
+    "rows": 61,
+    "training_status": "trained_base",
+    "licenses": {
+     "Apache-2.0": 31
+    },
+    "license_tiers": {
+     "permissive": 31
+    },
+    "source_datasets": {
+     "BLIP3o Pretrain Long Caption": 16,
+     "MCOT R1 VQA 66k": 15
+    }
+   }
+  }
+ },
+ "manifest_sha256": "5d0dda35aa00f1e72ca174d1653a67d7f473d724dff1a556fe65101e6a360dea"
+}

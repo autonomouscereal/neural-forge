@@ -1,0 +1,1 @@
+{"python": "3.12.3", "torch": "2.6.0+cu118", "cuda_build": "11.8", "arch_list": [], "transformers": "4.57.6", "cuda_visible": false, "qwen_asr": "Qwen3ASRModel", "granite": "GraniteSpeechForConditionalGeneration", "peft": "0.21.2", "import_passed": true}

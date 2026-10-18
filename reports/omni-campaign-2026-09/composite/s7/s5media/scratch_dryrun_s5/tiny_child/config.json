@@ -1,0 +1,168 @@
+{
+  "chimera_commit": "ffffffffffffffffffffffffffffffffffffffff",
+  "config": {
+    "activation_kind": "silu",
+    "architecture": "dense_decoder_native_omnimodal_encoder_free",
+    "attention_head_dim": 8,
+    "attnres_block_size": 4,
+    "attnres_init": "zero",
+    "aux_heads": [
+      "flow",
+      "grounding",
+      "sync"
+    ],
+    "block_pattern": [
+      "kda",
+      "kda",
+      "kda",
+      "gated_gqa"
+    ],
+    "charted_blocks": [],
+    "csa_compress_stride": 64,
+    "dropout": 0.0,
+    "feed_forward_kind": "dense",
+    "force_final_gated_mla": false,
+    "gqa_output_gate": true,
+    "gqa_qk_norm": true,
+    "gqa_rope_dim": 2,
+    "gqa_rope_theta": 10000000.0,
+    "hca_compress_stride": 1024,
+    "hidden_size": 5120,
+    "intermediate_size": 96,
+    "intermediate_sizes": [],
+    "kda_conv_bias": false,
+    "kda_decay_kind": "gdn",
+    "kda_decay_rank": 0,
+    "kda_gate_lower_bound": -5.0,
+    "kda_head_dim": 8,
+    "kda_num_heads": 4,
+    "kda_num_key_heads": 2,
+    "kda_output_gate": "silu",
+    "kda_qk_norm_eps": 1e-06,
+    "kda_qk_norm_kind": "fla",
+    "kda_query_scale": "inv_sqrt_key_dim",
+    "kda_short_conv_kernel_size": 4,
+    "kda_value_head_dim": 8,
+    "ledger_bands": [
+      [
+        "control",
+        8
+      ],
+      [
+        "media",
+        16
+      ],
+      [
+        "grounding",
+        8
+      ],
+      [
+        "sync",
+        8
+      ],
+      [
+        "tool",
+        8
+      ],
+      [
+        "music_codes",
+        65536
+      ]
+    ],
+    "ledger_base_vocab_size": 256,
+    "ledger_kind": "fixed_band",
+    "local_window": 256,
+    "max_sequence_length": 256,
+    "metadata": {
+      "fixture": "c16_media_fixtures",
+      "profile": "toy_27b_shaped"
+    },
+    "mla_extra_head_dim": 0,
+    "mla_key_head_dim": 0,
+    "mla_latent_norm_eps": 0.0,
+    "mla_latent_size": 0,
+    "mla_query_latent_size": 0,
+    "mla_value_head_dim": 0,
+    "mtp_heads": 0,
+    "native_bidirectional_block_kinds": [
+      "gated_mla"
+    ],
+    "native_bidirectional_refinement": false,
+    "native_coordinate_frequencies": 8,
+    "native_feature_dim": 6144,
+    "native_loss_reduction": "type_balanced",
+    "native_position_dim": 4,
+    "native_type_count": 8,
+    "num_heads": 4,
+    "num_kv_heads": 2,
+    "num_layers": 8,
+    "residual_mode": "none",
+    "rms_norm_eps": 1e-06,
+    "scale_policy": "explicit_config_no_baked_target_size",
+    "schema": "chimera_omni.config.v1",
+    "situ_gate_beta": 4.0,
+    "situ_up_beta": 25.0,
+    "tie_word_embeddings": false,
+    "vocab_size": 65840
+  },
+  "ledger": {
+    "ranges": [
+      {
+        "begin": 0,
+        "end": 256,
+        "name": "text",
+        "purpose": "language and code tokens",
+        "width": 256
+      },
+      {
+        "begin": 256,
+        "end": 264,
+        "name": "control",
+        "purpose": "roles, routing, sentinels, and loss controls",
+        "width": 8
+      },
+      {
+        "begin": 264,
+        "end": 280,
+        "name": "media",
+        "purpose": "native media placeholder and artifact tokens",
+        "width": 16
+      },
+      {
+        "begin": 280,
+        "end": 288,
+        "name": "grounding",
+        "purpose": "spatial, temporal, and reference grounding",
+        "width": 8
+      },
+      {
+        "begin": 288,
+        "end": 296,
+        "name": "sync",
+        "purpose": "audio-video and timeline synchronization",
+        "width": 8
+      },
+      {
+        "begin": 296,
+        "end": 304,
+        "name": "tool",
+        "purpose": "tool calls, observations, and agentic state",
+        "width": 8
+      },
+      {
+        "begin": 304,
+        "end": 65840,
+        "name": "music_codes",
+        "purpose": "ACE-Step LM audio-code rows (C18 embedding bridge)",
+        "width": 65536
+      }
+    ],
+    "schema": "chimera_omni.ledger.v1",
+    "vocab_size": 65840
+  },
+  "schema": "chimera_omni.checkpoint.v1",
+  "source": {
+    "fixture": "c16_media_fixtures.write_child",
+    "seed": 0
+  }
+}

@@ -1,0 +1,885 @@
+{
+  "probe": "K2KV layer-27 gated-writer Gram",
+  "parent": "/home/cereal/models/Qwen3.5-4B",
+  "evidence": "/home/cereal/omni-campaign/qwen-fold/evidence/omni-evidence-v1.json",
+  "target_layer": 27,
+  "device": "cuda:0 (CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=0)",
+  "dtype": "bfloat16",
+  "torch": "2.11.0+cu128",
+  "stages": {
+    "A": {
+      "label": "layer 27 alone, kv-only",
+      "arm": "kv-only",
+      "positions": [
+        27
+      ],
+      "merge": "stopped at L027 after diagnosis (by design)",
+      "layer": "L027",
+      "installed_child_weights": {
+        "q_proj": {
+          "shape": [
+            8192,
+            2560
+          ],
+          "absmax": "Infinity",
+          "nonfinite": 40960
+        },
+        "k_proj": {
+          "shape": [
+            512,
+            2560
+          ],
+          "absmax": 0.23828125,
+          "nonfinite": 0
+        },
+        "v_proj": {
+          "shape": [
+            512,
+            2560
+          ],
+          "absmax": 0.4140625,
+          "nonfinite": 0
+        },
+        "o_proj": {
+          "shape": [
+            2560,
+            4096
+          ],
+          "absmax": 0.486328125,
+          "nonfinite": 0
+        },
+        "q_norm_gain": {
+          "absmax": 2.09375,
+          "absmin": 0.0,
+          "nonfinite": 0
+        },
+        "k_norm_gain": {
+          "absmax": 2.5625,
+          "absmin": 0.00390625,
+          "nonfinite": 0
+        }
+      },
+      "target_local_fit": {
+        "shape": [
+          73728,
+          2560
+        ],
+        "dtype": "torch.float64",
+        "nonfinite": 0,
+        "nan": 0,
+        "posinf": 0,
+        "neginf": 0,
+        "absmax_finite": 50.75
+      },
+      "capture_seconds": 20.0,
+      "lambda_split": true,
+      "gram_inner_split": {
+        "label": "L027 G_in (inner split)",
+        "rows": 49152,
+        "columns": 4096,
+        "stream": {
+          "shape": [
+            49152,
+            4096
+          ],
+          "dtype": "torch.float64",
+          "nonfinite": 201326592,
+          "nan": 201326592,
+          "posinf": 0,
+          "neginf": 0,
+          "nonfinite_columns": 4096,
+          "first_nonfinite_columns": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23
+          ],
+          "nonfinite_rows": 49152,
+          "first_nonfinite_rows": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7
+          ],
+          "absmax_finite": 0.0
+        },
+        "per_channel_variance_min": 0.0,
+        "per_channel_variance_max": 0.0,
+        "per_channel_variance_argmin": 0,
+        "channels_with_zero_variance": 4096,
+        "channels_with_variance_below_1e-30": 4096,
+        "G_diag_min": "NaN",
+        "G_diag_max": "NaN",
+        "G_diag_nonfinite": 4096,
+        "G_diag_nonpositive": 0,
+        "G_diag_argmin": 0,
+        "G_nonfinite_entries": 16777216,
+        "G_diag_mean": "NaN",
+        "G_diag_mean_is_finite": false,
+        "G_00": "NaN",
+        "ridge_rel": 1e-06,
+        "lambda_absolute": "NaN",
+        "lambda_is_finite": false,
+        "Gl_00": "NaN",
+        "cholesky": "FAILED",
+        "cholesky_error": "_LinAlgError: linalg.cholesky: The factorization could not be completed because the input is not positive-definite (the leading minor of order 1 is not positive-definite).",
+        "G_eigenvalues": "skipped: Gram carries non-finite entries"
+      },
+      "gram_all_rows": {
+        "label": "L027 G_all (all fit rows)",
+        "rows": 73728,
+        "columns": 4096,
+        "stream": {
+          "shape": [
+            73728,
+            4096
+          ],
+          "dtype": "torch.float64",
+          "nonfinite": 301989888,
+          "nan": 301989888,
+          "posinf": 0,
+          "neginf": 0,
+          "nonfinite_columns": 4096,
+          "first_nonfinite_columns": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23
+          ],
+          "nonfinite_rows": 73728,
+          "first_nonfinite_rows": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7
+          ],
+          "absmax_finite": 0.0
+        },
+        "per_channel_variance_min": 0.0,
+        "per_channel_variance_max": 0.0,
+        "per_channel_variance_argmin": 0,
+        "channels_with_zero_variance": 4096,
+        "channels_with_variance_below_1e-30": 4096,
+        "G_diag_min": "NaN",
+        "G_diag_max": "NaN",
+        "G_diag_nonfinite": 4096,
+        "G_diag_nonpositive": 0,
+        "G_diag_argmin": 0,
+        "G_nonfinite_entries": 16777216,
+        "G_diag_mean": "NaN",
+        "G_diag_mean_is_finite": false,
+        "G_00": "NaN",
+        "ridge_rel": 1e-06,
+        "lambda_absolute": "NaN",
+        "lambda_is_finite": false,
+        "Gl_00": "NaN",
+        "cholesky": "FAILED",
+        "cholesky_error": "_LinAlgError: linalg.cholesky: The factorization could not be completed because the input is not positive-definite (the leading minor of order 1 is not positive-definite).",
+        "G_eigenvalues": "skipped: Gram carries non-finite entries"
+      },
+      "submodule_census_one_batch": {
+        "layer_input_hidden": {
+          "nonfinite": 0,
+          "absmax": 109.0,
+          "shape": [
+            1,
+            4096,
+            2560
+          ]
+        },
+        "attn_input_hidden": {
+          "nonfinite": 0,
+          "absmax": 42.0,
+          "shape": [
+            1,
+            4096,
+            2560
+          ]
+        },
+        "q_proj_out": {
+          "nonfinite": 65536,
+          "absmax": 274.0,
+          "shape": [
+            1,
+            4096,
+            8192
+          ]
+        },
+        "k_proj_out": {
+          "nonfinite": 0,
+          "absmax": 20.0,
+          "shape": [
+            1,
+            4096,
+            512
+          ]
+        },
+        "v_proj_out": {
+          "nonfinite": 0,
+          "absmax": 31.5,
+          "shape": [
+            1,
+            4096,
+            512
+          ]
+        },
+        "o_proj_input_gated": {
+          "nonfinite": 16777216,
+          "absmax": 0.0,
+          "shape": [
+            1,
+            4096,
+            4096
+          ]
+        },
+        "o_proj_out": {
+          "nonfinite": 10485760,
+          "absmax": 0.0,
+          "shape": [
+            1,
+            4096,
+            2560
+          ]
+        }
+      },
+      "solve": {
+        "outcome": "FAILED",
+        "error": "_LinAlgError: linalg.cholesky: The factorization could not be completed because the input is not positive-definite (the leading minor of order 1 is not positive-definite)."
+      },
+      "seconds": 1165.9
+    },
+    "B": {
+      "label": "layer 27 alone, full-group",
+      "arm": "full-group",
+      "positions": [
+        27
+      ],
+      "merge": "stopped at L027 after diagnosis (by design)",
+      "layer": "L027",
+      "installed_child_weights": {
+        "q_proj": {
+          "shape": [
+            4096,
+            2560
+          ],
+          "absmax": "NaN",
+          "nonfinite": 20480
+        },
+        "k_proj": {
+          "shape": [
+            512,
+            2560
+          ],
+          "absmax": 0.23828125,
+          "nonfinite": 0
+        },
+        "v_proj": {
+          "shape": [
+            512,
+            2560
+          ],
+          "absmax": 0.4140625,
+          "nonfinite": 0
+        },
+        "o_proj": {
+          "shape": [
+            2560,
+            2048
+          ],
+          "absmax": 0.265625,
+          "nonfinite": 0
+        },
+        "q_norm_gain": {
+          "absmax": 2.09375,
+          "absmin": 0.0,
+          "nonfinite": 0
+        },
+        "k_norm_gain": {
+          "absmax": 2.5625,
+          "absmin": 0.00390625,
+          "nonfinite": 0
+        }
+      },
+      "target_local_fit": {
+        "shape": [
+          73728,
+          2560
+        ],
+        "dtype": "torch.float64",
+        "nonfinite": 0,
+        "nan": 0,
+        "posinf": 0,
+        "neginf": 0,
+        "absmax_finite": 50.75
+      },
+      "capture_seconds": 18.2,
+      "lambda_split": true,
+      "gram_inner_split": {
+        "label": "L027 G_in (inner split)",
+        "rows": 49152,
+        "columns": 2048,
+        "stream": {
+          "shape": [
+            49152,
+            2048
+          ],
+          "dtype": "torch.float64",
+          "nonfinite": 100663296,
+          "nan": 100663296,
+          "posinf": 0,
+          "neginf": 0,
+          "nonfinite_columns": 2048,
+          "first_nonfinite_columns": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23
+          ],
+          "nonfinite_rows": 49152,
+          "first_nonfinite_rows": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7
+          ],
+          "absmax_finite": 0.0
+        },
+        "per_channel_variance_min": 0.0,
+        "per_channel_variance_max": 0.0,
+        "per_channel_variance_argmin": 0,
+        "channels_with_zero_variance": 2048,
+        "channels_with_variance_below_1e-30": 2048,
+        "G_diag_min": "NaN",
+        "G_diag_max": "NaN",
+        "G_diag_nonfinite": 2048,
+        "G_diag_nonpositive": 0,
+        "G_diag_argmin": 0,
+        "G_nonfinite_entries": 4194304,
+        "G_diag_mean": "NaN",
+        "G_diag_mean_is_finite": false,
+        "G_00": "NaN",
+        "ridge_rel": 1e-06,
+        "lambda_absolute": "NaN",
+        "lambda_is_finite": false,
+        "Gl_00": "NaN",
+        "cholesky": "FAILED",
+        "cholesky_error": "_LinAlgError: linalg.cholesky: The factorization could not be completed because the input is not positive-definite (the leading minor of order 1 is not positive-definite).",
+        "G_eigenvalues": "skipped: Gram carries non-finite entries"
+      },
+      "gram_all_rows": {
+        "label": "L027 G_all (all fit rows)",
+        "rows": 73728,
+        "columns": 2048,
+        "stream": {
+          "shape": [
+            73728,
+            2048
+          ],
+          "dtype": "torch.float64",
+          "nonfinite": 150994944,
+          "nan": 150994944,
+          "posinf": 0,
+          "neginf": 0,
+          "nonfinite_columns": 2048,
+          "first_nonfinite_columns": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23
+          ],
+          "nonfinite_rows": 73728,
+          "first_nonfinite_rows": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7
+          ],
+          "absmax_finite": 0.0
+        },
+        "per_channel_variance_min": 0.0,
+        "per_channel_variance_max": 0.0,
+        "per_channel_variance_argmin": 0,
+        "channels_with_zero_variance": 2048,
+        "channels_with_variance_below_1e-30": 2048,
+        "G_diag_min": "NaN",
+        "G_diag_max": "NaN",
+        "G_diag_nonfinite": 2048,
+        "G_diag_nonpositive": 0,
+        "G_diag_argmin": 0,
+        "G_nonfinite_entries": 4194304,
+        "G_diag_mean": "NaN",
+        "G_diag_mean_is_finite": false,
+        "G_00": "NaN",
+        "ridge_rel": 1e-06,
+        "lambda_absolute": "NaN",
+        "lambda_is_finite": false,
+        "Gl_00": "NaN",
+        "cholesky": "FAILED",
+        "cholesky_error": "_LinAlgError: linalg.cholesky: The factorization could not be completed because the input is not positive-definite (the leading minor of order 1 is not positive-definite).",
+        "G_eigenvalues": "skipped: Gram carries non-finite entries"
+      },
+      "submodule_census_one_batch": {
+        "layer_input_hidden": {
+          "nonfinite": 0,
+          "absmax": 109.0,
+          "shape": [
+            1,
+            4096,
+            2560
+          ]
+        },
+        "attn_input_hidden": {
+          "nonfinite": 0,
+          "absmax": 42.0,
+          "shape": [
+            1,
+            4096,
+            2560
+          ]
+        },
+        "q_proj_out": {
+          "nonfinite": 32768,
+          "absmax": 141.0,
+          "shape": [
+            1,
+            4096,
+            4096
+          ]
+        },
+        "k_proj_out": {
+          "nonfinite": 0,
+          "absmax": 20.0,
+          "shape": [
+            1,
+            4096,
+            512
+          ]
+        },
+        "v_proj_out": {
+          "nonfinite": 0,
+          "absmax": 31.5,
+          "shape": [
+            1,
+            4096,
+            512
+          ]
+        },
+        "o_proj_input_gated": {
+          "nonfinite": 8388608,
+          "absmax": 0.0,
+          "shape": [
+            1,
+            4096,
+            2048
+          ]
+        },
+        "o_proj_out": {
+          "nonfinite": 10485760,
+          "absmax": 0.0,
+          "shape": [
+            1,
+            4096,
+            2560
+          ]
+        }
+      },
+      "solve": {
+        "outcome": "FAILED",
+        "error": "_LinAlgError: linalg.cholesky: The factorization could not be completed because the input is not positive-definite (the leading minor of order 1 is not positive-definite)."
+      },
+      "seconds": 1364.3
+    },
+    "C": {
+      "label": "layers 3..27 sequential, kv-only (faithful reproduction)",
+      "arm": "kv-only",
+      "positions": [
+        3,
+        7,
+        11,
+        15,
+        19,
+        23,
+        27
+      ]
+    },
+    "A_fixed": {
+      "label": "layer 27 alone, kv-only",
+      "arm": "kv-only",
+      "positions": [
+        27
+      ],
+      "stage_error": "TypeError: instrument_resolver.<locals>.patched() got an unexpected keyword argument 'log'",
+      "traceback": "Traceback (most recent call last):\n  File \"/home/cereal/omni-campaign/qwen-fold/probe_k2kv_l27.py\", line 336, in run_stage\n    qf_attn.kv_head_merge(\n  File \"/home/cereal/omni-campaign/qwen-fold/qf_attn.py\", line 871, in kv_head_merge\n    guard, scores = _resolve_writer(\n                    ^^^^^^^^^^^^^^^^\nTypeError: instrument_resolver.<locals>.patched() got an unexpected keyword argument 'log'\n",
+      "seconds": 1198.3
+    },
+    "B_fixed": {
+      "label": "layer 27 alone, full-group",
+      "arm": "full-group",
+      "positions": [
+        27
+      ],
+      "stage_error": "TypeError: instrument_resolver.<locals>.patched() got an unexpected keyword argument 'log'",
+      "traceback": "Traceback (most recent call last):\n  File \"/home/cereal/omni-campaign/qwen-fold/probe_k2kv_l27.py\", line 336, in run_stage\n    qf_attn.kv_head_merge(\n  File \"/home/cereal/omni-campaign/qwen-fold/qf_attn.py\", line 871, in kv_head_merge\n    guard, scores = _resolve_writer(\n                    ^^^^^^^^^^^^^^^^\nTypeError: instrument_resolver.<locals>.patched() got an unexpected keyword argument 'log'\n",
+      "seconds": 1199.2
+    }
+  },
+  "evidence_manifest_sha256": "643267e8e4b164d32ba3878d2c424246424ba3edff852b24360a05b8dd6535fb",
+  "fit_rows": 73728,
+  "internal_check_rows": 24576,
+  "fix_toggle": {
+    "what": "one-factor toggle on the parents own layer-27 weights, CPU only",
+    "layer": 27,
+    "q_norm_effective_gain": {
+      "convention": "1 + weight, as Qwen3_5RMSNorm.forward applies it",
+      "min_abs": 0.0,
+      "coordinates_exactly_zero": [
+        1
+      ],
+      "geometry": "rotary_dim 64 -> lo=0..31 hi=32..63; coordinate 1 is lo[1], the real half of rotary plane 1, paired with coordinate 33"
+    },
+    "k_norm_effective_gain_min_abs": 0.00390625,
+    "child_kv_head": 0,
+    "query_slots": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "old_line_q_hats_over_gq": {
+      "total_nonfinite": 20480
+    },
+    "new_line_unfold_gain": {
+      "total_nonfinite": 0
+    },
+    "per_query_slot": [
+      {
+        "query_slot": 0,
+        "old_division_nonfinite": 2560,
+        "unfold_gain_nonfinite": 0,
+        "scaled_dead_row_absmax": 0.0,
+        "solved_dead_row_absmax_before_division": 0.028724437521334828,
+        "dead_row_equals_parent_row": true
+      },
+      {
+        "query_slot": 1,
+        "old_division_nonfinite": 2560,
+        "unfold_gain_nonfinite": 0,
+        "scaled_dead_row_absmax": 0.0,
+        "solved_dead_row_absmax_before_division": 0.02197296716375613,
+        "dead_row_equals_parent_row": true
+      },
+      {
+        "query_slot": 2,
+        "old_division_nonfinite": 2560,
+        "unfold_gain_nonfinite": 0,
+        "scaled_dead_row_absmax": 0.0,
+        "solved_dead_row_absmax_before_division": 0.0667781795367784,
+        "dead_row_equals_parent_row": true
+      },
+      {
+        "query_slot": 3,
+        "old_division_nonfinite": 2560,
+        "unfold_gain_nonfinite": 0,
+        "scaled_dead_row_absmax": 0.0,
+        "solved_dead_row_absmax_before_division": 0.02896994553433769,
+        "dead_row_equals_parent_row": true
+      },
+      {
+        "query_slot": 4,
+        "old_division_nonfinite": 2560,
+        "unfold_gain_nonfinite": 0,
+        "scaled_dead_row_absmax": 0.0,
+        "solved_dead_row_absmax_before_division": 0.02627281726279529,
+        "dead_row_equals_parent_row": true
+      },
+      {
+        "query_slot": 5,
+        "old_division_nonfinite": 2560,
+        "unfold_gain_nonfinite": 0,
+        "scaled_dead_row_absmax": 0.0,
+        "solved_dead_row_absmax_before_division": 0.02861395939512358,
+        "dead_row_equals_parent_row": true
+      },
+      {
+        "query_slot": 6,
+        "old_division_nonfinite": 2560,
+        "unfold_gain_nonfinite": 0,
+        "scaled_dead_row_absmax": 0.0,
+        "solved_dead_row_absmax_before_division": 0.04057979696035708,
+        "dead_row_equals_parent_row": true
+      },
+      {
+        "query_slot": 7,
+        "old_division_nonfinite": 2560,
+        "unfold_gain_nonfinite": 0,
+        "scaled_dead_row_absmax": 0.0,
+        "solved_dead_row_absmax_before_division": 0.07647730965605758,
+        "dead_row_equals_parent_row": true
+      }
+    ],
+    "relation_error_mean": 0.5924083055223865,
+    "zero_gain_records": [
+      {
+        "where": "slot 0",
+        "coordinates": [
+          1
+        ],
+        "count": 1,
+        "gain_convention": "effective gain is 1 + weight (Qwen3_5RMSNorm)",
+        "installed": "the parent's own raw row, not the divided one and not zero: the norm multiplies this coordinate by zero either way, and the parent's value is what its per-token RMS saw",
+        "would_have_been": "+-Inf from a division by zero, which q_norm's RMS turns into NaN across the entire head"
+      },
+      {
+        "where": "slot 1",
+        "coordinates": [
+          1
+        ],
+        "count": 1,
+        "gain_convention": "effective gain is 1 + weight (Qwen3_5RMSNorm)",
+        "installed": "the parent's own raw row, not the divided one and not zero: the norm multiplies this coordinate by zero either way, and the parent's value is what its per-token RMS saw",
+        "would_have_been": "+-Inf from a division by zero, which q_norm's RMS turns into NaN across the entire head"
+      }
+    ]
+  },
+  "runs": {
+    "before_fix": {
+      "stages": [
+        "A",
+        "B"
+      ],
+      "qf_attn_sha256": "6dceff7503f302b0b8c90a359ace5120fe751295d1d6d08b062dfe1b825b6406",
+      "outcome": "both arms reproduced the crash at layer 27"
+    },
+    "after_fix": {
+      "stages": [
+        "A_fixed",
+        "B_fixed"
+      ],
+      "qf_attn_sha256": "142a5a239ad18ea1a7b4cd141fbc7f05909e328817a059a088263663be951faf",
+      "outcome": "NO DIAGNOSTICS -- both stages raised TypeError inside the PROBE, not inside the lane: qf_attn._resolve_writer had gained a `log=` keyword and this probe's monkeypatch was still pinned to the old arity.  40 minutes of GPU produced two stage_error entries and nothing else.  They are kept here rather than deleted because a receipt that hides its own wasted runs is not a receipt.  The after-fix evidence is `fix_toggle` below (the same two lines, on the parent's own layer-27 weights, CPU only) and the K2KV build in logs/build-K2KV.log."
+    }
+  },
+  "stage_C_not_run": "The planned third stage -- layers 3,7,11,15,19,23,27 merged sequentially, the build's own order -- was started and stopped after stages A and B had already reproduced the identical failure at layer 27 with layer 27 as the ONLY merged layer.  The pathology is therefore not accumulated drift from the upstream folds; it is local to layer 27's own merge, and the parent gain census below says why.  Stage C would have cost ~2 h of the queue's GPU to confirm a result already isolated.",
+  "parent_norm_gain_census": [
+    {
+      "layer": 3,
+      "q_norm": {
+        "dtype": "torch.bfloat16",
+        "min_abs_effective_gain": 0.775390625,
+        "coordinates_with_gain_exactly_zero": []
+      },
+      "k_norm": {
+        "dtype": "torch.bfloat16",
+        "min_abs_effective_gain": 0.20703125,
+        "coordinates_with_gain_exactly_zero": []
+      }
+    },
+    {
+      "layer": 7,
+      "q_norm": {
+        "dtype": "torch.bfloat16",
+        "min_abs_effective_gain": 0.78515625,
+        "coordinates_with_gain_exactly_zero": []
+      },
+      "k_norm": {
+        "dtype": "torch.bfloat16",
+        "min_abs_effective_gain": 0.265625,
+        "coordinates_with_gain_exactly_zero": []
+      }
+    },
+    {
+      "layer": 11,
+      "q_norm": {
+        "dtype": "torch.bfloat16",
+        "min_abs_effective_gain": 0.46484375,
+        "coordinates_with_gain_exactly_zero": []
+      },
+      "k_norm": {
+        "dtype": "torch.bfloat16",
+        "min_abs_effective_gain": 0.01171875,
+        "coordinates_with_gain_exactly_zero": []
+      }
+    },
+    {
+      "layer": 15,
+      "q_norm": {
+        "dtype": "torch.bfloat16",
+        "min_abs_effective_gain": 0.00390625,
+        "coordinates_with_gain_exactly_zero": []
+      },
+      "k_norm": {
+        "dtype": "torch.bfloat16",
+        "min_abs_effective_gain": 0.015625,
+        "coordinates_with_gain_exactly_zero": []
+      }
+    },
+    {
+      "layer": 19,
+      "q_norm": {
+        "dtype": "torch.bfloat16",
+        "min_abs_effective_gain": 0.04296875,
+        "coordinates_with_gain_exactly_zero": []
+      },
+      "k_norm": {
+        "dtype": "torch.bfloat16",
+        "min_abs_effective_gain": 0.01171875,
+        "coordinates_with_gain_exactly_zero": []
+      }
+    },
+    {
+      "layer": 23,
+      "q_norm": {
+        "dtype": "torch.bfloat16",
+        "min_abs_effective_gain": 0.015625,
+        "coordinates_with_gain_exactly_zero": []
+      },
+      "k_norm": {
+        "dtype": "torch.bfloat16",
+        "min_abs_effective_gain": 0.01953125,
+        "coordinates_with_gain_exactly_zero": []
+      }
+    },
+    {
+      "layer": 27,
+      "q_norm": {
+        "dtype": "torch.bfloat16",
+        "min_abs_effective_gain": 0.0,
+        "coordinates_with_gain_exactly_zero": [
+          1
+        ]
+      },
+      "k_norm": {
+        "dtype": "torch.bfloat16",
+        "min_abs_effective_gain": 0.00390625,
+        "coordinates_with_gain_exactly_zero": []
+      }
+    },
+    {
+      "layer": 31,
+      "q_norm": {
+        "dtype": "torch.bfloat16",
+        "min_abs_effective_gain": 0.04296875,
+        "coordinates_with_gain_exactly_zero": []
+      },
+      "k_norm": {
+        "dtype": "torch.bfloat16",
+        "min_abs_effective_gain": 0.015625,
+        "coordinates_with_gain_exactly_zero": []
+      }
+    }
+  ],
+  "finding": {
+    "root_cause": "qf_attn.kv_head_merge divides the solved query rows by the q_norm EFFECTIVE gain (1 + weight, the factor Qwen3_5RMSNorm.forward applies).  Qwen3.5-4B layer 27's q_norm has one coordinate -- index 1 -- whose bf16 weight is exactly -1.0, so that gain is exactly 0.  Coordinate 1 is the real half of rotary plane 1, so the gain-scaled row is zero while the plane is not, and the complex coefficient qf_solve.joint_relation_solve applies to the plane returns a non-zero value into that row.  non-zero / 0 = +-Inf.",
+    "chain": [
+      "child q_proj carries +-Inf in one row per query head (kv-only: 16 rows x 2560 = 40960 entries; full-group: 8 x 2560 = 20480, and the energy-weighted sum of +Inf and -Inf makes those NaN)",
+      "q_proj_out is non-finite for that coordinate at every token",
+      "q_norm's rsqrt(mean(x^2)) over the head is then Inf, and Inf * 0 is NaN, so the whole head's query is NaN",
+      "logits, softmax and the attention output are NaN, so 100% of the gated o_proj input stream is non-finite",
+      "A^T A is all NaN; lam = 1e-6 * mean(diag(G)) is NaN; G + lam I is all NaN; cholesky reports 'the leading minor of order 1 is not positive-definite', which is about channel 0 only because that is where LAPACK looks first"
+    ],
+    "why_layer_27_and_not_3_to_23": "parent_norm_gain_census: layer 27 is the ONLY full-attention layer of this parent with an effective q_norm gain of exactly zero",
+    "both_arms_affected": true,
+    "fix": "qf_attn.unfold_gain installs the PARENT's own raw row at a zero-gain coordinate instead of dividing.  The score is unchanged (the norm multiplies that coordinate by zero either way) and the per-token RMS the norm divides the head by is the parent's.  Recorded per layer as zero_gain_coordinates.",
+    "defence_in_depth": "qf_solve.prior_anchored_gram now refuses with the offending channels named; law_abiding_solve* fall back per rung to eigen_anchored_gram with an explicit recorded eigenvalue floor (solver_fallback); qf_attn._resolve_writer drops and counts non-finite captured rows (stream_repair)."
+  }
+}

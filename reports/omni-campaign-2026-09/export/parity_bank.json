@@ -1,0 +1,22 @@
+{
+  "bank_id": "EXPORT-PB1",
+  "purpose": "Export fidelity only: does the GGUF answer like the HF checkpoint it came from. This is NOT an intelligence surface and must never be scored as one; the frozen 15-case review and bank v2 are separate instruments and are not reproduced here (contamination rule).",
+  "decode": "greedy (temperature 0, top_k 1), cache_prompt false, identical prompt text on both sides",
+  "prompts": [
+    {"id": "PB1-01", "category": "arithmetic", "n_predict": 48, "prompt": "Compute 47 * 23. Give only the number.\nAnswer:"},
+    {"id": "PB1-02", "category": "arithmetic_multistep", "n_predict": 96, "prompt": "A train leaves at 09:15 and arrives at 13:40. How many minutes is the journey? Show the subtraction, then give the number.\nAnswer:"},
+    {"id": "PB1-03", "category": "retrieval", "n_predict": 48, "prompt": "Facts: the reactor coolant pump is model RX-88; the backup pump is model RX-42; the valve is model VV-19.\nQuestion: which model is the backup pump?\nAnswer:"},
+    {"id": "PB1-04", "category": "instruction_following", "n_predict": 64, "prompt": "List exactly three primary colours, one per line, no other text.\n"},
+    {"id": "PB1-05", "category": "code", "n_predict": 128, "prompt": "Write a Python function named `second_largest` that returns the second largest distinct value in a list of integers, or None if there is no such value. Code only.\n"},
+    {"id": "PB1-06", "category": "code_reading", "n_predict": 64, "prompt": "What does this print?\n\nxs = [3, 1, 4, 1, 5]\nprint(sum(sorted(set(xs))[:2]))\n\nAnswer:"},
+    {"id": "PB1-07", "category": "json_format", "n_predict": 96, "prompt": "Return a JSON object with keys \"city\" and \"population\" for Oslo (population 709000). JSON only.\n"},
+    {"id": "PB1-08", "category": "summarization", "n_predict": 128, "prompt": "Summarize in one sentence: The maintenance crew replaced the corroded intake valve, flushed the coolant loop, and recorded a pressure drop of 4 kPa, which the shift engineer attributed to the new gasket seating itself.\nSummary:"},
+    {"id": "PB1-09", "category": "reasoning", "n_predict": 96, "prompt": "All gliders in hangar B are yellow. The glider named Kestrel is in hangar B. What colour is Kestrel? Answer in one sentence.\nAnswer:"},
+    {"id": "PB1-10", "category": "long_form_start", "n_predict": 128, "prompt": "Explain what a KV cache is in a transformer, in two sentences.\n"},
+    {"id": "PB1-11", "category": "translation", "n_predict": 64, "prompt": "Translate to French, output only the translation: \"The door is locked.\"\n"},
+    {"id": "PB1-12", "category": "ordering", "n_predict": 64, "prompt": "Sort these numbers ascending and output them space separated on one line: 12 3 47 8 21\n"},
+    {"id": "PB1-13", "category": "extraction", "n_predict": 64, "prompt": "Extract the date from this line and output it as YYYY-MM-DD only: \"Invoice issued on the 4th of March, 2026, due in 30 days.\"\n"},
+    {"id": "PB1-14", "category": "negation", "n_predict": 64, "prompt": "Which of these is NOT a mammal: dolphin, bat, penguin, horse? Answer with one word.\nAnswer:"},
+    {"id": "PB1-15", "category": "greeting_termination", "n_predict": 48, "prompt": "Say hello in one short sentence and then stop.\n"}
+  ]
+}

@@ -1,0 +1,19 @@
+[b2_held_aquarium_room.image] (48 tokens, stopped=False)
+subject: A documentary-style interior photograph of a quiet public aquarium gallery with one broad illuminated tank built into a dark wall. A few small silver fish swim above rocks and aquatic plants behind clear glass, while two simple wooden benches face the display. The surrounding floor is matte gray and the ceiling lights are subdued, with realistic glass reflections rather than glowing haze. The room is empty and architecturally coherent. Natural fish anatomy and water color, no visitors, large text panels, logos or fantasy creatures.
+answer: The prompt asks for a description of the image, but the image provided is a text string. The text string is a sequence of words, which are tokens. The tokens are "Describe", "this", "image", ".", and "The
+
+[b2_held_aquarium_room.zeroed_features] (48 tokens, stopped=False)
+subject: A documentary-style interior photograph of a quiet public aquarium gallery with one broad illuminated tank built into a dark wall. A few small silver fish swim above rocks and aquatic plants behind clear glass, while two simple wooden benches face the display. The surrounding floor is matte gray and the ceiling lights are subdued, with realistic glass reflections rather than glowing haze. The room is empty and architecturally coherent. Natural fish anatomy and water color, no visitors, large text panels, logos or fantasy creatures.
+answer: The image is a placeholder. It is a generic, abstract representation of a generic, abstract representation. It is a generic, abstract representation of a generic, abstract representation. It is a generic, abstract representation of a generic, abstract representation.
+
+[b1_fit_travel_bag.image] (48 tokens, stopped=False)
+subject: A realistic product photograph of one ochre canvas travel bag with two short leather handles and a closed brass zipper. The entire rectangular bag is visible from a slightly elevated three-quarter angle on a pale wooden bench. Carefully stitched seams, woven fabric and gently worn leather have convincing physical texture. Soft daylight enters from the upper right, leaving a clear contact shadow and an uncluttered cream background. The bag is neither transparent nor cut open. No people, brand markings, labels or floating parts.
+answer: The image is a text block describing a concept of "describe this image" in a specific format. It is a paragraph of text, with a specific structure. The text is a description of the image, and the text is a description of
+
+[b1_fit_travel_bag.zeroed_features] (48 tokens, stopped=False)
+subject: A realistic product photograph of one ochre canvas travel bag with two short leather handles and a closed brass zipper. The entire rectangular bag is visible from a slightly elevated three-quarter angle on a pale wooden bench. Carefully stitched seams, woven fabric and gently worn leather have convincing physical texture. Soft daylight enters from the upper right, leaving a clear contact shadow and an uncluttered cream background. The bag is neither transparent nor cut open. No people, brand markings, labels or floating parts.
+answer: The image is a placeholder. It is a generic, abstract representation of a generic, abstract representation. It is a generic, abstract representation of a generic, abstract representation. It is a generic, abstract representation of a generic, abstract representation.
+
+[no_image] (48 tokens, stopped=False)
+subject: None
+answer: The image is a **2x2 grid** of four squares. Each square is divided into a 3x3 grid of cells. The cells are filled with numbers, and the numbers are arranged in a pattern. The pattern is a

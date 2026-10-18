@@ -1,0 +1,84 @@
+{
+ "schema": "omni-campaign.speech-teacher-smoke.tts.v1",
+ "tool_version": "1.0.0",
+ "model": "qwen3-tts-base",
+ "model_dir": "/mnt/lexar/models/Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+ "revision": "fd4b254389122332181a7c3db7f27e918eec64e3",
+ "device": "cpu",
+ "dtype": "float32",
+ "threads": 16,
+ "load_seconds": 43.0,
+ "rows": [
+  {
+   "index": 0,
+   "text": "The river rose overnight, so the ferry left an hour later than usual.",
+   "wav": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/tts/qwen3-tts-base-0.wav",
+   "sample_rate": 24000,
+   "audio_seconds": 4.0,
+   "seconds": 120.23,
+   "rtf": 30.057,
+   "peak_abs": 0.4264,
+   "finite": true,
+   "condition": {
+    "clone_ref": "3570-5695-0015",
+    "clone_ref_source": "librispeech/test-clean",
+    "sample_rate": 24000
+   },
+   "sha256": "9ce733be0adf9a0998b270fe586b70fafd35444a9913fe06b18b8fdd4f62a70b"
+  },
+  {
+   "index": 1,
+   "text": "Please set the oven to two hundred degrees and wait ten more minutes.",
+   "wav": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/tts/qwen3-tts-base-1.wav",
+   "sample_rate": 24000,
+   "audio_seconds": 3.36,
+   "seconds": 116.61,
+   "rtf": 34.705,
+   "peak_abs": 0.3349,
+   "finite": true,
+   "condition": {
+    "clone_ref": "3570-5695-0015",
+    "clone_ref_source": "librispeech/test-clean",
+    "sample_rate": 24000
+   },
+   "sha256": "3907a587e22823dbd8082d16ccc796ba9bbd3b432283426d320f88e0cd4a2cfa"
+  },
+  {
+   "index": 2,
+   "text": "She painted the old fence blue, then sat on the porch to watch it dry.",
+   "wav": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/tts/qwen3-tts-base-2.wav",
+   "sample_rate": 24000,
+   "audio_seconds": 4.08,
+   "seconds": 97.96,
+   "rtf": 24.01,
+   "peak_abs": 0.3359,
+   "finite": true,
+   "condition": {
+    "clone_ref": "3570-5695-0015",
+    "clone_ref_source": "librispeech/test-clean",
+    "sample_rate": 24000
+   },
+   "sha256": "39a9cf771fc8e4191325a8eff5e53239969872e3f44eec9390051dd101cf9540"
+  },
+  {
+   "index": 3,
+   "text": "Our meeting moved to Thursday because the projector was broken again.",
+   "wav": "/home/cereal/omni-campaign/distill/speech/teachers/smoke/tts/qwen3-tts-base-3.wav",
+   "sample_rate": 24000,
+   "audio_seconds": 3.2,
+   "seconds": 89.78,
+   "rtf": 28.058,
+   "peak_abs": 0.5455,
+   "finite": true,
+   "condition": {
+    "clone_ref": "3570-5695-0015",
+    "clone_ref_source": "librispeech/test-clean",
+    "sample_rate": 24000
+   },
+   "sha256": "4ed5a55a461892a87ec1326343e9a7983b1e8884f87a9f9beb68ff147f0ad539"
+  }
+ ],
+ "peak_rss_gib": 11.4,
+ "torch": "2.6.0+cu118",
+ "finished_utc": "2026-10-15T01:20:20Z"
+}

@@ -1,0 +1,828 @@
+{
+  "block_kind": "kda",
+  "columns": [
+    {
+      "block_residual": {
+        "chimera_blocks": 1,
+        "pushed_input_unchanged": true,
+        "reference_blocks": 1
+      },
+      "chimera_seconds": 0.108,
+      "device": "cuda:0",
+      "dtype": "bfloat16",
+      "gpu_name": "Quadro RTX 8000",
+      "import_receipt": {
+        "block_kind": "kda",
+        "consumed": [
+          {
+            "dtype": "BF16",
+            "elements": 7168,
+            "name": "language_model.model.layers.0.input_layernorm.weight",
+            "sha256": "f6f6c7da023ddbab5f6ebb465d92a4380fa9a73cb5ee2c4c791a310c93698d82",
+            "shape": [
+              7168
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 242221056,
+            "name": "language_model.model.layers.0.mlp.down_proj.weight",
+            "sha256": "b45f5dc5724b46e8cfb17f9323638f750678692d30de00212ca528483ec98353",
+            "shape": [
+              7168,
+              33792
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 242221056,
+            "name": "language_model.model.layers.0.mlp.gate_proj.weight",
+            "sha256": "c5bace9b3192b81ae996489268b03388137dd7cbbb0acdc317a103aa39fed62c",
+            "shape": [
+              33792,
+              7168
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 242221056,
+            "name": "language_model.model.layers.0.mlp.up_proj.weight",
+            "sha256": "5371f4720d4c2bc7e1d95f5728332a701a4a08620fa31a76a099cf38994765a0",
+            "shape": [
+              33792,
+              7168
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 7168,
+            "name": "language_model.model.layers.0.mlp_res_norm.weight",
+            "sha256": "28451f880d57dfb0069bde43082dac3755c11f12c516b128b585546571880654",
+            "shape": [
+              7168
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 7168,
+            "name": "language_model.model.layers.0.mlp_res_proj.weight",
+            "sha256": "bed04897a09865f9fca7ba2eba367679c17036aa249d74e195586de28baccded",
+            "shape": [
+              1,
+              7168
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 7168,
+            "name": "language_model.model.layers.0.post_attention_layernorm.weight",
+            "sha256": "93320f6766748de6ba8d6359a59380f7fe6f68d1ae0645f5b0d6dbdbb89d7a37",
+            "shape": [
+              7168
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 7168,
+            "name": "language_model.model.layers.0.self_attention_res_norm.weight",
+            "sha256": "07fb03a2168fa0aa05332e12cff972fa41ee14575ca1c746c07429e077a6e259",
+            "shape": [
+              7168
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 7168,
+            "name": "language_model.model.layers.0.self_attention_res_proj.weight",
+            "sha256": "aa9e58dd0dce9668529dfeb51212af07c23430aa17decb89f501d8d9346c15c7",
+            "shape": [
+              1,
+              7168
+            ]
+          },
+          {
+            "dtype": "F32",
+            "elements": 128,
+            "name": "language_model.model.layers.0.self_attn.A_log",
+            "sha256": "3c1ce45a972527119a89c64331f4961cdde32a1dac2591b3be7393c00a131d08",
+            "shape": [
+              128
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 688128,
+            "name": "language_model.model.layers.0.self_attn.b_proj.weight",
+            "sha256": "8b055c7a1bba042a516796772427245bc8b8d1364a7364fa1e7e9a8b48707a1e",
+            "shape": [
+              96,
+              7168
+            ]
+          },
+          {
+            "dtype": "F32",
+            "elements": 12288,
+            "name": "language_model.model.layers.0.self_attn.dt_bias",
+            "sha256": "8b8ae61099d74fe691e0bf887f3878b06b42dae69e6f55aaedb8956efdbb5abb",
+            "shape": [
+              12288
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 917504,
+            "name": "language_model.model.layers.0.self_attn.f_a_proj.weight",
+            "sha256": "bbf18fe61c44305af843b9390de2aab38a6c0bfe6f28b7838087a5f5f83880c5",
+            "shape": [
+              128,
+              7168
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 1572864,
+            "name": "language_model.model.layers.0.self_attn.f_b_proj.weight",
+            "sha256": "1d9d281283c3c40da912e10f420c6abd6eb5c70e059e538729b18da8969d19d2",
+            "shape": [
+              12288,
+              128
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 88080384,
+            "name": "language_model.model.layers.0.self_attn.g_proj.weight",
+            "sha256": "aca2b14a88cd6751a94d3a518e46ab8168f61690c5a75c99f33a83067fa6dbe6",
+            "shape": [
+              12288,
+              7168
+            ]
+          },
+          {
+            "dtype": "F32",
+            "elements": 49152,
+            "name": "language_model.model.layers.0.self_attn.k_conv1d.weight",
+            "sha256": "6de70d5cce35d380813e2a34a71c4935898b60f12f8f6a2a821a76742090c493",
+            "shape": [
+              12288,
+              1,
+              4
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 88080384,
+            "name": "language_model.model.layers.0.self_attn.k_proj.weight",
+            "sha256": "40820bcecf143ce2f3ef94e800dac43ddf8dfa01f0b05010d521e3a5395d5856",
+            "shape": [
+              12288,
+              7168
+            ]
+          },
+          {
+            "dtype": "F32",
+            "elements": 128,
+            "name": "language_model.model.layers.0.self_attn.o_norm.weight",
+            "sha256": "fbe70fde8cefd376af7c68985afdb108709220ae739ee6fdc0a9794561e38b21",
+            "shape": [
+              128
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 88080384,
+            "name": "language_model.model.layers.0.self_attn.o_proj.weight",
+            "sha256": "daea5bb1ae9024e91190dd9ba76b17f0eaf4eddea154bbad2094766226728d88",
+            "shape": [
+              7168,
+              12288
+            ]
+          },
+          {
+            "dtype": "F32",
+            "elements": 49152,
+            "name": "language_model.model.layers.0.self_attn.q_conv1d.weight",
+            "sha256": "10575c0838bf943c2d670c24ac27be8e1403aaa1456a3af94d1e145f430ff587",
+            "shape": [
+              12288,
+              1,
+              4
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 88080384,
+            "name": "language_model.model.layers.0.self_attn.q_proj.weight",
+            "sha256": "c393b4e91bd660c29e17bef7e521c5f67f6c2e57814356ea6975d54f22a4fe1b",
+            "shape": [
+              12288,
+              7168
+            ]
+          },
+          {
+            "dtype": "F32",
+            "elements": 49152,
+            "name": "language_model.model.layers.0.self_attn.v_conv1d.weight",
+            "sha256": "7a3aeb303a19cc4aae6774eadf611fe72737bc4d8a80be0d075504a9cb408914",
+            "shape": [
+              12288,
+              1,
+              4
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 88080384,
+            "name": "language_model.model.layers.0.self_attn.v_proj.weight",
+            "sha256": "8ad567b319b850fab00b9ef31bad1b9a659c2af28b659ceb5025438d3c5adee4",
+            "shape": [
+              12288,
+              7168
+            ]
+          }
+        ],
+        "consumed_tensors": 23,
+        "dense_mlp": true,
+        "device": "cuda:0",
+        "dtype": "torch.bfloat16",
+        "initialised": [
+          "attention_residual.prefix_logit_bias 0.0 (attnres_init='zero'; no K3 source)",
+          "feed_forward_residual.prefix_logit_bias 0.0 (attnres_init='zero'; no K3 source)"
+        ],
+        "layer_index": 0,
+        "notes": [
+          "dt_bias is viewed as [heads, head_dim]; o_norm's single row is broadcast per head",
+          "res_proj is squeezed into DepthAttentionResidual.query; (w*k).q == k.(w*q)",
+          "prefix_logit_bias has no K3 source and stays 0 (uniform depth mixing, K3's behaviour)"
+        ],
+        "parameter_counts": {
+          "block_total": 1170458722,
+          "imported": 1170458720
+        },
+        "schema": "chimera_omni.import.kimi_k3.layer.v1",
+        "source_adjustments": [
+          "A_log trimmed from 128 to 96 entries (checkpoint zero-pads to head_dim)"
+        ],
+        "source_prefix": "language_model.model.",
+        "written_parameters": {
+          "attention_residual.norm.weight": 7168,
+          "attention_residual.query": 7168,
+          "feed_forward_residual.norm.weight": 7168,
+          "feed_forward_residual.query": 7168,
+          "ffn.down.weight": 242221056,
+          "ffn.up.weight": 484442112,
+          "mixer.decay_bias": 12288,
+          "mixer.decay_down.weight": 917504,
+          "mixer.decay_log_scale": 96,
+          "mixer.decay_up.weight": 1572864,
+          "mixer.k_conv.conv.weight": 49152,
+          "mixer.k_proj.weight": 88080384,
+          "mixer.out.weight": 88080384,
+          "mixer.output_gate.weight": 88080384,
+          "mixer.output_norm.weight": 12288,
+          "mixer.q_conv.conv.weight": 49152,
+          "mixer.q_proj.weight": 88080384,
+          "mixer.v_conv.conv.weight": 49152,
+          "mixer.v_proj.weight": 88080384,
+          "mixer.write_strength.weight": 688128,
+          "norm1.weight": 7168,
+          "norm2.weight": 7168
+        }
+      },
+      "input_seed": 0,
+      "input_shape": [
+        1,
+        64,
+        7168
+      ],
+      "layer_output": {
+        "max_abs_diff": 0.00048828125,
+        "mean_abs_diff": 1.7797317923395894e-05,
+        "reference_absmax": 0.08984375,
+        "reference_rms": 0.004073969088494778,
+        "relative_l2": 0.006097518020615974
+      },
+      "mixer_output": {
+        "max_abs_diff": 0.000244140625,
+        "mean_abs_diff": 8.645727575640194e-06,
+        "reference_absmax": 0.0556640625,
+        "reference_rms": 0.0013197034131735563,
+        "relative_l2": 0.00881828408708846
+      },
+      "recurrent_state": {
+        "as_is": {
+          "max_abs_diff": 0.22205369174480438,
+          "mean_abs_diff": 0.0013225805014371872,
+          "reference_absmax": 0.22076041996479034,
+          "reference_rms": 0.0023341961205005646,
+          "relative_l2": 1.407672153524514
+        },
+        "chimera_shape": [
+          1,
+          96,
+          128,
+          128
+        ],
+        "reference_shape": [
+          1,
+          96,
+          128,
+          128
+        ],
+        "reference_transposed": {
+          "max_abs_diff": 0.0014780759811401367,
+          "mean_abs_diff": 6.9404536588990595e-06,
+          "reference_absmax": 0.22076041996479034,
+          "reference_rms": 0.0023341961205005646,
+          "relative_l2": 0.007911465472377168
+        }
+      },
+      "reference_load_state_dict": {
+        "missing_keys": [],
+        "unexpected_keys": []
+      },
+      "reference_seconds": 1.478,
+      "torch_reference_substitutions": {},
+      "transformers_shims": {
+        "OutputRecorder": "placeholder; absent from this transformers version"
+      }
+    },
+    {
+      "block_residual": {
+        "chimera_blocks": 1,
+        "pushed_input_unchanged": true,
+        "reference_blocks": 1
+      },
+      "chimera_seconds": 1.574,
+      "device": "cpu",
+      "dtype": "float32",
+      "import_receipt": {
+        "block_kind": "kda",
+        "consumed": [
+          {
+            "dtype": "BF16",
+            "elements": 7168,
+            "name": "language_model.model.layers.0.input_layernorm.weight",
+            "sha256": "f6f6c7da023ddbab5f6ebb465d92a4380fa9a73cb5ee2c4c791a310c93698d82",
+            "shape": [
+              7168
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 242221056,
+            "name": "language_model.model.layers.0.mlp.down_proj.weight",
+            "sha256": "b45f5dc5724b46e8cfb17f9323638f750678692d30de00212ca528483ec98353",
+            "shape": [
+              7168,
+              33792
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 242221056,
+            "name": "language_model.model.layers.0.mlp.gate_proj.weight",
+            "sha256": "c5bace9b3192b81ae996489268b03388137dd7cbbb0acdc317a103aa39fed62c",
+            "shape": [
+              33792,
+              7168
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 242221056,
+            "name": "language_model.model.layers.0.mlp.up_proj.weight",
+            "sha256": "5371f4720d4c2bc7e1d95f5728332a701a4a08620fa31a76a099cf38994765a0",
+            "shape": [
+              33792,
+              7168
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 7168,
+            "name": "language_model.model.layers.0.mlp_res_norm.weight",
+            "sha256": "28451f880d57dfb0069bde43082dac3755c11f12c516b128b585546571880654",
+            "shape": [
+              7168
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 7168,
+            "name": "language_model.model.layers.0.mlp_res_proj.weight",
+            "sha256": "bed04897a09865f9fca7ba2eba367679c17036aa249d74e195586de28baccded",
+            "shape": [
+              1,
+              7168
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 7168,
+            "name": "language_model.model.layers.0.post_attention_layernorm.weight",
+            "sha256": "93320f6766748de6ba8d6359a59380f7fe6f68d1ae0645f5b0d6dbdbb89d7a37",
+            "shape": [
+              7168
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 7168,
+            "name": "language_model.model.layers.0.self_attention_res_norm.weight",
+            "sha256": "07fb03a2168fa0aa05332e12cff972fa41ee14575ca1c746c07429e077a6e259",
+            "shape": [
+              7168
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 7168,
+            "name": "language_model.model.layers.0.self_attention_res_proj.weight",
+            "sha256": "aa9e58dd0dce9668529dfeb51212af07c23430aa17decb89f501d8d9346c15c7",
+            "shape": [
+              1,
+              7168
+            ]
+          },
+          {
+            "dtype": "F32",
+            "elements": 128,
+            "name": "language_model.model.layers.0.self_attn.A_log",
+            "sha256": "3c1ce45a972527119a89c64331f4961cdde32a1dac2591b3be7393c00a131d08",
+            "shape": [
+              128
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 688128,
+            "name": "language_model.model.layers.0.self_attn.b_proj.weight",
+            "sha256": "8b055c7a1bba042a516796772427245bc8b8d1364a7364fa1e7e9a8b48707a1e",
+            "shape": [
+              96,
+              7168
+            ]
+          },
+          {
+            "dtype": "F32",
+            "elements": 12288,
+            "name": "language_model.model.layers.0.self_attn.dt_bias",
+            "sha256": "8b8ae61099d74fe691e0bf887f3878b06b42dae69e6f55aaedb8956efdbb5abb",
+            "shape": [
+              12288
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 917504,
+            "name": "language_model.model.layers.0.self_attn.f_a_proj.weight",
+            "sha256": "bbf18fe61c44305af843b9390de2aab38a6c0bfe6f28b7838087a5f5f83880c5",
+            "shape": [
+              128,
+              7168
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 1572864,
+            "name": "language_model.model.layers.0.self_attn.f_b_proj.weight",
+            "sha256": "1d9d281283c3c40da912e10f420c6abd6eb5c70e059e538729b18da8969d19d2",
+            "shape": [
+              12288,
+              128
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 88080384,
+            "name": "language_model.model.layers.0.self_attn.g_proj.weight",
+            "sha256": "aca2b14a88cd6751a94d3a518e46ab8168f61690c5a75c99f33a83067fa6dbe6",
+            "shape": [
+              12288,
+              7168
+            ]
+          },
+          {
+            "dtype": "F32",
+            "elements": 49152,
+            "name": "language_model.model.layers.0.self_attn.k_conv1d.weight",
+            "sha256": "6de70d5cce35d380813e2a34a71c4935898b60f12f8f6a2a821a76742090c493",
+            "shape": [
+              12288,
+              1,
+              4
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 88080384,
+            "name": "language_model.model.layers.0.self_attn.k_proj.weight",
+            "sha256": "40820bcecf143ce2f3ef94e800dac43ddf8dfa01f0b05010d521e3a5395d5856",
+            "shape": [
+              12288,
+              7168
+            ]
+          },
+          {
+            "dtype": "F32",
+            "elements": 128,
+            "name": "language_model.model.layers.0.self_attn.o_norm.weight",
+            "sha256": "fbe70fde8cefd376af7c68985afdb108709220ae739ee6fdc0a9794561e38b21",
+            "shape": [
+              128
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 88080384,
+            "name": "language_model.model.layers.0.self_attn.o_proj.weight",
+            "sha256": "daea5bb1ae9024e91190dd9ba76b17f0eaf4eddea154bbad2094766226728d88",
+            "shape": [
+              7168,
+              12288
+            ]
+          },
+          {
+            "dtype": "F32",
+            "elements": 49152,
+            "name": "language_model.model.layers.0.self_attn.q_conv1d.weight",
+            "sha256": "10575c0838bf943c2d670c24ac27be8e1403aaa1456a3af94d1e145f430ff587",
+            "shape": [
+              12288,
+              1,
+              4
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 88080384,
+            "name": "language_model.model.layers.0.self_attn.q_proj.weight",
+            "sha256": "c393b4e91bd660c29e17bef7e521c5f67f6c2e57814356ea6975d54f22a4fe1b",
+            "shape": [
+              12288,
+              7168
+            ]
+          },
+          {
+            "dtype": "F32",
+            "elements": 49152,
+            "name": "language_model.model.layers.0.self_attn.v_conv1d.weight",
+            "sha256": "7a3aeb303a19cc4aae6774eadf611fe72737bc4d8a80be0d075504a9cb408914",
+            "shape": [
+              12288,
+              1,
+              4
+            ]
+          },
+          {
+            "dtype": "BF16",
+            "elements": 88080384,
+            "name": "language_model.model.layers.0.self_attn.v_proj.weight",
+            "sha256": "8ad567b319b850fab00b9ef31bad1b9a659c2af28b659ceb5025438d3c5adee4",
+            "shape": [
+              12288,
+              7168
+            ]
+          }
+        ],
+        "consumed_tensors": 23,
+        "dense_mlp": true,
+        "device": "cpu",
+        "dtype": "torch.float32",
+        "initialised": [
+          "attention_residual.prefix_logit_bias 0.0 (attnres_init='zero'; no K3 source)",
+          "feed_forward_residual.prefix_logit_bias 0.0 (attnres_init='zero'; no K3 source)"
+        ],
+        "layer_index": 0,
+        "notes": [
+          "dt_bias is viewed as [heads, head_dim]; o_norm's single row is broadcast per head",
+          "res_proj is squeezed into DepthAttentionResidual.query; (w*k).q == k.(w*q)",
+          "prefix_logit_bias has no K3 source and stays 0 (uniform depth mixing, K3's behaviour)"
+        ],
+        "parameter_counts": {
+          "block_total": 1170458722,
+          "imported": 1170458720
+        },
+        "schema": "chimera_omni.import.kimi_k3.layer.v1",
+        "source_adjustments": [
+          "A_log trimmed from 128 to 96 entries (checkpoint zero-pads to head_dim)"
+        ],
+        "source_prefix": "language_model.model.",
+        "written_parameters": {
+          "attention_residual.norm.weight": 7168,
+          "attention_residual.query": 7168,
+          "feed_forward_residual.norm.weight": 7168,
+          "feed_forward_residual.query": 7168,
+          "ffn.down.weight": 242221056,
+          "ffn.up.weight": 484442112,
+          "mixer.decay_bias": 12288,
+          "mixer.decay_down.weight": 917504,
+          "mixer.decay_log_scale": 96,
+          "mixer.decay_up.weight": 1572864,
+          "mixer.k_conv.conv.weight": 49152,
+          "mixer.k_proj.weight": 88080384,
+          "mixer.out.weight": 88080384,
+          "mixer.output_gate.weight": 88080384,
+          "mixer.output_norm.weight": 12288,
+          "mixer.q_conv.conv.weight": 49152,
+          "mixer.q_proj.weight": 88080384,
+          "mixer.v_conv.conv.weight": 49152,
+          "mixer.v_proj.weight": 88080384,
+          "mixer.write_strength.weight": 688128,
+          "norm1.weight": 7168,
+          "norm2.weight": 7168
+        }
+      },
+      "input_seed": 0,
+      "input_shape": [
+        1,
+        64,
+        7168
+      ],
+      "layer_output": {
+        "max_abs_diff": 3.4691765904426575e-08,
+        "mean_abs_diff": 2.743168137087082e-09,
+        "reference_absmax": 0.08974114060401917,
+        "reference_rms": 0.004075160715728998,
+        "relative_l2": 9.716125855522246e-07
+      },
+      "mixer_output": {
+        "max_abs_diff": 3.5390257835388184e-08,
+        "mean_abs_diff": 2.4835886680563135e-09,
+        "reference_absmax": 0.05582140386104584,
+        "reference_rms": 0.0013222211273387074,
+        "relative_l2": 2.833902514059071e-06
+      },
+      "recurrent_state": {
+        "as_is": {
+          "max_abs_diff": 1.5273690223693848e-06,
+          "mean_abs_diff": 2.607921656405665e-09,
+          "reference_absmax": 0.22110597789287567,
+          "reference_rms": 0.002335938857868314,
+          "relative_l2": 1.402570857741118e-05
+        },
+        "chimera_shape": [
+          1,
+          96,
+          128,
+          128
+        ],
+        "reference_shape": [
+          1,
+          96,
+          128,
+          128
+        ],
+        "reference_transposed": {
+          "max_abs_diff": 0.22092020511627197,
+          "mean_abs_diff": 0.0013230229960754514,
+          "reference_absmax": 0.22110597789287567,
+          "reference_rms": 0.002335938857868314,
+          "relative_l2": 1.407150641415079
+        }
+      },
+      "reference_load_state_dict": {
+        "missing_keys": [],
+        "unexpected_keys": []
+      },
+      "reference_seconds": 1.418,
+      "torch_reference_substitutions": {
+        "FusedRMSNormGated": "plain torch rmsnorm(o) * w * sigmoid(g)",
+        "ShortConvolution": "torch depthwise F.conv1d with causal left padding and silu",
+        "chunk_kda": "fla.ops.kda.naive.naive_recurrent_kda with the in-kernel gate transcribed"
+      },
+      "transformers_shims": {
+        "OutputRecorder": "placeholder; absent from this transformers version"
+      }
+    }
+  ],
+  "config": {
+    "activation_kind": "situ",
+    "architecture": "dense_decoder_native_omnimodal_encoder_free",
+    "attention_head_dim": 128,
+    "attnres_block_size": 12,
+    "attnres_init": "zero",
+    "aux_heads": [
+      "flow",
+      "grounding",
+      "sync"
+    ],
+    "block_pattern": [
+      "kda",
+      "kda",
+      "kda",
+      "gated_mla"
+    ],
+    "csa_compress_stride": 64,
+    "dropout": 0.0,
+    "feed_forward_kind": "dense",
+    "force_final_gated_mla": true,
+    "gqa_output_gate": true,
+    "gqa_qk_norm": true,
+    "gqa_rope_dim": 0,
+    "gqa_rope_theta": 10000000.0,
+    "hca_compress_stride": 1024,
+    "hidden_size": 7168,
+    "intermediate_size": 33792,
+    "intermediate_sizes": [],
+    "kda_conv_bias": false,
+    "kda_decay_kind": "kda",
+    "kda_decay_rank": 128,
+    "kda_gate_lower_bound": -5.0,
+    "kda_head_dim": 128,
+    "kda_num_heads": 96,
+    "kda_num_key_heads": 96,
+    "kda_output_gate": "sigmoid",
+    "kda_qk_norm_eps": 1e-06,
+    "kda_qk_norm_kind": "fla",
+    "kda_query_scale": "inv_sqrt_key_dim",
+    "kda_short_conv_kernel_size": 4,
+    "kda_value_head_dim": 128,
+    "ledger_bands": [
+      [
+        "control",
+        512
+      ],
+      [
+        "media",
+        2048
+      ],
+      [
+        "grounding",
+        1024
+      ],
+      [
+        "sync",
+        128
+      ],
+      [
+        "tool",
+        384
+      ]
+    ],
+    "ledger_base_vocab_size": 163840,
+    "ledger_kind": "fixed_band",
+    "local_window": 256,
+    "max_sequence_length": 1048576,
+    "metadata": {
+      "import_source": "kimi_k3",
+      "moe_folding": "uniform_dense_width",
+      "source_config_scope": "text_config",
+      "source_config_sha256": "a15a5818a3b84f2d78be7476983d4a384ef0bb9c93667c099cfa5ba6e8775c5d"
+    },
+    "mla_extra_head_dim": 64,
+    "mla_key_head_dim": 128,
+    "mla_latent_norm_eps": 1e-06,
+    "mla_latent_size": 512,
+    "mla_query_latent_size": 1536,
+    "mla_value_head_dim": 128,
+    "mtp_heads": 0,
+    "native_bidirectional_block_kinds": [
+      "gated_mla"
+    ],
+    "native_bidirectional_refinement": false,
+    "native_coordinate_frequencies": 8,
+    "native_feature_dim": 6144,
+    "native_loss_reduction": "type_balanced",
+    "native_position_dim": 4,
+    "native_type_count": 8,
+    "num_heads": 96,
+    "num_kv_heads": 96,
+    "num_layers": 93,
+    "residual_mode": "block_attnres",
+    "rms_norm_eps": 1e-05,
+    "scale_policy": "explicit_config_no_baked_target_size",
+    "schema": "chimera_omni.config.v1",
+    "situ_gate_beta": 4.0,
+    "situ_up_beta": 25.0,
+    "tie_word_embeddings": false,
+    "vocab_size": 167936
+  },
+  "generated_utc": "2026-09-02T10:55:36Z",
+  "k3_dir": "/mnt/ai_data/models/moonshotai/Kimi-K3",
+  "layer_index": 0,
+  "notes": [
+    "Chimera runs a per-position fp32 recurrence; the reference runs fla's chunked Triton kernel, so a bf16 column carries chunking noise on top of the import",
+    "fla scales the query by 1/sqrt(head_dim); the import config therefore sets kda_query_scale='inv_sqrt_key_dim' (the constant is NOT absorbed by o_norm, which has an epsilon)",
+    "KimiMLAAttention builds its two latent norms with KimiRMSNorm's default eps (1e-6), not config.rms_norm_eps (1e-5); mla_latent_norm_eps carries that"
+  ],
+  "read": {
+    "cpu_run": {
+      "bytes": 2341213184,
+      "megabytes_per_second": 267.95,
+      "seconds": 8.33,
+      "source": "staged",
+      "tensors": 23
+    },
+    "gpu_run": {
+      "bytes": 2341213184,
+      "megabytes_per_second": 272.29,
+      "seconds": 8.2,
+      "source": "staged",
+      "tensors": 23
+    }
+  },
+  "schema": "chimera_omni.receipt.import.kimi_k3.layer.v1",
+  "source_prefix": "language_model.model."
+}

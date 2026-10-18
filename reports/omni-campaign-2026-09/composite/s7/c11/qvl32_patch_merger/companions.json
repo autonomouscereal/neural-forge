@@ -1,0 +1,31 @@
+{
+  "entries": [
+    {
+      "companion_decoder": false,
+      "emission_band": [
+        384,
+        385
+      ],
+      "feature_band": [
+        640,
+        2176
+      ],
+      "name": "qvl32_patch_merger",
+      "psnr_absorbed_db": null,
+      "psnr_parent_roundtrip_db": null,
+      "rows": "qvl32_patch_merger/linear/composed_interface.safetensors",
+      "rung": "linear",
+      "source": "QVL32",
+      "tensor_sha256": {
+        "bridge.feature_proj.weight": "44f5d319ab13443aab1b503a04fada5f32a373d56b60f2d63654bf292848c217",
+        "bridge.type_embed_delta": "e19fa21563196951aac291401c0259d36a98bb78b83b0c3c75a2494ebf00635b",
+        "head.out.weight": "96925977722fa67299bb8205082d2657a78d7d380a19c4d6ee305266dab22b34",
+        "head.type_affine_shift": "246132225d13cff01ebab02cf09d2e35721d40e9dfbb9a27a9e07897c1c90a99"
+      },
+      "type_id": 6
+    }
+  ],
+  "hidden": 5120,
+  "native_feature_dim": 6144,
+  "schema": "chimera_omni.composite.interface_set.v1"
+}

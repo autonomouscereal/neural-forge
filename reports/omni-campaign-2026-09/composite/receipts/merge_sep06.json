@@ -1,0 +1,129 @@
+{
+ "agent": "Claude Fable 5.1 (MERGE agent)",
+ "backup_dir": "/home/cereal/omni-campaign/.bak-merge-sep06-20260906T154256Z",
+ "backup_policy": "copy only; nothing deleted; the pre-merge canonical bytes live under backup_dir with the sha256 in files[*].sha256_before",
+ "campaign_root": "/home/cereal/omni-campaign",
+ "codex_tested_copy": "composite/codex-sep04-safety/ (k3-memory/ beneath it); byte-identical to the local mirror before the merge (handoff test counts: S0 26, QF 19, k3 chunking 63)",
+ "files": [
+  {
+   "canonical": "composite/tools/s0_import_27b.py",
+   "local_mirror": "composite/tools/s0_import_27b.py",
+   "parity": "canonical == codex == local mirror (sha256)",
+   "promoted_from": "composite/codex-sep04-safety/s0_import_27b.py",
+   "sha256_after": "ef090c9d63e5713aad987fee05e83834180f8675404f0a5db55fe163c66df3ba",
+   "sha256_before": "260de4ca70dfd358d200b9d7438461ebb171749f3afcada3b3320744adff89e2",
+   "sha256_codex": "ef090c9d63e5713aad987fee05e83834180f8675404f0a5db55fe163c66df3ba",
+   "sha256_local_mirror": "ef090c9d63e5713aad987fee05e83834180f8675404f0a5db55fe163c66df3ba"
+  },
+  {
+   "canonical": "composite/tools/test_s0_import_27b.py",
+   "local_mirror": "composite/tools/test_s0_import_27b.py",
+   "parity": "canonical == codex == local mirror (sha256)",
+   "promoted_from": "composite/codex-sep04-safety/test_s0_import_27b.py",
+   "sha256_after": "cbc202522385c22612a91888324c6609d0d15326808272c8495101b92c4dc2b4",
+   "sha256_before": "34b3f0afe2bb7cc4d678ff59c880b12e2c8423cc470fdd196cef903992ece315",
+   "sha256_codex": "cbc202522385c22612a91888324c6609d0d15326808272c8495101b92c4dc2b4",
+   "sha256_local_mirror": "cbc202522385c22612a91888324c6609d0d15326808272c8495101b92c4dc2b4"
+  },
+  {
+   "canonical": "composite/tools/qf_stream27.py",
+   "local_mirror": "composite/tools/qf_stream27.py",
+   "parity": "canonical == codex == local mirror (sha256)",
+   "promoted_from": "composite/codex-sep04-safety/qf_stream27.py",
+   "sha256_after": "a4691686e832a9ffd2eadc7d07cb023b1653d863d8e6f96561b94d2ea02ac110",
+   "sha256_before": "a2e5f5637b12ec21dfc3a287414a5ca59fe8d1bd9f25c61e3f7a64f867a9a2ae",
+   "sha256_codex": "a4691686e832a9ffd2eadc7d07cb023b1653d863d8e6f96561b94d2ea02ac110",
+   "sha256_local_mirror": "a4691686e832a9ffd2eadc7d07cb023b1653d863d8e6f96561b94d2ea02ac110"
+  },
+  {
+   "canonical": "composite/tools/test_qf_stream27.py",
+   "local_mirror": "composite/tools/test_qf_stream27.py",
+   "parity": "canonical == codex == local mirror (sha256)",
+   "promoted_from": "composite/codex-sep04-safety/test_qf_stream27.py",
+   "sha256_after": "906747633c51ec1736716e479210db0adff53ccd4fd69c22e096314b21189de9",
+   "sha256_before": "23fc1f9a3aadd69d0d0495bca8b28abff096752d394c8d9fea79181b0bc84323",
+   "sha256_codex": "906747633c51ec1736716e479210db0adff53ccd4fd69c22e096314b21189de9",
+   "sha256_local_mirror": "906747633c51ec1736716e479210db0adff53ccd4fd69c22e096314b21189de9"
+  },
+  {
+   "canonical": "k3/harness/k3_common.py",
+   "local_mirror": "k3/k3_common.py",
+   "parity": "canonical == codex == local mirror (sha256)",
+   "promoted_from": "composite/codex-sep04-safety/k3-memory/k3_common.py",
+   "sha256_after": "70117c6bd55f18ed5a751adf3c9480f7e9e949f2702662dfdd91f9cdcb298f16",
+   "sha256_before": "4a39bc9b25a36020dc11855a0dec1e70e5b8d02181d34da83d49cfa34b3425a4",
+   "sha256_codex": "70117c6bd55f18ed5a751adf3c9480f7e9e949f2702662dfdd91f9cdcb298f16",
+   "sha256_local_mirror": "70117c6bd55f18ed5a751adf3c9480f7e9e949f2702662dfdd91f9cdcb298f16"
+  },
+  {
+   "canonical": "k3/harness/test_k3_attn_res_chunking.py",
+   "local_mirror": "k3/test_k3_attn_res_chunking.py",
+   "parity": "canonical == codex == local mirror (sha256)",
+   "promoted_from": "composite/codex-sep04-safety/k3-memory/test_k3_attn_res_chunking.py",
+   "sha256_after": "7fd1c472d00340fe917c2ca65c7b93744fe31e07b2be1dad301cb96f7274cf0e",
+   "sha256_before": null,
+   "sha256_codex": "7fd1c472d00340fe917c2ca65c7b93744fe31e07b2be1dad301cb96f7274cf0e",
+   "sha256_local_mirror": "7fd1c472d00340fe917c2ca65c7b93744fe31e07b2be1dad301cb96f7274cf0e"
+  }
+ ],
+ "generated_utc": "2026-09-06T15:51:31Z",
+ "local_mirror_root": "C:/Users/cereal/Documents/ai training/neural-forge/reports/omni-campaign-2026-09",
+ "merge": "codex-sep04-safety -> canonical (S0 import tool, QF streamed fold tool, K3 apply_attn_res token chunking)",
+ "review": {
+  "k3_common.apply_attn_res": "keyword-only token_chunk_size=1024 added after the five positionals; five-positional callers (k3_stream.py:195, k3_layer.py:682/703, k3_review_stream.py:318, test_k3_harness.py:154) unchanged; kernel is row-independent (per-token RMS + softmax over the block axis) so slicing tokens is exact; output dtype promote_types(prefix, block) == the original .to(v.dtype); CPU fp32/bf16 bit-identity proven by the 63-test suite; GPU bit-identity not measured (Codex states the same)",
+  "qf_stream27": "checkpoint_weight_manifest/bind_checkpoint_source/recheck_checkpoint_source: hashes index + every consumed shard, refuses substituted same-config weights before engine construction, rechecks before assembly and after export; adds ~162-324 GB of bounded-memory reads per 27B run (I/O cost, not a rule change); qf_selftest is NOT imported by qf_stream27 (imports: qf_arch, qf_build, qf_corpus, qf_export, qf_mlp, qf_solve, tps_probe)",
+  "s0_import_27b": "TOOL_VERSION 1.0.0 -> 1.2.0; --profile default qwen35 -> auto (tensor bytes profile-independent, tested); path-overlap refusals, pre-write preflight, post-write verify+cleanup with REFUSED.json, fp16 narrowing waiver, executable-source manifest, --compare-to lane comparison; no quantization, dense only, header-counted storage: standing rules intact"
+ },
+ "schema": "omni-campaign.merge.v1",
+ "tests": {
+  "exit_lines": [
+   "MERGE_TESTS_START 2026-09-06T15:42:56Z",
+   "S0_EXIT=1",
+   "QF_EXIT=0",
+   "K3CHUNK_EXIT=0",
+   "K3HARNESS_EXIT=0",
+   "MERGE_TESTS_DONE 2026-09-06T15:47:55Z"
+  ],
+  "k3_chunking": {
+   "command": "cd /home/cereal/omni-campaign/k3/harness && python -m pytest -o addopts='' -p no:cacheprovider -q test_k3_attn_res_chunking.py",
+   "count_line": "63 passed in 1.96s",
+   "expected": "63 passed"
+  },
+  "k3_harness": {
+   "command": "cd /home/cereal/omni-campaign/k3/harness && CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=6 python test_k3_harness.py --work-dir /home/cereal/omni-campaign/k3/testwork-merge-sep06 --src-dir /home/cereal/omni-campaign/k3/k3_src --out composite/receipts/sep06-merge-scratch/k3_harness_test_receipt_merge_sep06.json",
+   "count_line": "30 passed, 0 skipped, 0 failed -> /home/cereal/omni-campaign/composite/receipts/sep06-merge-scratch/k3_harness_test_receipt_merge_sep06.json",
+   "expected": "30 passed, 0 skipped, 0 failed"
+  },
+  "log_sha256": {
+   "merge_tests.log": "e0026a6c2002cdc2149109496cb3988762c70bca6c1e954ea142f2d34357b999",
+   "test_k3_attn_res_chunking.log": "383ceb99ab7ae8909484f1da038bc2bd3bd701922bed50b923953a08ec120af1",
+   "test_k3_harness.log": "a2008867340fc9c791e48a35c7b99ed3d2ab92513375a81f5e1170662420dd2f",
+   "test_qf_stream27.log": "8567e12438308f6ab1e9a7a71fc020af8d0057d565132c1f6fe3891ed30f6d84",
+   "test_s0_import_27b.log": "fbda99e4418fce23c2ff5dd3be039dd7416dc2517da580025c6835a420121bac",
+   "test_s0_import_27b.rerun.log": "e938382304b16141f3defcd0a5be074408b5bdd260503bcac4e782d2aeebfb70"
+  },
+  "python": "/home/cereal/model-surgery-lab/venv/bin/python (pytest 9.1.1, Python 3.12.3)",
+  "qf": {
+   "command": "cd /home/cereal/omni-campaign/composite/tools && python -m pytest -o addopts='' -p no:cacheprovider -q test_qf_stream27.py",
+   "count_line": "19 passed, 2 warnings in 42.41s",
+   "expected": "19 passed"
+  },
+  "qwen_fold_selftest": "not run: qf_stream27.py does not import qf_selftest",
+  "runner": "composite/receipts/sep06-merge-scratch/merge_sep06.sh tests (detached; setsid nohup)",
+  "s0": {
+   "command": "cd /home/cereal/omni-campaign/composite/tools && CHIMERA_OMNI_SRC=/home/cereal/omni-campaign/import/rq27b/tree_c5e6052 PYTHONPATH=$CHIMERA_OMNI_SRC/src python -m pytest -o addopts='' -p no:cacheprovider -q test_s0_import_27b.py",
+   "count_line": "26 passed in 202.88s (0:03:22)",
+   "expected": "26 passed",
+   "first_attempt_runner_error": {
+    "cause": "the merge runner omitted the PYTHONPATH=<tree>/src binding the test file's own docstring requires; 19 tests raised ModuleNotFoundError: No module named 'chimera_omni' in the pytest process (the tool binds the tree itself, the test module does not); not a defect in the merged files; rerun with the documented environment",
+    "count_line": "19 failed, 7 passed in 147.46s (0:02:27)",
+    "deviation": "--basetemp /home/cereal/omni-campaign/composite/s0/scratch_tests from the docstring was not passed; pytest's default /tmp/pytest-of-cereal basetemp was used"
+   }
+  }
+ },
+ "untouched": [
+  "k3/prefix-check/* (a Sep-02 working snapshot; its k3_common.py is the pre-merge 4a39bc9b version; not a canonical location)",
+  "composite/codex-sep04-safety/* (Codex's isolated deployment, kept as the promotion source)",
+  "composite/s0/q38-27bu-chimera-bf16-sep04 (S0 checkpoint) and every model artifact"
+ ]
+}

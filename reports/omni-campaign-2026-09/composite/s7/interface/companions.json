@@ -1,0 +1,271 @@
+{
+  "entries": [
+    {
+      "chart": {
+        "path": "/home/cereal/omni-campaign/composite/s7/interface/charts/ace.safetensors",
+        "sha256": "904250f76bfb9ca553e6d2f8b2fc6d6151c82379f3dfc2a5134ce313b012e8c4"
+      },
+      "companion_decoder": true,
+      "emission_band": [
+        0,
+        128
+      ],
+      "emission_layout": "index c*2+k over the 64 latent channels x 2 frames that ConvTranspose1d(2048, 64, k=2, s=2) emits for one token (the parent's velocity/flow output space)",
+      "feature_band": [
+        0,
+        384
+      ],
+      "feature_layout": "index c*2+k over the DiT's own 192-channel input x = cat([src_latents(64) | chunk_masks(64) | x_t(64)]) at the 2 latent frames k of one patch (ComfyUI ace_step15 forward: cat([context_latents, hidden_states]); Conv1d(192, 2048, k=2, s=2))",
+      "name": "music_ace",
+      "psnr_absorbed_db": 32.77672758497599,
+      "psnr_meaning": "psnr_parent_roundtrip_db = parent VAE D(E(x)) vs x on held items; psnr_through_interface_db = the decoder fed the interface's own reconstruction pinv(F) F z of the latent z -- equal to the round trip by construction when that reconstruction is exact (rel_l2 <= 1e-06), so the decoder is not re-run; None otherwise",
+      "psnr_parent_roundtrip_db": 32.77672758497599,
+      "raw_rung_ladder": {
+        "meaning": "media-lane raw-rung absorption (linear/nonlinear E,D fitted raw<->latent per VAE frame at hidden 5120); NOT what is installed (raw bands do not fit F)",
+        "receipt": "/home/cereal/omni-campaign/media/out/c15_real_v3/c15_ladder_receipt.json",
+        "receipt_sha256": "135456e62c1384d243bc711c082aa9244e566529fba8b5bc8348314aaa91a2ab",
+        "rows": [
+          {
+            "ceiling_below_linear_bound": true,
+            "d_latent": 64,
+            "d_raw": 3840,
+            "linear_rank_bound_psnr_db": 36.42237516023925,
+            "psnr_absorbed_db": 23.08603515291354,
+            "psnr_parent_roundtrip_db": 32.77672758497599,
+            "rung": "linear"
+          },
+          {
+            "ceiling_below_linear_bound": true,
+            "d_latent": 64,
+            "d_raw": 3840,
+            "linear_rank_bound_psnr_db": 36.42237516023925,
+            "psnr_absorbed_db": 22.94265301419888,
+            "psnr_parent_roundtrip_db": 32.77672758497599,
+            "rung": "nonlinear"
+          }
+        ]
+      },
+      "rows": "music_ace/composed_interface.safetensors",
+      "rows_file_sha256": "d27bf4f3d6ddc41ce50a332d09726231a29a173aa9fad1de5d352626f28ead7d",
+      "rung": "latent",
+      "scale": 5.035375842393086,
+      "source": "ace",
+      "tensor_sha256": {
+        "bridge.feature_proj.weight": "d8856b17acfd41ff71408064316c9ddb612b3ef51247659b68d2f32aa709b966",
+        "bridge.type_embed_delta": "3be30ecb18a73802382fd82021445391b7e1290b1d37cf8577905765843c6381",
+        "head.out.weight": "e9bfe25d01869eb4331b01afea0200881e8b3ffdd9f167c0c43a5c0b16346ed8",
+        "head.type_affine_shift": "86a9dc678fd7f41d6d8be8df0eff309b5a10c4d328024ee42eb2ad5e01222b5d"
+      },
+      "type_id": 4
+    },
+    {
+      "chart": {
+        "path": "/home/cereal/omni-campaign/composite/s7/interface/charts/h3.safetensors",
+        "sha256": "e79d193eb90a18f181120fc7642fec776bbdbf64b85ff10d58bfceb91ac31b74"
+      },
+      "companion_decoder": true,
+      "emission_band": [
+        128,
+        224
+      ],
+      "emission_layout": "final_layer.video_out output (96) in the same order",
+      "feature_band": [
+        384,
+        480
+      ],
+      "feature_layout": "the 96-wide H3 video token (24 latent channels x 1x2x2) in H3's own patchify order (video_patch_proj input)",
+      "name": "video_h3",
+      "psnr_absorbed_db": 9.909719341591522,
+      "psnr_meaning": "psnr_parent_roundtrip_db = parent VAE D(E(x)) vs x on held items; psnr_through_interface_db = the decoder fed the interface's own reconstruction pinv(F) F z of the latent z -- equal to the round trip by construction when that reconstruction is exact (rel_l2 <= 1e-06), so the decoder is not re-run; None otherwise",
+      "psnr_parent_roundtrip_db": 9.909719341591522,
+      "raw_rung_ladder": {
+        "meaning": "media-lane raw-rung absorption (linear/nonlinear E,D fitted raw<->latent per VAE frame at hidden 5120); NOT what is installed (raw bands do not fit F)",
+        "receipt": "/home/cereal/omni-campaign/media/out/c15_video_v2/c15_ladder_receipt.json",
+        "receipt_sha256": "1c22187a331491de19250e5e3d4c65bc37030a3c04c809f95124e5497b9fde5f",
+        "rows": [
+          {
+            "ceiling_below_linear_bound": true,
+            "d_latent": 24,
+            "d_raw": 3072,
+            "linear_rank_bound_psnr_db": 23.671229429154966,
+            "psnr_absorbed_db": 14.949340474982014,
+            "psnr_parent_roundtrip_db": 9.909719341591522,
+            "rung": "linear"
+          },
+          {
+            "ceiling_below_linear_bound": true,
+            "d_latent": 24,
+            "d_raw": 3072,
+            "linear_rank_bound_psnr_db": 23.671229429154966,
+            "psnr_absorbed_db": 18.063559612218402,
+            "psnr_parent_roundtrip_db": 9.909719341591522,
+            "rung": "nonlinear"
+          }
+        ]
+      },
+      "rows": "video_h3/composed_interface.safetensors",
+      "rows_file_sha256": "0a55b3df76257a105af8ab8055fef7ad4436054a34b4b2ac6df38ffd181746da",
+      "rung": "latent",
+      "scale": 2.0643613659165094,
+      "source": "h3",
+      "tensor_sha256": {
+        "bridge.feature_proj.weight": "c6a84368f534f9399e92f788a905fe8c98a8cdd09c19e0ca5f9e1dc46eda52e9",
+        "bridge.type_embed_delta": "3ab48068217a3a7a40cbb522f3802cdf8990f3840e2d071c3b1518f08c946595",
+        "head.out.weight": "18b704a9083ebcd0f17823b27d2f11b5b60887cf696a7ab6d8d704ab30a88114",
+        "head.type_affine_shift": "7312679e008a1fc40a1cc8b1e897fa780218dea8aa7cdd96e0659103e03da2b3"
+      },
+      "type_id": 2
+    },
+    {
+      "chart": {
+        "path": "/home/cereal/omni-campaign/composite/s7/interface/charts/h3.safetensors",
+        "sha256": "e79d193eb90a18f181120fc7642fec776bbdbf64b85ff10d58bfceb91ac31b74"
+      },
+      "companion_decoder": true,
+      "emission_band": [
+        224,
+        256
+      ],
+      "emission_layout": "final_layer.audio_out output (32)",
+      "feature_band": [
+        480,
+        512
+      ],
+      "feature_layout": "the 32-wide H3 audio token (audio_patch_proj input)",
+      "name": "audio_h3",
+      "psnr_absorbed_db": 36.33946604286972,
+      "psnr_meaning": "psnr_parent_roundtrip_db = parent VAE D(E(x)) vs x on held items; psnr_through_interface_db = the decoder fed the interface's own reconstruction pinv(F) F z of the latent z -- equal to the round trip by construction when that reconstruction is exact (rel_l2 <= 1e-06), so the decoder is not re-run; None otherwise",
+      "psnr_parent_roundtrip_db": 36.33946604286972,
+      "raw_rung_ladder": {
+        "meaning": "media-lane raw-rung absorption (linear/nonlinear E,D fitted raw<->latent per VAE frame at hidden 5120); NOT what is installed (raw bands do not fit F)",
+        "receipt": "/home/cereal/omni-campaign/media/out/c15_real_v3/c15_ladder_receipt.json",
+        "receipt_sha256": "135456e62c1384d243bc711c082aa9244e566529fba8b5bc8348314aaa91a2ab",
+        "rows": [
+          {
+            "ceiling_below_linear_bound": false,
+            "d_latent": 32,
+            "d_raw": 800,
+            "linear_rank_bound_psnr_db": 32.75678998373441,
+            "psnr_absorbed_db": 24.12869290624972,
+            "psnr_parent_roundtrip_db": 36.33946604286972,
+            "rung": "linear"
+          },
+          {
+            "ceiling_below_linear_bound": false,
+            "d_latent": 32,
+            "d_raw": 800,
+            "linear_rank_bound_psnr_db": 32.75678998373441,
+            "psnr_absorbed_db": 23.95528067885216,
+            "psnr_parent_roundtrip_db": 36.33946604286972,
+            "rung": "nonlinear"
+          }
+        ]
+      },
+      "rows": "audio_h3/composed_interface.safetensors",
+      "rows_file_sha256": "99c0e8ebcf1cc78f1d7633d6d3984b9d87eab39eb84ca61c0b583360b5bffa01",
+      "rung": "latent",
+      "scale": 4.026143135915209,
+      "source": "h3",
+      "tensor_sha256": {
+        "bridge.feature_proj.weight": "de77e60e90817222ee57de990cc3bf56ddbd2b58aa63bf149db58e40844c441a",
+        "bridge.type_embed_delta": "ff06f85e0ff1dde5562edf81c31555313e5e615445111d1218ed63123d808c3b",
+        "head.out.weight": "c1d31cfe24543e298fa497acb254633ea3c89dd3405b52a753ca902091340fe5",
+        "head.type_affine_shift": "4fc951fdf5877093fe844634c4beefecb376ae7d271ce4c42ccca8e00d0d8e7c"
+      },
+      "type_id": 3
+    },
+    {
+      "chart": {
+        "path": "/home/cereal/omni-campaign/composite/s7/interface/charts/qimg.safetensors",
+        "sha256": "ec735b8817ee09a62df6d4af65698b35efa683623bfff6bd761ffb2f63466611"
+      },
+      "companion_decoder": true,
+      "emission_band": [
+        256,
+        320
+      ],
+      "emission_layout": "proj_out output (64) in the same (c, ph, pw) order",
+      "feature_band": [
+        512,
+        576
+      ],
+      "feature_layout": "index c*4+ph*2+pw over a 2x2 group of 16-channel DiT-space latents (ComfyUI qwen_image process_img order; Wan21 latent format)",
+      "name": "image_qimg",
+      "psnr_absorbed_db": 34.15381935183386,
+      "psnr_meaning": "psnr_parent_roundtrip_db = parent VAE D(E(x)) vs x on held items; psnr_through_interface_db = the decoder fed the interface's own reconstruction pinv(F) F z of the latent z -- equal to the round trip by construction when that reconstruction is exact (rel_l2 <= 1e-06), so the decoder is not re-run; None otherwise",
+      "psnr_parent_roundtrip_db": 34.15381935183386,
+      "raw_rung_ladder": {
+        "meaning": "media-lane raw-rung absorption fitted here (mediafold.c15_fit.fit_absorption, linear, ridge lambda ladder) on 16x16 RGB patch <-> 2x2x16 DiT-space latent token rows; held split by image; NOT installed",
+        "rows": [
+          {
+            "ceiling_below_linear_bound": false,
+            "d_latent": 64,
+            "d_raw": 768,
+            "encoder_cos": 0.8828415447970106,
+            "linear_rank_bound_psnr_db": 28.93296105362844,
+            "psnr_absorbed_db": 22.77203435312837,
+            "psnr_parent_roundtrip_db": 34.15381935183386,
+            "rung": "linear"
+          }
+        ]
+      },
+      "rows": "image_qimg/composed_interface.safetensors",
+      "rows_file_sha256": "e93d399df2afd1e3570304e14e6be60d1b0aa6cc90097472c15240314ebe524b",
+      "rung": "latent",
+      "scale": 4.078273494762718,
+      "source": "qimg",
+      "tensor_sha256": {
+        "bridge.feature_proj.weight": "c3a88f405bc1c37f416ec45291c88bd6d90cf45a52a0d5204e5d5e1c77e5712c",
+        "bridge.type_embed_delta": "1f4c607bf6a014f0984c1a995b40a8c652db5bea3a966d2b0fcb1e6443b18c38",
+        "head.out.weight": "45128ec6ba5ac512833e11549ea2b626c28b0da7f801e78f7d7daa555d71c459",
+        "head.type_affine_shift": "0ac22cb470e75b8e34ba1972af9bbd652d20d48c5467dd615b3a3c45a6ff7847"
+      },
+      "type_id": 1
+    },
+    {
+      "chart": {
+        "path": "/home/cereal/omni-campaign/composite/s7/interface/charts/hy3d.safetensors",
+        "sha256": "5b5cdbb36cd3335c3f0b12eab819648bf336814b28af75419916a7a966abadae"
+      },
+      "companion_decoder": true,
+      "emission_band": [
+        320,
+        384
+      ],
+      "emission_layout": "final_layer.linear output (64)",
+      "feature_band": [
+        576,
+        640
+      ],
+      "feature_layout": "one 64-channel ShapeVAE latent token in DiT space (x scale_factor 1.0039506158752403)",
+      "name": "volume_hy3d",
+      "psnr_absorbed_db": 8.883359228021668,
+      "psnr_meaning": "psnr_parent_roundtrip_db = parent VAE D(E(x)) vs x on held items; psnr_through_interface_db = the decoder fed the interface's own reconstruction pinv(F) F z of the latent z -- equal to the round trip by construction when that reconstruction is exact (rel_l2 <= 1e-06), so the decoder is not re-run; None otherwise",
+      "psnr_parent_roundtrip_db": 8.883359228021668,
+      "raw_rung_ladder": {
+        "meaning": "not applicable: the ShapeVAE is a perceiver over surface point sets; no raw row pairs with one latent token",
+        "rows": []
+      },
+      "rows": "volume_hy3d/composed_interface.safetensors",
+      "rows_file_sha256": "25cf01f212db0fb43178b8b90c5b9b273a78081d9bde0679a6ac1933b703485b",
+      "rung": "latent",
+      "scale": 7.597938578101961,
+      "source": "hy3d",
+      "tensor_sha256": {
+        "bridge.feature_proj.weight": "709948cead7fed0b4300bc1b8eba247247b6dd43ae57caabecc83f930e76afb2",
+        "bridge.type_embed_delta": "1c2921b88b26b94fa9153224853ce943b13a8cec9421bc33bd0080b4a884ae4b",
+        "head.out.weight": "21dc2c6decbeaf89d6191e370652d92f2825a912d670f71d9d4ce85492cb92a5",
+        "head.type_affine_shift": "1592418a0c08282db7386ab3e84696815b0b8eaa908fd88083cf112b0b46eaf5"
+      },
+      "type_id": 7
+    }
+  ],
+  "hidden": 5120,
+  "native_feature_dim": 6144,
+  "producer": {
+    "lane": "M2 2026-10-10",
+    "tool": "c15_interface_rows.py",
+    "version": "1.0.0"
+  },
+  "schema": "chimera_omni.composite.interface_set.v1"
+}

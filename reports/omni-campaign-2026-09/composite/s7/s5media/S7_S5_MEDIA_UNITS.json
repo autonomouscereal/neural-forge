@@ -1,0 +1,1015 @@
+{
+ "schema": "omni-campaign.s7_s5_media_lane.v1",
+ "created_at_utc": "2026-10-13T02:13:45Z",
+ "policy": "owner 2026-10-06: chart numbers are diagnostics, never gates",
+ "units": {
+  "ace_dit_L12": {
+   "host_rows": {
+    "file": "/home/cereal/omni-campaign/composite/s7/tap_rows_s5/ace_dit_L12/paired_rows.safetensors",
+    "sha256": "1e7027dbe8727ada11113e2f9d342decaf89198522de89f57c6fa25a5fe7b860",
+    "json_sha256": "0729ebdaeb015cadcf5d05703bedc51e92afad68cf4d69b1ab72168b150eebac",
+    "tool": "1.3.0",
+    "rows": 38400,
+    "rows_held": 7600,
+    "rows_time": 0,
+    "forwards": 768,
+    "batches": 4,
+    "seconds": 625.1639609336853,
+    "cuda_peak_gib": 8.491712093353271,
+    "trunk": "/home/cereal/omni-campaign/composite/c10/S5-C2K4352K3U/child",
+    "block_residency": "streamed (layer-major: one block on the device at a time; block i is applied to every batch and to the prompt-only causal row, then freed, before block i+1 is built)",
+    "pairs_sha256": "408b5ce9f5ad07e60f0d5d4ba33e80eafe15a22ba0048ff31e2f405e711d3066",
+    "same_pairs_as_s3": true,
+    "same_rows_as_s3": true,
+    "interface_companions_sha256": [
+     "929083f864be12a25c160632575900fc5dadfe74e46dd6c18e20744651b6d60d"
+    ],
+    "same_interface_as_s3": true,
+    "causal_prompt_check": {
+     "max_abs_diff_prompt_rows_with_vs_without_media": 0.5,
+     "prompt_row_norm_median": 90.85967254638672,
+     "prompt_tokens": 6
+    },
+    "host_row_norm_median": 118.91629028320312,
+    "s3_host_row_norm_median": 114.5987319946289
+   },
+   "charts_s5": {
+    "sha256": "dab25b3191608a4b02ca7f73a32ba03b7973c8f048c0eafcdfc824c51d2b41d2",
+    "ridge_rel": {
+     "chart_in": 0.01,
+     "chart_out": 0.001
+    },
+    "held": {
+     "forward": {
+      "cos": 0.875651952454657,
+      "rel_l2": 0.5750859161539498,
+      "rows": 7600
+     },
+     "roundtrip": {
+      "cos": 0.9598450537406233,
+      "rel_l2": 0.30270275480202036,
+      "rows": 7600
+     }
+    },
+    "time_rows": null,
+    "producer": {
+     "lane": "S7-on-S5 media 2026-10-13",
+     "sha256": "c83c6f6ac12506e8110a4e16866fcc9d0b3b8e7d091170516e6bdd269a89c046",
+     "tool": "s7_chart_fit",
+     "version": "1.3.0"
+    },
+    "trunk_label": "S5",
+    "valid_only_with": "the latent interface rows these host rows were captured under (s7/interface_latent) and the S5 trunk prefix 0..31 (/home/cereal/omni-campaign/composite/c10/S5-C2K4352K3U/child); any other trunk prefix needs a recapture",
+    "type_ids": [
+     4
+    ],
+    "chart_receipt_sha256": "41d0ef0e1c7e30c461ce3c8bb8d96a97ffe568c00ddc8af4c19cc3199a068a19",
+    "fit_seconds": 598.4598693847656
+   },
+   "charts_s3_for_comparison": {
+    "sha256": "ae084950a1a8f42847692dfdce6cf3ce684d7735f59accaec62590de9761074f",
+    "ridge_rel": {
+     "chart_in": 0.01,
+     "chart_out": 0.001
+    },
+    "held": {
+     "forward": {
+      "cos": 0.8747887789454092,
+      "rel_l2": 0.5763623848731744,
+      "rows": 7600
+     },
+     "roundtrip": {
+      "cos": 0.9582323909041569,
+      "rel_l2": 0.30817334254580026,
+      "rows": 7600
+     }
+    }
+   },
+   "unit_dir": "/home/cereal/omni-campaign/composite/s7/units_s5/ace/ace_dit_L12",
+   "files": {
+    "chart_receipt.json": {
+     "bytes": 10713,
+     "sha256": "41d0ef0e1c7e30c461ce3c8bb8d96a97ffe568c00ddc8af4c19cc3199a068a19",
+     "symlink_to": null
+    },
+    "chart_receipt.json.sha256": {
+     "bytes": 65,
+     "sha256": "02e4629e939d3b71095de7e9e5eca6d64f5de306340c96f1bde35cf5146abb77",
+     "symlink_to": null
+    },
+    "charted_block.json": {
+     "bytes": 11535,
+     "sha256": "9e0054f03f4454aee13dd203fec557bb91e6e72f56f8d97aa61fc9f2fa975a30",
+     "symlink_to": null
+    },
+    "charted_block.json.pre-m1": {
+     "bytes": 9252,
+     "sha256": "d2563489edb80906d2efa2b217f5df1e99c58b221c0096edd6c634e7d8341c0a",
+     "symlink_to": null
+    },
+    "charted_block.safetensors": {
+     "bytes": 327355608,
+     "sha256": "94c4f10f55fa3e09380376e6997cdffe3e3458e660cd422463d7eb90458ab7f5",
+     "symlink_to": null
+    },
+    "charts.safetensors": {
+     "bytes": 83894528,
+     "sha256": "dab25b3191608a4b02ca7f73a32ba03b7973c8f048c0eafcdfc824c51d2b41d2",
+     "symlink_to": null
+    },
+    "charts_host128.reference.safetensors": {
+     "bytes": 2105600,
+     "sha256": "84002ea37c2e9e424d21edef06170da5ebfb970cd0004670c38ded301370e6ad",
+     "symlink_to": null
+    },
+    "charts_split_ridge.diagnostic.safetensors": {
+     "bytes": 83894528,
+     "sha256": "bca9f3721df4480a57c2748ed9ce8cb458a647bf0141ea4812c3839604dda4be",
+     "symlink_to": null
+    },
+    "time_reference.safetensors": {
+     "bytes": 49308,
+     "sha256": "0d1ae9939364f80a2dc9a074273397b196137995d094c508acedcd64bca0a727",
+     "symlink_to": null
+    }
+   },
+   "unit_bytes": 497331137,
+   "installed_parameters": 102811904,
+   "component_4x": {
+    "meets_4x_component": true,
+    "mlp_compression_x": 4.0,
+    "mlp_ratio": 0.25,
+    "rule": "c16 components(): child MLP / parent MLP <= 0.25 registers as --component",
+    "whole_block_ratio_recorded_only": 0.550135457259777
+   }
+  },
+  "h3_dit_L25_curve6": {
+   "host_rows": {
+    "file": "/home/cereal/omni-campaign/composite/s7/tap_rows_s5/h3_dit_L25_curve6/paired_rows.safetensors",
+    "sha256": "06e3bbb038cd955fd2b1d56a576bdc56e26f50fd9630c87b5f4f01e887231bc9",
+    "json_sha256": "8bbd8409e561d3658bd7d43d32ec598fb852ab479bc5fa5e550e08cf2611c6bb",
+    "tool": "1.3.0",
+    "rows": 28800,
+    "rows_held": 5760,
+    "rows_time": 0,
+    "forwards": 480,
+    "batches": 3,
+    "seconds": 236.6686975955963,
+    "cuda_peak_gib": 7.813836097717285,
+    "trunk": "/home/cereal/omni-campaign/composite/c10/S5-C2K4352K3U/child",
+    "block_residency": "streamed (layer-major: one block on the device at a time; block i is applied to every batch and to the prompt-only causal row, then freed, before block i+1 is built)",
+    "pairs_sha256": "1cdfb65303c636a29bb615710043a9da1adad65c832e19b1be688767126a3947",
+    "same_pairs_as_s3": true,
+    "same_rows_as_s3": true,
+    "interface_companions_sha256": [
+     "929083f864be12a25c160632575900fc5dadfe74e46dd6c18e20744651b6d60d"
+    ],
+    "same_interface_as_s3": true,
+    "causal_prompt_check": {
+     "max_abs_diff_prompt_rows_with_vs_without_media": 0.5,
+     "prompt_row_norm_median": 87.59288787841797,
+     "prompt_tokens": 8
+    },
+    "host_row_norm_median": 116.18582916259766,
+    "s3_host_row_norm_median": 112.01384735107422
+   },
+   "charts_s5": {
+    "sha256": "f52687e313ac15641ef22c1bd78e913a732acf192325ae67f5371a5f39cf121b",
+    "ridge_rel": {
+     "chart_in": 0.1,
+     "chart_out": 0.1
+    },
+    "held": {
+     "forward": {
+      "cos": 0.9592517396385227,
+      "rel_l2": 0.3189295473012852,
+      "rows": 5760
+     },
+     "roundtrip": {
+      "cos": 0.9253046074599992,
+      "rel_l2": 0.4081405727131296,
+      "rows": 5760
+     }
+    },
+    "time_rows": null,
+    "producer": {
+     "lane": "S7-on-S5 media 2026-10-13",
+     "sha256": "c83c6f6ac12506e8110a4e16866fcc9d0b3b8e7d091170516e6bdd269a89c046",
+     "tool": "s7_chart_fit",
+     "version": "1.3.0"
+    },
+    "trunk_label": "S5",
+    "valid_only_with": "the latent interface rows these host rows were captured under (s7/interface_latent) and the S5 trunk prefix 0..31 (/home/cereal/omni-campaign/composite/c10/S5-C2K4352K3U/child); any other trunk prefix needs a recapture",
+    "type_ids": [
+     2,
+     3
+    ],
+    "chart_receipt_sha256": "90de9bf0d733762b3dd0d611a07da39ef73389f5541c1ca8064cfc38f3805c20",
+    "fit_seconds": 1038.3116071224213
+   },
+   "charts_s3_for_comparison": {
+    "sha256": "7222f554e5de25f60f3c2515aa6ab7cb3a665c9ba34162052f22053196a0b8bf",
+    "ridge_rel": {
+     "chart_in": 0.1,
+     "chart_out": 0.1
+    },
+    "held": {
+     "forward": {
+      "cos": 0.9591691882461574,
+      "rel_l2": 0.31939585417260064,
+      "rows": 5760
+     },
+     "roundtrip": {
+      "cos": 0.9224774243695238,
+      "rel_l2": 0.41610596168337194,
+      "rows": 5760
+     }
+    }
+   },
+   "unit_dir": "/home/cereal/omni-campaign/composite/s7/units_s5/h3/h3_dit_L25_curve6",
+   "files": {
+    "chart_receipt.json": {
+     "bytes": 11041,
+     "sha256": "90de9bf0d733762b3dd0d611a07da39ef73389f5541c1ca8064cfc38f3805c20",
+     "symlink_to": null
+    },
+    "chart_receipt.json.sha256": {
+     "bytes": 65,
+     "sha256": "0d5d16fb95264236881ee1ae063329521157f7fda09cfcb376855c7a172ef833",
+     "symlink_to": null
+    },
+    "charted_block.json": {
+     "bytes": 14567,
+     "sha256": "37731af8fb2a585b9d115da2b380f5892cfe63a2883746c41efc07dcd76bd718",
+     "symlink_to": null
+    },
+    "charted_block.json.pre-m1": {
+     "bytes": 12484,
+     "sha256": "42cda12f709acfdcdb89dfed7bfda161afcfaa120f84ffe4a03e20dc26776b93",
+     "symlink_to": null
+    },
+    "charted_block.safetensors": {
+     "bytes": 427426728,
+     "sha256": "8f1adfe2768513c721c9c77e52f729264883930d6af72b50fdc0f58df9cbfabf",
+     "symlink_to": "/home/cereal/omni-campaign/composite/media/h3-native-curve6-sep07/charted_block.safetensors"
+    },
+    "charts.safetensors": {
+     "bytes": 220222728,
+     "sha256": "f52687e313ac15641ef22c1bd78e913a732acf192325ae67f5371a5f39cf121b",
+     "symlink_to": null
+    },
+    "charts_split_ridge.diagnostic.safetensors": {
+     "bytes": 220222728,
+     "sha256": "96360ec3d33335b3a4931f51297a1ccb19579d56dfb3c9edf5ba4df992dae89b",
+     "symlink_to": null
+    },
+    "time_reference.safetensors": {
+     "bytes": 3097088,
+     "sha256": "d09fbd3501ff329a69a4be7824f5d4d3bd1e341f185e5037a818b7ed4d9bd3b0",
+     "symlink_to": "/home/cereal/omni-campaign/composite/media/h3-native-curve6-sep07/time_reference.safetensors"
+    }
+   },
+   "unit_bytes": 871007429,
+   "installed_parameters": 267889176,
+   "component_4x": {
+    "meets_4x_component": true,
+    "mlp_compression_x": 4.0,
+    "mlp_ratio": 0.25,
+    "rule": "c16 components(): child MLP / parent MLP <= 0.25 registers as --component",
+    "whole_block_ratio_recorded_only": 0.5510275232398217
+   }
+  },
+  "qimg_mmdit_L30_img": {
+   "host_rows": {
+    "file": "/home/cereal/omni-campaign/composite/s7/tap_rows_s5/qimg_mmdit_L30_img/paired_rows.safetensors",
+    "sha256": "0202be177a75655450f83d0b4539dc69cb014218fcb97dcdf3ca1a60144666f5",
+    "json_sha256": "ca10590fe889c4705f65ef8391799e27349ccb49a57f60d8af9fc00f0dfbe5e4",
+    "tool": "1.3.0",
+    "rows": 65536,
+    "rows_held": 16384,
+    "rows_time": 0,
+    "forwards": 64,
+    "batches": 11,
+    "seconds": 586.8842062950134,
+    "cuda_peak_gib": 7.888463973999023,
+    "trunk": "/home/cereal/omni-campaign/composite/c10/S5-C2K4352K3U/child",
+    "block_residency": "streamed (layer-major: one block on the device at a time; block i is applied to every batch and to the prompt-only causal row, then freed, before block i+1 is built)",
+    "pairs_sha256": "18ffac3b18b8ed1efcf6e811d4253628dcc3c65e653f1558fb2a68e469f606bc",
+    "same_pairs_as_s3": true,
+    "same_rows_as_s3": true,
+    "interface_companions_sha256": [
+     "929083f864be12a25c160632575900fc5dadfe74e46dd6c18e20744651b6d60d"
+    ],
+    "same_interface_as_s3": true,
+    "causal_prompt_check": {
+     "max_abs_diff_prompt_rows_with_vs_without_media": 1.0,
+     "prompt_row_norm_median": 81.09040069580078,
+     "prompt_tokens": 93
+    },
+    "host_row_norm_median": 122.46231079101562,
+    "s3_host_row_norm_median": 116.00756072998047
+   },
+   "charts_s5": {
+    "sha256": "019a4097d4e14267a4025e66dcf3fdc8766e4226c0cc91bb420b9f4cb5b776e8",
+    "ridge_rel": {
+     "chart_in": 0.01,
+     "chart_out": 0.01
+    },
+    "held": {
+     "forward": {
+      "cos": 0.8139081151741493,
+      "rel_l2": 0.6008314928990071,
+      "rows": 16384
+     },
+     "roundtrip": {
+      "cos": 0.9327755709360577,
+      "rel_l2": 0.4114029196879023,
+      "rows": 16384
+     }
+    },
+    "time_rows": null,
+    "producer": {
+     "lane": "S7-on-S5 media 2026-10-13",
+     "sha256": "c83c6f6ac12506e8110a4e16866fcc9d0b3b8e7d091170516e6bdd269a89c046",
+     "tool": "s7_chart_fit",
+     "version": "1.3.0"
+    },
+    "trunk_label": "S5",
+    "valid_only_with": "the latent interface rows these host rows were captured under (s7/interface_latent) and the S5 trunk prefix 0..31 (/home/cereal/omni-campaign/composite/c10/S5-C2K4352K3U/child); any other trunk prefix needs a recapture",
+    "type_ids": [
+     1
+    ],
+    "chart_receipt_sha256": "6594c493b802752c9334c7d4e25700fa8828f89ed449290d44d48c74fe058029",
+    "fit_seconds": 1225.2834932804108
+   },
+   "charts_s3_for_comparison": {
+    "sha256": "87ee5e23f72763249256640ce4f843a3ee38738f0a9a51ce5f47adb5cb4d2e03",
+    "ridge_rel": {
+     "chart_in": 0.01,
+     "chart_out": 0.01
+    },
+    "held": {
+     "forward": {
+      "cos": 0.8131520825908275,
+      "rel_l2": 0.6018630657957955,
+      "rows": 16384
+     },
+     "roundtrip": {
+      "cos": 0.9293615257170138,
+      "rel_l2": 0.42279034097920815,
+      "rows": 16384
+     }
+    }
+   },
+   "unit_dir": "/home/cereal/omni-campaign/composite/s7/units_s5/qimg/qimg_mmdit_L30_img",
+   "files": {
+    "chart_receipt.json": {
+     "bytes": 10786,
+     "sha256": "6594c493b802752c9334c7d4e25700fa8828f89ed449290d44d48c74fe058029",
+     "symlink_to": null
+    },
+    "chart_receipt.json.sha256": {
+     "bytes": 65,
+     "sha256": "a26ae5c7d40aa36baab7551887c03b2ba2e7c863e73be55fd65d86ad3af16761",
+     "symlink_to": null
+    },
+    "charted_block.json": {
+     "bytes": 12363,
+     "sha256": "2ae90a621d223401e370b1dfc8bdf171f842d27912eac741be446d249a52c397",
+     "symlink_to": null
+    },
+    "charted_block.json.pre-m1": {
+     "bytes": 10049,
+     "sha256": "df18dc66386e9eba670cda6306d603a7e2178bdb6e2ba968bf39c778c673a23f",
+     "symlink_to": null
+    },
+    "charted_block.safetensors": {
+     "bytes": 247052662,
+     "sha256": "e15a5b754e1d9456865ba64a13a0aa4a13491b2f28d9aca040529c666bcd9c0b",
+     "symlink_to": null
+    },
+    "charts.safetensors": {
+     "bytes": 125841672,
+     "sha256": "019a4097d4e14267a4025e66dcf3fdc8766e4226c0cc91bb420b9f4cb5b776e8",
+     "symlink_to": null
+    },
+    "charts_split_ridge.diagnostic.safetensors": {
+     "bytes": 125841672,
+     "sha256": "02ff45903f0f8f555666e2dc599b56d1a702b5a3dcd7d303ad90e32ff5085253",
+     "symlink_to": null
+    },
+    "time_reference.safetensors": {
+     "bytes": 295080,
+     "sha256": "d1ef99406661806b2ee9c70d5ac702b380458b8cbe3f9c2c478cfdfa7b2c816e",
+     "symlink_to": null
+    }
+   },
+   "unit_bytes": 499064349,
+   "installed_parameters": 154985727,
+   "component_4x": {
+    "meets_4x_component": true,
+    "mlp_compression_x": 4.000814014054087,
+    "mlp_ratio": 0.24994913447293302,
+    "rule": "c16 components(): child MLP / parent MLP <= 0.25 registers as --component",
+    "whole_block_ratio_recorded_only": 0.685628009482924
+   }
+  },
+  "hy3d_dit_L10": {
+   "host_rows": {
+    "file": "/home/cereal/omni-campaign/composite/s7/tap_rows_s5/hy3d_dit_L10/paired_rows.safetensors",
+    "sha256": "838cedfa840aff27c99ece44a2628a4b921fa6f7e976c833eb191622f6bb7683",
+    "json_sha256": "65d9538c6a33568c39df305a92ead630cee1f4103c3350c31307fd6d2e14ef1f",
+    "tool": "1.3.0",
+    "rows": 16388,
+    "rows_held": 8194,
+    "rows_time": 4,
+    "forwards": 4,
+    "batches": 3,
+    "seconds": 465.93721556663513,
+    "cuda_peak_gib": 11.166029930114746,
+    "trunk": "/home/cereal/omni-campaign/composite/c10/S5-C2K4352K3U/child",
+    "block_residency": "streamed (layer-major: one block on the device at a time; block i is applied to every batch and to the prompt-only causal row, then freed, before block i+1 is built)",
+    "pairs_sha256": "d0493c597d89501d1bfd48b3ec18232a242dcc78456abc244195fbd68aa83db9",
+    "same_pairs_as_s3": true,
+    "same_rows_as_s3": true,
+    "interface_companions_sha256": [
+     "929083f864be12a25c160632575900fc5dadfe74e46dd6c18e20744651b6d60d"
+    ],
+    "same_interface_as_s3": true,
+    "causal_prompt_check": {
+     "max_abs_diff_prompt_rows_with_vs_without_media": 1.25,
+     "prompt_row_norm_median": 80.95243072509766,
+     "prompt_tokens": 96
+    },
+    "host_row_norm_median": 118.39815521240234,
+    "s3_host_row_norm_median": 113.78801727294922
+   },
+   "charts_s5": {
+    "sha256": "ef2ee05784eeca775ebb7bad5cd8745a86643bc18e28cdf495d5996b74475a47",
+    "ridge_rel": {
+     "chart_in": 0.1,
+     "chart_out": 0.01
+    },
+    "held": {
+     "forward": {
+      "cos": 0.4054474047120374,
+      "rel_l2": 0.9280708803596736,
+      "rows": 8194
+     },
+     "roundtrip": {
+      "cos": 0.9653643496346541,
+      "rel_l2": 0.27648676607433764,
+      "rows": 8194
+     }
+    },
+    "time_rows": {
+     "rows": 4,
+     "rows_held": 2,
+     "weight": 4096,
+     "held_forward_time": {
+      "cos": 0.9845430934645791,
+      "rel_l2": 0.17514893410889065
+     },
+     "held_forward_content": {
+      "cos": 0.4053060239286505,
+      "rel_l2": 0.9286104031135115
+     }
+    },
+    "producer": {
+     "lane": "S7-on-S5 media 2026-10-13",
+     "sha256": "c83c6f6ac12506e8110a4e16866fcc9d0b3b8e7d091170516e6bdd269a89c046",
+     "tool": "s7_chart_fit",
+     "version": "1.3.0"
+    },
+    "trunk_label": "S5",
+    "valid_only_with": "the latent interface rows these host rows were captured under (s7/interface_latent) and the S5 trunk prefix 0..31 (/home/cereal/omni-campaign/composite/c10/S5-C2K4352K3U/child); any other trunk prefix needs a recapture",
+    "type_ids": [
+     7
+    ],
+    "chart_receipt_sha256": "1c605d7b44607285a0bad25a451cf7873d6ea84eb0c1a068361c3b00d9df6f2a",
+    "fit_seconds": 449.420476436615
+   },
+   "charts_s3_for_comparison": {
+    "sha256": "5209e8343562193140684f719c860c23b28c67cb0785f87dfcdda357c5dd4b5b",
+    "ridge_rel": {
+     "chart_in": 0.1,
+     "chart_out": 0.01
+    },
+    "held": {
+     "forward": {
+      "cos": 0.40517134538355787,
+      "rel_l2": 0.928295716137986,
+      "rows": 8194
+     },
+     "roundtrip": {
+      "cos": 0.9641313154994424,
+      "rel_l2": 0.2819364336770953,
+      "rows": 8194
+     }
+    }
+   },
+   "unit_dir": "/home/cereal/omni-campaign/composite/s7/units_s5/hy3d/hy3d_dit_L10",
+   "files": {
+    "chart_receipt.json": {
+     "bytes": 17683,
+     "sha256": "1c605d7b44607285a0bad25a451cf7873d6ea84eb0c1a068361c3b00d9df6f2a",
+     "symlink_to": null
+    },
+    "chart_receipt.json.sha256": {
+     "bytes": 65,
+     "sha256": "83a196e510955a0d6c07bf506523f9fa5e3b5157a45f82e18f93e7ae0458d7bf",
+     "symlink_to": null
+    },
+    "charted_block.json": {
+     "bytes": 14677,
+     "sha256": "4a091d426b98b61969d833584b7633664f8f5a059de0cc3b766eceb65935f563",
+     "symlink_to": null
+    },
+    "charted_block.json.pre-m1": {
+     "bytes": 10225,
+     "sha256": "c461702c5f2937e5c2c732a8e2b4af132b37ca080618129e2ec35d13a6470e3e",
+     "symlink_to": null
+    },
+    "charted_block.safetensors": {
+     "bytes": 50366462,
+     "sha256": "58574fe6255d924a651d910ed941115da1d1aabaf5f1c4f8afba1e81e8b5d817",
+     "symlink_to": null
+    },
+    "charts.safetensors": {
+     "bytes": 83894528,
+     "sha256": "ef2ee05784eeca775ebb7bad5cd8745a86643bc18e28cdf495d5996b74475a47",
+     "symlink_to": null
+    },
+    "charts_split_ridge.diagnostic.safetensors": {
+     "bytes": 83894528,
+     "sha256": "c30fca7f5a2070c81743c71046c7d40ae12fb20df70a361934312eb2d0cd32e3",
+     "symlink_to": null
+    },
+    "hy3d_time_token_reference.safetensors": {
+     "bytes": 172260,
+     "sha256": "27642bfad438f0f397d6f54d2f1e0ad69c1d37812eedda38f9e6d0eea976b79f",
+     "symlink_to": null
+    }
+   },
+   "unit_bytes": 218370428,
+   "installed_parameters": 46156031,
+   "component_4x": {
+    "meets_4x_component": true,
+    "mlp_compression_x": 4.001221180107734,
+    "mlp_ratio": 0.2499236995374184,
+    "rule": "c16 components(): child MLP / parent MLP <= 0.25 registers as --component",
+    "whole_block_ratio_recorded_only": 0.5000635244938056
+   }
+  },
+  "qvl32_vit_L13": {
+   "host_rows": {
+    "file": "/home/cereal/omni-campaign/composite/s7/tap_rows_s5/qvl32_vit_L13/paired_rows.safetensors",
+    "sha256": "03f7577f1ccd8a67831cd6300d51ae38578f4e815e05a6a421a9982051a5c8d5",
+    "json_sha256": "7f97945eaed843e86fb90a41822598eac20c9781b39bb534b30d2deeb1db646c",
+    "tool": "1.3.0",
+    "rows": 57856,
+    "rows_held": 10848,
+    "rows_time": 0,
+    "forwards": 64,
+    "batches": 6,
+    "seconds": 481.7071588039398,
+    "cuda_peak_gib": 7.644817352294922,
+    "trunk": "/home/cereal/omni-campaign/composite/c10/S5-C2K4352K3U/child",
+    "block_residency": "streamed (layer-major: one block on the device at a time; block i is applied to every batch and to the prompt-only causal row, then freed, before block i+1 is built)",
+    "pairs_sha256": "32ed96e283b1a3c8eeb74c788f91b5f70f5587529278e0297289a619df05d888",
+    "same_pairs_as_s3": true,
+    "same_rows_as_s3": true,
+    "interface_companions_sha256": [
+     "1181a1bd1567ad9e6a200819c4e9b58003a9d5895db2b6a93f5e4e528a4ace44"
+    ],
+    "same_interface_as_s3": true,
+    "causal_prompt_check": {
+     "max_abs_diff_prompt_rows_with_vs_without_media": 2.0,
+     "prompt_row_norm_median": 83.14669799804688,
+     "prompt_tokens": 4
+    },
+    "host_row_norm_median": 94.03570556640625,
+    "s3_host_row_norm_median": 90.19703674316406
+   },
+   "charts_s5": {
+    "sha256": "891c9dc3550892a72e47700d99354ed80124fdf3947dc7b8a512d63149f4423e",
+    "ridge_rel": {
+     "chart_in": 0.01,
+     "chart_out": 0.0001
+    },
+    "held": {
+     "forward": {
+      "cos": 0.3660124257049142,
+      "rel_l2": 0.9236584327644433,
+      "rows": 10848
+     },
+     "roundtrip": {
+      "cos": 0.9591978498048569,
+      "rel_l2": 0.30805150788109104,
+      "rows": 10848
+     }
+    },
+    "time_rows": null,
+    "producer": {
+     "lane": "S7-on-S5 media 2026-10-13",
+     "sha256": "c83c6f6ac12506e8110a4e16866fcc9d0b3b8e7d091170516e6bdd269a89c046",
+     "tool": "s7_chart_fit",
+     "version": "1.3.0"
+    },
+    "trunk_label": "S5",
+    "valid_only_with": "the latent interface rows these host rows were captured under (s7/interface_latent) and the S5 trunk prefix 0..31 (/home/cereal/omni-campaign/composite/c10/S5-C2K4352K3U/child); any other trunk prefix needs a recapture",
+    "type_ids": [
+     6
+    ],
+    "chart_receipt_sha256": "3888fac732dd4bc241856d5ab978857b67a9c63ddf344e37ecea7f59e27273ef",
+    "fit_seconds": 726.8358685970306
+   },
+   "charts_s3_for_comparison": {
+    "sha256": "8cb1db4af70c28fde7024da8041ca37adf0f80db057553a9410cbff3a94f949b",
+    "ridge_rel": {
+     "chart_in": 0.01,
+     "chart_out": 0.0001
+    },
+    "held": {
+     "forward": {
+      "cos": 0.3627978770413499,
+      "rel_l2": 0.923160494409965,
+      "rows": 10848
+     },
+     "roundtrip": {
+      "cos": 0.9553304700534272,
+      "rel_l2": 0.3201315538298993,
+      "rows": 10848
+     }
+    }
+   },
+   "unit_dir": "/home/cereal/omni-campaign/composite/s7/units_s5/qvl32/qvl32_vit_L13",
+   "files": {
+    "chart_receipt.json": {
+     "bytes": 10949,
+     "sha256": "3888fac732dd4bc241856d5ab978857b67a9c63ddf344e37ecea7f59e27273ef",
+     "symlink_to": null
+    },
+    "chart_receipt.json.sha256": {
+     "bytes": 65,
+     "sha256": "894a6b6b5e75bc7a1b28f250fda0b47dccf659472b134d2830274bc6939eafa1",
+     "symlink_to": null
+    },
+    "charted_block.json": {
+     "bytes": 9366,
+     "sha256": "a4c6e6a01c3736a1abdb14aebb56a54fad0a2c1528142b7ca897ef488e7ba912",
+     "symlink_to": null
+    },
+    "charted_block.json.pre-m1": {
+     "bytes": 6714,
+     "sha256": "e1f76dd7548cadf970015906f4b3d5d4458448d4238214a18da65040e4d38b43",
+     "symlink_to": null
+    },
+    "charted_block.safetensors": {
+     "bytes": 15594702,
+     "sha256": "42e07a077b2f0a43f6279fb311e35ed216b83c9ddf9179c89c638d27791876bb",
+     "symlink_to": null
+    },
+    "charts.safetensors": {
+     "bytes": 47190784,
+     "sha256": "891c9dc3550892a72e47700d99354ed80124fdf3947dc7b8a512d63149f4423e",
+     "symlink_to": null
+    },
+    "charts_split_ridge.diagnostic.safetensors": {
+     "bytes": 47190784,
+     "sha256": "b3999640a6979264433f379cce54cc2742f3b8d8e9c8a4e62ac424ff325844b8",
+     "symlink_to": null
+    }
+   },
+   "unit_bytes": 110003364,
+   "installed_parameters": 19594291,
+   "component_4x": {
+    "meets_4x_component": true,
+    "mlp_compression_x": 4.002325105777388,
+    "mlp_ratio": 0.24985476531041723,
+    "rule": "c16 components(): child MLP / parent MLP <= 0.25 registers as --component",
+    "whole_block_ratio_recorded_only": 0.5116084486739201
+   }
+  }
+ },
+ "dryrun_tiny_5120": {
+  "manifest": "/home/cereal/omni-campaign/composite/s7/s5media/scratch_dryrun_s5/out_S5ALL/composite_manifest.json",
+  "manifest_sha256": "64288d3fb9bbfc2719f52a5327054714173609b4f8c1997a1c2eaa4614adaeb9",
+  "check": {
+   "loaded_tensors": 252,
+   "parameters": 1372887129,
+   "child_parameters": 781450000,
+   "layers": 13,
+   "charted_layers": [
+    4,
+    5,
+    6,
+    7,
+    8
+   ],
+   "text_hidden_bit_identical": true,
+   "text_logits_finite": true
+  },
+  "added_parameters": 591437129,
+  "components": [
+   {
+    "component": "ace.dit.block12.mlp",
+    "parent_params": 37748736,
+    "child_params": 9437184,
+    "ratio": 0.25,
+    "meets_4x": true
+   },
+   {
+    "component": "h3.dit.block.mlp",
+    "parent_params": 231211008,
+    "child_params": 57802752,
+    "ratio": 0.25,
+    "meets_4x": true
+   },
+   {
+    "component": "hy3d.dit.block10.mlp",
+    "parent_params": 33564672,
+    "child_params": 8388607,
+    "ratio": 0.2499236995374184,
+    "meets_4x": true
+   },
+   {
+    "component": "qimg.mmdit.block30.img_mlp",
+    "parent_params": 75512832,
+    "child_params": 18874367,
+    "ratio": 0.24994913447293302,
+    "meets_4x": true
+   },
+   {
+    "component": "qvl32.vit.block13.mlp",
+    "parent_params": 9921872,
+    "child_params": 2479027,
+    "ratio": 0.24985476531041723,
+    "meets_4x": true
+   }
+  ],
+  "interface_entries": [
+   [
+    "music_ace",
+    4,
+    [
+     0,
+     384
+    ],
+    [
+     0,
+     128
+    ]
+   ],
+   [
+    "video_h3",
+    2,
+    [
+     384,
+     480
+    ],
+    [
+     128,
+     224
+    ]
+   ],
+   [
+    "audio_h3",
+    3,
+    [
+     480,
+     512
+    ],
+    [
+     224,
+     256
+    ]
+   ],
+   [
+    "image_qimg",
+    1,
+    [
+     512,
+     576
+    ],
+    [
+     256,
+     320
+    ]
+   ],
+   [
+    "volume_hy3d",
+    7,
+    [
+     576,
+     640
+    ],
+    [
+     320,
+     384
+    ]
+   ],
+   [
+    "ocr_qvl32",
+    6,
+    [
+     640,
+     2176
+    ],
+    [
+     384,
+     385
+    ]
+   ]
+  ],
+  "band": {
+   "begin": 304,
+   "end": 65840,
+   "name": "music_codes",
+   "width": 65536
+  },
+  "warnings": [],
+  "charted_dtype": null
+ },
+ "plan_check_s5_child": {
+  "file": "/home/cereal/omni-campaign/composite/s7/s5media/scratch_dryrun_s5/plan_check_S5ALL.json",
+  "sha256": "f63d222692409a3e34d501cd107126bba66e975d90f90c5b196f2f817cc7d221",
+  "verdict": "PLAN HOLDS on the S5 child: interface + C11 + C18 + 5 units load, pair, account and run finite",
+  "refusals": [],
+  "accounting": {
+   "s5_header_parameters": 26944218624,
+   "units_installed_parameters": 591437129,
+   "interface_and_band_parameters": 0,
+   "composite_header_parameters": 27535655753,
+   "accounting_parent_parameters": 27781427952,
+   "headroom": 245772199,
+   "below_parent": true
+  },
+  "units": {
+   "ace_dit_L12": {
+    "insert_after": 31,
+    "params": 102811904,
+    "forward": {
+     "finite": true,
+     "output_shape": [
+      50,
+      5120
+     ],
+     "rows_written": 50,
+     "source_positions": null,
+     "noise_levels": "pair-set sigma",
+     "write_norm_over_x_norm_median": 0.15936610102653503,
+     "x_norm_median": 124.05765533447266,
+     "forward_index": 4,
+     "rows": 50,
+     "held_forward": true,
+     "host_rows_file": "/home/cereal/omni-campaign/composite/s7/tap_rows_s5/ace_dit_L12/paired_rows.safetensors",
+     "host_rows_sha256": "1e7027dbe8727ada11113e2f9d342decaf89198522de89f57c6fa25a5fe7b860"
+    },
+    "time_reference": {
+     "rel_l2": 1.1816756995131072e-07,
+     "verified": true,
+     "tolerance_rel_l2": 1e-05
+    }
+   },
+   "h3_dit_L25_curve6": {
+    "insert_after": 31,
+    "params": 267889176,
+    "forward": {
+     "finite": true,
+     "output_shape": [
+      60,
+      5120
+     ],
+     "rows_written": 60,
+     "source_positions": "zeros (H3)",
+     "noise_levels": "pair-set sigma",
+     "write_norm_over_x_norm_median": 0.049855586141347885,
+     "x_norm_median": 109.0539321899414,
+     "forward_index": 12,
+     "rows": 60,
+     "held_forward": true,
+     "host_rows_file": "/home/cereal/omni-campaign/composite/s7/tap_rows_s5/h3_dit_L25_curve6/paired_rows.safetensors",
+     "host_rows_sha256": "06e3bbb038cd955fd2b1d56a576bdc56e26f50fd9630c87b5f4f01e887231bc9"
+    },
+    "time_reference": {
+     "rel_l2": 1.3166969381472882e-07,
+     "verified": true,
+     "tolerance_rel_l2": 1e-05
+    }
+   },
+   "hy3d_dit_L10": {
+    "insert_after": 31,
+    "params": 46156031,
+    "forward": {
+     "finite": true,
+     "output_shape": [
+      4097,
+      5120
+     ],
+     "rows_written": 4097,
+     "source_positions": null,
+     "noise_levels": "pair-set sigma",
+     "write_norm_over_x_norm_median": 0.013414124958217144,
+     "x_norm_median": 118.27172088623047,
+     "forward_index": 2,
+     "rows": 4097,
+     "held_forward": true,
+     "host_rows_file": "/home/cereal/omni-campaign/composite/s7/tap_rows_s5/hy3d_dit_L10/paired_rows.safetensors",
+     "host_rows_sha256": "838cedfa840aff27c99ece44a2628a4b921fa6f7e976c833eb191622f6bb7683"
+    },
+    "time_reference": null
+   },
+   "qimg_mmdit_L30_img": {
+    "insert_after": 31,
+    "params": 154985727,
+    "forward": {
+     "finite": true,
+     "output_shape": [
+      1024,
+      5120
+     ],
+     "rows_written": 1024,
+     "source_positions": null,
+     "noise_levels": "pair-set sigma",
+     "write_norm_over_x_norm_median": 0.13087905943393707,
+     "x_norm_median": 144.63739013671875,
+     "forward_index": 24,
+     "rows": 1024,
+     "held_forward": true,
+     "host_rows_file": "/home/cereal/omni-campaign/composite/s7/tap_rows_s5/qimg_mmdit_L30_img/paired_rows.safetensors",
+     "host_rows_sha256": "0202be177a75655450f83d0b4539dc69cb014218fcb97dcdf3ca1a60144666f5"
+    },
+    "time_reference": {
+     "rel_l2": 1.1680489109267e-07,
+     "verified": true,
+     "tolerance_rel_l2": 1e-05
+    }
+   },
+   "qvl32_vit_L13": {
+    "insert_after": 31,
+    "params": 19594291,
+    "forward": {
+     "finite": true,
+     "output_shape": [
+      784,
+      5120
+     ],
+     "rows_written": 784,
+     "source_positions": null,
+     "noise_levels": null,
+     "write_norm_over_x_norm_median": 0.16747833788394928,
+     "x_norm_median": 94.84766387939453,
+     "forward_index": 8,
+     "rows": 784,
+     "held_forward": true,
+     "host_rows_file": "/home/cereal/omni-campaign/composite/s7/tap_rows_s5/qvl32_vit_L13/paired_rows.safetensors",
+     "host_rows_sha256": "03f7577f1ccd8a67831cd6300d51ae38578f4e815e05a6a421a9982051a5c8d5"
+    },
+    "time_reference": null
+   }
+  },
+  "band": {
+   "band": [
+    252416,
+    317952,
+    65536
+   ],
+   "s5_embed_band_nonzero": 0,
+   "s5_lm_head_band_nonzero": 0,
+   "table_finite": true
+  },
+  "interface_preconditions": {
+   "music_ace": {
+    "type_feature_scale[type, band]": 0,
+    "bridge.type_affine[type, scale half]": 0,
+    "head.type_affine[type, scale half]": 0
+   },
+   "video_h3": {
+    "type_feature_scale[type, band]": 0,
+    "bridge.type_affine[type, scale half]": 0,
+    "head.type_affine[type, scale half]": 0
+   },
+   "audio_h3": {
+    "type_feature_scale[type, band]": 0,
+    "bridge.type_affine[type, scale half]": 0,
+    "head.type_affine[type, scale half]": 0
+   },
+   "image_qimg": {
+    "type_feature_scale[type, band]": 0,
+    "bridge.type_affine[type, scale half]": 0,
+    "head.type_affine[type, scale half]": 0
+   },
+   "volume_hy3d": {
+    "type_feature_scale[type, band]": 0,
+    "bridge.type_affine[type, scale half]": 0,
+    "head.type_affine[type, scale half]": 0
+   },
+   "ocr_qvl32": {
+    "type_feature_scale[type, band]": 0,
+    "bridge.type_affine[type, scale half]": 0,
+    "head.type_affine[type, scale half]": 0
+   }
+  }
+ }
+}

@@ -1,0 +1,80 @@
+{
+ "schema": "omni-campaign.codex-reference-copy.v1",
+ "purpose": "reference / parity arms for d3_hybrid_module 1.1.0 tests; never imported by production code",
+ "worktree": "C:\\Users\\cereal\\Documents\\ai training\\.agent-worktrees\\neural-forge-a495ffdd2f\\workers\\codex\\chimera-training-recovery-oct13-eae1b72e2c3f",
+ "branch": "codex/work/codex/chimera-training-recovery-oct13-eae1b72e2c3f",
+ "head": "81f549884203193efdff6a842054937410ab0ddc",
+ "copied_utc": "2026-10-14",
+ "edited": false,
+ "added_files": {
+  "__init__.py": "package marker (consolidation.py uses `from .corpus import`)"
+ },
+ "files": {
+  "consolidation.py": {
+   "sha256": "c6478c14a523d6b6c3ee3feb06381bbd633ca57331b3c338d6307c2388b19f31",
+   "bytes": 30381,
+   "source": "experiments/chimera_recovery/consolidation.py",
+   "git_blob": "7f3e1b14bf3e82cf9fea5e8ec804bd01d97406c8"
+  },
+  "corpus.py": {
+   "sha256": "8d1eca68d238808121f3d86d857335e36c2c23bd3c5596eaf0ff0f24414ab634",
+   "bytes": 63280,
+   "source": "experiments/chimera_recovery/corpus.py",
+   "git_blob": "5054653838bd1c7a14891a6b869f6b2d7f778f50"
+  },
+  "media_cache.py": {
+   "sha256": "4437d3ffa19bee5fd1cdf08115dc8b1e07f61dc5c6d4baf02893508c2a774560",
+   "bytes": 23805,
+   "source": "experiments/chimera_recovery/media_cache.py",
+   "git_blob": "08cf90ac715feb9f0b3524b40f53fc3ab22d7d97"
+  },
+  "native_state_inheritance.py": {
+   "sha256": "d0b5b6966c074a865997ae1ded879e0938944f6f7d0556f00b1344d092515bb3",
+   "bytes": 23066,
+   "source": "experiments/chimera_recovery/native_state_inheritance.py",
+   "git_blob": "3dbefba9195793935e8624f015689b5bb6c6ec3e"
+  },
+  "stage_inheritance.py": {
+   "sha256": "fa32094faffc23de618256381b59d1fbcba03deed95c3fcd0bcaa56aaa362b69",
+   "bytes": 14412,
+   "source": "experiments/chimera_recovery/stage_inheritance.py",
+   "git_blob": "7f225935e9f180936a95dfda54b7195ee156a91e"
+  },
+  "train_audio.py": {
+   "sha256": "6d9d6547fcf9bf3d03cad65b764c8d832415d1241a066792e9dfee342379455d",
+   "bytes": 29571,
+   "source": "experiments/chimera_recovery/train_audio.py",
+   "git_blob": "68cc4dd8f851c4791241287988976990be01fd1d"
+  },
+  "train_media.py": {
+   "sha256": "4b764149311d9eb1a6e737d1e9f80cc9772ebfb5592bfc88f2f77e8f1135b67b",
+   "bytes": 35925,
+   "source": "experiments/chimera_recovery/train_media.py",
+   "git_blob": "0c609e977351cba89beab92b7b24e3157caed59e"
+  },
+  "train_music.py": {
+   "sha256": "afcf3ca7c61757b7d5b91dd4c37f54a44d69feb3127db24a2cbbc99083167a08",
+   "bytes": 14199,
+   "source": "experiments/chimera_recovery/train_music.py",
+   "git_blob": "265f62cacc1adff7b4876e29b451c58243e1e304"
+  },
+  "train_refit.py": {
+   "sha256": "305f8dedd134b5d693fc9b6d105e4ded2b028badcf5c6ee5e43c96a1cf212fb5",
+   "bytes": 7258,
+   "source": "experiments/chimera_recovery/train_refit.py",
+   "git_blob": "8a71f89b66aacabc2c4188006588e00576be9bfd"
+  },
+  "train_vision.py": {
+   "sha256": "adb48087a3cdaf6f0b12acec62f6a048fc094d21f4e0d13b2f174ed6263ad050",
+   "bytes": 9753,
+   "source": "experiments/chimera_recovery/train_vision.py",
+   "git_blob": "e789097a7cc939e41bf2b581e4c624ee54ccc3af"
+  },
+  "training.py": {
+   "sha256": "2c6cd35491a9a34c06751716d61d10a89dacbdfd86ab9b8f24bd8e03a0238b8c",
+   "bytes": 72557,
+   "source": "experiments/chimera_recovery/training.py",
+   "git_blob": "8e83a60762028858f92ef0988f90fb98a48255ee"
+  }
+ }
+}

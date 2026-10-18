@@ -1,0 +1,269 @@
+{
+ "schema": "omni-campaign.s8_media_latents.v1",
+ "modality": "h3",
+ "file": "/home/cereal/omni-campaign/composite/s8/media_out/h3/latents.safetensors",
+ "sha256": "34d4e65a84e70f53bf46bac7c3fde7fc5ee5fe95469dd3e7815e20db9aa149cf",
+ "keys": {
+  "h3_step0.video_clean": [
+   1,
+   24,
+   4,
+   4,
+   4
+  ],
+  "h3_step0.video_x_t": [
+   1,
+   24,
+   4,
+   4,
+   4
+  ],
+  "h3_step0.video_raw_omni_final": [
+   1,
+   24,
+   4,
+   4,
+   4
+  ],
+  "h3_step0.video_x0_omni_final": [
+   1,
+   24,
+   4,
+   4,
+   4
+  ],
+  "h3_step0.video_raw_omni_site": [
+   1,
+   24,
+   4,
+   4,
+   4
+  ],
+  "h3_step0.video_x0_omni_site": [
+   1,
+   24,
+   4,
+   4,
+   4
+  ],
+  "h3_step0.audio_clean": [
+   1,
+   32,
+   2,
+   22
+  ],
+  "h3_step0.audio_x_t": [
+   1,
+   32,
+   2,
+   22
+  ],
+  "h3_step0.audio_raw_omni_final": [
+   1,
+   32,
+   2,
+   22
+  ],
+  "h3_step0.audio_x0_omni_final": [
+   1,
+   32,
+   2,
+   22
+  ],
+  "h3_step0.audio_raw_omni_site": [
+   1,
+   32,
+   2,
+   22
+  ],
+  "h3_step0.audio_x0_omni_site": [
+   1,
+   32,
+   2,
+   22
+  ],
+  "h3_step1.video_clean": [
+   1,
+   24,
+   4,
+   4,
+   4
+  ],
+  "h3_step1.video_x_t": [
+   1,
+   24,
+   4,
+   4,
+   4
+  ],
+  "h3_step1.video_raw_omni_final": [
+   1,
+   24,
+   4,
+   4,
+   4
+  ],
+  "h3_step1.video_x0_omni_final": [
+   1,
+   24,
+   4,
+   4,
+   4
+  ],
+  "h3_step1.video_raw_omni_site": [
+   1,
+   24,
+   4,
+   4,
+   4
+  ],
+  "h3_step1.video_x0_omni_site": [
+   1,
+   24,
+   4,
+   4,
+   4
+  ],
+  "h3_step1.audio_clean": [
+   1,
+   32,
+   2,
+   22
+  ],
+  "h3_step1.audio_x_t": [
+   1,
+   32,
+   2,
+   22
+  ],
+  "h3_step1.audio_raw_omni_final": [
+   1,
+   32,
+   2,
+   22
+  ],
+  "h3_step1.audio_x0_omni_final": [
+   1,
+   32,
+   2,
+   22
+  ],
+  "h3_step1.audio_raw_omni_site": [
+   1,
+   32,
+   2,
+   22
+  ],
+  "h3_step1.audio_x0_omni_site": [
+   1,
+   32,
+   2,
+   22
+  ],
+  "h3_step2.video_clean": [
+   1,
+   24,
+   4,
+   4,
+   4
+  ],
+  "h3_step2.video_x_t": [
+   1,
+   24,
+   4,
+   4,
+   4
+  ],
+  "h3_step2.video_raw_omni_final": [
+   1,
+   24,
+   4,
+   4,
+   4
+  ],
+  "h3_step2.video_x0_omni_final": [
+   1,
+   24,
+   4,
+   4,
+   4
+  ],
+  "h3_step2.video_raw_omni_site": [
+   1,
+   24,
+   4,
+   4,
+   4
+  ],
+  "h3_step2.video_x0_omni_site": [
+   1,
+   24,
+   4,
+   4,
+   4
+  ],
+  "h3_step2.audio_clean": [
+   1,
+   32,
+   2,
+   22
+  ],
+  "h3_step2.audio_x_t": [
+   1,
+   32,
+   2,
+   22
+  ],
+  "h3_step2.audio_raw_omni_final": [
+   1,
+   32,
+   2,
+   22
+  ],
+  "h3_step2.audio_x0_omni_final": [
+   1,
+   32,
+   2,
+   22
+  ],
+  "h3_step2.audio_raw_omni_site": [
+   1,
+   32,
+   2,
+   22
+  ],
+  "h3_step2.audio_x0_omni_site": [
+   1,
+   32,
+   2,
+   22
+  ]
+ },
+ "space": "the parent's DiT latent space; decode = vae.decode(latent_format.process_out(x))",
+ "segments": [
+  {
+   "segment": "h3_step0",
+   "sigma": 0.631578947368421,
+   "layout": {
+    "video": "[1, 24, 4, 4, 4] MiniMax H3 video latent (scale 1)",
+    "audio": "[1, 32, 2, 22] MiniMax H3 audio latent"
+   }
+  },
+  {
+   "segment": "h3_step1",
+   "sigma": 0.8780487804878049,
+   "layout": {
+    "video": "[1, 24, 4, 4, 4] MiniMax H3 video latent (scale 1)",
+    "audio": "[1, 32, 2, 22] MiniMax H3 audio latent"
+   }
+  },
+  {
+   "segment": "h3_step2",
+   "sigma": 0.9523809523809523,
+   "layout": {
+    "video": "[1, 24, 4, 4, 4] MiniMax H3 video latent (scale 1)",
+    "audio": "[1, 32, 2, 22] MiniMax H3 audio latent"
+   }
+  }
+ ]
+}

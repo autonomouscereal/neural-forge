@@ -1,0 +1,436 @@
+{
+ "nvidia/NVIDIA-NemotronLabs-VoiceChat-11B": {
+  "created": "2026-07-29",
+  "modified": "2026-09-22",
+  "license": "openmdw-1.1",
+  "license_name": null,
+  "params": 11095371252,
+  "dtypes": [
+   "I64",
+   "F32"
+  ],
+  "bytes": 44398397860,
+  "gated": false,
+  "sha": "443794ea",
+  "pipeline": null,
+  "downloads": 4536
+ },
+ "tencent/Covo-Audio-Chat": {
+  "created": "2026-03-16",
+  "modified": "2026-03-16",
+  "license": [],
+  "license_name": null,
+  "params": 8402417920,
+  "dtypes": [
+   "BF16"
+  ],
+  "bytes": 18683249247,
+  "gated": false,
+  "sha": "eea9ecc9",
+  "pipeline": "audio-to-audio",
+  "downloads": 636
+ },
+ "kyutai/personaplex-rl-seamless": {
+  "created": "2026-06-02",
+  "modified": "2026-06-11",
+  "license": "other",
+  "license_name": null,
+  "params": 8371408896,
+  "dtypes": [
+   "BF16"
+  ],
+  "bytes": 17134329254,
+  "gated": "auto",
+  "sha": "3fa80030",
+  "pipeline": "audio-to-audio",
+  "downloads": 5325
+ },
+ "kyutai/moshika-rl-seamless": {
+  "created": "2026-06-02",
+  "modified": "2026-06-11",
+  "license": "cc-by-nc-4.0",
+  "license_name": null,
+  "params": 7687729152,
+  "dtypes": [
+   "BF16"
+  ],
+  "bytes": 15760704709,
+  "gated": "auto",
+  "sha": "d0a1df28",
+  "pipeline": "audio-to-audio",
+  "downloads": 334
+ },
+ "kyutai/glm-4-voice-of-reason-9b": {
+  "created": "2026-08-04",
+  "modified": "2026-09-17",
+  "license": "other",
+  "license_name": "glm-4-voice-license",
+  "params": 9542557728,
+  "dtypes": [
+   "BF16"
+  ],
+  "bytes": 19091021655,
+  "gated": false,
+  "sha": "cfc6636b",
+  "pipeline": "any-to-any",
+  "downloads": 551
+ },
+ "kyutai/hibiki-zero-3b-pytorch-bf16": {
+  "created": "2026-02-09",
+  "modified": "2026-02-12",
+  "license": [],
+  "license_name": null,
+  "params": null,
+  "dtypes": [],
+  "bytes": 6648931914,
+  "gated": false,
+  "sha": "73175ce6",
+  "pipeline": "audio-to-audio",
+  "downloads": 2227
+ },
+ "nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-BF16": {
+  "created": "2026-04-20",
+  "modified": "2026-08-24",
+  "license": "other",
+  "license_name": "nvidia-open-model-agreement",
+  "params": 33015632214,
+  "dtypes": [
+   "F32",
+   "BF16"
+  ],
+  "bytes": 66059015562,
+  "gated": false,
+  "sha": "e5e99324",
+  "pipeline": "any-to-any",
+  "downloads": 346528
+ },
+ "OpenMOSS-Team/MOSS-TTS-v1.5": {
+  "created": "2026-05-25",
+  "modified": "2026-05-26",
+  "license": "apache-2.0",
+  "license_name": null,
+  "params": 8489841664,
+  "dtypes": [
+   "BF16"
+  ],
+  "bytes": 16995761910,
+  "gated": false,
+  "sha": "cdd3b911",
+  "pipeline": "text-to-speech",
+  "downloads": 141904
+ },
+ "OpenMOSS-Team/MOSS-TTS-Realtime": {
+  "created": "2026-02-09",
+  "modified": "2026-07-27",
+  "license": "apache-2.0",
+  "license_name": null,
+  "params": 2331940864,
+  "dtypes": [
+   "BF16"
+  ],
+  "bytes": 4679903798,
+  "gated": false,
+  "sha": "75682787",
+  "pipeline": "text-to-speech",
+  "downloads": 12810
+ },
+ "OpenMOSS-Team/MOSS-Audio-8B-Instruct": {
+  "created": "2026-04-13",
+  "modified": "2026-09-25",
+  "license": "apache-2.0",
+  "license_name": null,
+  "params": 9052463488,
+  "dtypes": [
+   "BF16"
+  ],
+  "bytes": 18118123315,
+  "gated": false,
+  "sha": "d4dc5a6d",
+  "pipeline": "audio-text-to-text",
+  "downloads": 1926
+ },
+ "inclusionAI/Ming-omni-tts-16.8B-A3B": {
+  "created": "2026-02-11",
+  "modified": "2026-06-15",
+  "license": "apache-2.0",
+  "license_name": null,
+  "params": 17898074900,
+  "dtypes": [
+   "BF16",
+   "F32"
+  ],
+  "bytes": 35835766832,
+  "gated": false,
+  "sha": "2efcd28d",
+  "pipeline": "text-to-speech",
+  "downloads": 315
+ },
+ "inclusionAI/Ming-omni-tts-0.5B": {
+  "created": "2026-02-11",
+  "modified": "2026-02-25",
+  "license": "apache-2.0",
+  "license_name": null,
+  "params": 1615589524,
+  "dtypes": [
+   "F32",
+   "BF16"
+  ],
+  "bytes": 3275536244,
+  "gated": false,
+  "sha": "9154772e",
+  "pipeline": "text-to-speech",
+  "downloads": 23744
+ },
+ "XiaomiMiMo/MiMo-V2.5-ASR": {
+  "created": "2026-04-23",
+  "modified": "2026-04-24",
+  "license": "mit",
+  "license_name": null,
+  "params": 7622619136,
+  "dtypes": [
+   "F32"
+  ],
+  "bytes": 32091210815,
+  "gated": false,
+  "sha": "98641d53",
+  "pipeline": "automatic-speech-recognition",
+  "downloads": 2221
+ },
+ "microsoft/VibeVoice-ASR-Streaming-7B": {
+  "created": "2026-09-02",
+  "modified": "2026-09-03",
+  "license": "mit",
+  "license_name": null,
+  "params": 8674021857,
+  "dtypes": [
+   "BF16"
+  ],
+  "bytes": 17360633755,
+  "gated": false,
+  "sha": "60d858b5",
+  "pipeline": "automatic-speech-recognition",
+  "downloads": 4861
+ },
+ "nvidia/parakeet-unified-en-0.6b": {
+  "created": "2026-04-07",
+  "modified": "2026-06-09",
+  "license": "other",
+  "license_name": "nvidia-open-model-license",
+  "params": null,
+  "dtypes": [],
+  "bytes": 2474485624,
+  "gated": false,
+  "sha": "fe53cd88",
+  "pipeline": "automatic-speech-recognition",
+  "downloads": 2668
+ },
+ "nvidia/audio-flamingo-next-hf": {
+  "created": "2026-04-05",
+  "modified": "2026-05-13",
+  "license": "other",
+  "license_name": null,
+  "params": 8267215360,
+  "dtypes": [
+   "BF16"
+  ],
+  "bytes": 16546071198,
+  "gated": false,
+  "sha": "5634886e",
+  "pipeline": "audio-text-to-text",
+  "downloads": 3136
+ },
+ "FunAudioLLM/Fun-ASR-MLT-Nano-2512": {
+  "created": "2025-12-15",
+  "modified": "2026-08-05",
+  "license": "apache-2.0",
+  "license_name": null,
+  "params": null,
+  "dtypes": [],
+  "bytes": 1989118291,
+  "gated": false,
+  "sha": "2c088f53",
+  "pipeline": "automatic-speech-recognition",
+  "downloads": 7476
+ },
+ "FunAudioLLM/Fun-CineForge": {
+  "created": "2026-03-13",
+  "modified": "2026-05-31",
+  "license": "apache-2.0",
+  "license_name": null,
+  "params": null,
+  "dtypes": [],
+  "bytes": 13612461890,
+  "gated": false,
+  "sha": "b57d93ef",
+  "pipeline": "text-to-speech",
+  "downloads": 50
+ },
+ "meituan-longcat/LongCat-AudioDiT-3.5B": {
+  "created": "2026-03-30",
+  "modified": "2026-04-03",
+  "license": "mit",
+  "license_name": null,
+  "params": 3833985217,
+  "dtypes": [
+   "F32"
+  ],
+  "bytes": 15336488156,
+  "gated": false,
+  "sha": "5d3e6dc0",
+  "pipeline": null,
+  "downloads": 1650
+ },
+ "KittenML/kitten-tts-2": {
+  "created": "2026-09-30",
+  "modified": "2026-10-07",
+  "license": "other",
+  "license_name": "stellon-labs-community-license",
+  "params": null,
+  "dtypes": [],
+  "bytes": 7273292191,
+  "gated": false,
+  "sha": "f2eee74f",
+  "pipeline": "text-to-speech",
+  "downloads": 22050
+ },
+ "Qwen/Qwen3-ASR-0.6B-hf": {
+  "created": "2026-06-26",
+  "modified": "2026-07-22",
+  "license": "apache-2.0",
+  "license_name": null,
+  "params": 782426112,
+  "dtypes": [
+   "BF16"
+  ],
+  "bytes": 1576381331,
+  "gated": false,
+  "sha": "7f1569a4",
+  "pipeline": "automatic-speech-recognition",
+  "downloads": 202577
+ },
+ "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice": {
+  "created": "2026-01-21",
+  "modified": "2026-01-29",
+  "license": "apache-2.0",
+  "license_name": null,
+  "params": 905788672,
+  "dtypes": [
+   "BF16"
+  ],
+  "bytes": 2498388392,
+  "gated": false,
+  "sha": "85e237c1",
+  "pipeline": "text-to-speech",
+  "downloads": 1045846
+ },
+ "LiquidAI/LFM2.5-Audio-1.5B-JP": {
+  "created": "2026-05-26",
+  "modified": "2026-06-11",
+  "license": "other",
+  "license_name": "lfm1.0",
+  "params": 1470308496,
+  "dtypes": [
+   "I64",
+   "BF16"
+  ],
+  "bytes": 3713134798,
+  "gated": false,
+  "sha": "6c34b4d5",
+  "pipeline": "audio-to-audio",
+  "downloads": 580
+ },
+ "mistralai/Voxtral-Mini-4B-Realtime-Arabic": {
+  "created": "2026-10-08",
+  "modified": "2026-10-12",
+  "license": [],
+  "license_name": null,
+  "params": 4429679360,
+  "dtypes": [
+   "BF16"
+  ],
+  "bytes": 17739247571,
+  "gated": false,
+  "sha": "7c60cf2a",
+  "pipeline": "automatic-speech-recognition",
+  "downloads": 684
+ },
+ "fishaudio/drama-3-int4": {
+  "created": "2026-10-14",
+  "modified": "2026-10-14",
+  "license": "other",
+  "license_name": "fish-audio-community-license",
+  "params": 6857815168,
+  "dtypes": [
+   "BF16",
+   "I32",
+   "F16"
+  ],
+  "bytes": 24029279072,
+  "gated": false,
+  "sha": "525f312b",
+  "pipeline": "text-to-speech",
+  "downloads": 0
+ },
+ "FermionResearch/Phonon-2": {
+  "created": "2026-09-28",
+  "modified": "2026-10-08",
+  "license": "cc-by-4.0",
+  "license_name": null,
+  "params": null,
+  "dtypes": [],
+  "bytes": 163568993,
+  "gated": false,
+  "sha": "7e153e40",
+  "pipeline": "automatic-speech-recognition",
+  "downloads": 9655
+ },
+ "Aratako/Irodori-TTS-v4-Large": {
+  "created": "2026-09-27",
+  "modified": "2026-09-27",
+  "license": "gemma",
+  "license_name": null,
+  "params": 3288179489,
+  "dtypes": [
+   "F32"
+  ],
+  "bytes": 13186312526,
+  "gated": false,
+  "sha": "2e0c5542",
+  "pipeline": "text-to-speech",
+  "downloads": 0
+ },
+ "facebook/omniASR-LLM-7B-v2": {
+  "err": 401
+ },
+ "facebook/omniASR_LLM_7B": {
+  "err": 401
+ },
+ "openbmb/MiniCPM-o-4_5-gguf": {
+  "created": "2026-02-02",
+  "modified": "2026-08-18",
+  "license": "apache-2.0",
+  "license_name": null,
+  "params": null,
+  "dtypes": [],
+  "bytes": 79973019242,
+  "gated": false,
+  "sha": "db25077c",
+  "pipeline": "any-to-any",
+  "downloads": 58966
+ },
+ "google/gemma-4-12B-it": {
+  "created": "2026-05-23",
+  "modified": "2026-07-20",
+  "license": "apache-2.0",
+  "license_name": null,
+  "params": 11959730224,
+  "dtypes": [
+   "BF16"
+  ],
+  "bytes": 23951776979,
+  "gated": false,
+  "sha": "707f0a3b",
+  "pipeline": "any-to-any",
+  "downloads": 1642594
+ }
+}

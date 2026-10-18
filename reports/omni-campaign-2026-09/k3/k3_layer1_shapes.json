@@ -1,0 +1,171 @@
+{
+ "is_kda_layer": true,
+ "is_moe_layer": true,
+ "kda_shape_verdict": {
+  "self_attn.A_log": {
+   "dtype": "F32",
+   "expected_numel": 96,
+   "matches": false,
+   "numel": 128,
+   "shape": [
+    128
+   ],
+   "why_it_matters": "fla's gate does A_log.view(num_heads, 1); Chimera maps it to decay_log_scale[heads]"
+  },
+  "self_attn.dt_bias": {
+   "dtype": "F32",
+   "expected_numel": 12288,
+   "matches": true,
+   "numel": 12288,
+   "shape": [
+    12288
+   ],
+   "why_it_matters": "dt_bias.view(num_heads, head_dim) -- one bias per (head, key dim)"
+  },
+  "self_attn.o_norm.weight": {
+   "dtype": "F32",
+   "expected_numel": 128,
+   "matches": true,
+   "numel": 128,
+   "shape": [
+    128
+   ],
+   "why_it_matters": "FusedRMSNormGated(head_dim): ONE vector shared by every head"
+  }
+ },
+ "layer": 1,
+ "model_dir": "/mnt/ai_data/models/moonshotai/Kimi-K3",
+ "note": "header-only read: no tensor data was transferred off the share",
+ "shapes": {
+  "language_model.model.layers.1.self_attn.A_log": {
+   "bytes": 512,
+   "dtype": "F32",
+   "shape": [
+    128
+   ],
+   "shard": "model-00002-of-000096.safetensors"
+  },
+  "language_model.model.layers.1.self_attn.b_proj.weight": {
+   "bytes": 1376256,
+   "dtype": "BF16",
+   "shape": [
+    96,
+    7168
+   ],
+   "shard": "model-00002-of-000096.safetensors"
+  },
+  "language_model.model.layers.1.self_attn.dt_bias": {
+   "bytes": 49152,
+   "dtype": "F32",
+   "shape": [
+    12288
+   ],
+   "shard": "model-00002-of-000096.safetensors"
+  },
+  "language_model.model.layers.1.self_attn.f_a_proj.weight": {
+   "bytes": 1835008,
+   "dtype": "BF16",
+   "shape": [
+    128,
+    7168
+   ],
+   "shard": "model-00002-of-000096.safetensors"
+  },
+  "language_model.model.layers.1.self_attn.f_b_proj.weight": {
+   "bytes": 3145728,
+   "dtype": "BF16",
+   "shape": [
+    12288,
+    128
+   ],
+   "shard": "model-00002-of-000096.safetensors"
+  },
+  "language_model.model.layers.1.self_attn.g_proj.weight": {
+   "bytes": 176160768,
+   "dtype": "BF16",
+   "shape": [
+    12288,
+    7168
+   ],
+   "shard": "model-00002-of-000096.safetensors"
+  },
+  "language_model.model.layers.1.self_attn.k_conv1d.weight": {
+   "bytes": 196608,
+   "dtype": "F32",
+   "shape": [
+    12288,
+    1,
+    4
+   ],
+   "shard": "model-00002-of-000096.safetensors"
+  },
+  "language_model.model.layers.1.self_attn.k_proj.weight": {
+   "bytes": 176160768,
+   "dtype": "BF16",
+   "shape": [
+    12288,
+    7168
+   ],
+   "shard": "model-00002-of-000096.safetensors"
+  },
+  "language_model.model.layers.1.self_attn.o_norm.weight": {
+   "bytes": 512,
+   "dtype": "F32",
+   "shape": [
+    128
+   ],
+   "shard": "model-00002-of-000096.safetensors"
+  },
+  "language_model.model.layers.1.self_attn.o_proj.weight": {
+   "bytes": 176160768,
+   "dtype": "BF16",
+   "shape": [
+    7168,
+    12288
+   ],
+   "shard": "model-00002-of-000096.safetensors"
+  },
+  "language_model.model.layers.1.self_attn.q_conv1d.weight": {
+   "bytes": 196608,
+   "dtype": "F32",
+   "shape": [
+    12288,
+    1,
+    4
+   ],
+   "shard": "model-00002-of-000096.safetensors"
+  },
+  "language_model.model.layers.1.self_attn.q_proj.weight": {
+   "bytes": 176160768,
+   "dtype": "BF16",
+   "shape": [
+    12288,
+    7168
+   ],
+   "shard": "model-00002-of-000096.safetensors"
+  },
+  "language_model.model.layers.1.self_attn.v_conv1d.weight": {
+   "bytes": 196608,
+   "dtype": "F32",
+   "shape": [
+    12288,
+    1,
+    4
+   ],
+   "shard": "model-00002-of-000096.safetensors"
+  },
+  "language_model.model.layers.1.self_attn.v_proj.weight": {
+   "bytes": 176160768,
+   "dtype": "BF16",
+   "shape": [
+    12288,
+    7168
+   ],
+   "shard": "model-00002-of-000096.safetensors"
+  }
+ },
+ "shards": [
+  "model-00002-of-000096.safetensors"
+ ],
+ "tensor_count": 14
+}

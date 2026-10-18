@@ -1,0 +1,939 @@
+{
+  "schema": "neural-forge-omni1-register-counts-v1",
+  "created_utc": "2026-10-13T03:32:33Z",
+  "tool_sha256": "ab020e870dbaa616a3543a7b4a225c2a8a196f3a28f15224eb3d2693a14c265b",
+  "oc_seal_sha256": "9b84d3caa04564f3afd96550574f9b51a5261617fd98a071961f6c76ad9fad52",
+  "parent": {
+    "path": "/home/cereal/models/Qwen3.8-27B-Uncensored",
+    "header_parameters": 27781427952,
+    "mtp_header_parameters": 424699392
+  },
+  "omni1": {
+    "path": "/mnt/lexar/omni-campaign/omni1/OC02-F-Q38-27BU-OMNI1",
+    "header_parameters": 27535655753,
+    "config_sha256": "3516b587ce80461745b772eb92bf1d3c0ffd40fc5e0d82d83c037ad872c99b02",
+    "manifest_sha256": "95297685584bc21648dcda27df08ac0f8fb060bc7ebd185ac2ba7860a41be176",
+    "layers": 69,
+    "trunk_blocks": 64,
+    "charted_blocks": [
+      32,
+      33,
+      34,
+      35,
+      36
+    ],
+    "trunk_intermediate_size": 4352,
+    "k3_channels": 12288,
+    "hidden": 5120
+  },
+  "s5_counts": {
+    "path": "/home/cereal/omni-campaign/composite/c10/S5-C2K4352K3U/register_counts.json",
+    "sha256": "6043d016aa18ef0b36d89e4d5bbbc4610b572aa4f02980b8674609f394949b1a",
+    "s5_header_parameters": 26944218624,
+    "component_lines_equal": true,
+    "native_export_extra_equal": true
+  },
+  "omni1_minus_s5": 591437129,
+  "measured_drop": 245772199,
+  "qwen_mlp_saving": 12834570240,
+  "k3_rows_added": 12079595520,
+  "native_export_extra_parameters": 342464784,
+  "child_non_ffn_non_charted_parameters": 10586433024,
+  "parent_non_mlp_non_mtp_parameters": 10243968240,
+  "media": [
+    {
+      "omni1_block": 32,
+      "source": "ace",
+      "component": "ace.dit.block12.mlp",
+      "type_ids": [
+        4
+      ],
+      "header_parameters": 102811904,
+      "mlp_child_params": 9437184,
+      "chart_params": 20973568,
+      "non_mlp_block_params": 72401152,
+      "parent_mlp_params": 37748736,
+      "ratio": 0.25,
+      "parent_source_file": "/home/cereal/comfyui/models/diffusion_models/acestep_v1.5_turbo.safetensors",
+      "parent_prefix": "decoder.layers.12.mlp.",
+      "parent_tensors": {
+        "decoder.layers.12.mlp.down_proj.weight": [
+          2048,
+          6144
+        ],
+        "decoder.layers.12.mlp.gate_proj.weight": [
+          6144,
+          2048
+        ],
+        "decoder.layers.12.mlp.up_proj.weight": [
+          6144,
+          2048
+        ]
+      },
+      "parent_source_file_header_only": true
+    },
+    {
+      "omni1_block": 33,
+      "source": "h3",
+      "component": "h3.dit.block.mlp",
+      "type_ids": [
+        2,
+        3
+      ],
+      "header_parameters": 267889176,
+      "mlp_child_params": 57802752,
+      "chart_params": 55055616,
+      "non_mlp_block_params": 155030808,
+      "parent_mlp_params": 231211008,
+      "ratio": 0.25,
+      "parent_source_file": "/home/cereal/comfyui/models/diffusion_models/minimax_h3_fl2va_pruned_bf16.safetensors",
+      "parent_prefix": "blocks.25.mlp.",
+      "parent_tensors": {
+        "blocks.25.mlp.fc1.weight": [
+          28672,
+          5376
+        ],
+        "blocks.25.mlp.fc2.weight": [
+          5376,
+          14336
+        ]
+      },
+      "parent_source_file_header_only": true
+    },
+    {
+      "omni1_block": 34,
+      "source": "hy3d",
+      "component": "hy3d.dit.block10.mlp",
+      "type_ids": [
+        7
+      ],
+      "header_parameters": 46156031,
+      "mlp_child_params": 8388607,
+      "chart_params": 20973568,
+      "non_mlp_block_params": 16793856,
+      "parent_mlp_params": 33564672,
+      "ratio": 0.2499236995374184,
+      "parent_source_file": "/home/cereal/comfyui/models/checkpoints/hunyuan_3d_v2.1.safetensors",
+      "parent_prefix": "model.blocks.10.mlp.",
+      "parent_tensors": {
+        "model.blocks.10.mlp.fc1.bias": [
+          8192
+        ],
+        "model.blocks.10.mlp.fc1.weight": [
+          8192,
+          2048
+        ],
+        "model.blocks.10.mlp.fc2.bias": [
+          2048
+        ],
+        "model.blocks.10.mlp.fc2.weight": [
+          2048,
+          8192
+        ]
+      },
+      "parent_source_file_header_only": true
+    },
+    {
+      "omni1_block": 35,
+      "source": "qimg",
+      "component": "qimg.mmdit.block30.img_mlp",
+      "type_ids": [
+        1
+      ],
+      "header_parameters": 154985727,
+      "mlp_child_params": 18874367,
+      "chart_params": 31460352,
+      "non_mlp_block_params": 104651008,
+      "parent_mlp_params": 75512832,
+      "ratio": 0.24994913447293302,
+      "parent_source_file": "/home/cereal/comfyui/models/diffusion_models/qwen_image_fp8_e4m3fn.safetensors",
+      "parent_prefix": "transformer_blocks.30.img_mlp.",
+      "parent_tensors": {
+        "transformer_blocks.30.img_mlp.net.0.proj.bias": [
+          12288
+        ],
+        "transformer_blocks.30.img_mlp.net.0.proj.weight": [
+          12288,
+          3072
+        ],
+        "transformer_blocks.30.img_mlp.net.2.bias": [
+          3072
+        ],
+        "transformer_blocks.30.img_mlp.net.2.weight": [
+          3072,
+          12288
+        ]
+      },
+      "parent_source_file_header_only": true
+    },
+    {
+      "omni1_block": 36,
+      "source": "qvl32",
+      "component": "qvl32.vit.block13.mlp",
+      "type_ids": [
+        6
+      ],
+      "header_parameters": 19594291,
+      "mlp_child_params": 2479027,
+      "chart_params": 11797632,
+      "non_mlp_block_params": 5317632,
+      "parent_mlp_params": 9921872,
+      "ratio": 0.24985476531041723,
+      "parent_source_file": "/home/cereal/comfyui/models/text_encoders/qwen3vl_32b_minimax_h3_bf16.safetensors",
+      "parent_prefix": "visual.blocks.13.mlp.",
+      "parent_tensors": {
+        "visual.blocks.13.mlp.linear_fc1.bias": [
+          4304
+        ],
+        "visual.blocks.13.mlp.linear_fc1.weight": [
+          4304,
+          1152
+        ],
+        "visual.blocks.13.mlp.linear_fc2.bias": [
+          1152
+        ],
+        "visual.blocks.13.mlp.linear_fc2.weight": [
+          1152,
+          4304
+        ]
+      },
+      "parent_source_file_header_only": true
+    }
+  ],
+  "media_installed_parameters": 591437129,
+  "media_parent_mlp_parameters": 387959120,
+  "media_mlp_saving": 290977183,
+  "media_chart_parameters": 140260736,
+  "media_non_mlp_block_parameters": 354194456,
+  "interface_parameters_written_in_place": 13173760,
+  "band_parameters_written_in_place": 671088640,
+  "claimed_saving": 13125547423,
+  "claimed_parent_parameters": 17500719440,
+  "accounting_identity_residual": 0,
+  "media_identity_residual": 0,
+  "accounting_slack_argued": 13304474616,
+  "slack_covers_claim": true,
+  "rule": "omni1 = parent - qwen_saving - mtp + k3_rows + native_extra + media_installed (residual 0); slack = k3_rows + native_extra + media parent MLPs + charts + media non-MLP",
+  "layers": [
+    {
+      "layer": 0,
+      "omni1_block": 0,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 1,
+      "omni1_block": 1,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 2,
+      "omni1_block": 2,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 3,
+      "omni1_block": 3,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 4,
+      "omni1_block": 4,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 5,
+      "omni1_block": 5,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 6,
+      "omni1_block": 6,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 7,
+      "omni1_block": 7,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 8,
+      "omni1_block": 8,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 9,
+      "omni1_block": 9,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 10,
+      "omni1_block": 10,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 11,
+      "omni1_block": 11,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 12,
+      "omni1_block": 12,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 13,
+      "omni1_block": 13,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 14,
+      "omni1_block": 14,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 15,
+      "omni1_block": 15,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 16,
+      "omni1_block": 16,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 17,
+      "omni1_block": 17,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 18,
+      "omni1_block": 18,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 19,
+      "omni1_block": 19,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 20,
+      "omni1_block": 20,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 21,
+      "omni1_block": 21,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 22,
+      "omni1_block": 22,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 23,
+      "omni1_block": 23,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 24,
+      "omni1_block": 24,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 25,
+      "omni1_block": 25,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 26,
+      "omni1_block": 26,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 27,
+      "omni1_block": 27,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 28,
+      "omni1_block": 28,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 29,
+      "omni1_block": 29,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 30,
+      "omni1_block": 30,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 31,
+      "omni1_block": 31,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 32,
+      "omni1_block": 37,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 33,
+      "omni1_block": 38,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 34,
+      "omni1_block": 39,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 35,
+      "omni1_block": 40,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 36,
+      "omni1_block": 41,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 37,
+      "omni1_block": 42,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 38,
+      "omni1_block": 43,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 39,
+      "omni1_block": 44,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 40,
+      "omni1_block": 45,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 41,
+      "omni1_block": 46,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 42,
+      "omni1_block": 47,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 43,
+      "omni1_block": 48,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 44,
+      "omni1_block": 49,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 45,
+      "omni1_block": 50,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 46,
+      "omni1_block": 51,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 47,
+      "omni1_block": 52,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 48,
+      "omni1_block": 53,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 49,
+      "omni1_block": 54,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 50,
+      "omni1_block": 55,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 51,
+      "omni1_block": 56,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 52,
+      "omni1_block": 57,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 53,
+      "omni1_block": 58,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 54,
+      "omni1_block": 59,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 55,
+      "omni1_block": 60,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 56,
+      "omni1_block": 61,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 57,
+      "omni1_block": 62,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 58,
+      "omni1_block": 63,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 59,
+      "omni1_block": 64,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 60,
+      "omni1_block": 65,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 61,
+      "omni1_block": 66,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 62,
+      "omni1_block": 67,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    },
+    {
+      "layer": 63,
+      "omni1_block": 68,
+      "parent_mlp_header_params": 267386880,
+      "child_ffn_header_params": 255590400,
+      "qwen_rows_params": 66846720,
+      "k3_rows_params": 188743680,
+      "qwen_ratio": 0.25
+    }
+  ],
+  "component_lines": [
+    "qwen.mlp.layer00:267386880:66846720",
+    "qwen.mlp.layer01:267386880:66846720",
+    "qwen.mlp.layer02:267386880:66846720",
+    "qwen.mlp.layer03:267386880:66846720",
+    "qwen.mlp.layer04:267386880:66846720",
+    "qwen.mlp.layer05:267386880:66846720",
+    "qwen.mlp.layer06:267386880:66846720",
+    "qwen.mlp.layer07:267386880:66846720",
+    "qwen.mlp.layer08:267386880:66846720",
+    "qwen.mlp.layer09:267386880:66846720",
+    "qwen.mlp.layer10:267386880:66846720",
+    "qwen.mlp.layer11:267386880:66846720",
+    "qwen.mlp.layer12:267386880:66846720",
+    "qwen.mlp.layer13:267386880:66846720",
+    "qwen.mlp.layer14:267386880:66846720",
+    "qwen.mlp.layer15:267386880:66846720",
+    "qwen.mlp.layer16:267386880:66846720",
+    "qwen.mlp.layer17:267386880:66846720",
+    "qwen.mlp.layer18:267386880:66846720",
+    "qwen.mlp.layer19:267386880:66846720",
+    "qwen.mlp.layer20:267386880:66846720",
+    "qwen.mlp.layer21:267386880:66846720",
+    "qwen.mlp.layer22:267386880:66846720",
+    "qwen.mlp.layer23:267386880:66846720",
+    "qwen.mlp.layer24:267386880:66846720",
+    "qwen.mlp.layer25:267386880:66846720",
+    "qwen.mlp.layer26:267386880:66846720",
+    "qwen.mlp.layer27:267386880:66846720",
+    "qwen.mlp.layer28:267386880:66846720",
+    "qwen.mlp.layer29:267386880:66846720",
+    "qwen.mlp.layer30:267386880:66846720",
+    "qwen.mlp.layer31:267386880:66846720",
+    "qwen.mlp.layer32:267386880:66846720",
+    "qwen.mlp.layer33:267386880:66846720",
+    "qwen.mlp.layer34:267386880:66846720",
+    "qwen.mlp.layer35:267386880:66846720",
+    "qwen.mlp.layer36:267386880:66846720",
+    "qwen.mlp.layer37:267386880:66846720",
+    "qwen.mlp.layer38:267386880:66846720",
+    "qwen.mlp.layer39:267386880:66846720",
+    "qwen.mlp.layer40:267386880:66846720",
+    "qwen.mlp.layer41:267386880:66846720",
+    "qwen.mlp.layer42:267386880:66846720",
+    "qwen.mlp.layer43:267386880:66846720",
+    "qwen.mlp.layer44:267386880:66846720",
+    "qwen.mlp.layer45:267386880:66846720",
+    "qwen.mlp.layer46:267386880:66846720",
+    "qwen.mlp.layer47:267386880:66846720",
+    "qwen.mlp.layer48:267386880:66846720",
+    "qwen.mlp.layer49:267386880:66846720",
+    "qwen.mlp.layer50:267386880:66846720",
+    "qwen.mlp.layer51:267386880:66846720",
+    "qwen.mlp.layer52:267386880:66846720",
+    "qwen.mlp.layer53:267386880:66846720",
+    "qwen.mlp.layer54:267386880:66846720",
+    "qwen.mlp.layer55:267386880:66846720",
+    "qwen.mlp.layer56:267386880:66846720",
+    "qwen.mlp.layer57:267386880:66846720",
+    "qwen.mlp.layer58:267386880:66846720",
+    "qwen.mlp.layer59:267386880:66846720",
+    "qwen.mlp.layer60:267386880:66846720",
+    "qwen.mlp.layer61:267386880:66846720",
+    "qwen.mlp.layer62:267386880:66846720",
+    "qwen.mlp.layer63:267386880:66846720",
+    "ace.dit.block12.mlp:37748736:9437184",
+    "h3.dit.block.mlp:231211008:57802752",
+    "hy3d.dit.block10.mlp:33564672:8388607",
+    "qimg.mmdit.block30.img_mlp:75512832:18874367",
+    "qvl32.vit.block13.mlp:9921872:2479027"
+  ],
+  "qwen_component_lines": [
+    "qwen.mlp.layer00:267386880:66846720",
+    "qwen.mlp.layer01:267386880:66846720",
+    "qwen.mlp.layer02:267386880:66846720",
+    "qwen.mlp.layer03:267386880:66846720",
+    "qwen.mlp.layer04:267386880:66846720",
+    "qwen.mlp.layer05:267386880:66846720",
+    "qwen.mlp.layer06:267386880:66846720",
+    "qwen.mlp.layer07:267386880:66846720",
+    "qwen.mlp.layer08:267386880:66846720",
+    "qwen.mlp.layer09:267386880:66846720",
+    "qwen.mlp.layer10:267386880:66846720",
+    "qwen.mlp.layer11:267386880:66846720",
+    "qwen.mlp.layer12:267386880:66846720",
+    "qwen.mlp.layer13:267386880:66846720",
+    "qwen.mlp.layer14:267386880:66846720",
+    "qwen.mlp.layer15:267386880:66846720",
+    "qwen.mlp.layer16:267386880:66846720",
+    "qwen.mlp.layer17:267386880:66846720",
+    "qwen.mlp.layer18:267386880:66846720",
+    "qwen.mlp.layer19:267386880:66846720",
+    "qwen.mlp.layer20:267386880:66846720",
+    "qwen.mlp.layer21:267386880:66846720",
+    "qwen.mlp.layer22:267386880:66846720",
+    "qwen.mlp.layer23:267386880:66846720",
+    "qwen.mlp.layer24:267386880:66846720",
+    "qwen.mlp.layer25:267386880:66846720",
+    "qwen.mlp.layer26:267386880:66846720",
+    "qwen.mlp.layer27:267386880:66846720",
+    "qwen.mlp.layer28:267386880:66846720",
+    "qwen.mlp.layer29:267386880:66846720",
+    "qwen.mlp.layer30:267386880:66846720",
+    "qwen.mlp.layer31:267386880:66846720",
+    "qwen.mlp.layer32:267386880:66846720",
+    "qwen.mlp.layer33:267386880:66846720",
+    "qwen.mlp.layer34:267386880:66846720",
+    "qwen.mlp.layer35:267386880:66846720",
+    "qwen.mlp.layer36:267386880:66846720",
+    "qwen.mlp.layer37:267386880:66846720",
+    "qwen.mlp.layer38:267386880:66846720",
+    "qwen.mlp.layer39:267386880:66846720",
+    "qwen.mlp.layer40:267386880:66846720",
+    "qwen.mlp.layer41:267386880:66846720",
+    "qwen.mlp.layer42:267386880:66846720",
+    "qwen.mlp.layer43:267386880:66846720",
+    "qwen.mlp.layer44:267386880:66846720",
+    "qwen.mlp.layer45:267386880:66846720",
+    "qwen.mlp.layer46:267386880:66846720",
+    "qwen.mlp.layer47:267386880:66846720",
+    "qwen.mlp.layer48:267386880:66846720",
+    "qwen.mlp.layer49:267386880:66846720",
+    "qwen.mlp.layer50:267386880:66846720",
+    "qwen.mlp.layer51:267386880:66846720",
+    "qwen.mlp.layer52:267386880:66846720",
+    "qwen.mlp.layer53:267386880:66846720",
+    "qwen.mlp.layer54:267386880:66846720",
+    "qwen.mlp.layer55:267386880:66846720",
+    "qwen.mlp.layer56:267386880:66846720",
+    "qwen.mlp.layer57:267386880:66846720",
+    "qwen.mlp.layer58:267386880:66846720",
+    "qwen.mlp.layer59:267386880:66846720",
+    "qwen.mlp.layer60:267386880:66846720",
+    "qwen.mlp.layer61:267386880:66846720",
+    "qwen.mlp.layer62:267386880:66846720",
+    "qwen.mlp.layer63:267386880:66846720"
+  ],
+  "media_component_lines": [
+    "ace.dit.block12.mlp:37748736:9437184",
+    "h3.dit.block.mlp:231211008:57802752",
+    "hy3d.dit.block10.mlp:33564672:8388607",
+    "qimg.mmdit.block30.img_mlp:75512832:18874367",
+    "qvl32.vit.block13.mlp:9921872:2479027"
+  ]
+}

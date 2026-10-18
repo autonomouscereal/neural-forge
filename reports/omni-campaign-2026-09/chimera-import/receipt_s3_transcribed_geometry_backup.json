@@ -1,0 +1,307 @@
+{
+  "schema": "chimera_omni.behaviour_receipt.s3",
+  "label": "omni-import S3 fbb7ae7",
+  "torch_version": "2.11.0+cu128",
+  "python": "3.12.3",
+  "device": "cpu",
+  "fixed_band_ledger": {
+    "bands": [
+      [
+        "control",
+        512
+      ],
+      [
+        "media",
+        2048
+      ],
+      [
+        "grounding",
+        1024
+      ],
+      [
+        "sync",
+        128
+      ],
+      [
+        "tool",
+        384
+      ]
+    ],
+    "band_total": 4096,
+    "qwen3_5": {
+      "base_vocab_size": 248320,
+      "fixed_band_vocab_size": 252416,
+      "fixed_band_text_end": 248320,
+      "proportional_text_end": 194000,
+      "rows_the_proportional_policy_would_relabel": 54320,
+      "band_parameters_untied_h5120": 41943040,
+      "band_parameters_tied_h1024": 4194304
+    },
+    "kimi_k3": {
+      "base_vocab_size": 163840,
+      "fixed_band_vocab_size": 167936,
+      "fixed_band_text_end": 163840,
+      "proportional_text_end": 128000,
+      "rows_the_proportional_policy_would_relabel": 35840,
+      "band_parameters_untied_h5120": 41943040,
+      "band_parameters_tied_h1024": 4194304
+    }
+  },
+  "ledger_band_logit_mask": {
+    "base_vocab_size": 32,
+    "band_begin": 32,
+    "text_logits_bit_identical": true,
+    "masked_band_softmax_mass": 0.0,
+    "unmasked_band_softmax_mass": 1.511770248413086
+  },
+  "native_volume": {
+    "source_shape": [
+      1,
+      1,
+      33,
+      35,
+      37
+    ],
+    "layout_shape": [
+      3,
+      3,
+      3,
+      16
+    ],
+    "tokens": 27,
+    "feature_dim": 4096,
+    "bit_exact_round_trip": true,
+    "max_abs_diff": 0.0,
+    "type_id": 7,
+    "trunk_width_round_trip": true,
+    "trunk_width_zero_padding": 0.0
+  },
+  "typed_flow_noise_levels": {
+    "flow_type_shifts": {
+      "2": 12.0,
+      "3": 3.0,
+      "4": 3.0,
+      "5": 3.0,
+      "7": 3.0
+    },
+    "av_levels_bit_identical_to_frozen_code": true,
+    "av_update_mask": [
+      [
+        false,
+        false,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false
+      ]
+    ],
+    "typed_update_mask_includes_volume": [
+      [
+        false,
+        false,
+        true,
+        true,
+        true,
+        true,
+        false,
+        true
+      ]
+    ],
+    "typed_levels": [
+      [
+        0.0,
+        0.0,
+        0.734140157699585,
+        0.40840476751327515,
+        0.40840476751327515,
+        0.40840476751327515,
+        0.0,
+        0.40840476751327515
+      ]
+    ],
+    "av_schedule_volume_row_is_zero": true
+  },
+  "import_profiles": {
+    "trunk_feature_dim": 6144,
+    "qwen3_5_0_8b": {
+      "vocab_size": 252416,
+      "ledger_kind": "fixed_band",
+      "ledger_base_vocab_size": 248320,
+      "hidden_size": 1024,
+      "num_layers": 24,
+      "block_pattern": [
+        "kda",
+        "kda",
+        "kda",
+        "gated_gqa"
+      ],
+      "force_final_gated_mla": false,
+      "residual_mode": "none",
+      "attnres_block_size": 12,
+      "activation_kind": "silu",
+      "kda_num_heads": 16,
+      "kda_num_key_heads": 16,
+      "kda_decay_kind": "gdn",
+      "kda_output_gate": "silu",
+      "kda_qk_norm_kind": "fla",
+      "kda_conv_bias": false,
+      "gqa_rope_dim": 64,
+      "native_feature_dim": 6144,
+      "tie_word_embeddings": true,
+      "rms_norm_eps": 1e-06,
+      "metadata": {
+        "import_source": "qwen3_5",
+        "source_config_sha256": "83d6984e837680903c6b522321236512084da7aa81f688ff15a1ee79e7f647ee",
+        "attention_output_gate": "sigmoid"
+      }
+    },
+    "kimi_k3": {
+      "vocab_size": 167936,
+      "ledger_kind": "fixed_band",
+      "ledger_base_vocab_size": 163840,
+      "hidden_size": 7168,
+      "num_layers": 93,
+      "block_pattern": [
+        "kda",
+        "kda",
+        "kda",
+        "gated_mla"
+      ],
+      "force_final_gated_mla": true,
+      "residual_mode": "block_attnres",
+      "attnres_block_size": 12,
+      "activation_kind": "situ",
+      "kda_num_heads": 96,
+      "kda_num_key_heads": 96,
+      "kda_decay_kind": "kda",
+      "kda_output_gate": "sigmoid",
+      "kda_qk_norm_kind": "fla",
+      "kda_conv_bias": false,
+      "gqa_rope_dim": 0,
+      "native_feature_dim": 6144,
+      "tie_word_embeddings": false,
+      "rms_norm_eps": 1e-05,
+      "metadata": {
+        "import_source": "kimi_k3",
+        "source_config_sha256": "fb541b1e2094f0b43a19cde2085b48bbd13dac85b6facd1aa886485f9ff97f9a",
+        "moe_folding": "uniform_dense_width"
+      }
+    },
+    "chimera_omni_27b": {
+      "vocab_size": 252416,
+      "ledger_kind": "fixed_band",
+      "ledger_base_vocab_size": 248320,
+      "hidden_size": 5120,
+      "num_layers": 64,
+      "block_pattern": [
+        "kda",
+        "kda",
+        "kda",
+        "gated_gqa"
+      ],
+      "force_final_gated_mla": false,
+      "residual_mode": "none",
+      "attnres_block_size": 12,
+      "activation_kind": "silu",
+      "kda_num_heads": 48,
+      "kda_num_key_heads": 16,
+      "kda_decay_kind": "gdn",
+      "kda_output_gate": "silu",
+      "kda_qk_norm_kind": "fla",
+      "kda_conv_bias": false,
+      "gqa_rope_dim": 64,
+      "native_feature_dim": 6144,
+      "tie_word_embeddings": false,
+      "rms_norm_eps": 1e-06,
+      "metadata": {
+        "import_source": "qwen3_5",
+        "source_config_sha256": "2561d05c101898b80e01c86ba8107256b9b4a6a1efe33cb8869a4ffc64813bc3",
+        "attention_output_gate": "sigmoid",
+        "profile": "chimera_omni_27b",
+        "geometry_source": "verified_27b_geometry_plus_qwen3_5_family_defaults",
+        "assumed_fields": "full_attention_interval,linear_conv_kernel_dim,linear_key_head_dim,linear_value_head_dim,max_position_embeddings,partial_rotary_factor,rms_norm_eps,rope_theta,vocab_size",
+        "unresolved": "config.json declares output_gate_type=swish (spec Q1); this profile assumes the sigmoid gate"
+      }
+    }
+  },
+  "tokenizers": {
+    "qwen3_5": {
+      "dir": "/home/cereal/models/Qwen3.5-0.8B",
+      "tokenizer_vocab_size": 248070,
+      "base_vocab_size": 248320,
+      "vocab_size": 252416,
+      "token_counts": {
+        "The quick brown fox jumps over 13 lazy dogs.": 12,
+        "def fold(model, *, rank: int = 4) -> None:\n    return None\n": 20,
+        "\u30c1\u30e1\u30e9\u30aa\u30e0\u30cb is a model, not a mascot.": 13,
+        "  leading and trailing whitespace  ": 6
+      },
+      "round_trip_exact": true,
+      "first_media_band_id": 248832,
+      "bos_control_id": 248320
+    },
+    "kimi_k3": {
+      "dir": "/mnt/ai_data/models/moonshotai/Kimi-K3",
+      "tokenizer_vocab_size": 163840,
+      "base_vocab_size": 163840,
+      "vocab_size": 167936,
+      "token_counts": {
+        "The quick brown fox jumps over 13 lazy dogs.": 11,
+        "def fold(model, *, rank: int = 4) -> None:\n    return None\n": 19,
+        "\u30c1\u30e1\u30e9\u30aa\u30e0\u30cb is a model, not a mascot.": 14,
+        "  leading and trailing whitespace  ": 6
+      },
+      "round_trip_exact": true
+    },
+    "bridge_qwen_to_k3": {
+      "alignment": {
+        "schema": "chimera_omni.token_alignment.v1",
+        "source": "qwen3_5",
+        "destination": "kimi_k3",
+        "source_base_vocab_size": 248320,
+        "destination_base_vocab_size": 163840,
+        "scope": "corpus_observed",
+        "corpus_documents": 4,
+        "corpus_bytes": 182,
+        "corpus_source_tokens": 51,
+        "corpus_destination_tokens": 50,
+        "source_round_trip_documents": 4,
+        "destination_round_trip_documents": 4,
+        "byte_round_trip_exact": true,
+        "candidate_tokens": 43,
+        "aligned_tokens": 43,
+        "identity_tokens": 10,
+        "single_piece_tokens": 42,
+        "multi_piece_tokens": 1,
+        "unmapped_tokens": 0,
+        "max_pieces_per_token": 2,
+        "mean_pieces_per_token": 1.0232558139534884
+      },
+      "embedding": {
+        "schema": "chimera_omni.embedding_bridge.v1",
+        "mode": "mean",
+        "source_shape": [
+          248320,
+          8
+        ],
+        "destination_shape": [
+          163840,
+          8
+        ],
+        "bridged_shape": [
+          248320,
+          8
+        ],
+        "written_rows": 43,
+        "multi_piece_rows": 1,
+        "zero_rows": 248277,
+        "skipped_rows": 0,
+        "source_row_rms": 0.0,
+        "destination_row_rms": 0.9999499447581112,
+        "bridged_row_rms": 0.013450670635743999
+      }
+    }
+  }
+}

@@ -1,0 +1,470 @@
+{
+ "schema": "neural-forge-extension-bank-prompts-v2",
+ "surface": "extension-v2",
+ "purpose": "The second-generation ADDENDUM 16.1 extension surface.  Thirty prompts, two per sealed capability lane, authored blind in wave 34 from the L12 taxonomy and from wave 33's five measured defects in v1 -- not from any child reading.  This surface PRICES AND ORDERS.  It grades nothing and gates nothing: every frontier claim, ARCH verdict and ledger row continues to fire on the sealed fifteen only, forever.",
+ "authored": "2026-08-28",
+ "supersedes_nothing": "The v1 bank (c9d37004c901d757...) is FROZEN and stays frozen.  Sixty committed child observations were scored against it and its rubric; nothing here rewrites any of them.  v2 is a second instrument measured against the same sealed counts, so the two can be compared on one population.",
+ "design_rules": [
+  "SELF-CONTAINED.  Every prompt carries its own payload inline.  No prompt refers to a note, an update, a table, a file or a previous message that is not in the prompt itself.  Wave 33 lost two whole lanes of the paraphrase surface to exactly this defect, six prompts of forty-five, and charged it to the bank.",
+  "CONTENT, NOT FORM.  Every rubric entry names at least one thing the answer must CONTAIN.  Six of v1's thirty carried an empty requirement list and graded on formatting and length; the worst of them was held by 39 of 60 children and correlated NEGATIVELY with the sealed count.",
+  "NOT PROMPT-QUOTABLE.  No prompt satisfies its own rule.  This is asserted mechanically by mx34_extrubric2.py on every invocation, not asserted here.  Six of v1's thirty entries could be held by quoting the question back and those six pooled to rho 0.078 against 0.246 for the other twenty-four.",
+  "DIFFICULTY STAGGERED INSIDE THE LANE.  Every lane carries one A prompt (a plain instance of the capability) and one B prompt (the same capability under an added constraint that forbids the easy answer).  v1 staggered nothing inside a lane, so a lane contributed one bit and not two.",
+  "THE DEAD FAMILIES ARE REDESIGNED, NOT DROPPED.  v1's `context` and `explanation` families were never held by any of sixty children.  Both are rebuilt here: context now supplies a short notice inline and asks for two facts with a length ceiling that an echo cannot meet, and explanation now names the misconception to correct and requires the mechanism word that only a correct answer supplies.",
+  "THE CONVERSATION FAMILY IS REBUILT TO CORRELATE.  v1's `ext-conversation-competing-promises` graded length and the absence of a list.  Both prompts here require a register word the prompt does not contain, exactly one question, and no numbered list."
+ ],
+ "lanes": [
+  "conversation-natural-greeting",
+  "instruction-three-actions",
+  "explanation-seasons",
+  "arithmetic-multi-step",
+  "logic-ordering",
+  "context-retrieval",
+  "summarization-priorities",
+  "comparison-ram-rom",
+  "coding-deduplicate",
+  "debugging-off-by-one",
+  "writing-concise-email",
+  "planning-dependencies",
+  "uncertainty-insufficient-data",
+  "creative-continuity",
+  "multi-turn-correction"
+ ],
+ "prompts": [
+  {
+   "id": "ext2-conversation-dead-battery",
+   "lane": "conversation-natural-greeting",
+   "category": "conversation",
+   "step": "A",
+   "difficulty": "moderate",
+   "messages": [
+    {
+     "role": "user",
+     "content": "My car battery died in the supermarket car park last night and I waited two hours for the roadside crew. Reply the way a friend would, in plain sentences. Ask me exactly one thing, and do not give me a list."
+    }
+   ],
+   "context": "Human register plus restraint. Exactly one question; a second question is a miss; a numbered or bulleted list is a miss. The reply has to acknowledge the experience in words the ask does not supply."
+  },
+  {
+   "id": "ext2-conversation-two-promises",
+   "lane": "conversation-natural-greeting",
+   "category": "conversation",
+   "step": "B",
+   "difficulty": "hard",
+   "messages": [
+    {
+     "role": "user",
+     "content": "I said yes to covering a shift on Saturday and then remembered I already promised my daughter I would take her to her swim meet the same morning. Talk to me like a person, not like a helpdesk. Do not tell me which one to pick and do not give me options as a list. Ask exactly one thing."
+    }
+   ],
+   "context": "The same register test with a verdict forbidden. Naming the situation, one question, no list, and no instruction about which promise to keep. Choosing for the user is a miss."
+  },
+  {
+   "id": "ext2-instruction-first-week",
+   "lane": "instruction-three-actions",
+   "category": "instruction-following",
+   "step": "A",
+   "difficulty": "moderate",
+   "messages": [
+    {
+     "role": "user",
+     "content": "Write exactly three numbered steps someone should take in their first week at a new job to work out who owns what. Number them 1, 2 and 3. Each step must be different from the other two and each must name a specific thing to do."
+    }
+   ],
+   "context": "Three distinct numbered actions, each naming a concrete act. Three items that are one item three times is a miss, per the sealed instruction-three-actions calibration."
+  },
+  {
+   "id": "ext2-instruction-power-restored",
+   "lane": "instruction-three-actions",
+   "category": "instruction-following",
+   "step": "B",
+   "difficulty": "hard",
+   "messages": [
+    {
+     "role": "user",
+     "content": "The mains supply to a small office has just come back after a four-hour outage. Give exactly three numbered actions for the person who arrives first, in the order they should happen. Do not include anything about ringing the electricity company, and do not add a fourth item."
+    }
+   ],
+   "context": "Three distinct numbered actions under a forbidden obvious answer, and they must name equipment. The excluded action is the one an unconstrained model reaches for first."
+  },
+  {
+   "id": "ext2-explanation-second-tide",
+   "lane": "explanation-seasons",
+   "category": "knowledge-explanation",
+   "step": "A",
+   "difficulty": "moderate",
+   "messages": [
+    {
+     "role": "user",
+     "content": "A friend says high tide happens because the moon pulls the water up on the side facing it, so there should be one high tide a day. There are two. Explain in plain language what actually causes the second one. Do not use equations."
+    }
+   ],
+   "context": "A named misconception with a mechanism the ask does not supply. Explaining only the near-side pull answers the half of the question that was already stated."
+  },
+  {
+   "id": "ext2-explanation-blue-then-red",
+   "lane": "explanation-seasons",
+   "category": "knowledge-explanation",
+   "step": "B",
+   "difficulty": "hard",
+   "messages": [
+    {
+     "role": "user",
+     "content": "Someone tells me the sky is blue because it reflects the ocean. Explain why that is wrong and why the same sky turns red at sunset. Your answer has to account for both colours with a single mechanism."
+    }
+   ],
+   "context": "One mechanism, two observations, and an explicit correction. An answer that explains blue and stops has answered a third of it."
+  },
+  {
+   "id": "ext2-arithmetic-bolt-bags",
+   "lane": "arithmetic-multi-step",
+   "category": "reasoning",
+   "step": "A",
+   "difficulty": "moderate",
+   "messages": [
+    {
+     "role": "user",
+     "content": "A workshop has 7 crates with 24 bolts in each. 19 bolts are damaged and thrown out. The rest are packed into bags of 8. How many full bags are there, and how many bolts are left over?"
+    }
+   ],
+   "context": "168, then 149, then 18 bags with 5 left over. The division is the discriminator, as it is in the sealed arithmetic lane."
+  },
+  {
+   "id": "ext2-arithmetic-faulty-run",
+   "lane": "arithmetic-multi-step",
+   "category": "reasoning",
+   "step": "B",
+   "difficulty": "hard",
+   "messages": [
+    {
+     "role": "user",
+     "content": "A machine makes 45 parts an hour and runs for 6 hours. A fault then spoils 20 per cent of everything made so far. After the fault it runs 3 more hours at 30 parts an hour. How many good parts are there at the end? Give the number immediately after the fault as well."
+    }
+   ],
+   "context": "270, minus 54, is 216; plus 90 is 306. Two intermediate quantities are asked for by name, so a right final answer with no 216 has not shown the step the lane tests."
+  },
+  {
+   "id": "ext2-logic-shelf-order",
+   "lane": "logic-ordering",
+   "category": "reasoning",
+   "step": "A",
+   "difficulty": "moderate",
+   "messages": [
+    {
+     "role": "user",
+     "content": "Four books sit on a shelf. The atlas is somewhere to the left of the ledger. The ledger is to the left of the manual. The primer is to the right of the manual. Give the left-to-right order of all four."
+    }
+   ],
+   "context": "atlas, ledger, manual, primer. The constraints are stated in the answer order, so naming the four in sequence is not evidence; the end of the order is."
+  },
+  {
+   "id": "ext2-logic-relay-finish",
+   "lane": "logic-ordering",
+   "category": "reasoning",
+   "step": "B",
+   "difficulty": "hard",
+   "messages": [
+    {
+     "role": "user",
+     "content": "Five runners finish a relay leg. Dara finishes before Erin. Fitz finishes after Erin. Gil finishes before Dara. Hana finishes immediately after Erin. Give the finishing order for all five, first to last."
+    }
+   ],
+   "context": "Gil, Dara, Erin, Hana, Fitz. The immediately-after constraint puts the answer order out of the order the constraints are stated in, which is the point."
+  },
+  {
+   "id": "ext2-context-workshop-notice",
+   "lane": "context-retrieval",
+   "category": "context-use",
+   "step": "A",
+   "difficulty": "moderate",
+   "messages": [
+    {
+     "role": "user",
+     "content": "NOTICE - Riverside Workshop. The tool cage opens at 7:30 a.m. and the last checkout is 4:15 p.m. Bench 3 is reserved for welding on Tuesdays and Thursdays. The side door is locked after 6 p.m.; use the main gate. Visitors sign the yellow book, never the blue one.\n\nUsing only the notice above, and in no more than two sentences: what is the last time a tool can be checked out, and which book does a visitor sign?"
+    }
+   ],
+   "context": "The payload is inline and the answer is two facts out of five. The ceiling is the discriminator: returning the notice is not retrieval, and the sealed record has children whose context lane is the prompt quoted back."
+  },
+  {
+   "id": "ext2-context-clinic-notice",
+   "lane": "context-retrieval",
+   "category": "context-use",
+   "step": "B",
+   "difficulty": "hard",
+   "messages": [
+    {
+     "role": "user",
+     "content": "CLINIC NOTICE. Walk-in hours are 9 a.m. to 12 p.m. on Monday, Wednesday and Friday. Blood tests are taken only between 8 a.m. and 10 a.m., and only on days that have walk-in hours. The pharmacy counter closes at 3 p.m. every weekday. The ambulance bay is not a car park.\n\nFrom the notice only: a patient wants a blood test on Thursday morning. Say whether they can, and if they cannot, give the next day they can and the window."
+    }
+   ],
+   "context": "Two lines have to be combined and a distractor rejected: the pharmacy time and the walk-in window are both wrong answers. The refusal has to be attached to the day that was asked about."
+  },
+  {
+   "id": "ext2-summary-vendor-choice",
+   "lane": "summarization-priorities",
+   "category": "summarization",
+   "step": "A",
+   "difficulty": "moderate",
+   "messages": [
+    {
+     "role": "user",
+     "content": "Read this and reply in no more than three sentences, naming the decision that was made and the one risk that is still open.\n\nThe team compared three logging vendors. Kestrel is cheapest but stores data outside the EU. Marlin costs 40 per cent more and keeps data in Dublin. Osprey was ruled out for lacking single sign-on. The team chose Marlin. Legal has not yet confirmed whether the Dublin site satisfies the new retention rule, and the contract has to be signed by 14 November."
+    }
+   ],
+   "context": "The decision and the unresolved risk, compressed. The sealed summarisation calibration is that a near-copy that keeps the decision and the risk is Partial and a copy that drops either is a miss; the ceiling here makes the copy unavailable."
+  },
+  {
+   "id": "ext2-summary-friday-backlog",
+   "lane": "summarization-priorities",
+   "category": "summarization",
+   "step": "B",
+   "difficulty": "hard",
+   "messages": [
+    {
+     "role": "user",
+     "content": "Summarise the following in at most four short lines. Name the single item that has to happen first and the single item that can wait, and say why for each.\n\nBacklog for Friday: (a) the certificate on the payments gateway expires on Sunday; (b) the marketing site needs a new hero image; (c) two customers report duplicate invoices; (d) the staging database needs a version bump before the next release, which is in three weeks."
+    }
+   ],
+   "context": "Four items, a forced ranking at both ends, and a justification. Restating the four in order is not a summary; the pairing of an item with its reason is."
+  },
+  {
+   "id": "ext2-comparison-cache-memory",
+   "lane": "comparison-ram-rom",
+   "category": "conceptual-comparison",
+   "step": "A",
+   "difficulty": "moderate",
+   "messages": [
+    {
+     "role": "user",
+     "content": "Explain the difference between a processor cache and main memory to somebody who has never opened a computer, using one everyday comparison. Then say two specific ways your comparison would mislead them."
+    }
+   ],
+   "context": "The comparison needs a vehicle -- a concrete object outside the domain -- because the words analogy, comparison and mislead are all supplied by the ask. Two named failures of the comparison, not one."
+  },
+  {
+   "id": "ext2-comparison-bandwidth-latency",
+   "lane": "comparison-ram-rom",
+   "category": "conceptual-comparison",
+   "step": "B",
+   "difficulty": "hard",
+   "messages": [
+    {
+     "role": "user",
+     "content": "Explain the difference between bandwidth and latency to a person who has never used a computer. You may not use any comparison involving roads, traffic, pipes or water. Then give two specific ways your comparison breaks down."
+    }
+   ],
+   "context": "The same shape with the four standard vehicles forbidden by name, so the answer has to invent one. Reaching for a motorway is the failure this prompt exists to catch."
+  },
+  {
+   "id": "ext2-coding-collapse-runs",
+   "lane": "coding-deduplicate",
+   "category": "coding",
+   "step": "A",
+   "difficulty": "moderate",
+   "messages": [
+    {
+     "role": "user",
+     "content": "Write a Python function called collapse_runs(items) that returns a new list with consecutive duplicates collapsed to a single element and everything else kept. collapse_runs([1, 1, 2, 1, 1, 3]) must return [1, 2, 1, 3]. Do not import itertools."
+    }
+   ],
+   "context": "A set destroys the answer, exactly as it does in the sealed coding lane, and so does deduplicating globally: the repeated 1 later in the list has to survive. The function must parse."
+  },
+  {
+   "id": "ext2-coding-first-unique",
+   "lane": "coding-deduplicate",
+   "category": "coding",
+   "step": "B",
+   "difficulty": "hard",
+   "messages": [
+    {
+     "role": "user",
+     "content": "Write a Python function first_unique(items) that returns the first element appearing exactly once, in the original order, or None when there is no such element. first_unique(['a', 'b', 'a', 'c', 'b']) must return 'c'. Count in a single pass and do not sort."
+    }
+   ],
+   "context": "Order-preserving plus a frequency count plus an explicit empty case, with sorting forbidden. The function must parse and must name the None case."
+  },
+  {
+   "id": "ext2-debug-tail-slice",
+   "lane": "debugging-off-by-one",
+   "category": "debugging",
+   "step": "A",
+   "difficulty": "moderate",
+   "messages": [
+    {
+     "role": "user",
+     "content": "This function is meant to return the last n items of a list but it returns one too many. Fix it and say in one sentence what was wrong.\n\ndef tail(items, n):\n    return items[len(items) - n - 1:]"
+    }
+   ],
+   "context": "The faulty slice is in the prompt, so only the corrected slice can be required. Naming the fault without producing the slice is Partial at best."
+  },
+  {
+   "id": "ext2-debug-adjacent-pairs",
+   "lane": "debugging-off-by-one",
+   "category": "debugging",
+   "step": "B",
+   "difficulty": "hard",
+   "messages": [
+    {
+     "role": "user",
+     "content": "This is meant to return every adjacent pair from a list. On [1, 2, 3] it should give [(1, 2), (2, 3)] but it raises IndexError. Fix it and name the exact bound that is wrong.\n\ndef pairs(values):\n    out = []\n    for i in range(len(values)):\n        out.append((values[i], values[i + 1]))\n    return out"
+    }
+   ],
+   "context": "The fix is a loop bound and not a slice, so a child that has memorised the slice repair cannot transfer it. The corrected range has to appear."
+  },
+  {
+   "id": "ext2-email-wrong-colour",
+   "lane": "writing-concise-email",
+   "category": "writing",
+   "step": "A",
+   "difficulty": "moderate",
+   "messages": [
+    {
+     "role": "user",
+     "content": "Write a short email to a shop. The facts: order 7734 arrived in the wrong colour; you want a refund rather than a replacement; you can drop the item off in person on Thursday. Ask them to confirm which address to bring it to. Keep it under 120 words."
+    }
+   ],
+   "context": "All the facts are in the ask, so the EMAIL FORM and the request are the discriminators, exactly as in the sealed writing lane: a child that carries the items and inverts the ask is Partial."
+  },
+  {
+   "id": "ext2-email-reschedule",
+   "lane": "writing-concise-email",
+   "category": "writing",
+   "step": "B",
+   "difficulty": "hard",
+   "messages": [
+    {
+     "role": "user",
+     "content": "Write an email to a client moving Tuesday's review to the following Monday at 10:00. Say the delay is on your side, offer one alternative slot on Wednesday afternoon, and ask them to reply by Friday. Apologise no more than once, and keep it under 130 words."
+    }
+   ],
+   "context": "Four named facts, an email form, a request, and a repetition ceiling that a model reaching for politeness will break. Two apologies is a miss."
+  },
+  {
+   "id": "ext2-planning-office-move",
+   "lane": "planning-dependencies",
+   "category": "planning",
+   "step": "A",
+   "difficulty": "moderate",
+   "messages": [
+    {
+     "role": "user",
+     "content": "A four-person team is moving to a new office next Friday. Give a numbered plan of exactly five steps, in dependency order, covering: transferring the phone number, packing the server rack, updating the address with the bank, cancelling the old cleaning contract, and a check on the first morning that everything works. Number them 1 to 5."
+    }
+   ],
+   "context": "The sealed planning calibration keys on the ITEMS: five of five is Useful, four is Partial, three or fewer is a miss. The items are named in the ask, so the numbered steps carry the rest."
+  },
+  {
+   "id": "ext2-planning-db-cutover",
+   "lane": "planning-dependencies",
+   "category": "planning",
+   "step": "B",
+   "difficulty": "hard",
+   "messages": [
+    {
+     "role": "user",
+     "content": "Write a numbered plan of exactly six steps to move a live customer database to a new host overnight. It has to cover a verified backup, a read-only freeze, the data copy, a connection switch, a smoke check, and a way back if the check fails. The freeze may not be the first step and the backup may not be the last."
+    }
+   ],
+   "context": "Six items with two ordering constraints and a reversal step the ask does not name in the words the answer needs. A plan with no way back is the failure this prompt is built around."
+  },
+  {
+   "id": "ext2-uncertainty-churn-jump",
+   "lane": "uncertainty-insufficient-data",
+   "category": "epistemic-reasoning",
+   "step": "A",
+   "difficulty": "moderate",
+   "messages": [
+    {
+     "role": "user",
+     "content": "Our churn went from 3 per cent to 5 per cent. Should we cut the price? Answer by naming what you would need to know before answering, and say the one thing you can already say safely."
+    }
+   ],
+   "context": "The ask names neither the missing quantities nor the hedge, so both have to be produced. A confident recommendation is the miss."
+  },
+  {
+   "id": "ext2-uncertainty-first-hour",
+   "lane": "uncertainty-insufficient-data",
+   "category": "epistemic-reasoning",
+   "step": "B",
+   "difficulty": "hard",
+   "messages": [
+    {
+     "role": "user",
+     "content": "Variant B got 12 sign-ups and variant A got 8 in the first hour of an A/B test. My co-founder wants to ship B this afternoon. Write the reply."
+    }
+   ],
+   "context": "A plausible answer is available and wrong. The reply has to name the reason twenty observations decide nothing and say what would settle it, without being asked to."
+  },
+  {
+   "id": "ext2-creative-cold-cellar",
+   "lane": "creative-continuity",
+   "category": "creative-writing",
+   "step": "A",
+   "difficulty": "moderate",
+   "messages": [
+    {
+     "role": "user",
+     "content": "Continue this, keeping the same three things going: the cellar is colder than it should be, the tenant upstairs keeps moving furniture at night, and the narrator counts things to stay calm. Write one more paragraph and include exactly one line of spoken dialogue in quotation marks."
+    }
+   ],
+   "context": "Three motifs carried plus a line of dialogue. Wave 32's calibration: three motifs held is Partial, two is a miss. The dialogue is the part no prompt supplies."
+  },
+  {
+   "id": "ext2-creative-own-handwriting",
+   "lane": "creative-continuity",
+   "category": "creative-writing",
+   "step": "B",
+   "difficulty": "hard",
+   "messages": [
+    {
+     "role": "user",
+     "content": "Continue this without resolving it: a night keeper finds a note in the lamp room written in her own handwriting, the fog has not lifted in nine days, and the supply boat is overdue. Write one more paragraph, include one line of spoken dialogue in quotation marks, and do not explain who wrote the note."
+    }
+   ],
+   "context": "The same continuity test with the resolution forbidden. Explaining the note is the failure; a model that cannot hold an open question closes it."
+  },
+  {
+   "id": "ext2-multiturn-venue-revision",
+   "lane": "multi-turn-correction",
+   "category": "multi-turn-conversation",
+   "step": "A",
+   "difficulty": "moderate",
+   "messages": [
+    {
+     "role": "user",
+     "content": "Suggest four venues for a thirty-person team dinner in a city centre."
+    },
+    {
+     "role": "assistant",
+     "content": "1. The Iron Grill - steakhouse, private room.\n2. Marea - seafood, terrace.\n3. Casa Nova - Italian, set menus.\n4. The Smokehouse - barbecue, long tables."
+    },
+    {
+     "role": "user",
+     "content": "Two of the group are vegetarian and one uses a wheelchair. Redo the list of four with that in mind and say what changed."
+    }
+   ],
+   "context": "The revision is the lane. A list of four that still offers the steakhouse and the barbecue has revised nothing, which is the sealed multi-turn calibration applied to this content."
+  },
+  {
+   "id": "ext2-multiturn-dinner-revision",
+   "lane": "multi-turn-correction",
+   "category": "multi-turn-conversation",
+   "step": "B",
+   "difficulty": "hard",
+   "messages": [
+    {
+     "role": "user",
+     "content": "Give me three weeknight dinners I can cook in under twenty-five minutes."
+    },
+    {
+     "role": "assistant",
+     "content": "1. Chicken stir-fry with rice.\n2. Salmon and couscous.\n3. Carbonara."
+    },
+    {
+     "role": "user",
+     "content": "I should have said: no fish, no pork, and my partner does not eat gluten. Give three replacements and say why each one works."
+    }
+   ],
+   "context": "Three constraints arrive at once and two of the three original suggestions violate them. Keeping the carbonara, the salmon or the couscous is the miss; the justification is what separates Useful from Partial."
+  }
+ ]
+}

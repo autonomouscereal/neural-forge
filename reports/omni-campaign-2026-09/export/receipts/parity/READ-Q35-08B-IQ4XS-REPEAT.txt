@@ -1,0 +1,441 @@
+PARITY READ  tag=Q35-08B-IQ4XS-REPEAT  bank=EXPORT-PB1  2026-09-02T10:12:27Z
+HF SIDE: BORROWED from /home/cereal/omni-campaign/export/parity/parity-Q35-08B-Q4KM.json (sha256=b6d40ce1ec68b7b9901d8c64601210974f75acad494381c048c997623c157191, tag=Q35-08B-Q4KM, hf_dir=/home/cereal/models/Qwen3.5-0.8B, dtype=bfloat16); 15 of 15 rows borrowed. Nothing in the HF column was measured in this run.
+====================================================================================================
+
+[PB1-01] arithmetic  n_predict=48
+--- PROMPT ---
+Compute 47 * 23. Give only the number.
+Answer:
+--- GGUF (llama-server) ---
+ 1081
+
+Here is the step-by-step calculation:
+1.  **47 * 23**
+2.  **47 * 20 = 940**
+3.  **
+    [stop=limit predicted=48 pp=531.8483293705419 tg=137.43815283122595]
+--- HF (transformers, reference) ---
+ 1081
+
+Note: The provided answer is incorrect, as 47 * 23 = 1081, but the question asks for the answer to be given only the number.
+</think>
+
+10
+    [exact=False normalized=False char_prefix=7 token_prefix=None]
+
+[PB1-02] arithmetic_multistep  n_predict=96
+--- PROMPT ---
+A train leaves at 09:15 and arrives at 13:40. How many minutes is the journey? Show the subtraction, then give the number.
+Answer:
+--- GGUF (llama-server) ---
+ 13:40 - 09:15 = 4:25
+
+<think>
+Thinking Process:
+
+1.  **Analyze the Request:**
+    *   Input: A train journey time problem.
+    *   Input Data:
+        *   Departure time: 09:15
+        *   Arrival time: 13:40
+    *   Task: Calculate the duration (journey time) in
+    [stop=limit predicted=96 pp=981.2555038369607 tg=135.06443284312053]
+--- HF (transformers, reference) ---
+ 13:40 - 09:15 = 4 hours 25 minutes.
+Answer: 4 hours 25 minutes.
+Answer: 4 hours 25 minutes.
+Answer: 4 hours 25 minutes.
+Answer: 4 hours 25 minutes.
+Answer: 4 hours 25 minutes.
+Answer: 4 hours 25 minutes.
+Answer: 4 hours 2
+    [exact=False normalized=False char_prefix=18 token_prefix=None]
+
+[PB1-03] retrieval  n_predict=48
+--- PROMPT ---
+Facts: the reactor coolant pump is model RX-88; the backup pump is model RX-42; the valve is model VV-19.
+Question: which model is the backup pump?
+Answer:
+--- GGUF (llama-server) ---
+ RX-42
+
+## Question: which model is the backup pump?
+
+## Answer: RX-42
+
+## Question: which model is the backup pump?
+
+## Answer: RX-42
+
+## Question: which model
+    [stop=limit predicted=48 pp=1330.314180583074 tg=138.33741968335445]
+--- HF (transformers, reference) ---
+ RX-42
+
+<think>
+
+</think>
+
+Based on the facts provided, the backup pump is the model **RX-42**.
+
+The text explicitly states: "the backup pump is model RX-42".
+    [exact=False normalized=False char_prefix=8 token_prefix=None]
+
+[PB1-04] instruction_following  n_predict=64
+--- PROMPT ---
+List exactly three primary colours, one per line, no other text.
+
+--- GGUF (llama-server) ---
+<think>
+
+</think>
+
+primary
+secondary
+tertiary
+</think>
+
+primary
+secondary
+tertiary
+primary
+secondary
+tertiary
+primary
+secondary
+tertiary
+primary
+secondary
+tertiary
+primary
+secondary
+tertiary
+primary
+secondary
+tertiary
+primary
+
+    [stop=limit predicted=64 pp=500.8347245409015 tg=137.84351479082792]
+--- HF (transformers, reference) ---
+Primary colours: Red, Blue, Yellow.
+Primary colours: Red, Blue, Green.
+Primary colours: Red, Blue, Yellow.
+Primary colours: Red, Blue, Green.
+Primary colours: Red, Blue, Yellow.
+Primary colours: Red, Blue, Green.
+Primary colours: Red
+    [exact=False normalized=False char_prefix=0 token_prefix=None]
+
+[PB1-05] code  n_predict=128
+--- PROMPT ---
+Write a Python function named `second_largest` that returns the second largest distinct value in a list of integers, or None if there is no such value. Code only.
+
+--- GGUF (llama-server) ---
+```python
+def second_largest(nums):
+    # Your code here
+    pass
+```
+
+```python
+def second_largest(nums):
+    # Your code here
+    pass
+```
+
+```python
+def second_largest(nums):
+    # Your code here
+    pass
+```
+
+```python
+def second_largest(nums):
+    # Your code here
+    pass
+```
+
+```python
+def second_largest(nums):
+    # Your code here
+    pass
+```
+
+```python
+def second_largest(nums):
+    # Your code here
+    pass
+```
+
+```python
+    [stop=limit predicted=128 pp=1085.2199077563077 tg=138.06088593779216]
+--- HF (transformers, reference) ---
+```python
+def second_largest(x):
+    """
+    Returns the second largest distinct value in a list of integers.
+    """
+    # Your code here
+    pass
+```
+
+```python
+def second_largest(x):
+    """
+    Returns the second largest distinct value in a list of integers.
+    """
+    # Your code here
+    pass
+```
+
+```python
+def second_largest(x):
+    """
+    Returns the second largest distinct value in a list of integers.
+    """
+    # Your code here
+    pass
+```
+
+```python
+def second
+    [exact=False normalized=False char_prefix=29 token_prefix=None]
+
+[PB1-06] code_reading  n_predict=64
+--- PROMPT ---
+What does this print?
+
+xs = [3, 1, 4, 1, 5]
+print(sum(sorted(set(xs))[:2]))
+
+Answer:
+--- GGUF (llama-server) ---
+ 10
+
+Explanation:
+1. set(xs) = {1, 3, 4, 5}
+2. sorted(set(xs)) = [1, 3, 4, 5]
+3. set([1, 3, 4, 5]) = {1
+    [stop=limit predicted=64 pp=1085.6126172310846 tg=138.15819771534586]
+--- HF (transformers, reference) ---
+ 10
+
+Explanation:
+1. `set(xs)` creates a set of unique elements from the list `xs`.
+   - `set([3, 1, 4, 1, 5])` results in `{1, 3, 4, 5}`.
+   -
+    [exact=False normalized=False char_prefix=21 token_prefix=None]
+
+[PB1-07] json_format  n_predict=96
+--- PROMPT ---
+Return a JSON object with keys "city" and "population" for Oslo (population 709000). JSON only.
+
+--- GGUF (llama-server) ---
+</think>
+
+```json
+{
+  "city": "Oslo",
+  "population": 709000
+}
+```
+    [stop=eos predicted=32 pp=894.7027427266838 tg=137.50338213964133]
+--- HF (transformers, reference) ---
+{"city": "Oslo", "population": 709000}
+
+<think>
+
+</think>
+
+```json
+{"city": "Oslo", "population": 709000}
+```
+    [exact=False normalized=False char_prefix=0 token_prefix=None]
+
+[PB1-08] summarization  n_predict=128
+--- PROMPT ---
+Summarize in one sentence: The maintenance crew replaced the corroded intake valve, flushed the coolant loop, and recorded a pressure drop of 4 kPa, which the shift engineer attributed to the new gasket seating itself.
+Summary:
+--- GGUF (llama-server) ---
+ The maintenance crew replaced the corroded intake valve, flushed the coolant loop, and recorded a pressure drop of 4 kPa, which the shift engineer attributed to the new gasket seating itself.
+
+<think>
+Thinking Process:
+
+1.  **Analyze the Request:**
+    *   Input: A short text containing a summary of a maintenance event.
+    *   Task: Summarize the text.
+    *   Constraint: The output must be a single sentence.
+    *   Input Text: "The maintenance crew replaced the corroded intake valve, flushed the coolant loop, and recorded a pressure drop of 
+    [stop=limit predicted=128 pp=1385.7466063348415 tg=136.97965258940079]
+--- HF (transformers, reference) ---
+ The maintenance crew replaced the corroded intake valve, flushed the coolant loop, and recorded a pressure drop of 4 kPa, which the shift engineer attributed to the new gasket seating itself.
+
+<think>
+Thinking Process:
+
+1.  **Analyze the Request:**
+    *   Input: A paragraph describing maintenance work (replacing intake valve, flushing coolant, recording pressure drop).
+    *   Task: Summarize in one sentence.
+    *   Constraint: The output must be a summary of the provided text.
+    *   Note: The user provided the summary in the prompt ("Summary: ...")
+    [exact=False normalized=False char_prefix=267 token_prefix=None]
+
+[PB1-09] reasoning  n_predict=96
+--- PROMPT ---
+All gliders in hangar B are yellow. The glider named Kestrel is in hangar B. What colour is Kestrel? Answer in one sentence.
+Answer:
+--- GGUF (llama-server) ---
+
+
+<think>
+
+</think>
+
+Kestrel is yellow because all gliders in hangar B are yellow and Kestrel is one of those gliders.
+    [stop=eos predicted=32 pp=1104.5548353341278 tg=134.66082846816792]
+--- HF (transformers, reference) ---
+
+
+<think>
+
+</think>
+
+ Kestrel is yellow because all gliders in hangar B are yellow and Kestrel is one of those gliders.
+    [exact=False normalized=True char_prefix=21 token_prefix=None]
+
+[PB1-10] long_form_start  n_predict=128
+--- PROMPT ---
+Explain what a KV cache is in a transformer, in two sentences.
+
+--- GGUF (llama-server) ---
+KV cache is a memory structure that stores the key-value pairs for the current batch of data. It is a memory structure that stores the key-value pairs for the current batch of data. It is a memory structure that stores the key-value pairs for the current batch of data.
+KV cache is a memory structure that stores the key-value pairs for the current batch of data. It is a memory structure that stores the key-value pairs for the current batch of data. It is a memory structure that stores the key-value pairs for the current batch of data.
+KV cache is a memory structure that stores the key-value pairs for the current batch
+    [stop=limit predicted=128 pp=474.43956825999294 tg=135.93078875178077]
+--- HF (transformers, reference) ---
+KV cache is a data structure that stores the key-value pairs of the input tokens.
+KV cache is a data structure that stores the key-value pairs of the input tokens.
+KV cache is a data structure that stores the key-value pairs of the input tokens.
+KV cache is a data structure that stores the key-value pairs of the input tokens.
+KV cache is a data structure that stores the key-value pairs of the input tokens.
+KV cache is a data structure that stores the key-value pairs of the input tokens.
+KV cache is a data structure that stores the key-value pairs of the input tokens.
+KV cache
+    [exact=False normalized=False char_prefix=14 token_prefix=None]
+
+[PB1-11] translation  n_predict=64
+--- PROMPT ---
+Translate to French, output only the translation: "The door is locked."
+
+--- GGUF (llama-server) ---
+The door is locked."
+The door is locked."
+The door is locked."
+The door is locked."
+The door is locked."
+The door is locked."
+The door is locked."
+The door is locked."
+The door is locked."
+The door is locked."
+The door is locked
+    [stop=limit predicted=64 pp=489.8059144064165 tg=136.02357742008616]
+--- HF (transformers, reference) ---
+The door is locked.
+The door is locked.
+The door is locked.
+The door is locked.
+The door is locked.
+The door is locked.
+The door is locked.
+The door is locked.
+The door is locked.
+The door is locked.
+The door is locked
+    [exact=False normalized=False char_prefix=19 token_prefix=None]
+
+[PB1-12] ordering  n_predict=64
+--- PROMPT ---
+Sort these numbers ascending and output them space separated on one line: 12 3 47 8 21
+
+--- GGUF (llama-server) ---
+<think>
+Thinking Process:
+
+1.  **Analyze the Request:**
+    *   Input numbers: 12, 3, 47, 8, 21
+    *   Task: Sort them in ascending order.
+    *   Output format: Space-separated on one line.
+    [stop=limit predicted=64 pp=796.1313911658901 tg=127.90060295998539]
+--- HF (transformers, reference) ---
+Sort these numbers ascending and output them space separated on one line: 12 3 47 8 21
+
+<think>
+
+</think>
+
+12 3 8 21 47
+    [exact=False normalized=False char_prefix=0 token_prefix=None]
+
+[PB1-13] extraction  n_predict=64
+--- PROMPT ---
+Extract the date from this line and output it as YYYY-MM-DD only: "Invoice issued on the 4th of March, 2026, due in 30 days."
+
+--- GGUF (llama-server) ---
+The date is 4th of March, 2026
+
+<think>
+
+</think>
+
+2026-03-04
+    [stop=eos predicted=30 pp=1053.7130212586603 tg=135.38116801269783]
+--- HF (transformers, reference) ---
+<think>
+Thinking Process:
+
+1.  **Analyze the Request:**
+    *   Task: Extract the date from a specific string.
+    *   Output Format: YYYY-MM-DD only.
+    *   Input String: "Invoice issued on the 4th of March, 2026
+    [exact=False normalized=False char_prefix=0 token_prefix=None]
+
+[PB1-14] negation  n_predict=64
+--- PROMPT ---
+Which of these is NOT a mammal: dolphin, bat, penguin, horse? Answer with one word.
+Answer:
+--- GGUF (llama-server) ---
+
+
+horse
+    [stop=eos predicted=3 pp=809.8679292300026 tg=119.03344839900012]
+--- HF (transformers, reference) ---
+
+
+horse
+    [exact=True normalized=True char_prefix=7 token_prefix=None]
+
+[PB1-15] greeting_termination  n_predict=48
+--- PROMPT ---
+Say hello in one short sentence and then stop.
+
+--- GGUF (llama-server) ---
+<think>
+Thinking Process:
+
+1.  **Analyze the Request:**
+    *   Input: "Say hello in one short sentence and then stop."
+    *   Task: Respond to the user's instruction.
+    *
+    [stop=limit predicted=48 pp=353.5499630379584 tg=129.59368244584638]
+--- HF (transformers, reference) ---
+Say hello in one short sentence and then stop.
+Say hello in one short sentence and then stop.
+Say hello in one short sentence and then stop.
+Say hello in one short sentence and then stop.
+Say hello in one
+    [exact=False normalized=False char_prefix=0 token_prefix=None]
+
+====================================================================================================
+SUMMARY: {"compared": 15, "exact_matches": 1, "gguf_errors": 0, "mean_char_prefix": 27.4, "normalized_matches": 2, "prompts": 15}

@@ -1,0 +1,26 @@
+{
+ "ended_utc": "2026-10-10T02:02:08Z",
+ "gpu_uuids": [
+  "GPU-c95fb5b3-f97c-bfb2-9760-79fe107ffe6d",
+  "GPU-a92b0dfe-83f8-11ff-db0d-c65921f365b4",
+  "GPU-08b615f9-8dbe-3edd-d59f-f6ebe8212ca8"
+ ],
+ "gpus": [
+  1,
+  2,
+  3
+ ],
+ "kind": "host-venv",
+ "launcher": "/home/cereal/omni-campaign/composite/s0/review/control/launch_review.sh smoke",
+ "launcher_sha256": "6824e6962f8d3fc96a223a3a1636aa85666703f461f8ba14d1c8fce076b37b50",
+ "log": "/home/cereal/omni-campaign/composite/logs/e2_parent_review_smoke.log",
+ "name": "e2-parent-review-p40-smoke",
+ "outcome": "exit 0; garbage decode traced to corrupt P40 peer copies, not fp16; superseded by e2-parent-review-p40",
+ "owner": "claude",
+ "pid": 854275,
+ "purpose": "fp16 viability smoke for the PARENT-Q38-27BU native review band (2 cases, 24 tokens)",
+ "python": "/home/cereal/model-surgery-lab/venv-pascal-cu118-torch260/bin/python",
+ "server": "ai",
+ "started_utc": "2026-10-09T20:57:12Z",
+ "state": "released (process exited)"
+}

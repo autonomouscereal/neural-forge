@@ -1,0 +1,12 @@
+{
+  "kind": "decode-smoke",
+  "prompt_set_sha256": "2d7c7f7d5f3d759ace9572db17d5c945b8a727e9c2db18c936b027e3bdaa89d4",
+  "prompts": [
+    "Explain in plain language what a circuit breaker does and why it trips.",
+    "I have 40 minutes and one pan. Give me a simple dinner plan and the order to cook things in.",
+    "Write a four-line note to a neighbour asking them to move a parked trailer, politely but clearly."
+  ],
+  "purpose": "Fixed 3-prompt decode smoke for the stage-1 matrix campaign (design 2.1 stage 6).  Chat-formatted, 128-token cap, recorded verbatim into the receipt and scored only under the frozen review rubric.  Disjoint from the 16 whole-response review prompts.",
+  "schema": "neural-forge-matrix-prompt-set-v1",
+  "sealed_for_campaign": "matrix-campaign-20260810"
+}

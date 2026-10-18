@@ -1,0 +1,337 @@
+artifact           selftest-results.json
+artifact_sha256    881aacf27398ce4be25f75de29e01c997a0daf89c8a224aee46bdf8a13e7c72f
+tests              23/23 PASS
+suite_seconds      103.52 (sum of the recorded per-test seconds)
+
+PASS  test_architecture_map  (0.10s)
+    class = "Qwen3_5ForCausalLM"
+    layer_types = ["linear_attention", "linear_attention", "linear_attention", "full_attention", "linear_attention", "linear_attention", ... 2 more]
+    parameters_live = 1256848
+    parameters_closed_form = 1256848
+    plane_layout.rotary_planes = 4
+    plane_layout.nope_coordinates = 24
+
+PASS  test_evidence_seal  (0.00s)
+    batches = 9
+    fit_batches = 6
+    internal_check_rows = 96
+    tamper_refused = true
+
+PASS  test_harness_parity  (1.58s)
+    sites = [0, 1, 3]
+    deterministic = true
+    hook_placement_relL2.L000 = 4.1158012001547767e-07
+    hook_placement_relL2.L001 = 4.112625364594426e-07
+    hook_placement_relL2.L003 = 4.088735123783549e-07
+    hook_placement_worst = 4.1158012001547767e-07
+    logits_bit_identical_under_hooks = true
+    forward_calls = 20
+
+PASS  test_causal_mask_assertion  (0.52s)
+    parent_above_diagonal = 0.0
+    repaired_excision_above_diagonal = 0.0
+    unrepaired_excision_leak = 0.4878038979307046
+    refusal = "layer 6 attends to the future: above-diagonal mass 0.469559 > 0.0"
+
+PASS  test_solve_laws  (0.17s)
+    gram_equals_rows_max_abs = 0.0
+    law_refuses_unbounded_update = true
+    one_parent_relation_error = 2.1632913937759085e-16
+    two_parent_relation_error = 0.42946787210737863
+    two_parent_installed_vs_conjugate_vs_unit.installed = [0.20741574530769258, 0.16125169767346093, 0.9197361733409825]
+    two_parent_installed_vs_conjugate_vs_unit.conjugated_coefficient = [0.3844392047279612, 0.2933380027185646, 1.0705693775143645]
+    two_parent_installed_vs_conjugate_vs_unit.gamma_equals_one = [0.3317301620792119, 0.2861911238306263, 1.2509663948113958]
+    whitened_lra_direction.installed_value_sse = 4.930385588011981e-32
+    whitened_lra_direction.transposed_whitening_value_sse = 0.9999979999990002
+    whitened_lra_direction.anisotropic_gram = [1.0, 1e-06]
+    gram_ladder_equals_row_form = true
+    coreset_scale_invariant_selection = [2, 3, 10, 13, 21, 24, ... 2 more]
+    coreset_residual_diagonal_fraction_at_1e-10 = 0.7039975526638999
+    plane_round_trip_exact = true
+    gated_cg_objective = [5861.922303745811, 1750.1626790273092]
+
+PASS  test_gram_refusal_and_eigen_fallback  (0.03s)
+    healthy_solver = "cholesky"
+    healthy_solver_fallback = []
+    dead_leading_channel_still_factorises.gram_00 = 0.0
+    dead_leading_channel_still_factorises.solver = "cholesky"
+    dead_leading_channel_still_factorises.means = "a zero column alone cannot raise the layer-27 error"
+    nan_leading_channel.exception = "GramNotPositiveDefinite"
+    nan_leading_channel.gram_nonfinite_entries = 23
+    nan_leading_channel.channels_poisoned = 12
+    nan_leading_channel.eigen_fallback_also_refused = true
+    nan_leading_channel.message = "prior_anchored_gram: the 12-channel Gram will not factorise at ridge rel=1e-06 (absolute nan); the ridge itself is not finite, so the Gram's diagonal mean is not finite either -- every entry of G + lam I is NaN and the 'leading minor of order 1' complaint is about channel 0 only by accident; 23 non-finite Gram entries; 12 channels carry one, first [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]; a non-fini"
+    zero_stream.channels_with_nonpositive_diagonal = 12
+    zero_stream.message = "prior_anchored_gram: the 12-channel Gram will not factorise at ridge rel=1e-06 (absolute 0.0); 12 channels have a non-positive diagonal after the ridge, first [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] -- an identically dead channel in the captured stream; finite diagonal min 0.0 max 0.0 mean 0.0; chole"
+    eigen_fallback.solver = "cholesky + eigen fallback"
+    eigen_fallback.eigen_floor_relative = 1e-12
+    eigen_fallback.eigen_floor_absolute = 1.0000000000000032e-12
+    eigen_fallback.eigenvalues_lifted = 1
+    eigen_fallback.eigenvalue_min_before_floor = -10.999999999999996
+    eigen_fallback.update_scale = 0.3696707630304912
+
+PASS  test_export_and_verify  (0.59s)
+    digest = "6d89aa2e37c5e8de"
+    tensors_digested = 109
+    reload_bit_identical = true
+    mtp_carried = ["mtp.fc.weight", "mtp.norm.weight"]
+
+PASS  test_c1_vocab  (0.43s)
+    parent_vocab = 512
+    child_vocab = 384
+    fold = 1.3333333333333333
+    hard_ids.text_config.bos_token_id.parent = 457
+    hard_ids.text_config.bos_token_id.child = 381
+    hard_ids.text_config.eos_token_id.parent = [458, 456]
+    hard_ids.text_config.eos_token_id.child = [382, 380]
+    hard_ids.text_config.pad_token_id.parent = 456
+    hard_ids.text_config.pad_token_id.child = 380
+    hard_ids.generation_config.bos_token_id.parent = 457
+    hard_ids.generation_config.bos_token_id.child = 381
+    hard_ids.generation_config.eos_token_id.parent = [458, 456]
+    hard_ids.generation_config.eos_token_id.child = [382, 380]
+    hard_ids.generation_config.pad_token_id.parent = 455
+    hard_ids.generation_config.pad_token_id.child = 379
+    generation_config_on_disk.parent.bos_token_id = 457
+    generation_config_on_disk.parent.eos_token_id = [458, 456]
+    generation_config_on_disk.parent.pad_token_id = 455
+    generation_config_on_disk.child.bos_token_id = 381
+    generation_config_on_disk.child.eos_token_id = [382, 380]
+    generation_config_on_disk.child.pad_token_id = 379
+    parent_space_id_refused = true
+    ids_addressable.config_id_fields_checked = 3
+    ids_addressable.generation_config_id_fields_checked = 3
+    ids_addressable.vocab_size = 384
+    mandatory_rows = 261
+    mandatory_breakdown.added_rows = 4
+    mandatory_breakdown.byte_alphabet_rows = 256
+    mandatory_breakdown.hard_id_rows = 1
+    mandatory_breakdown.closure_added_rows = 0
+    mandatory_breakdown.byte_alphabet_source = "canonical ByteLevel bytes_to_unicode table"
+    byte_alphabet_negative_control.cjk_single_char_not_reserved = true
+    byte_alphabet_negative_control.missing_byte_token_refused = true
+    merges = [200, 124]
+    sidecars = ["tokenizer.json", "generation_config.json"]
+    stream_remap_refuses_unspellable = true
+    parameters = 1224080
+    reload_class = "Qwen3_5ForCausalLM"
+
+PASS  test_c2_mlp  (3.15s)
+    identity_gate_relL2 = 1.3964037424558638e-07
+    parent_intermediate = 256
+    child_intermediate = 64
+    component_fold = 4.0
+    schedule.group_size = 3
+    schedule.groups[0] = [0, 1, 2]
+    schedule.groups[1] = [3, 4, 5]
+    schedule.groups[2] = [6, 7]
+    schedule.corpus_passes = 3
+    schedule.measured_corpus_passes = 3.0
+    worst_site_fit_relL2 = 0.7781909050049862
+    held_relL2 = [0.7606040886326199, 0.7639148950396252, 0.7625702603355522]
+    sites_where_repair_beat_drop = "8/8"
+    parameters = 667024
+    reload = "Qwen3_5ForCausalLM"
+
+PASS  test_c3_c4_excision  (0.82s)
+    cheapest_first = [6, 5, 4, 2, 1, 0, ... 2 more]
+    excised = [0, 3]
+    kinds = ["linear_attention", "full_attention"]
+    layers = [8, 6]
+    parameters_removed = 297048
+    closed_form_agrees = true
+    child_layer_types = ["linear_attention", "linear_attention", "linear_attention", "linear_attention", "linear_attention", "full_attention"]
+
+PASS  test_c5_gdn_head_count  (7.91s)
+    parent = [4, 2]
+    child = [2, 1]
+    component_ratio = 0.5002330459100442
+    fit_relL2 = [1.0031003345435543, 1.0044419502579038, 1.0071335150429483, 0.9998808173286803, 1.0060759921322884, 1.0025697620393343]
+    decay_refit_installed_and_strictly_better = "12/12"
+    decay_refit_refused = 0
+    beta_refit_installed_and_strictly_better = "12/12"
+    beta_relL2_worst = 0.0005510466082732638
+    beta_jensen_negative_control.parent_beta_means = [0.0024929995169624903, 0.8807055334020971]
+    beta_jensen_negative_control.target_mean_beta = 0.4415992664595298
+    beta_jensen_negative_control.weighted_logit_row_mean_beta = 0.11929446659790291
+    beta_jensen_negative_control.understatement_factor = 3.7017581707959346
+    beta_jensen_negative_control.refit_row_mean_beta = 0.4416627997392024
+    beta_jensen_negative_control.refit_relL2 = 0.007152025835908653
+    beta_jensen_negative_control.weighted_logit_relL2 = 0.7299905428364152
+    census_pairs = 1
+    parameters = 1153912
+    reload = "Qwen3_5ForCausalLM"
+
+PASS  test_c5_refit_gram_hoist  (7.72s)
+    beta_row_max_abs_difference_vs_row_form = 0.0
+    beta_relL2_bit_identical = true
+    beta_refit = "installed"
+    decay_row_max_abs_difference_vs_row_form = 0.0
+    decay_bias_max_abs_difference_vs_row_form = 0.0
+    decay_relL2_bit_identical = true
+    decay_refit = "installed"
+    layers_folded = 6
+    child_value_heads = 12
+    gram_formations = 6
+    gram_formations_before_the_fix = 24
+    gram_solves = 24
+
+PASS  test_c5_gdn_head_dim  (14.95s)
+    parent_head_dims = [16, 16]
+    child_head_dims = [4, 4]
+    component_ratio = 0.272547191796784
+    fit_relL2 = [0.976500440518618, 0.9762725366404317, 0.9744091031052009, 0.9780281561886395, 0.9722089407885823, 0.9766364671736399]
+    query_scale_note = "none required: the kernel's 1/sqrt(head_k_dim) is applied after the in-kernel L2 norm (modeling_qwen3_5.py:275,340) and the readout is then RMS-normalised by the gated norm (199-200), which removes any global scale on o"
+    parameters = 1107016
+    reload = "Qwen3_5ForCausalLM"
+
+PASS  test_c6_nope_contraction  (6.30s)
+    export_round_trip_logit_relL2 = 0.0
+    parent_head_dim = 32
+    child_head_dim = 14
+    rotary_dim_unchanged = 8
+    kv_cache_ratio = 0.4375
+    fit_relL2 = [0.5953235027806971, 0.6164884904162711]
+    rms_correction = 1.0754448200224354
+    query_frame.installed_vs_per_head_conditional_optimum_max_gap = 1.1102230246251565e-16
+    query_frame.own_metric_relerror_spread = [0.6822197347421655, 0.7228487966902296]
+    query_frame.heads_priced = 8
+    softmax_temperature_correction = 0.6614378277661477
+    probe.site = 3
+    probe.parent_recompute_relL2 = 2.124684066901648e-07
+    probe.child_recompute_relL2 = 1.73225437062686e-07
+    probe.scaling = [0.1767766952966369, 0.2672612419124244]
+    probe.logit_scale_ratio_child_vs_parent = 0.9822050169630505
+    probe.uncorrected_would_be = 0.6614378277661477
+    probe.mean_max_probability = [0.23418161086672198, 0.1991973343689705]
+    parameters = 1183048
+    reload = "Qwen3_5ForCausalLM"
+
+PASS  test_c7_kv_merge  (11.33s)
+    kv_only.kv_heads = [2, 1]
+    kv_only.attention_heads_unchanged = 4
+    kv_only.gate_rows_bit_identical = true
+    kv_only.kv_cache_ratio = 0.5
+    kv_only.fit_relL2 = [0.557346476023705, 0.5381779779735528]
+    kv_only.relation_error_mean = [0.6617320963999909]
+    kv_only.key_rms_ratio = [0.7090291288427891]
+    kv_only.probe.site = 3
+    kv_only.probe.parent_recompute_relL2 = 2.124684066901648e-07
+    kv_only.probe.child_recompute_relL2 = 2.5607527663945695e-07
+    kv_only.probe.scaling_unchanged = 0.1767766952966369
+    kv_only.probe.logit_scale_ratio_child_vs_parent = 0.7335877423579265
+    kv_only.probe.mean_max_probability = [0.23418161086672198, 0.2538674304893902]
+    full_group.attention_heads = [4, 2]
+    full_group.fit_relL2 = [0.6598842047714572, 0.517817144599527]
+    parameters = 1240464
+    reload = "Qwen3_5ForCausalLM"
+
+PASS  test_c7_zero_gain_coordinate  (10.55s)
+    planted.layer = 3
+    planted.coordinate = 1
+    planted.geometry = "lo[1]: the real half of rotary plane 1"
+    planted.effective_gain = 0.0
+    planted.convention = "Qwen3_5RMSNorm multiplies by (1.0 + weight)"
+    naked_division_nonfinite_entries = 128
+    unfold_gain_nonfinite_entries = 0
+    dead_row_equals_parent_row = true
+    kv_only.child_q_proj_finite = true
+    kv_only.zero_gain_coordinates[0].where = "q_norm, query slot 0"
+    kv_only.zero_gain_coordinates[0].coordinates = [1]
+    kv_only.zero_gain_coordinates[0].count = 1
+    kv_only.zero_gain_coordinates[0].gain_convention = "effective gain is 1 + weight (Qwen3_5RMSNorm)"
+    kv_only.zero_gain_coordinates[0].installed = "the parent's own raw row, not the divided one and not zero: the norm multiplies this coordinate by zero either way, and the parent's value is what its per-token RMS saw"
+    kv_only.zero_gain_coordinates[0].would_have_been = "+-Inf from a division by zero, which q_norm's RMS turns into NaN across the entire head"
+    kv_only.zero_gain_coordinates[1].where = "q_norm, query slot 1"
+    kv_only.zero_gain_coordinates[1].coordinates = [1]
+    kv_only.zero_gain_coordinates[1].count = 1
+    kv_only.zero_gain_coordinates[1].gain_convention = "effective gain is 1 + weight (Qwen3_5RMSNorm)"
+    kv_only.zero_gain_coordinates[1].installed = "the parent's own raw row, not the divided one and not zero: the norm multiplies this coordinate by zero either way, and the parent's value is what its per-token RMS saw"
+    kv_only.zero_gain_coordinates[1].would_have_been = "+-Inf from a division by zero, which q_norm's RMS turns into NaN across the entire head"
+    kv_only.zero_gain_coordinates[2].where = "q_norm, query slot 2"
+    kv_only.zero_gain_coordinates[2].coordinates = [1]
+    kv_only.zero_gain_coordinates[2].count = 1
+    kv_only.zero_gain_coordinates[2].gain_convention = "effective gain is 1 + weight (Qwen3_5RMSNorm)"
+    kv_only.zero_gain_coordinates[2].installed = "the parent's own raw row, not the divided one and not zero: the norm multiplies this coordinate by zero either way, and the parent's value is what its per-token RMS saw"
+    kv_only.zero_gain_coordinates[2].would_have_been = "+-Inf from a division by zero, which q_norm's RMS turns into NaN across the entire head"
+    kv_only.zero_gain_coordinates[3].where = "q_norm, query slot 3"
+    kv_only.zero_gain_coordinates[3].coordinates = [1]
+    kv_only.zero_gain_coordinates[3].count = 1
+    kv_only.zero_gain_coordinates[3].gain_convention = "effective gain is 1 + weight (Qwen3_5RMSNorm)"
+    kv_only.zero_gain_coordinates[3].installed = "the parent's own raw row, not the divided one and not zero: the norm multiplies this coordinate by zero either way, and the parent's value is what its per-token RMS saw"
+    kv_only.zero_gain_coordinates[3].would_have_been = "+-Inf from a division by zero, which q_norm's RMS turns into NaN across the entire head"
+    kv_only.fit_relL2 = [0.5541218424784754, 0.5354734833149294]
+    kv_only.logits_finite = true
+    full_group.child_q_proj_finite = true
+    full_group.fit_relL2 = [0.6582702935853277, 0.5167382975869071]
+
+PASS  test_c9_terminal_gain  (17.90s)
+    identity_gate_max_gain_drift = 0.0
+    identity_relative_sse = 5.946074627726096e-16
+    folded_child_reader_relSSE = [0.6835535341112261, 0.6384141805661644]
+    held = [0.7426678359061043, 0.6908915901863683]
+    gain_update_scale = 0.24438405667168106
+    lambda_split_path_lambda = 0.1
+
+PASS  test_c1_chain_via_remapped_evidence  (11.78s)
+    vocab_child.tag = "CHAINV"
+    vocab_child.vocab = [512, 384]
+    vocab_child.remapped_evidence = "evidence-remapped.json"
+    vocab_child.remapped_manifest_sha256 = "79e5f8ead69b5847"
+    vocab_child.highest_id_in_child_space = 255
+    vocab_child.parameters = 1224080
+    chained_child.tag = "CHAINV2"
+    chained_child.axes = ["intermediate_size"]
+    chained_child.parameters = 634256
+    chained_child.net_stored_ratio = 0.5181491405790472
+    chained_child.lineage = ["6c6bd9d7f81a45cd"]
+
+PASS  test_build_cli_end_to_end  (7.53s)
+    tag = "SELFTESTC2"
+    axes = ["intermediate_size", "layer_excision"]
+    net_stored_ratio = 0.48364161776125675
+    net_fold = 2.0676467104483898
+    per_component.mlp = 0.21875
+    per_component.gdn_mixer = 0.8333333333333334
+    per_component.attention_mixer = 1.0
+    per_component.interface = 1.0
+    per_component.vision = null
+    child_tensors_sha256 = "81b6001a6fa91b08"
+    receipt_sha256 = "153d40bb319f440b"
+    gguf_command = "python /home/cereal/llama.cpp/convert_hf_to_gguf.py /home/cereal/omni-campaign/qwen-fold/.work-k2kv/child-cli ..."
+    wall_time_seconds = 7.519
+
+PASS  test_evidence_builder_row_atomicity  (0.05s)
+    batches = 8
+    sequence_length = 1024
+    rows_placed = 50
+    rows_spanning_batches = 0
+    batches_starting_mid_row = 0
+    padding_tokens = 159
+    padding_fraction = 0.019409
+    padding_bound_longest_row = 326
+    rows_taken_from_look_ahead = 4
+    flat_packer_boundaries_cutting_a_row = "7 of 7"
+
+PASS  test_evidence_builder_screen  (0.00s)
+    sources = 2
+    probes = 4
+    caught = 4
+    rewrapped_caught = 4
+    short_quote_controls_falsely_caught = 0
+    clean_controls_falsely_caught = 0
+    windows = 285
+    unsealed_pack_refused = "lfm2_paraphrase_triplets_v1.json is ddb396590d91d9d82b6f891c140f79114be449c808e6"
+    empty_pack_refused = "review pack /home/cereal/omni-campaign/qwen-fold/.work-k2kv/"
+
+PASS  test_evidence_manifest_is_not_destroyed  (0.01s)
+    refused_without_force = "/home/cereal/omni-campaign/qwen-fold/.work-k2kv/evidence-guard/omni-evidence-v1."
+    backup_directory = ".superseded-20260903T024747Z"
+    backed_up = ["omni-evidence-v1.json", "omni-evidence-v1-build-receipt.json"]
+    manifest_sha256_unchanged = true
+
+PASS  test_evidence_tokenizer_gate  (0.10s)
+    parent_matches = true
+    mismatch_refused = "the evidence was tokenized by d57bff44ff088135d36b06a2e3f098b1d53230a03e1f46f29ff5febd51ccc6ab a"
+    mismatch_recordable = "the sealed stream was NOT tokenized by this parent's tokenizer"
+    missing_tokenizer_refused = true

@@ -1,0 +1,1142 @@
+{
+ "accounting": {
+  "below_parent": true,
+  "c10_arithmetic_projection": 26944218624,
+  "child_ffn_parameters": 16357785600,
+  "child_header_parameters": 26944218624,
+  "equals_c10_arithmetic": true,
+  "fits_with_media_units": true,
+  "headroom_after_media_units": 245772199,
+  "headroom_vs_parent": 837209328,
+  "max_k3_channels_with_media_units": 12538,
+  "method": "oc_seal.safetensors_tensor_counts(trunk) - trunk blocks.*.ffn.{up,down} + partial up/down numel",
+  "parent_parameter_count": 27781427952,
+  "s7_media_units_parameters": 591437129,
+  "trunk_ffn_parameters": 4278190080,
+  "trunk_header_parameters": 14864623104
+ },
+ "argv": [
+  "--trunk",
+  "/mnt/lexar/omni-campaign/s3-native-v2-3a25a459-4347-416d-a58a-2cb3c8e738fd/actual/native-s3-text-stage/native",
+  "--partial",
+  "/home/cereal/omni-campaign/composite/c10/rehearsal-k3-1-60/child.partial",
+  "--k3-channels",
+  "12288",
+  "--parent-parameter-count",
+  "27781427952",
+  "--media-units-parameters",
+  "591437129",
+  "--tokenizer-dir",
+  "/mnt/lexar/omni-campaign/s3-fold-sep07-codex/S3-C2K4352-sep07",
+  "--device",
+  "cuda:0",
+  "--dtype",
+  "bfloat16",
+  "--out",
+  "/home/cereal/omni-campaign/composite/c10/rehearsal-k3-1-60/virtual_child_check.json",
+  "--pad-missing-with-trunk",
+  "--out",
+  "/home/cereal/omni-campaign/composite/c10/rehearsal-k3-1-60/virtual_child_check_hybrid_L00-02.json"
+ ],
+ "c10_tool_sha256": "eb766ab389b0b18b1c9c8d7793305c9efe514802946aab885969052f603e952c",
+ "child_intermediate_size": 16640,
+ "child_kind": "HYBRID: c10 union layers 0..2 from the partial, trunk FFN zero-padded to the union width on layers 3..63",
+ "chimera_src": "/home/cereal/omni-campaign/import/rq27b/tree_ef1ffb9/src",
+ "comparison": {
+  "all_logits_finite": true,
+  "band_begin": 248320,
+  "kl_trunk_child_mean": 0.8161898405683181,
+  "note": "diagnostics only (owner policy 2026-10-06); top-1 over the base vocab [0, band_begin)",
+  "positions": 210,
+  "prompts": [
+   {
+    "child_logits_finite": true,
+    "index": 0,
+    "kl_trunk_child_max": 1.250514307038217,
+    "kl_trunk_child_mean": 0.29142335554001964,
+    "last_position_top1": {
+     "child": 198,
+     "trunk": 198
+    },
+    "max_abs_logit_diff": 7.515625,
+    "positions": 13,
+    "top1_agree": 11,
+    "top1_agreement": 0.8461538461538461,
+    "trunk_logits_finite": true
+   },
+   {
+    "child_logits_finite": true,
+    "index": 1,
+    "kl_trunk_child_max": 9.031008022881013,
+    "kl_trunk_child_mean": 1.1989404464589855,
+    "last_position_top1": {
+     "child": 198,
+     "trunk": 727
+    },
+    "max_abs_logit_diff": 17.302734375,
+    "positions": 24,
+    "top1_agree": 12,
+    "top1_agreement": 0.5,
+    "trunk_logits_finite": true
+   },
+   {
+    "child_logits_finite": true,
+    "index": 2,
+    "kl_trunk_child_max": 5.160665912127488,
+    "kl_trunk_child_mean": 1.0061548900166537,
+    "last_position_top1": {
+     "child": 198,
+     "trunk": 13120
+    },
+    "max_abs_logit_diff": 12.15234375,
+    "positions": 26,
+    "top1_agree": 12,
+    "top1_agreement": 0.46153846153846156,
+    "trunk_logits_finite": true
+   },
+   {
+    "child_logits_finite": true,
+    "index": 3,
+    "kl_trunk_child_max": 5.0852626161429,
+    "kl_trunk_child_mean": 3.3091020240924163,
+    "last_position_top1": {
+     "child": 198,
+     "trunk": 271
+    },
+    "max_abs_logit_diff": 10.953125,
+    "positions": 9,
+    "top1_agree": 2,
+    "top1_agreement": 0.2222222222222222,
+    "trunk_logits_finite": true
+   },
+   {
+    "child_logits_finite": true,
+    "index": 4,
+    "kl_trunk_child_max": 1.9690472018433138,
+    "kl_trunk_child_mean": 0.3456813291877938,
+    "last_position_top1": {
+     "child": 220,
+     "trunk": 220
+    },
+    "max_abs_logit_diff": 11.21875,
+    "positions": 66,
+    "top1_agree": 46,
+    "top1_agreement": 0.696969696969697,
+    "trunk_logits_finite": true
+   },
+   {
+    "child_logits_finite": true,
+    "index": 5,
+    "kl_trunk_child_max": 3.668278533907247,
+    "kl_trunk_child_mean": 0.6069377350505809,
+    "last_position_top1": {
+     "child": 198,
+     "trunk": 271
+    },
+    "max_abs_logit_diff": 11.421875,
+    "positions": 23,
+    "top1_agree": 14,
+    "top1_agreement": 0.6086956521739131,
+    "trunk_logits_finite": true
+   },
+   {
+    "child_logits_finite": true,
+    "index": 6,
+    "kl_trunk_child_max": 4.08801914554882,
+    "kl_trunk_child_mean": 2.1167979355218676,
+    "last_position_top1": {
+     "child": 198,
+     "trunk": 198
+    },
+    "max_abs_logit_diff": 14.921875,
+    "positions": 14,
+    "top1_agree": 2,
+    "top1_agreement": 0.14285714285714285,
+    "trunk_logits_finite": true
+   },
+   {
+    "child_logits_finite": true,
+    "index": 7,
+    "kl_trunk_child_max": 2.3579812316837487,
+    "kl_trunk_child_mean": 0.4710040027194927,
+    "last_position_top1": {
+     "child": 198,
+     "trunk": 198
+    },
+    "max_abs_logit_diff": 11.09375,
+    "positions": 35,
+    "top1_agree": 18,
+    "top1_agreement": 0.5142857142857142,
+    "trunk_logits_finite": true
+   }
+  ],
+  "top1_agree": 117,
+  "top1_agreement": 0.5571428571428572
+ },
+ "device": "cuda:0",
+ "dtype": "bfloat16",
+ "forward": {
+  "engine": "layer-major streamed: one ChimeraBlock on --device, load_state_dict(strict=True) per block, fp32 RoPE tables kept; trunk and child in the same pass",
+  "head": "lm_head.weight",
+  "per_layer": [
+   {
+    "child_residual_finite": true,
+    "layer": 0,
+    "residual_relL2_child_vs_trunk": 0.09787828443833387
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 1,
+    "residual_relL2_child_vs_trunk": 0.20229972555315356
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 2,
+    "residual_relL2_child_vs_trunk": 0.6993093797454012
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 3,
+    "residual_relL2_child_vs_trunk": 0.9265401082252094
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 4,
+    "residual_relL2_child_vs_trunk": 0.9653492349010652
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 5,
+    "residual_relL2_child_vs_trunk": 0.9274059868606083
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 6,
+    "residual_relL2_child_vs_trunk": 0.8465274390302153
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 7,
+    "residual_relL2_child_vs_trunk": 0.7421531924623891
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 8,
+    "residual_relL2_child_vs_trunk": 0.6322432835078085
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 9,
+    "residual_relL2_child_vs_trunk": 0.5457397914217331
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 10,
+    "residual_relL2_child_vs_trunk": 0.4950045520659331
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 11,
+    "residual_relL2_child_vs_trunk": 0.44566273898538666
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 12,
+    "residual_relL2_child_vs_trunk": 0.4068303668423486
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 13,
+    "residual_relL2_child_vs_trunk": 0.395437138486855
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 14,
+    "residual_relL2_child_vs_trunk": 0.37937481721436367
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 15,
+    "residual_relL2_child_vs_trunk": 0.3733149588877938
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 16,
+    "residual_relL2_child_vs_trunk": 0.3702794033828357
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 17,
+    "residual_relL2_child_vs_trunk": 0.3862598535674094
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 18,
+    "residual_relL2_child_vs_trunk": 0.4024489842704734
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 19,
+    "residual_relL2_child_vs_trunk": 0.4554990813185048
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 20,
+    "residual_relL2_child_vs_trunk": 0.5086349194343797
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 21,
+    "residual_relL2_child_vs_trunk": 0.45096788840834673
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 22,
+    "residual_relL2_child_vs_trunk": 0.4378939555575114
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 23,
+    "residual_relL2_child_vs_trunk": 0.4621779488206493
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 24,
+    "residual_relL2_child_vs_trunk": 0.4759687716946225
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 25,
+    "residual_relL2_child_vs_trunk": 0.45975733619356807
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 26,
+    "residual_relL2_child_vs_trunk": 0.4502920659020179
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 27,
+    "residual_relL2_child_vs_trunk": 0.4703840836686117
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 28,
+    "residual_relL2_child_vs_trunk": 0.4833050243020781
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 29,
+    "residual_relL2_child_vs_trunk": 0.48608505819734615
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 30,
+    "residual_relL2_child_vs_trunk": 0.48926196662021526
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 31,
+    "residual_relL2_child_vs_trunk": 0.49817943494847766
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 32,
+    "residual_relL2_child_vs_trunk": 0.5093188411262797
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 33,
+    "residual_relL2_child_vs_trunk": 0.5163222789481553
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 34,
+    "residual_relL2_child_vs_trunk": 0.5534042867629402
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 35,
+    "residual_relL2_child_vs_trunk": 0.5835163378860821
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 36,
+    "residual_relL2_child_vs_trunk": 0.6042919306687752
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 37,
+    "residual_relL2_child_vs_trunk": 0.6019386816221217
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 38,
+    "residual_relL2_child_vs_trunk": 0.5957512368338262
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 39,
+    "residual_relL2_child_vs_trunk": 0.6133000184911921
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 40,
+    "residual_relL2_child_vs_trunk": 0.6204318314640224
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 41,
+    "residual_relL2_child_vs_trunk": 0.6157799433755314
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 42,
+    "residual_relL2_child_vs_trunk": 0.6111045076740969
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 43,
+    "residual_relL2_child_vs_trunk": 0.6174042318406493
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 44,
+    "residual_relL2_child_vs_trunk": 0.6214707255365572
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 45,
+    "residual_relL2_child_vs_trunk": 0.6216470147419546
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 46,
+    "residual_relL2_child_vs_trunk": 0.6277377310879887
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 47,
+    "residual_relL2_child_vs_trunk": 0.6301753519739739
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 48,
+    "residual_relL2_child_vs_trunk": 0.6471386343107127
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 49,
+    "residual_relL2_child_vs_trunk": 0.6530699491348861
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 50,
+    "residual_relL2_child_vs_trunk": 0.6521128649599328
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 51,
+    "residual_relL2_child_vs_trunk": 0.672117199621684
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 52,
+    "residual_relL2_child_vs_trunk": 0.6741253866417358
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 53,
+    "residual_relL2_child_vs_trunk": 0.6602397714525193
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 54,
+    "residual_relL2_child_vs_trunk": 0.5988851265259364
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 55,
+    "residual_relL2_child_vs_trunk": 0.6439237167613692
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 56,
+    "residual_relL2_child_vs_trunk": 0.652916199205381
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 57,
+    "residual_relL2_child_vs_trunk": 0.6473012669836785
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 58,
+    "residual_relL2_child_vs_trunk": 0.5407767852330568
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 59,
+    "residual_relL2_child_vs_trunk": 0.6167283874612357
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 60,
+    "residual_relL2_child_vs_trunk": 0.5914823534408368
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 61,
+    "residual_relL2_child_vs_trunk": 0.5877597243523971
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 62,
+    "residual_relL2_child_vs_trunk": 0.5601661691981901
+   },
+   {
+    "child_residual_finite": true,
+    "layer": 63,
+    "residual_relL2_child_vs_trunk": 0.5376753628807042
+   }
+  ],
+  "seconds": 559.09
+ },
+ "identity_rows": [
+  {
+   "file_sha256": "2797bd7b951932fdc66a903d9c9d4d095a7973dadd7a5ba8229469e972ff94bc",
+   "heldout_relL2": 0.1623470038175583,
+   "k3_layers": [
+    1
+   ],
+   "k3_rows": 12288,
+   "k3_term_energy_fraction_held": 0.6252002207810627,
+   "layer": 0,
+   "peak_rss_gigabytes": 92.272,
+   "qwen_down_columns_relL2_vs_trunk_down": 0.15214841067790985,
+   "qwen_gate_rows_verbatim": true,
+   "qwen_up_rows_verbatim": true,
+   "seconds": 490.86,
+   "trunk_only_held_relL2": 0.6412523984909058,
+   "update_scale": 0.309024453163147,
+   "veto_binding": true,
+   "veto_reason": "THE LAW: the free solve wanted more than the prior (ridge.veto_binding)",
+   "zero_pad_exact": true,
+   "zero_pad_rows": 0
+  },
+  {
+   "file_sha256": "8712e37154090ca0db83a4305e08ec8f03b92059ebf0c61578ef2f3404742f1f",
+   "heldout_relL2": 0.21925774216651917,
+   "k3_layers": [
+    2
+   ],
+   "k3_rows": 12288,
+   "k3_term_energy_fraction_held": 0.8620612053813427,
+   "layer": 1,
+   "peak_rss_gigabytes": 92.272,
+   "qwen_down_columns_relL2_vs_trunk_down": 0.177709698677063,
+   "qwen_gate_rows_verbatim": true,
+   "qwen_up_rows_verbatim": true,
+   "seconds": 574.09,
+   "trunk_only_held_relL2": 0.8792983293533325,
+   "update_scale": 0.37046578526496887,
+   "veto_binding": true,
+   "veto_reason": "THE LAW: the free solve wanted more than the prior (ridge.veto_binding)",
+   "zero_pad_exact": true,
+   "zero_pad_rows": 0
+  },
+  {
+   "file_sha256": "7afeb951850654331197296eb74c1090e203a59c27c173ca747bf1b311d0fd08",
+   "heldout_relL2": 0.1327446848154068,
+   "k3_layers": [
+    3,
+    4
+   ],
+   "k3_rows": 12288,
+   "k3_term_energy_fraction_held": 0.9472237836869211,
+   "layer": 2,
+   "peak_rss_gigabytes": 126.265,
+   "qwen_down_columns_relL2_vs_trunk_down": 0.6680665016174316,
+   "qwen_gate_rows_verbatim": true,
+   "qwen_up_rows_verbatim": true,
+   "seconds": 791.89,
+   "trunk_only_held_relL2": 0.9494571685791016,
+   "update_scale": 0.9612467288970947,
+   "veto_binding": true,
+   "veto_reason": "THE LAW: the free solve wanted more than the prior (ridge.veto_binding)",
+   "zero_pad_exact": true,
+   "zero_pad_rows": 0
+  },
+  {
+   "k3_rows": 0,
+   "layer": 3,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 4,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 5,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 6,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 7,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 8,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 9,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 10,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 11,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 12,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 13,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 14,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 15,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 16,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 17,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 18,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 19,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 20,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 21,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 22,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 23,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 24,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 25,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 26,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 27,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 28,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 29,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 30,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 31,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 32,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 33,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 34,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 35,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 36,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 37,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 38,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 39,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 40,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 41,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 42,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 43,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 44,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 45,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 46,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 47,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 48,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 49,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 50,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 51,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 52,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 53,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 54,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 55,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 56,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 57,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 58,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 59,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 60,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 61,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 62,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  },
+  {
+   "k3_rows": 0,
+   "layer": 63,
+   "source": "TRUNK FFN zero-padded to the union width -- not a c10 layer",
+   "veto_binding": null,
+   "zero_pad_rows": 12288
+  }
+ ],
+ "k3_channels": 12288,
+ "partial": {
+  "c10_tool_version": "1.3.0",
+  "inputs_sha256": "65baef0655fa4ba1dfe5b605bc48097a58213419242dc751985f577702564a88",
+  "path": "/home/cereal/omni-campaign/composite/c10/rehearsal-k3-1-60/child.partial"
+ },
+ "peak_cuda_allocated_bytes": 8014977536,
+ "peak_rss_gigabytes": 66.584,
+ "prompts": {
+  "prompts": [
+   {
+    "index": 0,
+    "text": "The receipt is the artifact; a prediction is not a measurement.",
+    "tokens": 13
+   },
+   {
+    "index": 1,
+    "text": "def delta_rule(state, key, value, retention, beta):\n    return retention * state + beta * key\n",
+    "tokens": 24
+   },
+   {
+    "index": 2,
+    "text": "Kimi K3 uses 93 layers, 96 heads, and a 7168-wide residual stream.",
+    "tokens": 26
+   },
+   {
+    "index": 3,
+    "text": "\u4eca\u5929\u7684\u5929\u6c14\u5f88\u597d\uff0c\u6211\u4eec\u53bb\u516c\u56ed\u6563\u6b65\u5427\u3002",
+    "tokens": 9
+   },
+   {
+    "index": 4,
+    "text": "1 1 2 3 5 8 13 21 34 55 89 144 233 377 610 987 1597 2584 4181 6765",
+    "tokens": 66
+   },
+   {
+    "index": 5,
+    "text": "SELECT id, name FROM markets WHERE correlation_score > 0.8 ORDER BY volume DESC LIMIT 25;",
+    "tokens": 23
+   },
+   {
+    "index": 6,
+    "text": "\u0417\u0430\u043c\u0435\u0440\u044c \u0440\u0430\u0437\u043d\u0438\u0446\u0443, \u043d\u0435 \u0443\u0433\u0430\u0434\u044b\u0432\u0430\u0439 \u0435\u0451.",
+    "tokens": 14
+   },
+   {
+    "index": 7,
+    "text": "An exact import means the same function, not a similar one: every rewrite has to be an identity in exact arithmetic, and every place it is not has to be named.",
+    "tokens": 35
+   }
+  ],
+  "script_sha256": "3776719772812dc43c43421dcc15eae81daad819fe3e1ffbc9af6f58414b12eb",
+  "source": "/home/cereal/omni-campaign/import/rq27b/tree_ef1ffb9/scripts/import_receipt_qwen35.py PROMPT_PACK (8 R-Q prompts)",
+  "tokenizer_dir": "/mnt/lexar/omni-campaign/s3-fold-sep07-codex/S3-C2K4352-sep07"
+ },
+ "schema": "neural-forge-c10-virtual-child-check-v1",
+ "seconds": 938.46,
+ "structural_load": {
+  "missing": [],
+  "rule": "ChimeraOmniModel(child_cfg) on meta: names and shapes == trunk headers with the partial FFNs swapped in",
+  "shape_mismatched": [],
+  "state_tensors": 1011,
+  "strict_load_equivalent": true,
+  "unexpected": []
+ },
+ "tool": "c10_virtual_child_check",
+ "tool_sha256": "a07c081596545aa0f9837db2bd7b14c134b04241229e467e47fe748e2c1477bd",
+ "tool_version": "1.1.0",
+ "torch": "2.11.0+cu128",
+ "trunk": {
+  "chimera_commit": "ef1ffb9c3c1abd9ea79f1d4d5707ac5486dab9ab",
+  "intermediate_size": 4352,
+  "path": "/mnt/lexar/omni-campaign/s3-native-v2-3a25a459-4347-416d-a58a-2cb3c8e738fd/actual/native-s3-text-stage/native"
+ },
+ "trunk_padded_layers": [
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15,
+  16,
+  17,
+  18,
+  19,
+  20,
+  21,
+  22,
+  23,
+  24,
+  25,
+  26,
+  27,
+  28,
+  29,
+  30,
+  31,
+  32,
+  33,
+  34,
+  35,
+  36,
+  37,
+  38,
+  39,
+  40,
+  41,
+  42,
+  43,
+  44,
+  45,
+  46,
+  47,
+  48,
+  49,
+  50,
+  51,
+  52,
+  53,
+  54,
+  55,
+  56,
+  57,
+  58,
+  59,
+  60,
+  61,
+  62,
+  63
+ ],
+ "union_layers": [
+  0,
+  1,
+  2
+ ],
+ "verdict": "HYBRID prefix child loads; identity and accounting hold; text forward finite",
+ "veto_binding_layers": 3
+}

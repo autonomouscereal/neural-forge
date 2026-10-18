@@ -1,0 +1,20 @@
+{
+ "affected_rows": 3386,
+ "at_utc": "2026-10-15T03:35:28Z",
+ "conservation": true,
+ "documents": 22970,
+ "kept_row_x_positions_masked": 1660520,
+ "kept_rows": 1497,
+ "manifest_file_sha256": "1455f6284617f787351b98a993f36ff7451a54d342ba3b15453c1aaf05176632",
+ "manifest_sha256": "5f25c817fa06eb0030e32db6c88bfd50ee0233b9a2e6073cb3db096378cb8d52",
+ "ok": true,
+ "problems": [],
+ "real_tokens": 12349164,
+ "rows": 3015,
+ "schema": "omni-d2-clean-repack-v1-verify",
+ "tool": "d2_clean_repack",
+ "tool_sha256": "1d03d3e852e6d9d0dbcf501b79c0294124703692c87adb3ec8bca288bda26664",
+ "tool_version": "1.0.1",
+ "x_docs": 5061,
+ "x_tokens": 3180411
+}

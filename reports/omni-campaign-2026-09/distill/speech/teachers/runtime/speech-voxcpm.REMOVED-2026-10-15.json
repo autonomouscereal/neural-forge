@@ -1,0 +1,16 @@
+{
+ "schema": "omni-campaign.runtime-removal.v1",
+ "runtime": "/mnt/lexar/omni-campaign/runtimes/speech-voxcpm",
+ "files": 14163,
+ "bytes": 660315177,
+ "reason": "pydantic 2.14.1 + pydantic_core 2.50.1 installed for voxcpm 2.0.3 (its model code imports pydantic); Cyril's global rule forbids ORM / Pydantic / SQLAlchemy in any environment we build",
+ "pydantic_lines": [
+  "pydantic==2.14.1",
+  "pydantic_core==2.50.1"
+ ],
+ "freeze_file": "/home/cereal/omni-campaign/distill/speech/teachers/runtime/speech-voxcpm.freeze.at-removal.txt",
+ "freeze_sha256": "9fa3c253196f9c1efa16de3e988b00edd2ba0ba44fdc6f59699406d4ae3a6aa8",
+ "rebuild_recipe": "tools/speech/_superseded/build_speech_runtimes_1.0.0.sh (speech-voxcpm section) -- do not rebuild",
+ "model_weights_kept": "/mnt/lexar/models/openbmb/VoxCPM2 (marked _STATUS_UNUSABLE_NO_PYDANTIC_RULE.txt)",
+ "removed_utc": "2026-10-15T03:10:40Z"
+}

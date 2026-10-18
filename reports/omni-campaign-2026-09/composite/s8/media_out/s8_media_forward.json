@@ -1,0 +1,1357 @@
+{
+ "schema": "omni-campaign.s8_media_smoke.v1",
+ "tool": {
+  "name": "s8_media_smoke",
+  "version": "1.1.0",
+  "sha256": "cb1e5a5cba2500698ce70b15985a27dd9a909c9bd521a164457083633e936477"
+ },
+ "argv": [
+  "--device",
+  "cuda:0",
+  "--chimera-src",
+  "/home/cereal/omni-campaign/import/rq27b/tree_ef1ffb9",
+  "--modalities",
+  "ace,h3,qimg,hy3d,qvl"
+ ],
+ "torch": "2.11.0+cu128",
+ "device": "cuda:0",
+ "dtype": "bfloat16",
+ "started_utc": "2026-10-13T05:57:21Z",
+ "policy": "owner 2026-10-06: every finite number here is a diagnostic; refusals are structural / non-finite only",
+ "chimera_omni": {
+  "imported_from": "/home/cereal/omni-campaign/import/rq27b/tree_ef1ffb9/src/chimera_omni/__init__.py",
+  "chimera_src": "/home/cereal/omni-campaign/import/rq27b/tree_ef1ffb9",
+  "bound": true
+ },
+ "cuda_device_name": "NVIDIA GeForce RTX 3090",
+ "cuda_visible_devices": "0",
+ "siblings": {
+  "s7_omni1_check": "d57dd49cf7b5231bccf001711646e089821267d9702279e4d86c5b36a37d3a70",
+  "s7_pairs_parent": "4339b1952d6c84c112e311afc25a36a505f66888d833aa0fcd0924d5986d6ca6"
+ },
+ "pairs": {
+  "ace": {
+   "file": "/home/cereal/omni-campaign/composite/s7/pairs/ace_dit_L12/parent_capture.safetensors",
+   "sha256": "408b5ce9f5ad07e60f0d5d4ba33e80eafe15a22ba0048ff31e2f405e711d3066",
+   "receipt": "/home/cereal/omni-campaign/composite/s7/pairs/ace_dit_L12/parent_capture.json",
+   "receipt_sha256": "8778d4f0f2c269886b9a80cb180325fad239f9d6292c1ca84a8ca41b2cf25d61"
+  },
+  "h3": {
+   "file": "/home/cereal/omni-campaign/composite/s7/pairs/h3_dit_L25_curve6/parent_capture.safetensors",
+   "sha256": "1cdfb65303c636a29bb615710043a9da1adad65c832e19b1be688767126a3947",
+   "receipt": "/home/cereal/omni-campaign/composite/s7/pairs/h3_dit_L25_curve6/parent_capture.json",
+   "receipt_sha256": "67953fbadd7e077b3f41b1e4ff18958b9558f7a99bf89e90122e2f1652da228f"
+  },
+  "qimg": {
+   "file": "/home/cereal/omni-campaign/composite/s7/pairs/qimg_mmdit_L30_img/parent_capture.safetensors",
+   "sha256": "18ffac3b18b8ed1efcf6e811d4253628dcc3c65e653f1558fb2a68e469f606bc",
+   "receipt": "/home/cereal/omni-campaign/composite/s7/pairs/qimg_mmdit_L30_img/parent_capture.json",
+   "receipt_sha256": "bb18e325d9a1e17b10cbe71888b99f4142c69386482b2e2d99cdac61710293b8"
+  },
+  "hy3d": {
+   "file": "/home/cereal/omni-campaign/composite/s7/pairs/hy3d_dit_L10/parent_capture.safetensors",
+   "sha256": "d0493c597d89501d1bfd48b3ec18232a242dcc78456abc244195fbd68aa83db9",
+   "receipt": "/home/cereal/omni-campaign/composite/s7/pairs/hy3d_dit_L10/parent_capture.json",
+   "receipt_sha256": "617ad80101cc7a8819eac02e55eff73f18e29eb0f10ec8331a545783f5fb3c46"
+  }
+ },
+ "references": {
+  "ace_parent": {
+   "weights": "/home/cereal/comfyui/models/diffusion_models/acestep_v1.5_turbo.safetensors",
+   "load": {
+    "source": "/home/cereal/comfyui/models/diffusion_models/acestep_v1.5_turbo.safetensors",
+    "prefix": "decoder.",
+    "depth": 24,
+    "consumed_tensors": 476,
+    "state_sha256": "c8c965dacaeb76b00612776a8a6f44f17992407b57452b06437b8ff7866e5365",
+    "parameters": 1575458880,
+    "config": {
+     "hidden_size": 2048,
+     "num_attention_heads": 16,
+     "num_key_value_heads": 8,
+     "head_dim": 128,
+     "intermediate_size": 6144,
+     "patch_size": 2,
+     "layer_types": [
+      "sliding_attention",
+      "full_attention",
+      "sliding_attention",
+      "full_attention",
+      "sliding_attention",
+      "full_attention",
+      "sliding_attention",
+      "full_attention",
+      "sliding_attention",
+      "full_attention",
+      "sliding_attention",
+      "full_attention",
+      "sliding_attention",
+      "full_attention",
+      "sliding_attention",
+      "full_attention",
+      "sliding_attention",
+      "full_attention",
+      "sliding_attention",
+      "full_attention",
+      "sliding_attention",
+      "full_attention",
+      "sliding_attention",
+      "full_attention"
+     ]
+    }
+   },
+   "regime": "the pair capture's: seeded gaussian encoder states, timestep = sigma, timestep_r = 0 (ComfyUI passes timestep_r = timestep)"
+  },
+  "qimg_clean_solve": {
+   "b1_held_glass_pitcher": {
+    "encoded": "/mnt/lexar/omni-campaign/qimg-broad-capture-sep07/run/encoded_batch1/b1_held_glass_pitcher.safetensors",
+    "sha256": "b30b6f709f5637e692864c0582f4af8dee1de468878f29b670e7bb227c9a4e27",
+    "sigmas": [
+     0.15000000596046448,
+     0.3499999940395355,
+     0.6499999761581421,
+     0.8999999761581421
+    ],
+    "max_rel_residual": 4.563126488129242e-08,
+    "recipe": "x_s = s*n + (1-s)*Wan21.process_in(VAE.encode(pixels)), one shared n"
+   }
+  }
+ },
+ "omni1": {
+  "directory": "/mnt/lexar/omni-campaign/omni1/OC02-F-Q38-27BU-OMNI1",
+  "manifest_sha256": "95297685584bc21648dcda27df08ac0f8fb060bc7ebd185ac2ba7860a41be176",
+  "index_sha256": "564bd342cc8ddd63a3b28b2c0b37b595a4623020360c97bff87d2842858f6082",
+  "config_sha256": "3516b587ce80461745b772eb92bf1d3c0ffd40fc5e0d82d83c037ad872c99b02",
+  "structural": {
+   "tensors": 1120,
+   "strict_equivalent": true,
+   "dtypes": {
+    "BF16": 1116,
+    "F32": 4
+   },
+   "sha256_pinned_tensors": 1120
+  },
+  "strict_load_coverage": {
+   "tensors_loaded": 1120,
+   "tensors_expected": 1120,
+   "complete": true,
+   "sha256_verified_on_read": true
+  },
+  "charted_blocks": {
+   "32": "ace_dit_L12",
+   "33": "h3_dit_L25_curve6",
+   "34": "hy3d_dit_L10",
+   "35": "qimg_mmdit_L30_img",
+   "36": "qvl32_vit_L13"
+  },
+  "band_begin": 248320,
+  "placeholder_token_id": 248832
+ },
+ "prompt_tokenizer": {
+  "path": "/mnt/lexar/omni-campaign/s3-native-v2-3a25a459-4347-416d-a58a-2cb3c8e738fd/actual/native-s3-text-stage/tokenizer/tokenizer.json",
+  "sha256": "06b9509352d2af50381ab2247e083b80d32d5c0aba91c272ca9ff729b6a0e523"
+ },
+ "media_pass": {
+  "seconds": 990.340836763382,
+  "site_after_block": 36,
+  "cuda_peak_gib": 5.986908912658691
+ },
+ "modalities": {
+  "ace": {
+   "latents": "/home/cereal/omni-campaign/composite/s8/media_out/ace/latents.safetensors",
+   "latents_sha256": "15917bcdd70a8aa9516e588aa7d0e2eaf62cb1dce55dd55f29ae1f49a0d75805",
+   "segments": [
+    {
+     "segment": "ace_s030",
+     "unit": "ace_dit_L12",
+     "pair_forward": 4,
+     "sigma": 0.3,
+     "prompt_tokens": 6,
+     "media_rows": 50,
+     "time_rows": 0,
+     "input_finite": true,
+     "final_hidden_finite": true,
+     "last_position_logits_finite": true,
+     "emission_final": {
+      "finite": true,
+      "norm": 571.0830688476562,
+      "nonzero": true
+     },
+     "emission_site": {
+      "finite": true,
+      "norm": 571.30029296875
+     },
+     "own_charted_write": [
+      {
+       "seq": 0,
+       "rows_owned": 50,
+       "write_norm": 149.00421142578125
+      }
+     ],
+     "checks": {
+      "features_equal_pair_rows_max_abs": 0.0,
+      "clip": 4,
+      "seed": 0,
+      "batch_row": 4,
+      "context_note": "src_latents = the CLEAN latent, chunk masks 0 (latent_stimulus): the clean target is literally inside the input features"
+     },
+     "layout": {
+      "latent": "[1, 64, 100] ACE-1.5 VAE latent (ACEAudio15: DiT space = VAE space)",
+      "frames": 100
+     },
+     "latent": {
+      "parent_sign_check": {
+       "+1": 0.809866902142351,
+       "-1": 0.3962539703942293,
+       "better": -1.0
+      },
+      "final": {
+       "raw_finite": true,
+       "raw_nonzero": true,
+       "raw_norm": 132.8324432373047,
+       "ideal_raw_norm": 110.5384521484375,
+       "cos_raw_vs_ideal": -0.08101864401217418,
+       "rel_l2_raw_vs_ideal": 1.6244288058916645,
+       "rel_l2_x0_vs_clean": 0.6970801862922159,
+       "rel_l2_xt_vs_clean_v0_baseline": 0.42912326061235984,
+       "cos_x0_vs_clean": 0.7316966300825845,
+       "oracle_scalar_gain": -0.06742077189650861,
+       "rel_l2_x0_vs_clean_at_oracle_gain": 0.4277125542385855,
+       "cos_raw_vs_parent": -0.08332408206900774,
+       "rel_l2_raw_vs_parent": 1.5422228226692594,
+       "rel_l2_x0_vs_parent_x0": 0.7012000550276434,
+       "parent_rel_l2_x0_vs_clean": 0.3962539703942293,
+       "parent_cos_raw_vs_ideal": 0.616409359866774
+      },
+      "site": {
+       "raw_finite": true,
+       "raw_nonzero": true,
+       "raw_norm": 200.32420349121094,
+       "ideal_raw_norm": 110.5384521484375,
+       "cos_raw_vs_ideal": -0.06839162962854661,
+       "rel_l2_raw_vs_ideal": 2.1288902462903696,
+       "rel_l2_x0_vs_clean": 0.9135563237946398,
+       "rel_l2_xt_vs_clean_v0_baseline": 0.42912326061235984,
+       "cos_x0_vs_clean": 0.5576685606683754,
+       "oracle_scalar_gain": -0.03773830696100299,
+       "rel_l2_x0_vs_clean_at_oracle_gain": 0.4281184902459242,
+       "cos_raw_vs_parent": -0.03080742564804406,
+       "rel_l2_raw_vs_parent": 1.955041015813528,
+       "rel_l2_x0_vs_parent_x0": 0.8888954605938006,
+       "parent_rel_l2_x0_vs_clean": 0.3962539703942293,
+       "parent_cos_raw_vs_ideal": 0.616409359866774
+      },
+      "sigma": 0.3,
+      "sign": -1.0
+     }
+    },
+    {
+     "segment": "ace_s050",
+     "unit": "ace_dit_L12",
+     "pair_forward": 100,
+     "sigma": 0.5,
+     "prompt_tokens": 6,
+     "media_rows": 50,
+     "time_rows": 0,
+     "input_finite": true,
+     "final_hidden_finite": true,
+     "last_position_logits_finite": true,
+     "emission_final": {
+      "finite": true,
+      "norm": 566.6995239257812,
+      "nonzero": true
+     },
+     "emission_site": {
+      "finite": true,
+      "norm": 571.8369750976562
+     },
+     "own_charted_write": [
+      {
+       "seq": 1,
+       "rows_owned": 50,
+       "write_norm": 122.74344635009766
+      }
+     ],
+     "checks": {
+      "features_equal_pair_rows_max_abs": 0.0,
+      "clip": 4,
+      "seed": 0,
+      "batch_row": 4,
+      "context_note": "src_latents = the CLEAN latent, chunk masks 0 (latent_stimulus): the clean target is literally inside the input features"
+     },
+     "layout": {
+      "latent": "[1, 64, 100] ACE-1.5 VAE latent (ACEAudio15: DiT space = VAE space)",
+      "frames": 100
+     },
+     "latent": {
+      "parent_sign_check": {
+       "+1": 1.1537328726656673,
+       "-1": 0.6584495056524631,
+       "better": -1.0
+      },
+      "final": {
+       "raw_finite": true,
+       "raw_nonzero": true,
+       "raw_norm": 130.0828857421875,
+       "ideal_raw_norm": 110.5384521484375,
+       "cos_raw_vs_ideal": -0.053820530913423,
+       "rel_l2_raw_vs_ideal": 1.5847905688000536,
+       "rel_l2_x0_vs_clean": 1.1334507850375382,
+       "rel_l2_xt_vs_clean_v0_baseline": 0.7152054079135514,
+       "cos_x0_vs_clean": 0.39219558241226166,
+       "oracle_scalar_gain": -0.045734157579918326,
+       "rel_l2_x0_vs_clean_at_oracle_gain": 0.7141688080781922,
+       "cos_raw_vs_parent": -0.04980972359218062,
+       "rel_l2_raw_vs_parent": 1.7458806291162234,
+       "rel_l2_x0_vs_parent_x0": 1.0535505520936694,
+       "parent_rel_l2_x0_vs_clean": 0.6584495056524631,
+       "parent_cos_raw_vs_ideal": 0.5152165531452961
+      },
+      "site": {
+       "raw_finite": true,
+       "raw_nonzero": true,
+       "raw_norm": 200.266845703125,
+       "ideal_raw_norm": 110.5384521484375,
+       "cos_raw_vs_ideal": 0.02863360658105289,
+       "rel_l2_raw_vs_ideal": 2.044175275695202,
+       "rel_l2_x0_vs_clean": 1.462005211185507,
+       "rel_l2_xt_vs_clean_v0_baseline": 0.7152054079135514,
+       "cos_x0_vs_clean": 0.2032776742072936,
+       "oracle_scalar_gain": 0.0158044690281478,
+       "rel_l2_x0_vs_clean_at_oracle_gain": 0.714912155292724,
+       "cos_raw_vs_parent": -0.031606288500012125,
+       "rel_l2_raw_vs_parent": 2.3795971190581633,
+       "rel_l2_x0_vs_parent_x0": 1.435966362450725,
+       "parent_rel_l2_x0_vs_clean": 0.6584495056524631,
+       "parent_cos_raw_vs_ideal": 0.5152165531452961
+      },
+      "sigma": 0.5,
+      "sign": -1.0
+     }
+    },
+    {
+     "segment": "ace_s075",
+     "unit": "ace_dit_L12",
+     "pair_forward": 196,
+     "sigma": 0.75,
+     "prompt_tokens": 6,
+     "media_rows": 50,
+     "time_rows": 0,
+     "input_finite": true,
+     "final_hidden_finite": true,
+     "last_position_logits_finite": true,
+     "emission_final": {
+      "finite": true,
+      "norm": 568.7431030273438,
+      "nonzero": true
+     },
+     "emission_site": {
+      "finite": true,
+      "norm": 572.070556640625
+     },
+     "own_charted_write": [
+      {
+       "seq": 2,
+       "rows_owned": 50,
+       "write_norm": 88.63201141357422
+      }
+     ],
+     "checks": {
+      "features_equal_pair_rows_max_abs": 0.0,
+      "clip": 4,
+      "seed": 0,
+      "batch_row": 4,
+      "context_note": "src_latents = the CLEAN latent, chunk masks 0 (latent_stimulus): the clean target is literally inside the input features"
+     },
+     "layout": {
+      "latent": "[1, 64, 100] ACE-1.5 VAE latent (ACEAudio15: DiT space = VAE space)",
+      "frames": 100
+     },
+     "latent": {
+      "parent_sign_check": {
+       "+1": 1.4311953661429597,
+       "-1": 1.022050124627984,
+       "better": -1.0
+      },
+      "final": {
+       "raw_finite": true,
+       "raw_nonzero": true,
+       "raw_norm": 129.6057891845703,
+       "ideal_raw_norm": 110.53844451904297,
+       "cos_raw_vs_ideal": -0.011285913668711988,
+       "rel_l2_raw_vs_ideal": 1.549584806275399,
+       "rel_l2_x0_vs_clean": 1.6624071499838113,
+       "rel_l2_xt_vs_clean_v0_baseline": 1.0728081119156716,
+       "cos_x0_vs_clean": 0.10307635979981941,
+       "oracle_scalar_gain": -0.009625542702405083,
+       "rel_l2_x0_vs_clean_at_oracle_gain": 1.072739786846735,
+       "cos_raw_vs_parent": 0.001867687049112058,
+       "rel_l2_raw_vs_parent": 2.2344400969003315,
+       "rel_l2_x0_vs_parent_x0": 1.793089463070517,
+       "parent_rel_l2_x0_vs_clean": 1.022050124627984,
+       "parent_cos_raw_vs_ideal": 0.3719147704482132
+      },
+      "site": {
+       "raw_finite": true,
+       "raw_nonzero": true,
+       "raw_norm": 201.08128356933594,
+       "ideal_raw_norm": 110.53844451904297,
+       "cos_raw_vs_ideal": 0.1490696764760996,
+       "rel_l2_raw_vs_ideal": 1.9408269058373393,
+       "rel_l2_x0_vs_clean": 2.082134847339397,
+       "rel_l2_xt_vs_clean_v0_baseline": 1.0728081119156716,
+       "cos_x0_vs_clean": 0.018245313441665717,
+       "oracle_scalar_gain": 0.08194654010655944,
+       "rel_l2_x0_vs_clean_at_oracle_gain": 1.0608212988321777,
+       "cos_raw_vs_parent": 0.16247791349086335,
+       "rel_l2_raw_vs_parent": 3.101696223747415,
+       "rel_l2_x0_vs_parent_x0": 2.4890435970304874,
+       "parent_rel_l2_x0_vs_clean": 1.022050124627984,
+       "parent_cos_raw_vs_ideal": 0.3719147704482132
+      },
+      "sigma": 0.75,
+      "sign": -1.0
+     }
+    }
+   ]
+  },
+  "h3": {
+   "latents": "/home/cereal/omni-campaign/composite/s8/media_out/h3/latents.safetensors",
+   "latents_sha256": "34d4e65a84e70f53bf46bac7c3fde7fc5ee5fe95469dd3e7815e20db9aa149cf",
+   "segments": [
+    {
+     "segment": "h3_step0",
+     "unit": "h3_dit_L25_curve6",
+     "pair_forward": 12,
+     "sigma": 0.631578947368421,
+     "prompt_tokens": 8,
+     "media_rows": 60,
+     "time_rows": 0,
+     "input_finite": true,
+     "final_hidden_finite": true,
+     "last_position_logits_finite": true,
+     "emission_final": {
+      "finite": true,
+      "norm": 604.635986328125,
+      "nonzero": true
+     },
+     "emission_site": {
+      "finite": true,
+      "norm": 618.2821044921875
+     },
+     "own_charted_write": [
+      {
+       "seq": 3,
+       "rows_owned": 60,
+       "write_norm": 67.0854721069336
+      }
+     ],
+     "checks": {
+      "features_equal_pair_rows_max_abs": 0.0,
+      "clean_reproduces_stimulus": true,
+      "video_clip": 12,
+      "audio_window": 400,
+      "seed": 12,
+      "sigma_video": 0.631578947368421,
+      "sigma_audio": 0.29999999999999993
+     },
+     "layout": {
+      "video": "[1, 24, 4, 4, 4] MiniMax H3 video latent (scale 1)",
+      "audio": "[1, 32, 2, 22] MiniMax H3 audio latent"
+     },
+     "latent": {
+      "video_final": {
+       "raw_finite": true,
+       "raw_nonzero": true,
+       "raw_norm": 212.90589904785156,
+       "ideal_raw_norm": 72.74710845947266,
+       "cos_raw_vs_ideal": -0.24445936263425905,
+       "rel_l2_raw_vs_ideal": 3.3160560001172366,
+       "rel_l2_x0_vs_clean": 2.466349436071016,
+       "rel_l2_xt_vs_clean_v0_baseline": 0.7437598882050747,
+       "cos_x0_vs_clean": -0.17108544620788152,
+       "oracle_scalar_gain": -0.08352849235877935,
+       "rel_l2_x0_vs_clean_at_oracle_gain": 0.7211938693733155
+      },
+      "video_site": {
+       "raw_finite": true,
+       "raw_nonzero": true,
+       "raw_norm": 216.12525939941406,
+       "ideal_raw_norm": 72.74710845947266,
+       "cos_raw_vs_ideal": 0.08455943506618102,
+       "rel_l2_raw_vs_ideal": 3.0535034792935094,
+       "rel_l2_x0_vs_clean": 2.271073402774755,
+       "rel_l2_xt_vs_clean_v0_baseline": 0.7437598882050747,
+       "cos_x0_vs_clean": 0.11241126344363103,
+       "oracle_scalar_gain": 0.02846244584706702,
+       "rel_l2_x0_vs_clean_at_oracle_gain": 0.7410960651118385
+      },
+      "video_sigma": 0.631578947368421,
+      "video_sign": 1.0,
+      "audio_final": {
+       "raw_finite": true,
+       "raw_nonzero": true,
+       "raw_norm": 203.9674835205078,
+       "ideal_raw_norm": 43.53313064575195,
+       "cos_raw_vs_ideal": 0.016127749266011918,
+       "rel_l2_raw_vs_ideal": 4.775074186977434,
+       "rel_l2_x0_vs_clean": 2.9101911810139747,
+       "rel_l2_xt_vs_clean_v0_baseline": 0.609454650950352,
+       "cos_x0_vs_clean": 0.15942656174120307,
+       "oracle_scalar_gain": 0.0034421686861654008,
+       "rel_l2_x0_vs_clean_at_oracle_gain": 0.6093753841946825
+      },
+      "audio_site": {
+       "raw_finite": true,
+       "raw_nonzero": true,
+       "raw_norm": 184.86460876464844,
+       "ideal_raw_norm": 43.53313064575195,
+       "cos_raw_vs_ideal": 0.06116655538728989,
+       "rel_l2_raw_vs_ideal": 4.302737467859669,
+       "rel_l2_x0_vs_clean": 2.6223233682151714,
+       "rel_l2_xt_vs_clean_v0_baseline": 0.609454650950352,
+       "cos_x0_vs_clean": 0.001132224333983473,
+       "oracle_scalar_gain": 0.014403881347650872,
+       "rel_l2_x0_vs_clean_at_oracle_gain": 0.6083134910858674
+      },
+      "audio_sigma": 0.29999999999999993,
+      "audio_sign": 1.0
+     },
+     "h3_source_positions": {
+      "from": "comfy/ldm/minimax/model.py PackedLayout, transcribed (sha256 882c280b05aa60cd17f231e5e2389b921b52880fb3b4e23574c0aba5f2bd5024)",
+      "text_len": 8,
+      "note": "the OMNI1 check passed zeros here"
+     }
+    },
+    {
+     "segment": "h3_step1",
+     "unit": "h3_dit_L25_curve6",
+     "pair_forward": 132,
+     "sigma": 0.8780487804878049,
+     "prompt_tokens": 8,
+     "media_rows": 60,
+     "time_rows": 0,
+     "input_finite": true,
+     "final_hidden_finite": true,
+     "last_position_logits_finite": true,
+     "emission_final": {
+      "finite": true,
+      "norm": 606.7786254882812,
+      "nonzero": true
+     },
+     "emission_site": {
+      "finite": true,
+      "norm": 640.0145874023438
+     },
+     "own_charted_write": [
+      {
+       "seq": 4,
+       "rows_owned": 60,
+       "write_norm": 55.058189392089844
+      }
+     ],
+     "checks": {
+      "features_equal_pair_rows_max_abs": 0.0,
+      "clean_reproduces_stimulus": true,
+      "video_clip": 12,
+      "audio_window": 400,
+      "seed": 1012,
+      "sigma_video": 0.8780487804878049,
+      "sigma_audio": 0.6428571428571427
+     },
+     "layout": {
+      "video": "[1, 24, 4, 4, 4] MiniMax H3 video latent (scale 1)",
+      "audio": "[1, 32, 2, 22] MiniMax H3 audio latent"
+     },
+     "latent": {
+      "video_final": {
+       "raw_finite": true,
+       "raw_nonzero": true,
+       "raw_norm": 214.18154907226562,
+       "ideal_raw_norm": 73.86750793457031,
+       "cos_raw_vs_ideal": -0.15721584947724926,
+       "rel_l2_raw_vs_ideal": 3.2123235470975455,
+       "rel_l2_x0_vs_clean": 3.3727237531663765,
+       "rel_l2_xt_vs_clean_v0_baseline": 1.049932768157508,
+       "cos_x0_vs_clean": -0.22517799674123468,
+       "oracle_scalar_gain": -0.05422101423645344,
+       "rel_l2_x0_vs_clean_at_oracle_gain": 1.0368760819163974
+      },
+      "video_site": {
+       "raw_finite": true,
+       "raw_nonzero": true,
+       "raw_norm": 231.81199645996094,
+       "ideal_raw_norm": 73.86750793457031,
+       "cos_raw_vs_ideal": 0.11457952938793832,
+       "rel_l2_raw_vs_ideal": 3.182646089682785,
+       "rel_l2_x0_vs_clean": 3.3415644030254112,
+       "rel_l2_xt_vs_clean_v0_baseline": 1.049932768157508,
+       "cos_x0_vs_clean": -0.08916671272759949,
+       "oracle_scalar_gain": 0.036511064664589796,
+       "rel_l2_x0_vs_clean_at_oracle_gain": 1.0430179935932375
+      },
+      "video_sigma": 0.8780487804878049,
+      "video_sign": 1.0,
+      "audio_final": {
+       "raw_finite": true,
+       "raw_nonzero": true,
+       "raw_norm": 192.75550842285156,
+       "ideal_raw_norm": 42.782169342041016,
+       "cos_raw_vs_ideal": 0.031668641572332255,
+       "rel_l2_raw_vs_ideal": 4.584137711820303,
+       "rel_l2_x0_vs_clean": 5.883491550666737,
+       "rel_l2_xt_vs_clean_v0_baseline": 1.283445636073144,
+       "cos_x0_vs_clean": -0.038982192991916444,
+       "oracle_scalar_gain": 0.007028858118241969,
+       "rel_l2_x0_vs_clean_at_oracle_gain": 1.28280188815261
+      },
+      "audio_site": {
+       "raw_finite": true,
+       "raw_nonzero": true,
+       "raw_norm": 187.97413635253906,
+       "ideal_raw_norm": 42.782169342041016,
+       "cos_raw_vs_ideal": 0.2373529852096146,
+       "rel_l2_raw_vs_ideal": 4.26841166372297,
+       "rel_l2_x0_vs_clean": 5.478274321869181,
+       "rel_l2_xt_vs_clean_v0_baseline": 1.283445636073144,
+       "cos_x0_vs_clean": -0.05225690963402702,
+       "oracle_scalar_gain": 0.05402053724014233,
+       "rel_l2_x0_vs_clean_at_oracle_gain": 1.2467692145891327
+      },
+      "audio_sigma": 0.6428571428571427,
+      "audio_sign": 1.0
+     },
+     "h3_source_positions": {
+      "from": "comfy/ldm/minimax/model.py PackedLayout, transcribed (sha256 882c280b05aa60cd17f231e5e2389b921b52880fb3b4e23574c0aba5f2bd5024)",
+      "text_len": 8,
+      "note": "the OMNI1 check passed zeros here"
+     }
+    },
+    {
+     "segment": "h3_step2",
+     "unit": "h3_dit_L25_curve6",
+     "pair_forward": 252,
+     "sigma": 0.9523809523809523,
+     "prompt_tokens": 8,
+     "media_rows": 60,
+     "time_rows": 0,
+     "input_finite": true,
+     "final_hidden_finite": true,
+     "last_position_logits_finite": true,
+     "emission_final": {
+      "finite": true,
+      "norm": 615.433837890625,
+      "nonzero": true
+     },
+     "emission_site": {
+      "finite": true,
+      "norm": 643.3086547851562
+     },
+     "own_charted_write": [
+      {
+       "seq": 5,
+       "rows_owned": 60,
+       "write_norm": 55.63564682006836
+      }
+     ],
+     "checks": {
+      "features_equal_pair_rows_max_abs": 0.0,
+      "clean_reproduces_stimulus": true,
+      "video_clip": 12,
+      "audio_window": 400,
+      "seed": 2012,
+      "sigma_video": 0.9523809523809523,
+      "sigma_audio": 0.8333333333333334
+     },
+     "layout": {
+      "video": "[1, 24, 4, 4, 4] MiniMax H3 video latent (scale 1)",
+      "audio": "[1, 32, 2, 22] MiniMax H3 audio latent"
+     },
+     "latent": {
+      "video_final": {
+       "raw_finite": true,
+       "raw_nonzero": true,
+       "raw_norm": 214.60198974609375,
+       "ideal_raw_norm": 72.50496673583984,
+       "cos_raw_vs_ideal": -0.07684425072750019,
+       "rel_l2_raw_vs_ideal": 3.196162718488682,
+       "rel_l2_x0_vs_clean": 3.572701409406135,
+       "rel_l2_xt_vs_clean_v0_baseline": 1.1178096084386078,
+       "cos_x0_vs_clean": -0.14067483714377155,
+       "oracle_scalar_gain": -0.025962428978652235,
+       "rel_l2_x0_vs_clean_at_oracle_gain": 1.1145043673380137
+      },
+      "video_site": {
+       "raw_finite": true,
+       "raw_nonzero": true,
+       "raw_norm": 227.06939697265625,
+       "ideal_raw_norm": 72.50496673583984,
+       "cos_raw_vs_ideal": 0.1421261337600641,
+       "rel_l2_raw_vs_ideal": 3.1492567627544354,
+       "rel_l2_x0_vs_clean": 3.5202694778124983,
+       "rel_l2_xt_vs_clean_v0_baseline": 1.1178096084386078,
+       "cos_x0_vs_clean": -0.08439189080122204,
+       "oracle_scalar_gain": 0.04538193190199786,
+       "rel_l2_x0_vs_clean_at_oracle_gain": 1.1064622253988021
+      },
+      "video_sigma": 0.9523809523809523,
+      "video_sign": 1.0,
+      "audio_final": {
+       "raw_finite": true,
+       "raw_nonzero": true,
+       "raw_norm": 193.78152465820312,
+       "ideal_raw_norm": 42.61323928833008,
+       "cos_raw_vs_ideal": -0.0065886379141095255,
+       "rel_l2_raw_vs_ideal": 4.662539062607207,
+       "rel_l2_x0_vs_clean": 7.726555733788873,
+       "rel_l2_xt_vs_clean_v0_baseline": 1.657156258006143,
+       "cos_x0_vs_clean": -0.06993542004176345,
+       "oracle_scalar_gain": -0.0014488626803839965,
+       "rel_l2_x0_vs_clean_at_oracle_gain": 1.657120285434552
+      },
+      "audio_site": {
+       "raw_finite": true,
+       "raw_nonzero": true,
+       "raw_norm": 195.5108184814453,
+       "ideal_raw_norm": 42.61323928833008,
+       "cos_raw_vs_ideal": 0.29173937628905466,
+       "rel_l2_raw_vs_ideal": 4.401484983264174,
+       "rel_l2_x0_vs_clean": 7.293948340476843,
+       "rel_l2_xt_vs_clean_v0_baseline": 1.657156258006143,
+       "cos_x0_vs_clean": -0.054991152306587986,
+       "oracle_scalar_gain": 0.0635869571838144,
+       "rel_l2_x0_vs_clean_at_oracle_gain": 1.585066397571415
+      },
+      "audio_sigma": 0.8333333333333334,
+      "audio_sign": 1.0
+     },
+     "h3_source_positions": {
+      "from": "comfy/ldm/minimax/model.py PackedLayout, transcribed (sha256 882c280b05aa60cd17f231e5e2389b921b52880fb3b4e23574c0aba5f2bd5024)",
+      "text_len": 8,
+      "note": "the OMNI1 check passed zeros here"
+     }
+    }
+   ]
+  },
+  "qimg": {
+   "latents": "/home/cereal/omni-campaign/composite/s8/media_out/qimg/latents.safetensors",
+   "latents_sha256": "99d9d43f5becfdcae8d56baadf052908de2c586eabebd2fe93d653a9e1b23cd4",
+   "segments": [
+    {
+     "segment": "qimg_s015",
+     "unit": "qimg_mmdit_L30_img",
+     "pair_forward": 24,
+     "sigma": 0.15000000596046448,
+     "prompt_tokens": 100,
+     "media_rows": 1024,
+     "time_rows": 0,
+     "input_finite": true,
+     "final_hidden_finite": true,
+     "last_position_logits_finite": true,
+     "emission_final": {
+      "finite": true,
+      "norm": 2450.0302734375,
+      "nonzero": true
+     },
+     "emission_site": {
+      "finite": true,
+      "norm": 2485.239990234375
+     },
+     "own_charted_write": [
+      {
+       "seq": 6,
+       "rows_owned": 1024,
+       "write_norm": 636.2669677734375
+      }
+     ],
+     "checks": {
+      "features_equal_pair_rows_max_abs": 0.0,
+      "capture": "/mnt/lexar/omni-campaign/qimg-broad-capture-sep07/run/capture_batch1/b1_held_glass_pitcher_sigma00.safetensors",
+      "capture_sha256": "0383e3669dd5df5f44b64807fd3ec96758d964793158ccc61531c945029371aa",
+      "xt_vs_solved_interpolate_rel": 0.0016578538343310356
+     },
+     "layout": {
+      "latent": "[1, 16, 1, 64, 64] Qwen-Image DiT space = Wan21.process_in(VAE latent)",
+      "image": "/mnt/lexar/omni-campaign/qimg-broad-calibration-sep07/batch1/b1_held_glass_pitcher.png"
+     },
+     "latent": {
+      "parent_sign_check": {
+       "+1": 0.6326231651795853,
+       "-1": 0.09766997926011486,
+       "better": -1.0
+      },
+      "final": {
+       "raw_finite": true,
+       "raw_nonzero": true,
+       "raw_norm": 58.0942497253418,
+       "ideal_raw_norm": 285.825439453125,
+       "cos_raw_vs_ideal": 0.07771136667147005,
+       "rel_l2_raw_vs_ideal": 1.0048488784932748,
+       "rel_l2_x0_vs_clean": 0.33204647770318096,
+       "rel_l2_xt_vs_clean_v0_baseline": 0.3304441939808113,
+       "cos_x0_vs_clean": 0.9438715268323647,
+       "oracle_scalar_gain": 0.38234092543474374,
+       "rel_l2_x0_vs_clean_at_oracle_gain": 0.3294448974521328,
+       "cos_raw_vs_parent": 0.08182432115594554,
+       "rel_l2_raw_vs_parent": 1.005789179800639,
+       "rel_l2_x0_vs_parent_x0": 0.3140456539346253,
+       "parent_rel_l2_x0_vs_clean": 0.09766997926011486,
+       "parent_cos_raw_vs_ideal": 0.9555180528908318
+      },
+      "site": {
+       "raw_finite": true,
+       "raw_nonzero": true,
+       "raw_norm": 59.95591735839844,
+       "ideal_raw_norm": 285.825439453125,
+       "cos_raw_vs_ideal": 0.09119904831155987,
+       "rel_l2_raw_vs_ideal": 1.0028661850473088,
+       "rel_l2_x0_vs_clean": 0.3313913080366117,
+       "rel_l2_xt_vs_clean_v0_baseline": 0.3304441939808113,
+       "cos_x0_vs_clean": 0.9444054223932452,
+       "oracle_scalar_gain": 0.4347679999223595,
+       "rel_l2_x0_vs_clean_at_oracle_gain": 0.329067128444127,
+       "cos_raw_vs_parent": 0.09685340541552993,
+       "rel_l2_raw_vs_parent": 1.0033980116843255,
+       "rel_l2_x0_vs_parent_x0": 0.31329904015049675,
+       "parent_rel_l2_x0_vs_clean": 0.09766997926011486,
+       "parent_cos_raw_vs_ideal": 0.9555180528908318
+      },
+      "sigma": 0.15000000596046448,
+      "sign": -1.0
+     }
+    },
+    {
+     "segment": "qimg_s035",
+     "unit": "qimg_mmdit_L30_img",
+     "pair_forward": 25,
+     "sigma": 0.3499999940395355,
+     "prompt_tokens": 100,
+     "media_rows": 1024,
+     "time_rows": 0,
+     "input_finite": true,
+     "final_hidden_finite": true,
+     "last_position_logits_finite": true,
+     "emission_final": {
+      "finite": true,
+      "norm": 2469.528076171875,
+      "nonzero": true
+     },
+     "emission_site": {
+      "finite": true,
+      "norm": 2442.9091796875
+     },
+     "own_charted_write": [
+      {
+       "seq": 7,
+       "rows_owned": 1024,
+       "write_norm": 936.0385131835938
+      }
+     ],
+     "checks": {
+      "features_equal_pair_rows_max_abs": 0.0,
+      "capture": "/mnt/lexar/omni-campaign/qimg-broad-capture-sep07/run/capture_batch1/b1_held_glass_pitcher_sigma01.safetensors",
+      "capture_sha256": "88f6ce424833842abb6faa888769aff059ab10160e3929d9bcf6152745dcb593",
+      "xt_vs_solved_interpolate_rel": 0.0016545240068808198
+     },
+     "layout": {
+      "latent": "[1, 16, 1, 64, 64] Qwen-Image DiT space = Wan21.process_in(VAE latent)",
+      "image": "/mnt/lexar/omni-campaign/qimg-broad-calibration-sep07/batch1/b1_held_glass_pitcher.png"
+     },
+     "latent": {
+      "parent_sign_check": {
+       "+1": 1.51039923501595,
+       "-1": 0.14636047121505838,
+       "better": -1.0
+      },
+      "final": {
+       "raw_finite": true,
+       "raw_nonzero": true,
+       "raw_norm": 60.175140380859375,
+       "ideal_raw_norm": 285.82489013671875,
+       "cos_raw_vs_ideal": 0.11967187013418382,
+       "rel_l2_raw_vs_ideal": 0.9969625070830448,
+       "rel_l2_x0_vs_clean": 0.7686927930157195,
+       "rel_l2_xt_vs_clean_v0_baseline": 0.7710348055040825,
+       "cos_x0_vs_clean": 0.695723983800983,
+       "oracle_scalar_gain": 0.5684255329761909,
+       "rel_l2_x0_vs_clean_at_oracle_gain": 0.7654937629644414,
+       "cos_raw_vs_parent": 0.1262453773044361,
+       "rel_l2_raw_vs_parent": 0.9961900904490864,
+       "rel_l2_x0_vs_parent_x0": 0.7563887591563818,
+       "parent_rel_l2_x0_vs_clean": 0.14636047121505838,
+       "parent_cos_raw_vs_ideal": 0.9819192205817433
+      },
+      "site": {
+       "raw_finite": true,
+       "raw_nonzero": true,
+       "raw_norm": 61.900535583496094,
+       "ideal_raw_norm": 285.82489013671875,
+       "cos_raw_vs_ideal": 0.21282027408460483,
+       "rel_l2_raw_vs_ideal": 0.9770985527248602,
+       "rel_l2_x0_vs_clean": 0.7533769927114042,
+       "rel_l2_xt_vs_clean_v0_baseline": 0.7710348055040825,
+       "cos_x0_vs_clean": 0.700306627693525,
+       "oracle_scalar_gain": 0.9826916851981775,
+       "rel_l2_x0_vs_clean_at_oracle_gain": 0.7533714488089047,
+       "cos_raw_vs_parent": 0.2188099649633794,
+       "rel_l2_raw_vs_parent": 0.9757800760989727,
+       "rel_l2_x0_vs_parent_x0": 0.7408918117227181,
+       "parent_rel_l2_x0_vs_clean": 0.14636047121505838,
+       "parent_cos_raw_vs_ideal": 0.9819192205817433
+      },
+      "sigma": 0.3499999940395355,
+      "sign": -1.0
+     }
+    },
+    {
+     "segment": "qimg_s065",
+     "unit": "qimg_mmdit_L30_img",
+     "pair_forward": 26,
+     "sigma": 0.6499999761581421,
+     "prompt_tokens": 100,
+     "media_rows": 1024,
+     "time_rows": 0,
+     "input_finite": true,
+     "final_hidden_finite": true,
+     "last_position_logits_finite": true,
+     "emission_final": {
+      "finite": true,
+      "norm": 2517.10302734375,
+      "nonzero": true
+     },
+     "emission_site": {
+      "finite": true,
+      "norm": 2489.84326171875
+     },
+     "own_charted_write": [
+      {
+       "seq": 8,
+       "rows_owned": 1024,
+       "write_norm": 719.4266357421875
+      }
+     ],
+     "checks": {
+      "features_equal_pair_rows_max_abs": 0.0,
+      "capture": "/mnt/lexar/omni-campaign/qimg-broad-capture-sep07/run/capture_batch1/b1_held_glass_pitcher_sigma02.safetensors",
+      "capture_sha256": "5646f2fc22a0823f3440ad01c81f565265dbace3c71482862bfd4bfa17440f51",
+      "xt_vs_solved_interpolate_rel": 0.0016461750492453575
+     },
+     "layout": {
+      "latent": "[1, 16, 1, 64, 64] Qwen-Image DiT space = Wan21.process_in(VAE latent)",
+      "image": "/mnt/lexar/omni-campaign/qimg-broad-calibration-sep07/batch1/b1_held_glass_pitcher.png"
+     },
+     "latent": {
+      "parent_sign_check": {
+       "+1": 2.8288305660921877,
+       "-1": 0.20354997153376092,
+       "better": -1.0
+      },
+      "final": {
+       "raw_finite": true,
+       "raw_nonzero": true,
+       "raw_norm": 59.64112091064453,
+       "ideal_raw_norm": 285.830078125,
+       "cos_raw_vs_ideal": 0.15360640565713152,
+       "rel_l2_raw_vs_ideal": 0.9896645741460074,
+       "rel_l2_x0_vs_clean": 1.4171482708990861,
+       "rel_l2_xt_vs_clean_v0_baseline": 1.4319480631077655,
+       "cos_x0_vs_clean": 0.2961202795688014,
+       "oracle_scalar_gain": 0.7361564881694217,
+       "rel_l2_x0_vs_clean_at_oracle_gain": 1.4149538649576063,
+       "cos_raw_vs_parent": 0.16344363246401047,
+       "rel_l2_raw_vs_parent": 0.987786760969238,
+       "rel_l2_x0_vs_parent_x0": 1.4292183261498261,
+       "parent_rel_l2_x0_vs_clean": 0.20354997153376092,
+       "parent_cos_raw_vs_ideal": 0.9898895806784913
+      },
+      "site": {
+       "raw_finite": true,
+       "raw_nonzero": true,
+       "raw_norm": 68.75350189208984,
+       "ideal_raw_norm": 285.830078125,
+       "cos_raw_vs_ideal": 0.36511061682771734,
+       "rel_l2_raw_vs_ideal": 0.9392614319439934,
+       "rel_l2_x0_vs_clean": 1.3449735869261397,
+       "rel_l2_xt_vs_clean_v0_baseline": 1.4319480631077655,
+       "cos_x0_vs_clean": 0.3006099033410216,
+       "oracle_scalar_gain": 1.5178780333942936,
+       "rel_l2_x0_vs_clean_at_oracle_gain": 1.333092302501732,
+       "cos_raw_vs_parent": 0.37367682554604664,
+       "rel_l2_raw_vs_parent": 0.9363982140151444,
+       "rel_l2_x0_vs_parent_x0": 1.3548647732384516,
+       "parent_rel_l2_x0_vs_clean": 0.20354997153376092,
+       "parent_cos_raw_vs_ideal": 0.9898895806784913
+      },
+      "sigma": 0.6499999761581421,
+      "sign": -1.0
+     }
+    },
+    {
+     "segment": "qimg_s090",
+     "unit": "qimg_mmdit_L30_img",
+     "pair_forward": 27,
+     "sigma": 0.8999999761581421,
+     "prompt_tokens": 100,
+     "media_rows": 1024,
+     "time_rows": 0,
+     "input_finite": true,
+     "final_hidden_finite": true,
+     "last_position_logits_finite": true,
+     "emission_final": {
+      "finite": true,
+      "norm": 2566.27392578125,
+      "nonzero": true
+     },
+     "emission_site": {
+      "finite": true,
+      "norm": 2576.663818359375
+     },
+     "own_charted_write": [
+      {
+       "seq": 9,
+       "rows_owned": 1024,
+       "write_norm": 251.31739807128906
+      }
+     ],
+     "checks": {
+      "features_equal_pair_rows_max_abs": 0.0,
+      "capture": "/mnt/lexar/omni-campaign/qimg-broad-capture-sep07/run/capture_batch1/b1_held_glass_pitcher_sigma03.safetensors",
+      "capture_sha256": "f7b4013f202c4ef3654a7f5556bdf4ca6e278f91c33f484e3e54fa917b61222a",
+      "xt_vs_solved_interpolate_rel": 0.0016669747419655323
+     },
+     "layout": {
+      "latent": "[1, 16, 1, 64, 64] Qwen-Image DiT space = Wan21.process_in(VAE latent)",
+      "image": "/mnt/lexar/omni-campaign/qimg-broad-calibration-sep07/batch1/b1_held_glass_pitcher.png"
+     },
+     "latent": {
+      "parent_sign_check": {
+       "+1": 3.9013928523779473,
+       "-1": 0.33113502747292456,
+       "better": -1.0
+      },
+      "final": {
+       "raw_finite": true,
+       "raw_nonzero": true,
+       "raw_norm": 56.664642333984375,
+       "ideal_raw_norm": 285.8302917480469,
+       "cos_raw_vs_ideal": 0.1589533867424231,
+       "rel_l2_raw_vs_ideal": 0.9880676871777795,
+       "rel_l2_x0_vs_clean": 1.9590399809715886,
+       "rel_l2_xt_vs_clean_v0_baseline": 1.982698154976115,
+       "cos_x0_vs_clean": 0.08844157085378554,
+       "oracle_scalar_gain": 0.8017974657396426,
+       "rel_l2_x0_vs_clean_at_oracle_gain": 1.957490306658225,
+       "cos_raw_vs_parent": 0.16389066867178903,
+       "rel_l2_raw_vs_parent": 0.987269644791378,
+       "rel_l2_x0_vs_parent_x0": 2.0980972696899465,
+       "parent_rel_l2_x0_vs_clean": 0.33113502747292456,
+       "parent_cos_raw_vs_ideal": 0.9860205910124775
+      },
+      "site": {
+       "raw_finite": true,
+       "raw_nonzero": true,
+       "raw_norm": 73.47514343261719,
+       "ideal_raw_norm": 285.8302917480469,
+       "cos_raw_vs_ideal": 0.4363876926354143,
+       "rel_l2_raw_vs_ideal": 0.9174555129296951,
+       "rel_l2_x0_vs_clean": 1.819037351617045,
+       "rel_l2_xt_vs_clean_v0_baseline": 1.982698154976115,
+       "cos_x0_vs_clean": 0.08704290293410238,
+       "oracle_scalar_gain": 1.6976179009492671,
+       "rel_l2_x0_vs_clean_at_oracle_gain": 1.7839499841423518,
+       "cos_raw_vs_parent": 0.4452718680664359,
+       "rel_l2_raw_vs_parent": 0.9136099742324374,
+       "rel_l2_x0_vs_parent_x0": 1.9415593303904304,
+       "parent_rel_l2_x0_vs_clean": 0.33113502747292456,
+       "parent_cos_raw_vs_ideal": 0.9860205910124775
+      },
+      "sigma": 0.8999999761581421,
+      "sign": -1.0
+     }
+    }
+   ]
+  },
+  "hy3d": {
+   "latents": "/home/cereal/omni-campaign/composite/s8/media_out/hy3d/latents.safetensors",
+   "latents_sha256": "7d42aa577c865277d82d510f9d9ad30d628fb4b8df839d5159fc056b6491d77c",
+   "segments": [
+    {
+     "segment": "hy3d_s025",
+     "unit": "hy3d_dit_L10",
+     "pair_forward": 2,
+     "sigma": 0.25,
+     "prompt_tokens": 100,
+     "media_rows": 4097,
+     "time_rows": 1,
+     "input_finite": true,
+     "final_hidden_finite": true,
+     "last_position_logits_finite": true,
+     "emission_final": {
+      "finite": true,
+      "norm": 5344.33447265625,
+      "nonzero": true
+     },
+     "emission_site": {
+      "finite": true,
+      "norm": 5018.69091796875
+     },
+     "own_charted_write": [
+      {
+       "seq": 10,
+       "rows_owned": 4097,
+       "write_norm": 100.39402770996094
+      }
+     ],
+     "checks": {
+      "features_equal_pair_rows_max_abs": null,
+      "captured_sigma": false,
+      "capture_sigma": 0.5,
+      "x_t_rebuilt_from_posterior_and_noise": true,
+      "capture_interpolate_rel_l2": 0.00022131693549454212,
+      "object_sha256": "69b8237ac685cb9df47c3127bc4221ff7620bc5f0cd9f00f44dbeb19c579f673",
+      "time_row": "row 0: zero features, TIME_ROW_POSITION, the segment sigma (unit contract)"
+     },
+     "layout": {
+      "latent": "[1, 64, 4096] Hunyuan3D-2.1 ShapeVAE latent x scale_factor (DiT space); comfy layout [B, C, N]"
+     },
+     "latent": {
+      "final": {
+       "raw_finite": true,
+       "raw_nonzero": true,
+       "raw_norm": 295.4485168457031,
+       "ideal_raw_norm": 536.0740356445312,
+       "cos_raw_vs_ideal": -0.009882576832168755,
+       "rel_l2_raw_vs_ideal": 1.1465751363425998,
+       "rel_l2_x0_vs_clean": 0.9449495540956221,
+       "rel_l2_xt_vs_clean_v0_baseline": 0.8241496995158704,
+       "cos_x0_vs_clean": 0.6308016698435399,
+       "oracle_scalar_gain": -0.017931564644506213,
+       "rel_l2_x0_vs_clean_at_oracle_gain": 0.8241094530899347
+      },
+      "site": {
+       "raw_finite": true,
+       "raw_nonzero": true,
+       "raw_norm": 340.2855529785156,
+       "ideal_raw_norm": 536.0740356445312,
+       "cos_raw_vs_ideal": -0.010691241130067829,
+       "rel_l2_raw_vs_ideal": 1.190168427745774,
+       "rel_l2_x0_vs_clean": 0.9808769519433543,
+       "rel_l2_xt_vs_clean_v0_baseline": 0.8241496995158704,
+       "cos_x0_vs_clean": 0.6178138468170185,
+       "oracle_scalar_gain": -0.01684280399021153,
+       "rel_l2_x0_vs_clean_at_oracle_gain": 0.8241025970269644
+      },
+      "sigma": 0.25,
+      "sign": 1.0
+     }
+    },
+    {
+     "segment": "hy3d_s050",
+     "unit": "hy3d_dit_L10",
+     "pair_forward": 2,
+     "sigma": 0.5,
+     "prompt_tokens": 100,
+     "media_rows": 4097,
+     "time_rows": 1,
+     "input_finite": true,
+     "final_hidden_finite": true,
+     "last_position_logits_finite": true,
+     "emission_final": {
+      "finite": true,
+      "norm": 5407.10498046875,
+      "nonzero": true
+     },
+     "emission_site": {
+      "finite": true,
+      "norm": 5196.29248046875
+     },
+     "own_charted_write": [
+      {
+       "seq": 11,
+       "rows_owned": 4097,
+       "write_norm": 101.22055053710938
+      }
+     ],
+     "checks": {
+      "features_equal_pair_rows_max_abs": 0.0,
+      "captured_sigma": true,
+      "capture_sigma": 0.5,
+      "x_t_rebuilt_from_posterior_and_noise": false,
+      "capture_interpolate_rel_l2": 0.00022131693549454212,
+      "object_sha256": "69b8237ac685cb9df47c3127bc4221ff7620bc5f0cd9f00f44dbeb19c579f673",
+      "time_row": "row 0: zero features, TIME_ROW_POSITION, the segment sigma (unit contract)"
+     },
+     "layout": {
+      "latent": "[1, 64, 4096] Hunyuan3D-2.1 ShapeVAE latent x scale_factor (DiT space); comfy layout [B, C, N]"
+     },
+     "latent": {
+      "parent_sign_check": {
+       "+1": 1.4959841133404135,
+       "-1": 1.939958050288508,
+       "better": 1.0
+      },
+      "final": {
+       "raw_finite": true,
+       "raw_nonzero": true,
+       "raw_norm": 278.7880859375,
+       "ideal_raw_norm": 536.0741577148438,
+       "cos_raw_vs_ideal": -0.008695508216731061,
+       "rel_l2_raw_vs_ideal": 1.1311484290610339,
+       "rel_l2_x0_vs_clean": 1.8644728946094389,
+       "rel_l2_xt_vs_clean_v0_baseline": 1.648300830125273,
+       "cos_x0_vs_clean": 0.26177664843130416,
+       "oracle_scalar_gain": -0.016720506174923898,
+       "rel_l2_x0_vs_clean_at_oracle_gain": 1.648238513582781,
+       "cos_raw_vs_parent": -0.017100666774332297,
+       "rel_l2_raw_vs_parent": 1.9089480743805205,
+       "rel_l2_x0_vs_parent_x0": 0.5960147490226526,
+       "parent_rel_l2_x0_vs_clean": 1.4959841133404135,
+       "parent_cos_raw_vs_ideal": 0.43430529882391067
+      },
+      "site": {
+       "raw_finite": true,
+       "raw_nonzero": true,
+       "raw_norm": 349.0280456542969,
+       "ideal_raw_norm": 536.0741577148438,
+       "cos_raw_vs_ideal": -0.009824662779912343,
+       "rel_l2_raw_vs_ideal": 1.1986198892134023,
+       "rel_l2_x0_vs_clean": 1.975686158336943,
+       "rel_l2_xt_vs_clean_v0_baseline": 1.648300830125273,
+       "cos_x0_vs_clean": 0.25086082848446595,
+       "oracle_scalar_gain": -0.015089948027690762,
+       "rel_l2_x0_vs_clean_at_oracle_gain": 1.6482212779486693,
+       "cos_raw_vs_parent": -0.00951787538635288,
+       "rel_l2_raw_vs_parent": 2.2575032675211006,
+       "rel_l2_x0_vs_parent_x0": 0.7048411957685243,
+       "parent_rel_l2_x0_vs_clean": 1.4959841133404135,
+       "parent_cos_raw_vs_ideal": 0.43430529882391067
+      },
+      "sigma": 0.5,
+      "sign": 1.0
+     }
+    },
+    {
+     "segment": "hy3d_s075",
+     "unit": "hy3d_dit_L10",
+     "pair_forward": 2,
+     "sigma": 0.75,
+     "prompt_tokens": 100,
+     "media_rows": 4097,
+     "time_rows": 1,
+     "input_finite": true,
+     "final_hidden_finite": true,
+     "last_position_logits_finite": true,
+     "emission_final": {
+      "finite": true,
+      "norm": 5283.73291015625,
+      "nonzero": true
+     },
+     "emission_site": {
+      "finite": true,
+      "norm": 5284.2099609375
+     },
+     "own_charted_write": [
+      {
+       "seq": 12,
+       "rows_owned": 4097,
+       "write_norm": 94.35303497314453
+      }
+     ],
+     "checks": {
+      "features_equal_pair_rows_max_abs": null,
+      "captured_sigma": false,
+      "capture_sigma": 0.5,
+      "x_t_rebuilt_from_posterior_and_noise": true,
+      "capture_interpolate_rel_l2": 0.00022131693549454212,
+      "object_sha256": "69b8237ac685cb9df47c3127bc4221ff7620bc5f0cd9f00f44dbeb19c579f673",
+      "time_row": "row 0: zero features, TIME_ROW_POSITION, the segment sigma (unit contract)"
+     },
+     "layout": {
+      "latent": "[1, 64, 4096] Hunyuan3D-2.1 ShapeVAE latent x scale_factor (DiT space); comfy layout [B, C, N]"
+     },
+     "latent": {
+      "final": {
+       "raw_finite": true,
+       "raw_nonzero": true,
+       "raw_norm": 273.1746520996094,
+       "ideal_raw_norm": 536.0740356445312,
+       "cos_raw_vs_ideal": -0.007226674873016462,
+       "rel_l2_raw_vs_ideal": 1.1256272088734394,
+       "rel_l2_x0_vs_clean": 2.783055979301189,
+       "rel_l2_xt_vs_clean_v0_baseline": 2.4724490995969033,
+       "cos_x0_vs_clean": 0.08853344938159184,
+       "oracle_scalar_gain": -0.014181637825216035,
+       "rel_l2_x0_vs_clean_at_oracle_gain": 2.4723845370551536
+      },
+      "site": {
+       "raw_finite": true,
+       "raw_nonzero": true,
+       "raw_norm": 358.1700134277344,
+       "ideal_raw_norm": 536.0740356445312,
+       "cos_raw_vs_ideal": -0.007338643651963933,
+       "rel_l2_raw_vs_ideal": 1.2067314536090537,
+       "rel_l2_x0_vs_clean": 2.983582096492897,
+       "rel_l2_xt_vs_clean_v0_baseline": 2.4724490995969033,
+       "cos_x0_vs_clean": 0.0856520836350479,
+       "oracle_scalar_gain": -0.01098389524177361,
+       "rel_l2_x0_vs_clean_at_oracle_gain": 2.4723825212616566
+      },
+      "sigma": 0.75,
+      "sign": 1.0
+     }
+    }
+   ]
+  }
+ },
+ "seconds": 2656.9,
+ "peak_rss_gib": 53.84074401855469,
+ "complete": true,
+ "qvl": {
+  "answers": "/home/cereal/omni-campaign/composite/s8/media_out/qvl/answers.json",
+  "answers_sha256": "6bb78caa7474cfe487c3afc27a26b923d0aa96cf23f0391682fa7920f40ebe98",
+  "preflight": {
+   "case": "b2_held_aquarium_room.image",
+   "prefill_last_logits_max_abs_diff_cached_vs_recompute": 0.0,
+   "prefill_argmax_equal": true,
+   "step1_logits_max_abs_diff_cached_vs_recompute": 0.125,
+   "step1_argmax_equal": true
+  },
+  "answers_differ_between_images": true,
+  "image_answer_equals_zeroed_answer": [
+   false,
+   false
+  ],
+  "cases": [
+   {
+    "case": "b2_held_aquarium_room.image",
+    "new_tokens": 48,
+    "stopped": false,
+    "answer_verbatim": "The prompt asks for a description of the image, but the image provided is a text string. The text string is a sequence of words, which are tokens. The tokens are \"Describe\", \"this\", \"image\", \".\", and \"The"
+   },
+   {
+    "case": "b2_held_aquarium_room.zeroed_features",
+    "new_tokens": 48,
+    "stopped": false,
+    "answer_verbatim": "The image is a placeholder. It is a generic, abstract representation of a generic, abstract representation. It is a generic, abstract representation of a generic, abstract representation. It is a generic, abstract representation of a generic, abstract representation."
+   },
+   {
+    "case": "b1_fit_travel_bag.image",
+    "new_tokens": 48,
+    "stopped": false,
+    "answer_verbatim": "The image is a text block describing a concept of \"describe this image\" in a specific format. It is a paragraph of text, with a specific structure. The text is a description of the image, and the text is a description of"
+   },
+   {
+    "case": "b1_fit_travel_bag.zeroed_features",
+    "new_tokens": 48,
+    "stopped": false,
+    "answer_verbatim": "The image is a placeholder. It is a generic, abstract representation of a generic, abstract representation. It is a generic, abstract representation of a generic, abstract representation. It is a generic, abstract representation of a generic, abstract representation."
+   },
+   {
+    "case": "no_image",
+    "new_tokens": 48,
+    "stopped": false,
+    "answer_verbatim": "The image is a **2x2 grid** of four squares. Each square is divided into a 3x3 grid of cells. The cells are filled with numbers, and the numbers are arranged in a pattern. The pattern is a"
+   }
+  ]
+ }
+}
