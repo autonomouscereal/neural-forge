@@ -112,7 +112,11 @@ from typing import Any, Iterable, Mapping, Sequence
 #: `charted_blocks` (else refused), and its tensors are extras like every other
 #: media tensor.  `num_layers` stays the TEXT layer count every consumer means;
 #: `num_blocks` and `text_blocks` record the Chimera indices.
-TOOL_VERSION = "p1_qwen35_reader 1.0.5"
+#: 1.0.6 (2026-10-18): the delta overlay checks a composed tensor's finiteness ONCE per name per reader.  Its inputs
+#: are immutable sha-verified shards and the compose is deterministic, so a repeat compose is bit-identical and so is its
+#: finiteness; the media trainer re-streams the frozen trunk every group, and the 54 GB isfinite scan was 40 % of its
+#: wall time (py-spy, M1 1.3.3).  The composed values are unchanged.
+TOOL_VERSION = "p1_qwen35_reader 1.0.6"
 SMOKE_SCHEMA = "neural-forge-omni-p1-seam-smoke-v1"
 RECEIPT_SCHEMA = "neural-forge-omni-p1-reader-parity-v1"
 DELTA_PLAN_SCHEMA = "neural-forge-omni-delta-plan-v1"
@@ -426,6 +430,7 @@ class DeltaOverlay:
                 "any same-architecture sibling); open the root itself or verify its digest"
             )
         self.links: list[tuple[dict[str, Any], ChimeraShards]] = []
+        self.finite_checked: set[str] = set()
         self.ops: dict[str, list[tuple[dict[str, Any], ChimeraShards]]] = {}
         for link in plan["deltas"]:
             directory = Path(link["directory"])
@@ -465,8 +470,10 @@ class DeltaOverlay:
                 out[index] *= gain.view(shape)
             else:
                 raise P1Error(f"plan op {op!r} is not replace/lora/scale")
-        if not bool(torch.isfinite(out).all()):
-            raise P1Error(f"composing {name} produced a non-finite value")
+        if name not in self.finite_checked:
+            if not bool(torch.isfinite(out).all()):
+                raise P1Error(f"composing {name} produced a non-finite value")
+            self.finite_checked.add(name)
         return out.to(dtype=base.dtype)
 
     def close(self) -> None:

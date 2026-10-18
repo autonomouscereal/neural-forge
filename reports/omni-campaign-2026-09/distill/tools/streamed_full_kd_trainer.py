@@ -53,7 +53,10 @@ from typing import Any
 import torch
 
 TOOL_NAME = "streamed_full_kd_trainer"
-TOOL_VERSION = "1.0.0"
+#: 1.0.1 (2026-10-18): the updated weight is copied straight from the device into the host master (`master.copy_(w)`,
+#: same bits) instead of through a fresh pageable CPU tensor; with --pin-weights that is one DMA.  py-spy on run 1 (step
+#: 94-100): 46 % of wall time in the pageable layer upload, 27 % in this write-back, 17 % in backward compute.
+TOOL_VERSION = "1.0.1"
 RECEIPT_SCHEMA = "neural-forge-omni-full-kd-trainer-v1"
 CHECKPOINT_SCHEMA = "neural-forge-omni-full-kd-checkpoint-v1"
 STUDENT_SCHEMA = "neural-forge-omni-full-kd-student-v1"
@@ -402,7 +405,7 @@ class FullParamEngine(skt.LayerwiseEngine):
         info = self.optimizer.update(name, weight, grad, self.lr, step=self.step_index)
         self.step_stats["clipped"] += int(info["scale"] < 1.0)
         self.step_stats["updated"] += 1
-        master.copy_(weight.detach().to("cpu"))
+        master.copy_(weight.detach())  # device -> host master directly (1.0.1)
 
     def _layer_backward(self, layer: torch.nn.Module, index: int, boundary: torch.Tensor, grad: torch.Tensor) -> torch.Tensor:
         params = dict(layer.named_parameters())

@@ -23,6 +23,10 @@ RETRIES=${RETRIES:-3}
 TOKENS=${TOKENS:-20000000}
 MICRO=${MICRO:-8}
 LR=${LR:-1e-5}
+# more trainer args (2026-10-18: EXTRA="--pin-weights --allow-config-change" -- the page-locked host master; py-spy put
+# 73 % of a run-1 step in pageable host<->device weight copies.  --allow-config-change because --pin-weights is part of
+# the config digest; base and data identity stay guarded)
+EXTRA=${EXTRA:-}
 STATUS=$RUN/queue.status
 mkdir -p "$RUN"
 utc() { date -u +%FT%TZ; }
@@ -35,8 +39,10 @@ ARGS=(train --p1-chimera /mnt/lexar/omni-campaign/clones/OC02-F-Q38-27BU-OMNI1.c
   --count-real-tokens --lr "$LR" --warmup-steps 20 --min-lr-ratio 0.1
   --out "$RUN/out" --safety-dir "$RUN/safety" --safety-minutes 60 --safety-keep 1 --resume auto
   --no-preregistration "full-parameter KD of Chimera Omni (ruling cyril-full-distill-no-lora-2026-10-17; plan REALIGNMENT_2026-10-17.md)")
+# shellcheck disable=SC2206
+[ -n "$EXTRA" ] && ARGS+=($EXTRA)
 exec 9>> "$Q/gpu$GPU.lock"
-say "queue start: GPU$GPU, data $DATA ($(sha256sum "$DATA" | cut -c1-16)), tokens $TOKENS, micro $MICRO, lr $LR, trainer $(sha256sum $T/streamed_full_kd_trainer.py | cut -c1-16)"
+say "queue start: GPU$GPU, data $DATA ($(sha256sum "$DATA" | cut -c1-16)), tokens $TOKENS, micro $MICRO, lr $LR, extra [$EXTRA], trainer $(sha256sum $T/streamed_full_kd_trainer.py | cut -c1-16)"
 flock 9
 say "gpu$GPU.lock held"
 crashes=0

@@ -236,7 +236,71 @@ The largest shared-id gap, 0.125, is one bf16 step at logprob ~ -20.
 - M1 restarted on 1.3.3 at 11:41Z (log `train-005.log`), from the step-6 checkpoint.
 - Also in this window: `flash_score_queue.sh` now takes GGUF, OK_MARK and OUT overrides. Caches default to Lexar beside the Q38 caches, and a group starts only with OUT_MIN_GB (215) free. When no OK_MARK exists, it hashes the GGUF itself. `fullkd_data_flash.py` roots default to Lexar too.
 
-**Waiting on a decision (Cyril):** local space for Flash Next. Either:
+## 4f. Update 2026-10-18 about 17:00Z: drive cleanup, the throughput fixes, and the M1 OOM
+
+**Cyril:** "[Cyril quote withheld]", with Flash Next to come after the drives are clean and training is running fully. Three agents did the cleanup, and each deletion was logged before it ran (`/home/cereal/cleanup-20261018/*-deleted.tsv`, with file lists under `lists/`).
+- **Lexar: 192 → 339 GB free** (150.5 GB freed):
+  - D1 transient scratch: `d1_boundary` 82 GB and `d1seal` 55 GB. D1 is sealed and reviewed; the registered delta and both clones stay.
+  - Superseded LoRA D2 checkpoints, 6 GB.
+  - 53 D1 rung files, 7 GB, sha-identical to `OMNI1D1-rungs-canonical`, which stays.
+- **Root: 22 → 174 GB free** (about 163 GB freed):
+  - unproven NF a0028 2× trace caches, 130 GB (frozen review 0/15; under Cyril's 08-19 rule, delete the unproven and keep the evidence);
+  - the superseded C10 rehearsal partial child, 14 GB;
+  - pytest temp files, 9.5 GB;
+  - the unreferenced SonicMaster HF dataset, 8 GB;
+  - journal, pip and apt caches.
+- **Category B, Cyril's call; nothing deleted:**
+  - On Lexar:
+    - `omnicoder_0.1.0`, 693 GiB. About 170 GiB of it is re-downloadable caches and venvs; its `data/` holds LibriSpeech and LJSpeech.
+    - Possible K3 fold duplicates, oct06/oct07, about 230 GiB; not hash-verified.
+    - Codex's `native_executor/qimg_first32`, 122 GiB.
+  - On root:
+    - `qwen-fold/children`, 140 GB: registered `partially_capable` children; CHECKPOINT_POLICY R4/R5 apply.
+    - About 28 GB of exited gauntlet/hunyuan containers.
+- Stopped the idle `comfyui_qwen21_gpu5` (0 prompts in 72 h; the policy is stopped by default). That freed 6.4 GB of swap; restart it with `docker start comfyui_qwen21_gpu5`.
+- **The NAS is still being repaired** (agent working); see §4e for the failure.
+
+**M1 OOM, 15:19:50Z.** The first `vision_in` group ran at the default 30,000 tokens. vision_in is full-depth (all 64 layers of boundaries) like music_codes, and it overflowed the 24 GB 3090 in the text-head objective.
+- `media_m1/media_data_v5.json` caps vision_in at `group_tokens` 10000.
+- M1 restarted 16:48:47Z from step 33. GPU0 was idle 15:20-16:49.
+
+**Throughput (py-spy on the live jobs).**
+- **M1:**
+  - 65% of each group was the P1 reader composing the frozen D1 overlay on the CPU; 40% was a 54 GB `isfinite` scan repeated every group.
+  - **`p1_qwen35_reader` 1.0.6** checks finiteness once per tensor per reader. The inputs are sha-verified and the compose is deterministic, so the values are unchanged.
+  - Two new tests were added; 1.0.5 fails exactly those two and 1.0.6 passes all 38.
+  - `media_m1_queue.sh` now defaults to `OMP_NUM_THREADS` 32 (it was 8, on 88 cores).
+- **Run 1:**
+  - 46% of each step was the pageable host→device layer upload, 27% the pageable write-back, and 17% backward compute.
+  - **`streamed_full_kd_trainer` 1.0.1** copies the update straight into the host master (same bits); its tests pass, 5 of 5.
+  - `fullkd_queue.sh` takes `EXTRA`.
+  - `run1_pin_restart.sh` waits for the next safety checkpoint, then STOPs and relaunches with `EXTRA="--pin-weights --allow-config-change"`. `--pin-weights` is in the config digest; base and data identity stay guarded.
+- **Watch item:** at attempts 159-161, as K3 pass-2 rows joined (about 7,500 K3 positions per step), grad_norm reached 6.05, 679 tensors were clipped and the loss went 0.25 → 0.71. It recovered at 162.
+- **Not ours, reported:** `clamd-mailcow` has restarted 175,730 times (exit 0, months-long) and costs one or two cores.
+
+## 4g. Update 2026-10-18 about 21:30Z: what the fixes did, run 1's 3.5-hour stop, the NAS root cause, and Flash Next staging
+
+- **M1 is about 3× faster.**
+  - Layer load per group dropped from 300-400 s to 72-102 s, and groups take 95-135 s (from 270-420 s).
+  - That came from reader 1.0.6, 32 OMP threads, and the GPU5 ComfyUI stop that freed swap.
+  - M1 went from step 34 (16:58Z) to step 135 (21:10Z).
+  - vision_in groups at `group_tokens` 10000 run without OOM.
+- **Run 1 was down 17:55-21:21Z.**
+  - The pinned restart (`ops-20261018/run1_pin_restart.sh`) worked as designed: checkpoint 163, then STOP, then trainer 1.0.1 with `--pin-weights`. The pinned 52 GB master loaded in 271 s.
+  - The resume was then REFUSED: the base identity includes the p1 reader's sha and version, and reader 1.0.6 changed them.
+  - `ops-20261018/base_identity_live.py` diffed the live identity against the checkpoint's stored one. The ONLY differences are `/p1_tool/sha256`, `/p1_tool/version` and `/summary/tool_version`. The clone, config, shards, parent config, D1 plan sha and root digest are all identical.
+  - Relaunched 21:21Z with `--pin-weights --allow-config-change --allow-identity-change`; the record is `run1/IDENTITY_OVERRIDE_2026-10-18.json`.
+  - **Lesson:** a reader change is a base-identity change for every job that streams through it; check the live jobs' resume guards BEFORE installing a shared module.
+- **The NAS share is healthy again** (agent report, 21:15Z). Nothing was restarted or rebooted.
+  - Root cause: the AI pool absorbs only about 5 MB/s of sustained writes. It sits on SMR ST5000LM000 disks, is 98% full, is attached to the VM as a queue-depth-1 emulated IDE disk, and the controller runs write-through.
+  - Our move rsyncs plus the memory backup overran it, so NFS writes queued 240 s and that cascaded into smbd and CIFS.
+  - The mirror looks DEGRADED: VM disk `sdb` (host `/dev/sdc`, controller volume reset at 12:29/12:30Z) takes no writes. **Cyril should check `zpool status ai_pool` on the NAS VM.** The ai-training corpus exists only on that pool.
+  - Reads now run 16-25 MB/s from the AI server.
+  - Freed 44 GB: our partial qwen-fold children copy.
+  - Category B (Cyril): `omnicoder_2026` 610 GiB; agent-memory backup retention (about 27 GB/day × 30 days ≈ 810 GB; 7 daily + 4 weekly would free about 350 GiB); likely-duplicate NF sealed caches; old ollama/lmstudio, 37 GiB; `lexar-relief` partial copy, 38 GiB.
+- **Flash Next:**
+  - The GGUF is being copied NAS → root SSD (`ops-20261018/flash_gguf_stage.sh`; direct I/O, resumable, sha-checked, then the lane's OK mark). It started 21:22Z at about 16 MB/s, so it should be done around 22:55Z.
+  - The P40 tool-call generation and scoring start after run 1's first steps are confirmed. Either:
 - (a) free Lexar by deleting the D1 transient scratch (`scratch/d1_boundary` 77 GB + `scratch/d1seal` 52 GB; D1 sealed 10-15; transient scratch under STAGE_D_RULINGS) and re-download the GGUF from Hugging Face to Lexar (about 2.5 h at 10 MB/s); or
 - (b) free NAS space and restart its SMB/NFS; or
 - (c) delete the cold `qwen-fold/children` (140 GB on root).

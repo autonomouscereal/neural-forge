@@ -28,7 +28,9 @@ PARENT=${OLD:-$(git rev-parse main)}
 export GIT_INDEX_FILE=$(mktemp -u)
 trap 'rm -f "$GIT_INDEX_FILE" "$LIST" "$LIST.hits"' EXIT
 git read-tree "$PARENT"
-git rm -r -q --cached --ignore-unmatch -- "$SUB" > /dev/null   # the subtree is rebuilt from the selection each time
+# the subtree is rebuilt from the selection each time; -f because the safety check compares with the checkout's HEAD
+# (a codex/* branch), which this private index has nothing to do with
+git rm -r -q -f --cached --ignore-unmatch -- "$SUB" > /dev/null
 xargs -d '\n' git add -f -- < "$LIST"
 TREE=$(git write-tree)
 if [ "$TREE" = "$(git rev-parse "$PARENT^{tree}")" ]; then echo "nothing changed"; exit 0; fi

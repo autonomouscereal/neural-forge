@@ -22,7 +22,9 @@ mkdir -p "$RUN"
 utc() { date -u +%FT%TZ; }
 say() { echo "$(utc) $*" | tee -a "$RUN/queue.status"; }
 avail_gib() { awk '/MemAvailable/ {print int($2/1048576)}' /proc/meminfo; }
-export CHIMERA_OMNI_SRC=$OC/import/rq27b/tree_ef1ffb9/src PYTHONPATH=$OC/import/rq27b/tree_ef1ffb9/src:$T OMP_NUM_THREADS=8
+# OMP threads: the P1 reader composes the frozen D1 overlay on the CPU every layer load (py-spy 10-18: 65 % of a group);
+# 8 threads left ~80 free cores idle, so the default is now 32 (OMP_THREADS overrides)
+export CHIMERA_OMNI_SRC=$OC/import/rq27b/tree_ef1ffb9/src PYTHONPATH=$OC/import/rq27b/tree_ef1ffb9/src:$T OMP_NUM_THREADS=${OMP_THREADS:-32}
 exec 9>> "$Q/gpu0.lock"
 flock -w 600 9 || { say "STOP: gpu0.lock is held"; exit 5; }
 echo "$(utc) CLAIM GPU0 owner=claude lane=media-m1 job=media-$MODE pid=$$ log=$RUN preempt: touch $RUN/STOP" >> "$Q/p40.claims"

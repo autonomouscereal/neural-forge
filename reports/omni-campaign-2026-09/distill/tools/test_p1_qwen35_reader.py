@@ -569,6 +569,29 @@ class TestDeltaOverlay(Fixture):
         # the base itself was not touched
         self.assertTrue(torch.equal(reader.shards.view("blocks.0.ffn.up.weight"), base_up))
 
+    def test_a_repeat_compose_is_bit_identical_and_checks_finiteness_once(self) -> None:
+        # 1.0.6: the composed tensor's finiteness is checked once per name (the inputs are sha-verified and the
+        # compose is deterministic), so a re-read after a page drop must give the same bits without a second scan
+        reader = self.reader(Path(self.base["directory"]), plan=self.plan)
+        name = "model.language_model.layers.0.mlp.down_proj.weight"
+        first = reader.get(name).clone()
+        self.assertEqual({"blocks.0.ffn.down.weight"}, reader.overlay.finite_checked)
+        reader.drop_pages()
+        self.assertTrue(torch.equal(first, reader.get(name)))
+        self.assertEqual({"blocks.0.ffn.down.weight"}, reader.overlay.finite_checked)
+
+    def test_a_non_finite_compose_is_still_refused_on_its_first_read(self) -> None:
+        reader = self.reader(Path(self.base["directory"]), plan=self.plan)
+
+        class InfShards:
+            def view(self, key: str) -> torch.Tensor:
+                return torch.full((1,), float("inf"))
+
+        reader.overlay.ops["blocks.0.ffn.down.weight"].append(({"op": "scale", "tensor": "inf", "dim": 0}, InfShards()))
+        with self.assertRaises(p1.P1Error):
+            reader.get("model.language_model.layers.0.mlp.down_proj.weight")
+        self.assertNotIn("blocks.0.ffn.down.weight", reader.overlay.finite_checked)
+
     def test_a_plan_for_other_bytes_is_refused(self) -> None:
         # one extra NON-FFN tensor: a checkpoint the reader opens fine on its own,
         # whose shards are simply not the ones the plan is about
