@@ -102,6 +102,15 @@ def dir_bytes(d: Path, prune: set[Path]) -> int:
     return total
 
 
+def server_host_id(conn) -> int:
+    """host.id of the AI server.  A plain SELECT first: common.host_id upserts (ON CONFLICT DO UPDATE), which
+    row-locks host 'ai' and then waits behind any concurrent ingester's open transaction."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT id FROM host WHERE name = %s", (C.SERVER_HOST,))
+        row = cur.fetchone()
+    return row[0] if row else C.host_id(conn)
+
+
 def put_dataset(conn, tally: K.Tally, batch: C.Batch, project: str, key: str, kind: str, description: str | None,
                 prov) -> int:
     ds_id, state = K.upsert(conn, "dataset", ("key",), {
@@ -115,7 +124,7 @@ def put_dataset(conn, tally: K.Tally, batch: C.Batch, project: str, key: str, ki
 def put_version(conn, tally: K.Tally, batch: C.Batch, ds_id: int, version: str, path: str, manifest: dict,
                 splits: dict, item_count, size_bytes, sealed: bool, created_at, prov) -> int:
     dv_id, state = K.upsert(conn, "dataset_version", ("dataset_id", "version"), {
-        "dataset_id": ds_id, "version": version, "path": path, "host_id": C.host_id(conn),
+        "dataset_id": ds_id, "version": version, "path": path, "host_id": server_host_id(conn),
         "manifest": manifest, "splits": splits, "item_count": item_count, "size_bytes": size_bytes,
         "sealed": sealed, "created_at": created_at,
         "src_path": prov[0], "src_sha256": prov[1], "src_host": prov[2], "ingest_batch_id": batch.id},
