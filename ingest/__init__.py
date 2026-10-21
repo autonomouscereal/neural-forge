@@ -12,7 +12,7 @@ MODELS_RUNS_ORDER = ("hardware", "tool_pins", "lanes", "oc_ledger", "model_scan"
                      "status_runs", "fold_receipts")
 # evals: banks first; dossiers and toolcall_bankruns before student_tests (its reader grades for the parent
 # and OMNI1 columns attach to those runs).  codex_tasksets reads the WORKSTATION's proof_outputs: run it there.
-EVALS_ORDER = ("banks", "dossiers", "toolcall_bankruns", "student_tests", "s8_media", "p11_reads")
+EVALS_ORDER = ("banks", "dossiers", "toolcall_bankruns", "student_tests", "s8_media", "p11_reads", "lab_runs")
 GROUPS = {"models-runs": MODELS_RUNS_ORDER, "evals": EVALS_ORDER}
 
 

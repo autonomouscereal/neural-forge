@@ -4,8 +4,9 @@ One PostgreSQL database (`omni_lab`) for every test, eval, fold, distill, cache 
 AI-model program (Chimera Omni, Neural Forge, K3, speech, media, corpus), plus the code that writes to it.
 Built 2026-10-21 from the Omni Lab design and its critique (cases are global, every run records its software environment (`env`), media outputs go in `eval_artifact`, the tensor census in `model_tensor_group`, and there is a separate read-only role).
 
-This step is the database core only: roles, database, migrations, the shared module, and tests.
-The ingesters, the eval runner and the GPU worker come next and use `omni_lab_db.py`.
+It has four parts: the database core (roles, migrations, `omni_lab_db.py`), the ingesters that backfill
+every existing result format, the runner (`omni_lab.py run` / `compare` / `list` / `add-suite` / `add-cases` /
+`grade` / `log-run`, in `omni_lab_run.py`) and its GPU worker (`omni_lab_worker.py` + `adapters/` + `graders/`).
 
 ## Where it lives
 
@@ -39,7 +40,9 @@ C:/Python314/python.exe omni_lab.py db check              # schema version, migr
 C:/Python314/python.exe omni_lab.py db migrate [--dry-run]
 C:/Python314/python.exe omni_lab.py last [N]              # newest N rows of v_results
 C:/Python314/python.exe omni_lab.py sql "SELECT * FROM v_results"   # runs as omni_lab_ro
-C:/Python314/python.exe -m unittest discover -s tests -v  # throwaway omni_lab_test_<hex> DB, created and dropped
+C:/Python314/python.exe omni_lab.py compare 30658 30666 30676       # runs x cases pivot (see "Running a test")
+$PY omni_lab.py run --model M --suite S --gpus 6,4,0 | --cpu       # AI server: evaluate -> console + database
+C:/Python314/python.exe -m unittest discover -s tests -v  # throwaway omni_lab_test_<hex> DBs, created and dropped
 ```
 
 ## Schema at a glance
@@ -127,6 +130,105 @@ Parent vs OMNI1 vs student, one line per case (`-` = the model never ran the cas
 ```
 C:/Python314/python.exe omni_lab.py sql "SELECT tc.case_id, max(COALESCE(vm.grade,'ungraded')) FILTER (WHERE er.label='PARENT-Q38-27BU-NATIVE-NOTHINK') parent, max(COALESCE(vm.grade,'ungraded')) FILTER (WHERE er.label='OC02-OMNI1-NATIVE-NOTHINK') omni1, max(COALESCE(vm.grade,'ungraded')) FILTER (WHERE er.engine='qwen35-student') student FROM test_case tc JOIN suite_member sm ON sm.case_pk=tc.id JOIN test_suite ts ON ts.id=sm.suite_id LEFT JOIN v_eval_matrix vm ON vm.case_pk=tc.id LEFT JOIN eval_run er ON er.run_id=vm.eval_run_id WHERE ts.name IN ('bank_v1','student_tests_20261021') GROUP BY tc.case_id ORDER BY 1"
 ```
+
+## Running a test and comparing (the runner)
+
+One command runs any model on any suite, prints the results, writes them to the database and prints the
+comparison. Run it on the AI server from `/home/cereal/omni-campaign/lab` with the intake venv (it has
+psycopg2; the worker it starts uses `model-surgery-lab/venv`, which has torch):
+
+```
+PY=/home/cereal/.venvs/chimera-intake/bin/python
+$PY omni_lab.py run --model PARENT-Q35-0.8B --suite bank_v1 --cases arithmetic-multi-step,context-retrieval --cpu --cap 96
+$PY omni_lab.py run --model /mnt/lexar/omni-campaign/distill/fullkd/run1/out/student --suite student_tests_20261021 --gpus 6,4,0
+$PY omni_lab.py run --model OC02-F-Q38-27BU-OMNI1 --suite bank_v1 --gpus 0,4 --split 22,22
+$PY omni_lab.py run ... --save-test bank-nothink      # name the suite+engine+gen+cards+case filter
+$PY omni_lab.py run --test bank-nothink --model <other model>   # rerun the same test on another model
+$PY omni_lab.py run ... --dry-run                      # resolve and print everything; claim and start nothing
+```
+
+What `run` does, in order:
+1. It resolves the model (a ledger checkpoint id, a `model_key`, or a path, which gets a `path:<sha16>` row), the
+   suite (`name` or `name@version`; newest by default) and the cases (`--cases` globs, `--category`, `--limit`).
+2. It picks the engine from the layout: `hf` (stock transformers, one card or CPU), `qwen35-student` (any
+   directory with `student_manifest.json`), `chimera` (`chimera.checkpoint.v1`) or `gguf` (needs `--server-url`
+   of a running llama-server). `--engine` overrides. The tokenizer defaults to the model directory, else to the
+   one the model's previous eval recorded.
+3. It checks the cards. Each `--gpus` card is locked with `flock` on `$OC/distill/queues/gpu<N>.lock`
+   (non-blocking: a held lock refuses the run), then refused if it uses more than `--busy-limit` MiB (2000).
+   GPU5 is refused without `--allow-gpu5`, and host MemAvailable must stay above `--mem-floor-gib` (40).
+   `--dry-run` applies the same refusals without locking.
+4. It writes the `run` row (status `running`) and `spec.json` into
+   `/mnt/lexar/omni-campaign/scratch/omni-lab-runs/<utc>-<engine>-<model>-<suite>/`, then starts the worker
+   under `nice` with `CUDA_DEVICE_ORDER=PCI_BUS_ID` and `CUDA_VISIBLE_DEVICES` set to the claimed cards.
+   It holds the locks until the worker exits.
+5. The worker loads the model through its adapter and generates every case with `oc_calib.generate_greedy`.
+   It applies the machine graders and writes `results.jsonl` (one line per case, as each finishes) and
+   `receipt.json` (runtime versions, card UUIDs as torch sees them, placement, kernels, tokenizer and template
+   sha, thinking requested vs. took effect, stops, tool sha256s).
+6. `ingest/lab_runs.py` loads the run directory into the database. The output is a per-case console table,
+   the summary line, and a pivot against up to two earlier runs that share cases with this one (a lineage
+   parent first). `--baseline 30666,30658` picks them yourself; `--baseline none` skips the pivot.
+
+If the database is down or the runner is killed after the worker, the run directory is still the record.
+`omni_lab.py ingest lab_runs` loads it later with the same keys.
+
+What each engine reuses (nothing is reimplemented):
+
+| Engine | Loader | Notes |
+|---|---|---|
+| `hf` | `oc_run_frozen_bank.load_model`, `stop_token_ids` | On CPU, `qf_arch.force_torch_kernels` runs first. One device only. |
+| `qwen35-student` | `student_test.load_student` (strict load, `model.language_model.` -> `model.`, accelerate dispatch) | `device_plan` generalised to 1..N cards. With 3 cards it is `student_test`'s own plan. The S8 ledger-band mask is on unless `--no-band-mask`. |
+| `chimera` | `run_omni_frozen_review.py` 1.2.0 as a subprocess, on a generated bank file | Tool cases, raw continuations and non-text inputs are recorded as unsupported. Not yet run end to end. |
+| `gguf` | `toolcall_selfgen.Renderer` + `Client` (bank-run greedy sampling, `n_predict` = `--cap`) | Never starts a llama-server. Not yet run end to end. |
+| `echo` | none: a mechanics bed that returns the prompt (tests only) | |
+
+Graders (worker side, `graders/registry.py`):
+
+| Grader | Applies to | Result |
+|---|---|---|
+| `toolcall_selfgen.grade_case` | Tool cases with `expected` | pass/fail |
+| `student_test.code_check` | Cases whose `reference.asserts` exists | Uses `student_test`'s harness with the case's own asserts. Score = fraction of asserts passed. |
+| `chimera_recovery.evaluate` | Cases with an `oracle` | Vendored Codex grader `evaluation.grade_semantics`, sha `6a84626d…`, at `$L/research/fold/tools/vendor/chimera_recovery`. When the oracle says ungraded, no grade row is written. |
+
+Bank v1 has no machine grader by design. Every result carries `oc_calib.classify_form`'s box and the loop/cap
+flags as artifact flags, never as grades. A reader grades afterwards, and a human grade outranks a machine one
+everywhere:
+
+```
+$PY omni_lab.py grade 37881 context-retrieval correct --why "names Saturday" --grader human:cyril
+$PY omni_lab.py grade 37881 --file grades.json --grader human:claude    # {case_id: grade} or {case_id: {grade, why}}
+```
+
+Comparing takes well under a second (0.4 s wall from the workstation on 2026-10-21). In the pivot, `C/P/M/N` are
+reader grades, `pass/FAIL` are machine grades, `?` means ran but ungraded, `-` means that run never had the case,
+`*` marks a human grade, and `~loop ~cap ~empty ~echo ~unsup` are artifact flags:
+
+```
+C:/Python314/python.exe omni_lab.py compare 30658 30666 30676          # parent (S0 import) vs OMNI1 vs full-KD student
+C:/Python314/python.exe omni_lab.py compare --suite bank_v1 --last 12   # every run that touched bank_v1 cases
+C:/Python314/python.exe omni_lab.py compare --model OC02-F-Q38-27BU-OMNI1 --show text
+C:/Python314/python.exe omni_lab.py list suites | tests | runs | models qwen | cases bank_v1
+```
+
+Adding tests never breaks old comparisons. `add-suite NAME --file F` reads every bank layout already in the
+estate: `{"prompts": [...]}`, `{"cases": [...]}`, a list of strings or objects, or Codex `tasks.jsonl`. Per
+case it takes `prompt` | `messages` | `raw_text` | `input`, `tools`, `media`, `expected`, `asserts` and `oracle`,
+and infers the grader. `add-cases SUITE --file F` makes the next suite version: the old cases are carried
+forward, a reused `case_id` with a new prompt replaces that case in the new version only, and every earlier run
+shows `-` for the new cases.
+
+Training, fold and cache jobs log themselves without the worker:
+
+```
+RID=$($PY omni_lab.py log-run start --kind distill --name "fullkd run2" --model OC02-F-Q38-27BU-OMNI1 \
+      --lane L-TRAIN --gpus 4,0 --config @trainer_config.json --log run.log) || true
+$PY omni_lab.py log-run metric $RID --metric loss=2.31@100 || true
+$PY omni_lab.py log-run end $RID --status pass --exit-code 0 --receipt receipt-001.json --metrics-jsonl steps.jsonl || true
+```
+
+`log-run` uses a 10 s statement timeout. Keep the `|| true` so a database outage never stops a job; the
+existing ingesters still pick its receipt up later.
 
 ## Rollback
 

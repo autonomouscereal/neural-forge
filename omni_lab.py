@@ -5,11 +5,20 @@
     omni_lab.py db check                   schema version, migration file parity, row counts, last batch per source
     omni_lab.py last [N]                   newest N rows of v_results (one line per eval run)
     omni_lab.py sql "SELECT ..."           read-only query as omni_lab_ro
-    omni_lab.py ingest <source>... | models-runs [--keep-going]
+    omni_lab.py ingest <source>... | models-runs | evals [--keep-going]
                                            run ingest/<source>.py (one ingest_batch each); idempotent
+    omni_lab.py run --model M --suite S [--gpus 6,4,0 | --cpu] [--cases ...] [--cap N] [--save-test T]
+                                           claim cards -> GPU worker -> results to console + database
+    omni_lab.py run --test T --model M      re-run a saved test (suite + engine + gen + cards + case filter)
+    omni_lab.py compare [RUN...] [--suite S] [--model M]...   runs x cases pivot ('-' = never ran that case)
+    omni_lab.py list runs|suites|models|tests|cases <suite>
+    omni_lab.py add-suite NAME --file F     a bank/task file -> a new suite
+    omni_lab.py add-cases SUITE --file F    new cases -> next suite version (older runs show '-' for them)
+    omni_lab.py grade RUN CASE GRADE [--why ...] | grade RUN --file grades.json   reader grades
+    omni_lab.py log-run start|end|metric ... rows for training / fold / cache jobs
 
-Ingest, run, compare, grade and log-run subcommands are added by later steps of the build; they
-use the same omni_lab_db helpers.  Connection settings: see omni_lab_db.py docstring and README.md.
+run/compare/list/add-*/grade/log-run live in omni_lab_run.py; the GPU side is omni_lab_worker.py.
+Connection settings: see omni_lab_db.py docstring and README.md.
 """
 from __future__ import annotations
 
@@ -153,6 +162,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--notes", type=int, default=10, help="print up to N batch notes per source")
     p.add_argument("--inventory", help="inventory snapshot directory (knowledge ingesters)")
     p.set_defaults(func=cmd_ingest)
+    import omni_lab_run
+    omni_lab_run.add_parsers(sub)
     args = ap.parse_args(argv)
     import psycopg2
     try:
@@ -160,6 +171,9 @@ def main(argv: list[str] | None = None) -> int:
     except db.LabError as exc:
         print(f"[refused] {exc}", file=sys.stderr)
         return 2
+    except KeyboardInterrupt:
+        print("[interrupted]", file=sys.stderr)
+        return 130
     except psycopg2.Error as exc:
         print(f"[db error] {type(exc).__name__}: {str(exc).strip()}", file=sys.stderr)
         return 3
