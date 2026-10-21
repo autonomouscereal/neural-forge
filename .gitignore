@@ -1,0 +1,4 @@
+# machine-local settings (credential helper commands); never commit
+.env
+__pycache__/
+*.pyc
