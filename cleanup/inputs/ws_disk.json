@@ -1,0 +1,5 @@
+[
+ {"disk": "Workstation C:", "before_free": 1155219456, "before_at": "2026-10-21T19:11:09Z (ws_cleanup start record)", "after_free": 90892304384, "after_at": "2026-10-21T20:14:21Z", "note": "62 worktrees + 7 git-rm'd children; the change also includes any other writes on C: in that hour"},
+ {"disk": "Workstation D:", "before_free": null, "after_free": 38158557184, "after_at": "2026-10-21T20:14:21Z", "note": "nothing deleted on D: (all 14 D: worktrees routed to Codex); 36 GB free at the plan scan"},
+ {"disk": "Workstation E:", "before_free": null, "after_free": 1376981958656, "after_at": "2026-10-21T20:14:21Z", "note": "nothing on E: was in the DELETE list"}
+]

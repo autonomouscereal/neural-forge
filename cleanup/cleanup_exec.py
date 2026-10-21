@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""cleanup_exec.py 1.0.0 - remove experimental weight directories one unit at a time, recording each first.
+"""cleanup_exec.py 1.2.0 - remove experimental weight directories one unit at a time, recording each first.
 
 Owner order (Cyril, 2026-10-21): "[Cyril quote withheld]".
 
@@ -17,8 +17,8 @@ Per unit, in order (a failure stops the worker; a refusal skips the unit and is 
   2. measure   - every file: size, mtime; sha256 of every file < 1 GB (all files when the unit is < 20 GB);
                  safetensors >= 1 GB: header sha256; other files >= 1 GB: sha256 of the first 64 MiB;
                  parameter count from safetensors headers / GGUF tensor infos; listing sha256
-  3. archive   - every non-weight file copied (and re-hashed) to <recipe>/tree/, plus MANIFEST.tsv and
-                 DELETION_RECEIPT.json
+  3. archive   - every non-weight file into <recipe>/tree.tar.gz (members re-hashed), plus MANIFEST.tsv and
+                 DELETION_RECEIPT.json (1.0.0 wrote loose files to <recipe>/tree/; converted by recipe_pack.py)
   4. record    - one transaction: unit model row (created if absent), every model row inside the unit set to
                  status 'deleting' with reason + recipe path, one model_deletion row (status 'deleting')
   5. ledger    - for registered checkpoints: oc_checkpoint.py set-status --cyril-ruling (status unchanged)
@@ -52,7 +52,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
-TOOL = "cleanup_exec 1.0.0"
+TOOL = "cleanup_exec 1.2.0"
 OWNER_ORDER = "[Cyril quote withheld]"
 OC = "/home/cereal/omni-campaign"
 LX = "/mnt/lexar/omni-campaign"
@@ -412,13 +412,14 @@ def gguf_params(path: str) -> int | None:
         return total
 
 
-def measure(u: dict, files: list[dict], mode: str, fh_log) -> dict:
+def measure(u: dict, files: list[dict], mode: str, fh_log, hash_threads: int = 1) -> dict:
     unit = u["path"]
     params, n_params_known = 0, False
     weight_bytes = 0
     digests: dict[str, dict] = {}
     t0 = time.time()
     hashed = 0
+    jobs: list[tuple] = []
     for f in sorted(files, key=lambda x: x["rel"]):
         rel, p = f["rel"], src_of(unit, f["rel"])
         d = {"size": f["size"], "mtime": dt.datetime.fromtimestamp(f["mtime"], dt.timezone.utc).isoformat()}
@@ -444,12 +445,21 @@ def measure(u: dict, files: list[dict], mode: str, fh_log) -> dict:
             except Exception as exc:
                 d["gguf_error"] = str(exc)[:200]
         if mode == "full-sha256" or f["size"] < FULL_FILE_LIMIT:
-            d["sha256"] = sha256_file(p)
+            jobs.append((rel, p, "sha256", None))
             hashed += f["size"]
         elif not rel.endswith(".safetensors"):
-            d["head64m_sha256"] = sha256_file(p, HEAD_BYTES)
+            jobs.append((rel, p, "head64m_sha256", HEAD_BYTES))
             hashed += HEAD_BYTES
         digests[rel] = d
+    # content hashes: in parallel when asked (the NAS share serves more in total to 2-3 readers than to one)
+    if hash_threads > 1 and len(jobs) > 1:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=hash_threads) as pool:
+            results = list(pool.map(lambda j: sha256_file(j[1], j[3]), jobs))
+    else:
+        results = [sha256_file(j[1], j[3]) for j in jobs]
+    for (rel, _p, key, _lim), digest in zip(jobs, results):
+        digests[rel][key] = digest
     lines = []
     for rel in sorted(digests):
         d = digests[rel]
@@ -475,20 +485,33 @@ def measure(u: dict, files: list[dict], mode: str, fh_log) -> dict:
 
 # ---------------------------------------------------------------- archive
 def archive(u: dict, m: dict, g: dict, rec_dir: str, tracked: list[str]) -> dict:
+    """Non-weight files -> <rec_dir>/tree.tar.gz (one file: Lexar is exFAT with 1 MiB clusters, so loose small
+    files cost 1 MiB each), every member re-read and re-hashed against the measured sha256; plus MANIFEST.tsv."""
+    import tarfile
     unit = u["path"]
-    tree = os.path.join(rec_dir, "tree")
-    os.makedirs(tree, exist_ok=True)
-    copied = []
-    for rel, d in sorted(m["digests"].items()):
-        if "symlink" in d or is_weight(rel):
-            continue
-        src, dst = src_of(unit, rel), os.path.join(tree, rel)
-        os.makedirs(os.path.dirname(dst), exist_ok=True)
-        shutil.copy2(src, dst)
-        got = sha256_file(dst)
-        if got != d["sha256"]:
-            raise RuntimeError(f"archive copy mismatch {rel}: {got} != {d['sha256']}")
-        copied.append(rel)
+    os.makedirs(rec_dir, exist_ok=True)
+    tar_path = os.path.join(rec_dir, "tree.tar.gz")
+    copied = sorted(rel for rel, d in m["digests"].items() if "symlink" not in d and not is_weight(rel))
+    tmp = tar_path + ".partial"
+    with tarfile.open(tmp, "w:gz", compresslevel=6) as tf:
+        for rel in copied:
+            tf.add(src_of(unit, rel), arcname=rel, recursive=False)
+    with tarfile.open(tmp, "r:gz") as tf:
+        seen = 0
+        for member in tf:
+            if not member.isfile():
+                continue
+            h = hashlib.sha256()
+            fh = tf.extractfile(member)
+            for b in iter(lambda: fh.read(1 << 20), b""):
+                h.update(b)
+            want = m["digests"][member.name]["sha256"]
+            if h.hexdigest() != want:
+                raise RuntimeError(f"recipe tar member mismatch {member.name}: {h.hexdigest()} != {want}")
+            seen += 1
+    if seen != len(copied):
+        raise RuntimeError(f"recipe tar holds {seen} files, expected {len(copied)}")
+    os.replace(tmp, tar_path)
     with open(os.path.join(rec_dir, "MANIFEST.tsv"), "w", encoding="utf-8", newline="\n") as fh:
         fh.write("relpath\tsize\tmtime_utc\tdigest_kind\tdigest\tarchived\tgit_tracked_kept\n")
         for rel in sorted(m["digests"]):
@@ -497,7 +520,7 @@ def archive(u: dict, m: dict, g: dict, rec_dir: str, tracked: list[str]) -> dict
             fh.write(f"{rel}\t{d['size']}\t{d['mtime']}\t{kind}\t{d.get(kind, '')}\t"
                      f"{'yes' if rel in copied else 'no'}\t{'yes' if rel in tracked else 'no'}\n")
     man_sha = sha256_file(os.path.join(rec_dir, "MANIFEST.tsv"))
-    return {"recipe_files": copied, "manifest_sha256": man_sha}
+    return {"recipe_files": copied, "manifest_sha256": man_sha, "tar_sha256": sha256_file(tar_path)}
 
 
 # ---------------------------------------------------------------- database
@@ -662,6 +685,9 @@ def cmd_execute(args) -> int:
     done = blocked = 0
     for u in units:
         unit = u["path"]
+        if os.path.exists(os.path.join(args.run_dir, f"STOP_{args.volume}")):
+            log(fh, step="stop", volume=args.volume, deleted=done, blocked=blocked, why="STOP file present")
+            return 0
         try:
             g = gate(u, protected, generic, refs)
             if g.get("absent"):
@@ -681,7 +707,7 @@ def cmd_execute(args) -> int:
                 git_tracked=len(tracked))
             if args.dry_run:
                 continue
-            m = measure(u, g["files"], mode, fh)
+            m = measure(u, g["files"], mode, fh, args.hash_threads)
             ledger_ids = u["omni_lab"].get("ledger_checkpoint_ids") or []
             rec_dir = os.path.join(args.recipe_root, (ledger_ids[0] if len(ledger_ids) == 1 else
                                                  os.path.basename(u["recipe_archive"].rstrip("/"))))
@@ -693,6 +719,7 @@ def cmd_execute(args) -> int:
                        "parameter_count": m["parameter_count"], "weight_bytes": m["weight_bytes"],
                        "file_count": len(m["digests"]), "ledger_checkpoint_ids": ledger_ids,
                        "recipe_files": arch["recipe_files"], "manifest_tsv_sha256": arch["manifest_sha256"],
+                       "recipe_tar": {"path": os.path.join(rec_dir, "tree.tar.gz"), "sha256": arch["tar_sha256"]},
                        "git_tracked_kept": tracked, "preflight": g["preflight"], "df_before": df_before,
                        "rebuild": {"recipe_dir": rec_dir, "ledger": f"{OC}/ledger.jsonl" if ledger_ids else None,
                                    "omni_lab": "model_deletion.unit_path = this path; model rows status deleted"}}
@@ -762,6 +789,7 @@ def main() -> int:
     e.add_argument("--only", type=int, nargs="*", default=None, help="plan indexes")
     e.add_argument("--dry-run", action="store_true")
     e.add_argument("--recipe-root", default=RECIPE_ROOT)
+    e.add_argument("--hash-threads", type=int, default=1)
     args = ap.parse_args()
     return cmd_gate(args) if args.cmd == "gate" else cmd_execute(args)
 

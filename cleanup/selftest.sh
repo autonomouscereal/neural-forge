@@ -44,7 +44,7 @@ PY
 export OMNI_LAB_PG_DB=$DB
 rc=0
 $PY cleanup_exec.py execute --units "$T/units.json" --protected "$T/protected.json" --generic "$T/generic.json" \
-   --volume lexar --run-dir "$T/run" --recipe-root "$T/recipes" > "$T/out.jsonl" 2>&1 || rc=$?
+   --volume lexar --run-dir "$T/run" --recipe-root "$T/recipes" --hash-threads 2 > "$T/out.jsonl" 2>&1 || rc=$?
 echo "exec rc=$rc"; grep -o '"step": "[A-Za-z-]*"' "$T/out.jsonl" | sort | uniq -c
 grep FAILED "$T/out.jsonl" | cut -c1-1500 || true
 ls -la "$T"; find "$T/recipes" -type f | sort; head -5 "$T"/recipes/*/MANIFEST.tsv
