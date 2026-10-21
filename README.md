@@ -126,7 +126,7 @@ The comparison of the S0 parent import, OMNI1 and the full-KD run-1 student on b
 
 ## Gaps (not done yet)
 
-- **The architecture-conformance tables are empty.** `arch_requirement`, `arch_check` and `model_tensor_group` have 0 rows, so `v_arch_conformance` and the tensor census return nothing yet. The requirements are written up in `ARCHITECTURE_REVIEW_2026-10-21.md` and in the `directive` table, but they are not seeded as checkable rows.
+- **Architecture conformance (seeded 2026-10-21, arch v2).** `arch_requirement` holds R1-R16, each citing `directive` rows (`ingest arch_requirements --inventory inventory/2026-10-21-arch-v2`). `omni_lab.py arch-check --report R.json [--model KEY]` loads a `chimera_omni.conformance` report (chimera-omni branch `claude/arch-v2-20261021`) into `model_tensor_group` + `arch_check` + a `probe` run. Checked so far: the v2 profiles `arch:co2-2b`, `arch:co2-4b`, `arch:co2-proxy` (design-stage rows, layout `chimera.config.v1`, no weights), the legacy `arch:k3-test` toy, and `OC02-F-Q38-27BU-OMNI1` (header-only census: fails R1, R3, R4, R5, R7, R9, R13). Only the proxy has dynamic probes (2B/4B R3/R5 stay `partial`).
 - **Most fold runs have no outcome.** 1,323 of the 1,691 fold runs have status `unknown`, because their receipts carry no terminal verdict. Unknown means "no record", not "still running".
 - **Only one saved `test`** (`smoke-bank2-cpu`) and one runner-produced eval run (37881, a CPU smoke test on PARENT-Q35-0.8B).
 - **Two engines have not run end to end:** `chimera` and `gguf`.

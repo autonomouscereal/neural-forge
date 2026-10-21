@@ -16,6 +16,8 @@
     omni_lab.py add-cases SUITE --file F    new cases -> next suite version (older runs show '-' for them)
     omni_lab.py grade RUN CASE GRADE [--why ...] | grade RUN --file grades.json   reader grades
     omni_lab.py log-run start|end|metric ... rows for training / fold / cache jobs
+    omni_lab.py arch-check --report R.json [--model KEY]
+                                           chimera_omni.conformance report -> tensor census + arch_check rows
 
 run/compare/list/add-*/grade/log-run live in omni_lab_run.py; the GPU side is omni_lab_worker.py.
 Connection settings: see omni_lab_db.py docstring and README.md.
@@ -141,6 +143,18 @@ def cmd_ingest(args) -> int:
     return worst
 
 
+def cmd_arch_check(args) -> int:
+    """Load conformance reports (ingest/arch_check.py) and print each model's requirement statuses."""
+    import ingest
+    batch = ingest.common.run_source(ingest.load("arch_check"), args)
+    print(f"[arch_check] batch {batch.id}: seen={batch.seen} written={batch.written} skipped={batch.skipped}")
+    for line in getattr(batch, "tally_lines", []):
+        print("  " + line)
+    for note in batch.notes[:20]:
+        print("  note: " + note)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="omni_lab.py", description="Omni Lab database CLI")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -162,6 +176,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--notes", type=int, default=10, help="print up to N batch notes per source")
     p.add_argument("--inventory", help="inventory snapshot directory (knowledge ingesters)")
     p.set_defaults(func=cmd_ingest)
+    p = sub.add_parser("arch-check", help="load chimera_omni.conformance reports into the conformance tables")
+    p.add_argument("--report", action="append", required=True, help="conformance report JSON (repeatable)")
+    p.add_argument("--model", help="existing model_key / ledger id the (single) report describes")
+    p.set_defaults(func=cmd_arch_check)
     import omni_lab_run
     omni_lab_run.add_parsers(sub)
     args = ap.parse_args(argv)
