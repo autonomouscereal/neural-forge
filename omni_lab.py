@@ -155,6 +155,16 @@ def cmd_arch_check(args) -> int:
     return 0
 
 
+def cmd_log_eval(args) -> int:
+    """Load proof eval files (ingest/proof_eval.py); prints the eval run ids for `compare`."""
+    import ingest
+    batch = ingest.common.run_source(ingest.load("proof_eval"), args)
+    print(f"[proof_eval] batch {batch.id}: seen={batch.seen} written={batch.written} skipped={batch.skipped}")
+    for line in getattr(batch, "tally_lines", []):
+        print("  " + line)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="omni_lab.py", description="Omni Lab database CLI")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -180,6 +190,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--report", action="append", required=True, help="conformance report JSON (repeatable)")
     p.add_argument("--model", help="existing model_key / ledger id the (single) report describes")
     p.set_defaults(func=cmd_arch_check)
+    p = sub.add_parser("log-eval", help="load a proof's omni-lab-proof-eval-v1 file(s): suite, eval run, results, grades")
+    p.add_argument("--file", action="append", required=True, help="eval JSON (repeatable)")
+    p.set_defaults(func=cmd_log_eval)
     import omni_lab_run
     omni_lab_run.add_parsers(sub)
     args = ap.parse_args(argv)
