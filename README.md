@@ -70,6 +70,72 @@ the version and sha256 of each applied file. `migrate` refuses to run if an appl
 
 A blank cell is a missing row. Add cases by creating a new suite version that links the old `test_case` rows plus the new ones. Older runs then show no result for the new cases. An edited prompt under the same `case_id` becomes a separate `test_case` row, so old and new answers are never compared as if they answered the same question.
 
+## How the tables join
+
+Everything hangs off `run`. A run is one fold, distill, cache, gen, eval, probe, build, export, review or smoke job.
+
+```
+project ─< lane ─< run >─ model ─< model_lineage >─ model          (lineage: fold/clone/distill/merge/export/source)
+                    │  └─ tool_version >─ tool                     (which pinned script, by sha256)
+                    │  └─ env                                      (torch/fla/transformers/driver stack)
+                    ├─< run_device >─ gpu >─ host                  (cards by UUID, kernel path, kernels dict, layer span)
+                    ├─< run_dataset >─ dataset_version >─ dataset  (corpora, teacher caches, banks)
+                    ├─< run_model >─ model                         (teacher / baseline / output / base)
+                    ├─< metric                                     (curves at step>0, summaries at step 0)
+                    ├─< run_event                                  (parsed *.status lines)
+                    └─1 eval_run ─< eval_result >─ test_case >─< suite_member >─ test_suite
+                                       ├─< eval_grade >─ grader    (machine or human; human wins in v_effective_grade)
+                                       └─< eval_artifact           (decoded wav/png/glb/latents)
+model ─< ledger_event                                              (mirror of $OC/ledger.jsonl, one row per line)
+technique ─< experiment ─< experiment_eval >─ eval_run             (fold / arch / distill experiments and their evals)
+directive, ruling, document, arch_requirement ─< arch_check >─ model   (Cyril's words, decisions, docs, conformance)
+every domain row: src_path, src_sha256, src_host, ingest_batch_id ─> ingest_batch   (provenance)
+```
+
+Questions and where to look:
+
+| Question | Start here |
+|---|---|
+| "What did test X give on model Y with which GPUs and kernels?" | `v_results` (one line per eval run: test, configs, results) or `omni_lab.py last` |
+| "Compare runs case by case" | `omni_lab.py compare <run ids>` or `--suite S --last N` |
+| "What did training job Z do, on which cards, with what loss?" | `run` + `run_device` + `metric` (`v_run_summary`) |
+| "What is this model, where is it, and what is it made of?" | `model`, `model_lineage`, `ledger_event`, `v_latest_models` |
+| "Which fold techniques were tried, and how did they turn out?" | `technique`, `experiment`, `experiment_eval` |
+| "What did Cyril say about X?" | `directive` (verbatim, dated, with the source event id), `v_directives_by_topic` |
+| "Which modalities does a model really handle?" | `v_model_modality_coverage` (measured from results, not from config) |
+
+## What is in it today (2026-10-21, from `omni_lab.py db check`)
+
+Schema version 5. All five migrations are `ok` on both hosts. There are 86 ingest batches across 22 sources. Two
+batches failed with a lock timeout (`dossiers` #27, `corpora` #65) while ingesters ran in parallel; both sources
+were re-run cleanly afterwards.
+
+| Area | Rows |
+|---|---|
+| Models | `model` 1,671 (1,663 present; 18 with a ledger checkpoint id), `model_lineage` 33, `ledger_event` 42 |
+| Runs | `run` 2,367, `metric` 19,354, `run_event` 1,051, `run_device` 244, `run_model` 93, `run_dataset` 94 |
+| Run kinds | fold 1,691 · cache 383 · probe 82 · build 74 · distill 42 · smoke 29 · review 26 · eval 24 · gen 10 · export 6 |
+| Tests and evals | `test_suite` 16, `test_case` 562, `suite_member` 1,078, `eval_run` 24, `eval_result` 390, `eval_grade` 241, `eval_artifact` 79, `grader` 6, `test` 1 |
+| Fold research | `technique` 43, `experiment` 43, `experiment_eval` 12 |
+| Data | `dataset` 36, `dataset_version` 109 |
+| Hardware and tools | `host` 1, `gpu` 7, `env` 16, `tool` 189, `tool_version` 330, `lane` 11 |
+| Knowledge | `directive` 136, `ruling` 34, `document` 1,927 |
+
+The comparison of the S0 parent import, OMNI1 and the full-KD run-1 student on bank_v1
+(`compare 30658 30666 30676`) took 0.48 s wall from the workstation.
+
+## Gaps (not done yet)
+
+- **The architecture-conformance tables are empty.** `arch_requirement`, `arch_check` and `model_tensor_group` have 0 rows, so `v_arch_conformance` and the tensor census return nothing yet. The requirements are written up in `ARCHITECTURE_REVIEW_2026-10-21.md` and in the `directive` table, but they are not seeded as checkable rows.
+- **Most fold runs have no outcome.** 1,323 of the 1,691 fold runs have status `unknown`, because their receipts carry no terminal verdict. Unknown means "no record", not "still running".
+- **Only one saved `test`** (`smoke-bank2-cpu`) and one runner-produced eval run (37881, a CPU smoke test on PARENT-Q35-0.8B).
+- **Two engines have not run end to end:** `chimera` and `gguf`.
+- **No media suites can run through the runner yet.** Media evals exist only as ingested S8 results (`s8_media_smoke`, `s8_qvl_describe`).
+- **No cron is installed.** Ingest is run by hand. No existing training job calls `log-run` yet, so new runs appear only after an `ingest`.
+- **Not ingested:** Codex sessions (`.codex/sessions`).
+- **Not audited for completeness:** the Neural Forge LFM2 / 4B ladder history beyond what `foldhist` and `fold_receipts` pick up.
+- **GPU mapping is approximate for status-line runs.** GPU indices from status lines are mapped through today's `nvidia-smi` order (`run_device.detail.mapping = 'index-from-status'`).
+
 ## Ingesters: models and runs
 
 Run on the AI server (the sources live there), from `/home/cereal/omni-campaign/lab`:
