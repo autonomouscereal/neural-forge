@@ -5,6 +5,8 @@
     omni_lab.py db check                   schema version, migration file parity, row counts, last batch per source
     omni_lab.py last [N]                   newest N rows of v_results (one line per eval run)
     omni_lab.py sql "SELECT ..."           read-only query as omni_lab_ro
+    omni_lab.py ingest <source>... | models-runs [--keep-going]
+                                           run ingest/<source>.py (one ingest_batch each); idempotent
 
 Ingest, run, compare, grade and log-run subcommands are added by later steps of the build; they
 use the same omni_lab_db helpers.  Connection settings: see omni_lab_db.py docstring and README.md.
@@ -104,6 +106,32 @@ def cmd_sql(args) -> int:
         conn.close()
 
 
+def cmd_ingest(args) -> int:
+    """Run ingesters (one ingest_batch each, in the given/group order) and print what each wrote."""
+    import time
+    import ingest
+    names = ingest.resolve(args.sources)
+    worst = 0
+    for name in names:
+        module = ingest.load(name)
+        t0 = time.time()
+        try:
+            batch = ingest.common.run_source(module, args)
+        except Exception as exc:  # the batch row is already marked failed by run_source
+            print(f"[{name}] FAILED after {time.time() - t0:.1f}s: {type(exc).__name__}: {exc}", file=sys.stderr)
+            worst = 1
+            if not args.keep_going:
+                return 1
+            continue
+        print(f"[{name}] batch {batch.id}: seen={batch.seen} written={batch.written} skipped={batch.skipped} "
+              f"files={len(set(batch.file_shas))} ({time.time() - t0:.1f}s)")
+        for line in getattr(batch, "tally_lines", []):
+            print("  " + line)
+        for note in batch.notes[: args.notes]:
+            print("  note: " + note)
+    return worst
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="omni_lab.py", description="Omni Lab database CLI")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -119,6 +147,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--limit", type=int, default=200)
     p.add_argument("--width", type=int, default=60)
     p.set_defaults(func=cmd_sql)
+    p = sub.add_parser("ingest", help="run ingesters: names under ingest/ or a group (models-runs)")
+    p.add_argument("sources", nargs="+")
+    p.add_argument("--keep-going", action="store_true", help="continue with the next source after a failure")
+    p.add_argument("--notes", type=int, default=10, help="print up to N batch notes per source")
+    p.add_argument("--inventory", help="inventory snapshot directory (knowledge ingesters)")
+    p.set_defaults(func=cmd_ingest)
     args = ap.parse_args(argv)
     import psycopg2
     try:

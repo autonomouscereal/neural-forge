@@ -67,6 +67,36 @@ the version and sha256 of each applied file. `migrate` refuses to run if an appl
 
 A blank cell is a missing row. Add cases by creating a new suite version that links the old `test_case` rows plus the new ones. Older runs then show no result for the new cases. An edited prompt under the same `case_id` becomes a separate `test_case` row, so old and new answers are never compared as if they answered the same question.
 
+## Ingesters: models and runs
+
+Run on the AI server (the sources live there), from `/home/cereal/omni-campaign/lab`:
+
+```
+/home/cereal/.venvs/chimera-intake/bin/python omni_lab.py ingest models-runs --keep-going   # the whole group, ~5 min
+/home/cereal/.venvs/chimera-intake/bin/python omni_lab.py ingest trainer_runs status_runs    # any subset, in that order
+```
+
+Each source writes one `ingest_batch` row (committed first, so a failure stays on record) and all of its
+rows in one transaction. Every row is keyed on a natural key, so a re-run rewrites the same rows. The
+ingesters only read their sources.
+
+| Source (`ingest/<name>.py`) | Reads | Writes |
+|---|---|---|
+| `hardware` | `nvidia-smi` on the host it runs on | `host`, `gpu` (UUID is the key, index refreshed) |
+| `tool_pins` | `$OC/distill/tools/TOOL_PINS.json` | `tool`, `tool_version` (pinned / superseded) |
+| `lanes` | `$OC/distill/queues/LANES.json` | `lane` |
+| `oc_ledger` | `$OC/ledger.jsonl`, `$OC/registry/**`, OMNI1 `composite_manifest.json` | `model` (key = checkpoint id), `ledger_event`, `model_lineage` (incl. OMNI1's 7 `source` edges), one `run` per sealed record with review columns as `metric` |
+| `model_scan` | every weight directory under `$OC`, `$L`, `/home/cereal/models`, `/home/cereal/model-surgery-lab` (safetensors headers only) | `model` (key `path:<sha16 of host:path>` unless the ledger owns the path; census in `config`) |
+| `teacher_caches` | `$L/teacher_cache/**/{manifest,pass_receipt.partial,plan}.json` | `dataset`, `dataset_version`, one `cache` run per pass + `run_dataset` |
+| `trainer_runs` | full-KD and media-M1 run dirs, M1/M2 self-tests, `d2.status` + its log, D1 run dirs | parent run + one run per segment/attempt, per-step `metric` curves from `STEP {json}` log lines and receipt histories, `run_device`, `env`, student / M1-export `model` rows with `distill` lineage |
+| `status_runs` | queue `*.status` files (not the trainer-owned ones) | `run_event` per timestamped line; `run` per paired job (heuristic: see module docstring) |
+| `fold_receipts` | `*receipt*.json` under fold / K3 / import / media-fold / LFM2 paths | one `run` per receipt (kind fold, cache, probe or build); content-addressed cache entries and copied trees are excluded, out-of-scope rows are pruned |
+
+Conventions worth knowing when reading the tables:
+- GPU placement from status lines is by **index** (`run_device.detail.mapping = 'index-from-status'`), mapped through today's `nvidia-smi` order. Runs whose lines carry GPU UUIDs use them (`uuid-from-status`).
+- `run.status = 'unknown'` means the source has no terminal record (for example, an open status line or `completed=false`). It does not mean the process is still alive.
+- Times taken from file mtimes are marked in `run.notes` or `config.time_source`.
+
 ## Ingesters: test suites and eval results
 
 Server sources (run in `/home/cereal/omni-campaign/lab`), then the Codex task sets on the workstation:

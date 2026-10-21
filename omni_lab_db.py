@@ -358,7 +358,7 @@ def start_batch(conn, source: str, parser: str | None = None, parser_sha256: str
 def end_batch(conn, batch_id: int, status: str, rows_seen: int = 0, rows_written: int = 0,
               rows_skipped: int = 0, error: str | None = None, file_shas: list[str] | None = None) -> None:
     with conn.cursor() as cur:
-        cur.execute("UPDATE ingest_batch SET ended_at = now(), status = %s, rows_seen = %s, rows_written = %s, "
+        cur.execute("UPDATE ingest_batch SET ended_at = clock_timestamp(), status = %s, rows_seen = %s, rows_written = %s, "
                     "rows_skipped = %s, error = %s, file_shas = %s WHERE id = %s",
                     (status, rows_seen, rows_written, rows_skipped, error, sorted(set(file_shas or [])), batch_id))
         if cur.rowcount != 1:
@@ -422,6 +422,11 @@ def ensure_env(conn, python: str | None = None, torch: str | None = None, cuda: 
     values = (python, torch, cuda, driver, transformers, fla, triton, llama_cpp_build, code_commit)
     env_sha = sha256_json({**dict(zip(ENV_FIELDS, values)), "env_vars": env_vars or {}, "packages": packages or {}})
     with conn.cursor() as cur:
+        # SELECT first: an upsert would hold the row lock for the rest of a long ingest transaction
+        cur.execute("SELECT id FROM env WHERE env_sha256 = %s", (env_sha,))
+        row = cur.fetchone()
+        if row:
+            return row[0]
         cur.execute("INSERT INTO env (env_sha256, python, torch, cuda, driver, transformers, fla, triton, "
                     "llama_cpp_build, code_commit, env_vars, packages) "
                     "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb) "
