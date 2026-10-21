@@ -1,0 +1,2 @@
+# LF everywhere: migration sha256s are recorded in schema_migration and must match on both hosts
+* text=auto eol=lf
