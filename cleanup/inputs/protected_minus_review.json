@@ -1,0 +1,778 @@
+[
+ {
+  "class": "plan-KEEP",
+  "path": "/mnt/lexar/models/moonshotai/Kimi-K3"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/models/gguf/Qwen3.8-Flash-Next-Strata"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/mnt/lexar/omni-campaign/teacher_cache/qvl32_vit/qvl32_vit_l13"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/models/Qwen3.8-27B-Uncensored"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/mnt/lexar/omni-campaign/omni1/OC02-F-Q38-27BU-OMNI1"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/mnt/lexar/omni-campaign/distill/fullkd/run1/out"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/comfyui/models/text_encoders/qwen3vl_32b_minimax_h3_bf16.safetensors"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/comfyui/models/checkpoints/ltx-2.3-22b-distilled.safetensors"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/comfyui/models/diffusion_models/minimax_h3_fl2va_pruned_bf16.safetensors"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/comfyui/models/text_encoders/gemma-3-12b-it-qat-q4_0-unquantized"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/mnt/lexar/omni-campaign/teacher_cache/hy3d/hy3d_trajectories"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/comfyui/models/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/comfyui/models/diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/comfyui/models/diffusion_models/qwen_image_edit_2509_fp8_e4m3fn.safetensors"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/comfyui/models/diffusion_models/qwen_image_fp8_e4m3fn.safetensors"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/mnt/ai_data/models/lmstudio/unsloth"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/mnt/ai_data/models/lmstudio/lmstudio-community"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/comfyui/models/text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/comfyui/models/diffusion_models/qwen_image_2.1_bf16.safetensors"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/comfyui/models/text_encoders/gemma_3_12B_it_fp4_mixed.safetensors"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/comfyui/models/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/comfyui/models/text_encoders/qwen3vl_8b_int8_convrot.safetensors"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/models/Qwen3.5-4B"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/mnt/lexar/omni-campaign/teacher_cache/qimg/qimg-te-qwen_2.5_vl_7b_fp8_scaled"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/comfyui/models/loras/ltx-2.3-22b-distilled-lora-384.safetensors"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/comfyui/models/checkpoints/hunyuan_3d_v2.1.safetensors"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/comfyui/models/diffusion_models/qwen_image_2.1_int8_convrot.safetensors"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/comfyui/models/vae/minimax_h3_video_vae_fp16.safetensors"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/mnt/lexar/omni-campaign/distill/media_m1/run1/out/export"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/mnt/lexar/models/ibm-granite/granite-speech-4.1-2b"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/comfyui/models/diffusion_models/acestep-v15-turbo"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/comfyui/models/diffusion_models/acestep_v1.5_turbo.safetensors"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/mnt/lexar/models/Qwen/Qwen3-ASR-1.7B"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/mnt/lexar/models/Qwen/Qwen3-TTS-12Hz-1.7B-Base"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/mnt/lexar/models/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/mnt/lexar/models/Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/omni-campaign/distill/corpus"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/comfyui/models/ACE-Step/acestep-5Hz-lm-1.7B"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/comfyui/models/text_encoders/qwen_1.7b_ace15.safetensors"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/mnt/lexar/omni-campaign/codex-adopted-2026-10-14/speech-native-caches-v2"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/mnt/lexar/omni-campaign/teacher_cache/qimg/qimg-velocity-qwen_image_fp8_e4m3fn"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/mnt/lexar/models/Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/omni-campaign/export/llamacpp"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/omni-campaign/export/llamacpp-imatrix"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/mnt/ai_data/models/lmstudio/DevQuasar"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/mnt/lexar/omni-campaign/teacher_cache/ace/ace_dit_velocity"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/mnt/lexar/models/Qwen/Qwen3-ASR-0.6B"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/models/Qwen3.5-0.8B"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/comfyui/models/text_encoders/qwen_0.6b_ace15.safetensors"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/comfyui/models/text_encoders/Qwen3-Embedding-0.6B"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/mnt/ai_data/models/lmstudio/JonathanColetti"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/comfyui/models/latent_upscale_models/ltx-2.3-spatial-upscaler-x1.5-1.0.safetensors"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/comfyui/models/latent_upscale_models/ltx-2.3-spatial-upscaler-x2-1.1.safetensors"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/comfyui/models/latent_upscale_models/ltx-2.3-spatial-upscaler-x2-1.0.safetensors"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/mnt/lexar/omni-campaign/teacher_cache/k3/eb35851b2496a628-provisional-bf16"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/comfyui/models/loras/h3"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/comfyui/models/vae/qwen_image_2.1_vae_bf16.safetensors"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/comfyui/models/vae/Hunyuan3D-vae-v2-1-fp16.ckpt"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/comfyui/models/vae/minimax_h3_audio_vae_fp32.safetensors"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/mnt/lexar/omni-campaign/teacher_cache/qimg/qimg-vae"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/omni-campaign/import/rq27b"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/comfyui/models/vae/ace_1.5_vae.safetensors"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/comfyui/models/vae/vae"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/mnt/lexar/omni-campaign/teacher_cache/qvl32_vit_ref/qvl32_vit_l13"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/comfyui/models/latent_upscale_models/ltx-2.3-temporal-upscaler-x2-1.0.safetensors"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/comfyui/models/vae/qwen_image_vae.safetensors"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/omni-campaign/distill/toolcall"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/mnt/lexar/omni-campaign/corpus/holdouts"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/mnt/lexar/omni-campaign/research/data/quality-v1.0.1-registry-2026-10-15"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/mnt/lexar/omni-campaign/research/data/quality-v1-registry-2026-10-15"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/mnt/lexar/omni-campaign/research/data/quality-v1.0.3-registry-2026-10-15"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/mnt/lexar/omni-campaign/research/data/quality-v1.0.4-registry-2026-10-15"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/mnt/lexar/omni-campaign/codex-adopted-2026-10-14/h3-bf16-velocity-v1"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/mnt/lexar/omni-campaign/teacher_cache/qtext/inputs"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/omni-campaign/distill/queues"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/omni-campaign/receipts/codex-seven-native-01a11bd5-20261014-v28"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/mnt/lexar/omni-campaign/codex-adopted-2026-10-14/h3-bf16-text-v1"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/comfyui/models/upscale_models/RealESRGAN_x4plus_anime_6B.pth"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/comfyui/models/ACE-Step/acestep-v15-turbo"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/home/cereal/omni-campaign/receipts/codex-native-qimg-01a11bd5-20261013-v2"
+ },
+ {
+  "class": "plan-KEEP",
+  "path": "/mnt/lexar/omni-campaign/codex-adopted-2026-10-14/tool-train-168-corpus"
+ },
+ {
+  "class": "plan-HOLD",
+  "path": "/mnt/lexar/omni-campaign/distill/fullkd/run1/safety"
+ },
+ {
+  "class": "plan-HOLD",
+  "path": "/mnt/lexar/omni-campaign/distill/media_m1/run1/out/checkpoints"
+ },
+ {
+  "class": "plan-HOLD",
+  "path": "/mnt/lexar/omni-campaign/research/fold/x3-08b"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/ai_data/models/moonshotai/Kimi-K3"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/ai_data/omnicoder_2026/weights_archive"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/ai_data/models/film2/hunyuan"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/ai_data/omnicoder_2026/local_root_legacy_payloads"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/ai_data/models/flash-next-strata/RVN-Qwen3.8-Flash-Next-Abliterated-Uncensored-IQ3_S-Strata"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/ai_data/models/Qwen/Qwen3.8-27B"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/ai_data/models/JonathanColetti/Qwen3.8-27B-Uncensored"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/ai_data/omnicoder_2026/checkpoint_archives"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/ai_data/omnicoder_2026/training_runs"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/ai_data/omnicoder_2026/checkpoints"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/ai_data/omnicoder_2026/root_pressure_archive_20260604T0438Z"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/ai_data/models/Qwen/Qwen3.5-9B"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/models/gguf/Qwen3.8-27B-Uncensored-Q4_K_M.gguf"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/models/gguf/Qwen3.6-27B-Q4_K_M.gguf"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/omnicoder_2026_work/weights"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/ai_data/models/comfyui/checkpoints"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/lexar/models/ibm-granite/granite-speech-3.3-2b"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/lexar/models/FunAudioLLM/Fun-CosyVoice3-0.5B-2512"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/ai_data/models/Qwen/Qwen3.5-4B"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/omni-campaign/runtime/speech-src-01a114aa-9772e4d5-d09b-4c54-9650-699586a9529d"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/.cache/huggingface/hub/models--Qwen--Qwen3-4B-Base"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/omni-campaign/runtime/speech-native-01a11531-c0bf-74f0-9ec5-d7d7072790b8-880527b5-9d0f-4ba4-a8e0-f83aef34123e"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/model-surgery-lab/models/NEO1_5-2B-SFT-materialized-20260710"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/ai_data/hf_cache/models--Paranioar--NEO1_5-2B-SFT"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/lexar/omnicoder_0.1.0/models/hf/hub/models--microsoft--phi-2"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/lexar/omnicoder_0.1.0/models/hf/models--microsoft--phi-2"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/lexar/omnicoder_0.1.0/models/hf/hub/models--runwayml--stable-diffusion-v1-5"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/ai_data/omnicoder_2026/weights"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/omni-campaign/runtime/ace24-native-cpu-01a11929-c8eb6b59-2975-4f9f-9c5b-8c072bea397c"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/lexar/models/openbmb/VoxCPM2"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/lexar/omnicoder_0.1.0/weights"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/ai_data/backups/omnicoder_0.1.0-evidence/weights"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/omni-campaign/runtime/ace24-native-cpu-01a11929-c7bbf8ab-a1e3-49fe-973a-4601e59dae21"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/omni-campaign/runtime/ace-oct06-native-492961ec-82c3-4bed-98ce-cb6c01af973e"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/ai_data/models/comfyui/animatediff_models"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/lexar-relief-local/omni-campaign/distill"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/ai_data/models/comfyui/controlnet"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/omni-campaign/export/gguf"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/ai_data/models/comfyui/ipadapter"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/omni-campaign/media/out"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/omni-campaign/media/pairs"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/ai_data/models/Qwen/Qwen3.5-0.8B"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/comfyui/models/skintoken/experiments"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/embeddinggemma2-preprod-20261006-task3/assets"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/.cache/huggingface/hub/models--Qwen--Qwen3-0.6B"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/omni-campaign/runtime/k3-nas-window61-72-oct07-a151e1a8-39b6-486e-a4aa-124865332425"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/omni-campaign/runtime/qvl32-cpu-01a10f94-29cc8a2c-2fc0-47b4-b98c-7cdd392d09be"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/.cache/huggingface/hub/models--Qwen--Qwen3-0.6B-Base"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/omni-campaign/runtime/h3_joint50-capture-native-cpu-01a11929-8f899bc7-cce0-4519-a3d9-c4d970abd998"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/.cache/huggingface/hub/models--HuggingFaceTB--SmolVLM2-256M-Video-Instruct"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/omni-campaign/runtime/qwen333-native-cpu-01a10f94-136a6909-c556-4146-8fe3-a89e0e3e0f3f"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/omni-campaign/runtime/qvl32-1075-cpu-01a10f94-2b148ef9-817e-464f-b28c-746319b5ac77"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/lexar/omnicoder_0.1.0/models--google--siglip-base-patch16-224"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/ai_data/neural-forge-stage2/corpus"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/omni-campaign/runtime/k3-nas-window61-72-oct07-def64e2b-a609-495d-846e-4167d125d99e"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/omni-campaign/runtime/ace-audio-vae-cpu-01a10f94-5bafc3da-32a4-4e83-894a-7e293616823e"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/omni-campaign/runtime/h3_audio-native-cpu-01a10f94-3181d72e-f9a3-48cc-a8bd-ea17bf2a7a5f"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/lexar/omnicoder_0.1.0/models/hf/hub/models--timm--vit_base_patch32_clip_224.openai"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/omni-campaign/runtime/k3-nas-window61-72-oct07-2ceb7b30-6b44-436e-b161-bac8b7f29caa"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/omni-campaign/runtime/qwen333-fixed1075-cpu-01a10f94-27588780-c763-4489-89cf-1f296ae1cc89"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/.cache/huggingface/hub/models--openai-community--gpt2"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/.cache/huggingface/hub/models--LiquidAI--LFM2.5-230M"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/.cache/huggingface/hub/models--LiquidAI--LFM2.5-230M-Base"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/model-surgery-lab/models/LFM2.5-230M"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/ai_data/models/comfyui/insightface"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/ai_data/omnicoder_2026/benchmarks"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/.cache/huggingface/hub/models--EleutherAI--pythia-160m"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/lexar/models/hexgrad/Kokoro-82M"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/.cache/huggingface/hub/models--HuggingFaceTB--SmolLM2-135M"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/ai_data/omnicoder_2026/benchmarks_2026"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/omni-campaign/runtime/h3_text-native-cpu-01a10f94-1c8778bb-7ea3-43ec-9f89-a2ef517b9adb"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/lexar/omnicoder_0.1.0/inception-2015-12-05.pt"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/chimera-proof-c5a5c18-v4/proof_outputs"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/lexar/omni-campaign/distill/media_m1/codex-image-edit-v1-extracted"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/omni-campaign/composite/corpus"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/ai_data/neural-forge-stage2/calib"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/ai_data/backups/ice-cleanup-20261001-selftest/tar"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/ai_data/backups/ice-cleanup-20261001-selftest/d"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/omni-campaign/runtime/disk-backup-exact2x-20261007T0418-approved-54c54ee2"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/ai_data/models/comfyui/upscale_models"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/omni-campaign/distill/p11"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/home/cereal/omni-campaign/runtime/h3-cpu-01a10f94-19c8cec0-dbd0-4fee-8066-7b63f33fa48b"
+ },
+ {
+  "class": "plan-UNSURE",
+  "path": "/mnt/ai_data/backups/ice-agent-simulator-git-20261001/dotgit-cursor"
+ },
+ {
+  "class": "never-delete",
+  "path": "/home/cereal/omni-campaign/runtime"
+ },
+ {
+  "class": "never-delete",
+  "path": "/home/cereal/omni-campaign/export/llamacpp"
+ },
+ {
+  "class": "never-delete",
+  "path": "/home/cereal/omni-campaign/export/llamacpp-imatrix"
+ },
+ {
+  "class": "never-delete",
+  "path": "/home/cereal/omni-campaign/distill/queues"
+ },
+ {
+  "class": "never-delete",
+  "path": "/home/cereal/omni-campaign/distill/tools"
+ },
+ {
+  "class": "never-delete",
+  "path": "/home/cereal/omni-campaign/distill/corpus"
+ },
+ {
+  "class": "never-delete",
+  "path": "/home/cereal/omni-campaign/import/rq27b"
+ },
+ {
+  "class": "never-delete",
+  "path": "/home/cereal/omni-campaign/lab"
+ },
+ {
+  "class": "never-delete",
+  "path": "/home/cereal/omni-campaign/ledger"
+ },
+ {
+  "class": "never-delete",
+  "path": "/home/cereal/omni-campaign/registry"
+ },
+ {
+  "class": "never-delete",
+  "path": "/home/cereal/omni-campaign/ledger.jsonl"
+ },
+ {
+  "class": "never-delete",
+  "path": "/home/cereal/models"
+ },
+ {
+  "class": "never-delete",
+  "path": "/home/cereal/comfyui/models"
+ },
+ {
+  "class": "never-delete",
+  "path": "/mnt/lexar/models"
+ },
+ {
+  "class": "never-delete",
+  "path": "/mnt/lexar/omni-campaign/teacher_cache"
+ },
+ {
+  "class": "never-delete",
+  "path": "/mnt/lexar/omni-campaign/omni1"
+ },
+ {
+  "class": "never-delete",
+  "path": "/mnt/lexar/omni-campaign/distill/fullkd"
+ },
+ {
+  "class": "never-delete",
+  "path": "/mnt/lexar/omni-campaign/distill/media_m1"
+ },
+ {
+  "class": "never-delete",
+  "path": "/mnt/lexar/omni-campaign/corpus"
+ },
+ {
+  "class": "never-delete",
+  "path": "/mnt/lexar/omni-campaign/codex-adopted-2026-10-14"
+ },
+ {
+  "class": "never-delete",
+  "path": "/mnt/lexar/omni-campaign/archive"
+ },
+ {
+  "class": "never-delete",
+  "path": "/mnt/lexar/backups"
+ },
+ {
+  "class": "never-delete",
+  "path": "/mnt/ai_data/models"
+ },
+ {
+  "class": "never-delete",
+  "path": "/mnt/ai_data/backups/agent-memory-postgres"
+ },
+ {
+  "class": "never-delete",
+  "path": "/mnt/ai_data/training_data"
+ },
+ {
+  "class": "never-delete",
+  "path": "/home/cereal/agent-memory-backup"
+ },
+ {
+  "class": "never-delete",
+  "path": "/home/cereal/.config"
+ }
+]

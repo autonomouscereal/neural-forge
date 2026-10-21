@@ -1,0 +1,1025 @@
+[
+ {
+  "path": "/mnt/ai_data/omni-campaign/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139",
+  "host": "ai",
+  "volume": "nas",
+  "size_bytes_du": 110111184098,
+  "size_gb": 110.11,
+  "weight_bytes": 110102107136,
+  "file_count": 73,
+  "weight_files": 43,
+  "last_modified_utc": "2026-10-08T14:41Z",
+  "what": "fold-scratch",
+  "category": "DELETE",
+  "reason": "NAS K3 fold window/run archive",
+  "omni_lab": {
+   "existing_rows_inside_unit": 0,
+   "exact_row": false,
+   "row_ids_to_mark_deleted": [],
+   "create_unit_row": {
+    "model_key": "path:ae1df7729edde4bd",
+    "host": "ai",
+    "path": "/mnt/ai_data/omni-campaign/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139"
+   },
+   "ledger_checkpoint_ids": [],
+   "producing_runs": []
+  },
+  "digest_mode": "index+headers+listing",
+  "recipe_archive": "/mnt/lexar/omni-campaign/archive/recipes/path-ae1df7729edde4bd__omni-campaign-k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139/",
+  "ledger_action": "omni_lab model_deletion row (no ledger checkpoint)",
+  "notes": [],
+  "wave": "W1-NAS",
+  "plan_index": 0
+ },
+ {
+  "path": "/mnt/ai_data/omni-campaign/k3-nas-window37-48-oct07-764524b1-96a9-4636-be74-942f9c54754c",
+  "host": "ai",
+  "volume": "nas",
+  "size_bytes_du": 97778110125,
+  "size_gb": 97.78,
+  "weight_bytes": 97770847608,
+  "file_count": 73,
+  "weight_files": 43,
+  "last_modified_utc": "2026-10-07T21:55Z",
+  "what": "fold-scratch",
+  "category": "DELETE",
+  "reason": "NAS K3 fold window/run archive",
+  "omni_lab": {
+   "existing_rows_inside_unit": 0,
+   "exact_row": false,
+   "row_ids_to_mark_deleted": [],
+   "create_unit_row": {
+    "model_key": "path:451b16dc57056cc6",
+    "host": "ai",
+    "path": "/mnt/ai_data/omni-campaign/k3-nas-window37-48-oct07-764524b1-96a9-4636-be74-942f9c54754c"
+   },
+   "ledger_checkpoint_ids": [],
+   "producing_runs": []
+  },
+  "digest_mode": "index+headers+listing",
+  "recipe_archive": "/mnt/lexar/omni-campaign/archive/recipes/path-451b16dc57056cc6__omni-campaign-k3-nas-window37-48-oct07-764524b1-96a9-4636-be74-942f9c54754c/",
+  "ledger_action": "omni_lab model_deletion row (no ledger checkpoint)",
+  "notes": [],
+  "wave": "W1-NAS",
+  "plan_index": 5
+ },
+ {
+  "path": "/mnt/ai_data/neural-forge/archive",
+  "host": "ai",
+  "volume": "nas",
+  "size_bytes_du": 2006196357,
+  "size_gb": 2.01,
+  "weight_bytes": 2832074,
+  "file_count": 2446,
+  "weight_files": 2,
+  "last_modified_utc": "2026-07-10T20:03Z",
+  "what": "nf-experiment",
+  "category": "DELETE",
+  "reason": "Neural Forge experiment checkpoints / evidence caches",
+  "omni_lab": {
+   "existing_rows_inside_unit": 0,
+   "exact_row": false,
+   "row_ids_to_mark_deleted": [],
+   "create_unit_row": {
+    "model_key": "path:df16b1e32fd6e476",
+    "host": "ai",
+    "path": "/mnt/ai_data/neural-forge/archive"
+   },
+   "ledger_checkpoint_ids": [],
+   "producing_runs": []
+  },
+  "digest_mode": "full-sha256",
+  "recipe_archive": "/mnt/lexar/omni-campaign/archive/recipes/path-df16b1e32fd6e476__neural-forge-archive/",
+  "ledger_action": "omni_lab model_deletion row (no ledger checkpoint)",
+  "notes": [],
+  "wave": "W1-NAS",
+  "plan_index": 39
+ },
+ {
+  "path": "/home/cereal/omni-campaign/k3-run-oct09-claude/fold",
+  "host": "ai",
+  "volume": "home",
+  "size_bytes_du": 102434762786,
+  "size_gb": 102.43,
+  "weight_bytes": 102429521296,
+  "file_count": 224,
+  "weight_files": 125,
+  "last_modified_utc": "2026-10-10T19:32Z",
+  "what": "fold-scratch",
+  "category": "DELETE",
+  "reason": "K3 dense fold bodies / fold scratch",
+  "omni_lab": {
+   "existing_rows_inside_unit": 12,
+   "exact_row": false,
+   "row_ids_to_mark_deleted": [
+    199,
+    200,
+    201,
+    202,
+    203,
+    204,
+    205,
+    206,
+    207,
+    208,
+    209,
+    210
+   ],
+   "create_unit_row": {
+    "model_key": "path:1647441307d46e4a",
+    "host": "ai",
+    "path": "/home/cereal/omni-campaign/k3-run-oct09-claude/fold"
+   },
+   "ledger_checkpoint_ids": [],
+   "producing_runs": []
+  },
+  "digest_mode": "index+headers+listing",
+  "recipe_archive": "/mnt/lexar/omni-campaign/archive/recipes/path-1647441307d46e4a__k3-run-oct09-claude-fold/",
+  "ledger_action": "omni_lab model_deletion row (no ledger checkpoint)",
+  "notes": [],
+  "wave": "W2-HOME",
+  "plan_index": 71
+ },
+ {
+  "path": "/home/cereal/omni-campaign/distill/codex-preparation-01a1326f-20261013",
+  "host": "ai",
+  "volume": "home",
+  "size_bytes_du": 20689775044,
+  "size_gb": 20.69,
+  "weight_bytes": 7576055371,
+  "file_count": 45020,
+  "weight_files": 237,
+  "last_modified_utc": "2026-10-14T00:37Z",
+  "what": "scratch",
+  "category": "DELETE",
+  "reason": "codex-* experimental weight dir",
+  "omni_lab": {
+   "existing_rows_inside_unit": 12,
+   "exact_row": false,
+   "row_ids_to_mark_deleted": [
+    934,
+    935,
+    936,
+    937,
+    938,
+    939,
+    940,
+    941,
+    942,
+    943,
+    944,
+    995
+   ],
+   "create_unit_row": {
+    "model_key": "path:2ef9a9908ecd01a8",
+    "host": "ai",
+    "path": "/home/cereal/omni-campaign/distill/codex-preparation-01a1326f-20261013"
+   },
+   "ledger_checkpoint_ids": [],
+   "producing_runs": []
+  },
+  "digest_mode": "index+headers+listing",
+  "recipe_archive": "/mnt/lexar/omni-campaign/archive/recipes/path-2ef9a9908ecd01a8__distill-codex-preparation-01a1326f-20261013/",
+  "ledger_action": "omni_lab model_deletion row (no ledger checkpoint)",
+  "notes": [],
+  "wave": "W2-HOME",
+  "plan_index": 76
+ },
+ {
+  "path": "/home/cereal/model-surgery-lab/artifacts/neural_forge_exact4x_20260730",
+  "host": "ai",
+  "volume": "home",
+  "size_bytes_du": 12818963238,
+  "size_gb": 12.82,
+  "weight_bytes": 11951089856,
+  "file_count": 3636,
+  "weight_files": 1273,
+  "last_modified_utc": "2026-10-09T02:35Z",
+  "what": "nf-experiment",
+  "category": "DELETE",
+  "reason": "Neural Forge experiment checkpoints / evidence caches",
+  "omni_lab": {
+   "existing_rows_inside_unit": 0,
+   "exact_row": false,
+   "row_ids_to_mark_deleted": [],
+   "create_unit_row": {
+    "model_key": "path:95faaab81282f13b",
+    "host": "ai",
+    "path": "/home/cereal/model-surgery-lab/artifacts/neural_forge_exact4x_20260730"
+   },
+   "ledger_checkpoint_ids": [],
+   "producing_runs": []
+  },
+  "digest_mode": "full-sha256",
+  "recipe_archive": "/mnt/lexar/omni-campaign/archive/recipes/path-95faaab81282f13b__artifacts-neural_forge_exact4x_20260730/",
+  "ledger_action": "omni_lab model_deletion row (no ledger checkpoint)",
+  "notes": [],
+  "wave": "W2-HOME",
+  "plan_index": 78
+ },
+ {
+  "path": "/home/cereal/omni-campaign/distill/codex-speech-1p7-comparison-modality-v1",
+  "host": "ai",
+  "volume": "home",
+  "size_bytes_du": 9225443761,
+  "size_gb": 9.23,
+  "weight_bytes": 9214217156,
+  "file_count": 65,
+  "weight_files": 4,
+  "last_modified_utc": "2026-10-14T00:31Z",
+  "what": "scratch",
+  "category": "DELETE",
+  "reason": "codex-* experimental weight dir",
+  "omni_lab": {
+   "existing_rows_inside_unit": 3,
+   "exact_row": false,
+   "row_ids_to_mark_deleted": [
+    1048,
+    1049,
+    1050
+   ],
+   "create_unit_row": {
+    "model_key": "path:64a761d6976411f7",
+    "host": "ai",
+    "path": "/home/cereal/omni-campaign/distill/codex-speech-1p7-comparison-modality-v1"
+   },
+   "ledger_checkpoint_ids": [],
+   "producing_runs": []
+  },
+  "digest_mode": "full-sha256",
+  "recipe_archive": "/mnt/lexar/omni-campaign/archive/recipes/path-64a761d6976411f7__distill-codex-speech-1p7-comparison-modality-v1/",
+  "ledger_action": "omni_lab model_deletion row (no ledger checkpoint)",
+  "notes": [],
+  "wave": "W2-HOME",
+  "plan_index": 80
+ },
+ {
+  "path": "/home/cereal/omni-campaign/distill/parity",
+  "host": "ai",
+  "volume": "home",
+  "size_bytes_du": 5851125284,
+  "size_gb": 5.85,
+  "weight_bytes": 5813307368,
+  "file_count": 435,
+  "weight_files": 9,
+  "last_modified_utc": "2026-10-15T15:53Z",
+  "what": "scratch",
+  "category": "DELETE",
+  "reason": "K3 cache parity scratch (b2 gpu6)",
+  "omni_lab": {
+   "existing_rows_inside_unit": 12,
+   "exact_row": false,
+   "row_ids_to_mark_deleted": [
+    893,
+    894,
+    895,
+    896,
+    897,
+    898,
+    899,
+    900,
+    901,
+    902,
+    903,
+    904
+   ],
+   "create_unit_row": {
+    "model_key": "path:566c66da955e42c8",
+    "host": "ai",
+    "path": "/home/cereal/omni-campaign/distill/parity"
+   },
+   "ledger_checkpoint_ids": [],
+   "producing_runs": []
+  },
+  "digest_mode": "full-sha256",
+  "recipe_archive": "/mnt/lexar/omni-campaign/archive/recipes/path-566c66da955e42c8__distill-parity/",
+  "ledger_action": "omni_lab model_deletion row (no ledger checkpoint)",
+  "notes": [],
+  "wave": "W2-HOME",
+  "plan_index": 103
+ },
+ {
+  "path": "/home/cereal/omni-campaign/distill/codex-speech-preparation-modality-01a1326f-v1",
+  "host": "ai",
+  "volume": "home",
+  "size_bytes_du": 1677482707,
+  "size_gb": 1.68,
+  "weight_bytes": 515784408,
+  "file_count": 1036,
+  "weight_files": 201,
+  "last_modified_utc": "2026-10-13T21:32Z",
+  "what": "scratch",
+  "category": "DELETE",
+  "reason": "codex-* experimental weight dir",
+  "omni_lab": {
+   "existing_rows_inside_unit": 1,
+   "exact_row": false,
+   "row_ids_to_mark_deleted": [
+    1004
+   ],
+   "create_unit_row": {
+    "model_key": "path:a17bc3e2715ca1d2",
+    "host": "ai",
+    "path": "/home/cereal/omni-campaign/distill/codex-speech-preparation-modality-01a1326f-v1"
+   },
+   "ledger_checkpoint_ids": [],
+   "producing_runs": []
+  },
+  "digest_mode": "full-sha256",
+  "recipe_archive": "/mnt/lexar/omni-campaign/archive/recipes/path-a17bc3e2715ca1d2__distill-codex-speech-preparation-modality-01a1326f-v1/",
+  "ledger_action": "omni_lab model_deletion row (no ledger checkpoint)",
+  "notes": [],
+  "wave": "W2-HOME",
+  "plan_index": 118
+ },
+ {
+  "path": "/mnt/lexar/omni-campaign/native_executor/qimg_first32",
+  "host": "ai",
+  "volume": "lexar",
+  "size_bytes_du": 122713105658,
+  "size_gb": 122.71,
+  "weight_bytes": 122531374896,
+  "file_count": 8645,
+  "weight_files": 2074,
+  "last_modified_utc": "2026-10-08T00:35Z",
+  "what": "media-unit",
+  "category": "DELETE",
+  "reason": "native media fold units / captures / pilots",
+  "omni_lab": {
+   "existing_rows_inside_unit": 1,
+   "exact_row": false,
+   "row_ids_to_mark_deleted": [
+    1459
+   ],
+   "create_unit_row": {
+    "model_key": "path:8a618e499b53cda3",
+    "host": "ai",
+    "path": "/mnt/lexar/omni-campaign/native_executor/qimg_first32"
+   },
+   "ledger_checkpoint_ids": [],
+   "producing_runs": []
+  },
+  "digest_mode": "index+headers+listing",
+  "recipe_archive": "/mnt/lexar/omni-campaign/archive/recipes/path-8a618e499b53cda3__native_executor-qimg_first32/",
+  "ledger_action": "omni_lab model_deletion row (no ledger checkpoint)",
+  "notes": [],
+  "wave": "W3-LEXAR",
+  "plan_index": 189
+ },
+ {
+  "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold",
+  "host": "ai",
+  "volume": "lexar",
+  "size_bytes_du": 110015009234,
+  "size_gb": 110.02,
+  "weight_bytes": 110013740976,
+  "file_count": 117,
+  "weight_files": 79,
+  "last_modified_utc": "2026-10-07T09:56Z",
+  "what": "fold-scratch",
+  "category": "DELETE",
+  "reason": "K3 dense fold bodies / fold scratch",
+  "omni_lab": {
+   "existing_rows_inside_unit": 12,
+   "exact_row": false,
+   "row_ids_to_mark_deleted": [
+    1311,
+    1312,
+    1313,
+    1314,
+    1315,
+    1316,
+    1317,
+    1318,
+    1319,
+    1320,
+    1321,
+    1322
+   ],
+   "create_unit_row": {
+    "model_key": "path:1ac90327d8bec04c",
+    "host": "ai",
+    "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/fold"
+   },
+   "ledger_checkpoint_ids": [],
+   "producing_runs": []
+  },
+  "digest_mode": "index+headers+listing",
+  "recipe_archive": "/mnt/lexar/omni-campaign/archive/recipes/path-1ac90327d8bec04c__k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318-fold/",
+  "ledger_action": "omni_lab model_deletion row (no ledger checkpoint)",
+  "notes": [],
+  "wave": "W3-LEXAR",
+  "plan_index": 190
+ },
+ {
+  "path": "/mnt/lexar/omni-campaign/k3-continuation-oct06-bde8b657-90d4-41e8-83b3-7908616aeaf1/fold",
+  "host": "ai",
+  "volume": "lexar",
+  "size_bytes_du": 89462841599,
+  "size_gb": 89.46,
+  "weight_bytes": 89461616720,
+  "file_count": 114,
+  "weight_files": 77,
+  "last_modified_utc": "2026-10-07T03:41Z",
+  "what": "fold-scratch",
+  "category": "DELETE",
+  "reason": "K3 dense fold bodies / fold scratch",
+  "omni_lab": {
+   "existing_rows_inside_unit": 12,
+   "exact_row": false,
+   "row_ids_to_mark_deleted": [
+    1462,
+    1463,
+    1464,
+    1465,
+    1466,
+    1467,
+    1468,
+    1469,
+    1470,
+    1471,
+    1472,
+    1473
+   ],
+   "create_unit_row": {
+    "model_key": "path:875d4aa00b298d8d",
+    "host": "ai",
+    "path": "/mnt/lexar/omni-campaign/k3-continuation-oct06-bde8b657-90d4-41e8-83b3-7908616aeaf1/fold"
+   },
+   "ledger_checkpoint_ids": [],
+   "producing_runs": []
+  },
+  "digest_mode": "index+headers+listing",
+  "recipe_archive": "/mnt/lexar/omni-campaign/archive/recipes/path-875d4aa00b298d8d__k3-continuation-oct06-bde8b657-90d4-41e8-83b3-7908616aeaf1-fold/",
+  "ledger_action": "omni_lab model_deletion row (no ledger checkpoint)",
+  "notes": [],
+  "wave": "W3-LEXAR",
+  "plan_index": 191
+ },
+ {
+  "path": "/mnt/lexar/omni-campaign/k3-continuation-oct08-claude/fold",
+  "host": "ai",
+  "volume": "lexar",
+  "size_bytes_du": 82204781629,
+  "size_gb": 82.2,
+  "weight_bytes": 82202592504,
+  "file_count": 124,
+  "weight_files": 63,
+  "last_modified_utc": "2026-10-08T17:29Z",
+  "what": "fold-scratch",
+  "category": "DELETE",
+  "reason": "K3 dense fold bodies / fold scratch",
+  "omni_lab": {
+   "existing_rows_inside_unit": 12,
+   "exact_row": false,
+   "row_ids_to_mark_deleted": [
+    1207,
+    1208,
+    1209,
+    1210,
+    1211,
+    1212,
+    1213,
+    1214,
+    1215,
+    1216,
+    1218,
+    1255
+   ],
+   "create_unit_row": {
+    "model_key": "path:d37b1b3373440f86",
+    "host": "ai",
+    "path": "/mnt/lexar/omni-campaign/k3-continuation-oct08-claude/fold"
+   },
+   "ledger_checkpoint_ids": [],
+   "producing_runs": []
+  },
+  "digest_mode": "index+headers+listing",
+  "recipe_archive": "/mnt/lexar/omni-campaign/archive/recipes/path-d37b1b3373440f86__k3-continuation-oct08-claude-fold/",
+  "ledger_action": "omni_lab model_deletion row (no ledger checkpoint)",
+  "notes": [],
+  "wave": "W3-LEXAR",
+  "plan_index": 192
+ },
+ {
+  "path": "/mnt/lexar/omni-campaign/clones/OC02-F-Q38-27BU-OMNI1.clone-pre-D1",
+  "host": "ai",
+  "volume": "lexar",
+  "size_bytes_du": 55073531261,
+  "size_gb": 55.07,
+  "weight_bytes": 55073189730,
+  "file_count": 18,
+  "weight_files": 14,
+  "last_modified_utc": "2026-10-13T03:27Z",
+  "what": "model",
+  "category": "DELETE",
+  "reason": "byte clone of OMNI1 / OMNI1D1 (duplicate)",
+  "omni_lab": {
+   "existing_rows_inside_unit": 1,
+   "exact_row": true,
+   "row_ids_to_mark_deleted": [
+    16
+   ],
+   "create_unit_row": null,
+   "ledger_checkpoint_ids": [
+    "OC02-F-Q38-27BU-OMNI1.clone-pre-D1"
+   ],
+   "producing_runs": []
+  },
+  "digest_mode": "index+headers+listing",
+  "recipe_archive": "/mnt/lexar/omni-campaign/archive/recipes/OC02-F-Q38-27BU-OMNI1.clone-pre-D1/",
+  "ledger_action": "oc_checkpoint.py set-status --cyril-ruling <owner order> --notes <deletion record> (status unchanged)",
+  "notes": [],
+  "wave": "W3-LEXAR",
+  "plan_index": 193
+ },
+ {
+  "path": "/mnt/lexar/omni-campaign/k3-continuation-oct06-bde8b657-90d4-41e8-83b3-7908616aeaf1/ancestry",
+  "host": "ai",
+  "volume": "lexar",
+  "size_bytes_du": 50522588959,
+  "size_gb": 50.52,
+  "weight_bytes": 50517470240,
+  "file_count": 78,
+  "weight_files": 15,
+  "last_modified_utc": "2026-10-06T22:48Z",
+  "what": "fold-scratch",
+  "category": "DELETE",
+  "reason": "K3 dense fold bodies / fold scratch",
+  "omni_lab": {
+   "existing_rows_inside_unit": 10,
+   "exact_row": false,
+   "row_ids_to_mark_deleted": [
+    1574,
+    1575,
+    1576,
+    1577,
+    1578,
+    1579,
+    1580,
+    1581,
+    1582,
+    1583
+   ],
+   "create_unit_row": {
+    "model_key": "path:874b75b8e2e675ef",
+    "host": "ai",
+    "path": "/mnt/lexar/omni-campaign/k3-continuation-oct06-bde8b657-90d4-41e8-83b3-7908616aeaf1/ancestry"
+   },
+   "ledger_checkpoint_ids": [],
+   "producing_runs": []
+  },
+  "digest_mode": "index+headers+listing",
+  "recipe_archive": "/mnt/lexar/omni-campaign/archive/recipes/path-874b75b8e2e675ef__k3-continuation-oct06-bde8b657-90d4-41e8-83b3-7908616aeaf1-ancestry/",
+  "ledger_action": "omni_lab model_deletion row (no ledger checkpoint)",
+  "notes": [],
+  "wave": "W3-LEXAR",
+  "plan_index": 194
+ },
+ {
+  "path": "/mnt/lexar/omni-campaign/k3-continuation-oct06-bde8b657-90d4-41e8-83b3-7908616aeaf1/body",
+  "host": "ai",
+  "volume": "lexar",
+  "size_bytes_du": 33738870432,
+  "size_gb": 33.74,
+  "weight_bytes": 33738870432,
+  "file_count": 38,
+  "weight_files": 38,
+  "last_modified_utc": "2026-10-07T03:13Z",
+  "what": "fold-scratch",
+  "category": "DELETE",
+  "reason": "K3 dense fold bodies / fold scratch",
+  "omni_lab": {
+   "existing_rows_inside_unit": 12,
+   "exact_row": true,
+   "row_ids_to_mark_deleted": [
+    1536,
+    1537,
+    1538,
+    1539,
+    1540,
+    1541,
+    1542,
+    1543,
+    1544,
+    1545,
+    1546,
+    1547
+   ],
+   "create_unit_row": null,
+   "ledger_checkpoint_ids": [],
+   "producing_runs": []
+  },
+  "digest_mode": "index+headers+listing",
+  "recipe_archive": "/mnt/lexar/omni-campaign/archive/recipes/path-a66390373626baa7__k3-continuation-oct06-bde8b657-90d4-41e8-83b3-7908616aeaf1-body/",
+  "ledger_action": "omni_lab model_deletion row (no ledger checkpoint)",
+  "notes": [],
+  "wave": "W3-LEXAR",
+  "plan_index": 195
+ },
+ {
+  "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/body",
+  "host": "ai",
+  "volume": "lexar",
+  "size_bytes_du": 33738870432,
+  "size_gb": 33.74,
+  "weight_bytes": 33738870432,
+  "file_count": 38,
+  "weight_files": 38,
+  "last_modified_utc": "2026-10-07T09:32Z",
+  "what": "fold-scratch",
+  "category": "DELETE",
+  "reason": "K3 dense fold bodies / fold scratch",
+  "omni_lab": {
+   "existing_rows_inside_unit": 12,
+   "exact_row": true,
+   "row_ids_to_mark_deleted": [
+    1273,
+    1274,
+    1275,
+    1276,
+    1277,
+    1278,
+    1279,
+    1280,
+    1281,
+    1282,
+    1283,
+    1284
+   ],
+   "create_unit_row": null,
+   "ledger_checkpoint_ids": [],
+   "producing_runs": []
+  },
+  "digest_mode": "index+headers+listing",
+  "recipe_archive": "/mnt/lexar/omni-campaign/archive/recipes/path-5cbc1f3c30057386__k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318-body/",
+  "ledger_action": "omni_lab model_deletion row (no ledger checkpoint)",
+  "notes": [],
+  "wave": "W3-LEXAR",
+  "plan_index": 196
+ },
+ {
+  "path": "/mnt/lexar/omni-campaign/s3-native-v2-3a25a459-4347-416d-a58a-2cb3c8e738fd",
+  "host": "ai",
+  "volume": "lexar",
+  "size_bytes_du": 30680835963,
+  "size_gb": 30.68,
+  "weight_bytes": 30658797016,
+  "file_count": 44,
+  "weight_files": 10,
+  "last_modified_utc": "2026-10-06T17:59Z",
+  "what": "model",
+  "category": "DELETE",
+  "reason": "S3/S5 fold child",
+  "omni_lab": {
+   "existing_rows_inside_unit": 3,
+   "exact_row": false,
+   "row_ids_to_mark_deleted": [
+    1456,
+    1457,
+    1458
+   ],
+   "create_unit_row": {
+    "model_key": "path:46460de6ddf9de51",
+    "host": "ai",
+    "path": "/mnt/lexar/omni-campaign/s3-native-v2-3a25a459-4347-416d-a58a-2cb3c8e738fd"
+   },
+   "ledger_checkpoint_ids": [],
+   "producing_runs": []
+  },
+  "digest_mode": "index+headers+listing",
+  "recipe_archive": "/mnt/lexar/omni-campaign/archive/recipes/path-46460de6ddf9de51__omni-campaign-s3-native-v2-3a25a459-4347-416d-a58a-2cb3c8e738fd/",
+  "ledger_action": "omni_lab model_deletion row (no ledger checkpoint)",
+  "notes": [],
+  "wave": "W3-LEXAR",
+  "plan_index": 197
+ },
+ {
+  "path": "/mnt/lexar/omni-campaign/s3-fold-sep07-codex",
+  "host": "ai",
+  "volume": "lexar",
+  "size_bytes_du": 29066734915,
+  "size_gb": 29.07,
+  "weight_bytes": 29044465880,
+  "file_count": 16,
+  "weight_files": 8,
+  "last_modified_utc": "2026-09-08T05:43Z",
+  "what": "model",
+  "category": "DELETE",
+  "reason": "S3/S5 fold child",
+  "omni_lab": {
+   "existing_rows_inside_unit": 1,
+   "exact_row": false,
+   "row_ids_to_mark_deleted": [
+    13
+   ],
+   "create_unit_row": {
+    "model_key": "path:0d556e50809ef262",
+    "host": "ai",
+    "path": "/mnt/lexar/omni-campaign/s3-fold-sep07-codex"
+   },
+   "ledger_checkpoint_ids": [
+    "OC02-F-Q38-27BU-C2K4352"
+   ],
+   "producing_runs": []
+  },
+  "digest_mode": "index+headers+listing",
+  "recipe_archive": "/mnt/lexar/omni-campaign/archive/recipes/OC02-F-Q38-27BU-C2K4352/",
+  "ledger_action": "oc_checkpoint.py set-status --cyril-ruling <owner order> --notes <deletion record> (status unchanged)",
+  "notes": [],
+  "wave": "W3-LEXAR",
+  "plan_index": 198
+ },
+ {
+  "path": "/mnt/lexar/omni-campaign/h3-joint50-fixed3584-native-01a11929-de0a9de7-873d-4441-aa8f-4d9f25935af3",
+  "host": "ai",
+  "volume": "lexar",
+  "size_bytes_du": 23913596141,
+  "size_gb": 23.91,
+  "weight_bytes": 23908513016,
+  "file_count": 272,
+  "weight_files": 106,
+  "last_modified_utc": "2026-10-08T22:21Z",
+  "what": "media-unit",
+  "category": "DELETE",
+  "reason": "native media fold units / captures / pilots",
+  "omni_lab": {
+   "existing_rows_inside_unit": 3,
+   "exact_row": false,
+   "row_ids_to_mark_deleted": [
+    1204,
+    1205,
+    1206
+   ],
+   "create_unit_row": {
+    "model_key": "path:1a6094930dd6dec1",
+    "host": "ai",
+    "path": "/mnt/lexar/omni-campaign/h3-joint50-fixed3584-native-01a11929-de0a9de7-873d-4441-aa8f-4d9f25935af3"
+   },
+   "ledger_checkpoint_ids": [],
+   "producing_runs": []
+  },
+  "digest_mode": "index+headers+listing",
+  "recipe_archive": "/mnt/lexar/omni-campaign/archive/recipes/path-1a6094930dd6dec1__omni-campaign-h3-joint50-fixed3584-native-01a11929-de0a9de7-873d-4441-aa8f-4d9f2/",
+  "ledger_action": "omni_lab model_deletion row (no ledger checkpoint)",
+  "notes": [],
+  "wave": "W3-LEXAR",
+  "plan_index": 200
+ },
+ {
+  "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/ancestry",
+  "host": "ai",
+  "volume": "lexar",
+  "size_bytes_du": 20554901300,
+  "size_gb": 20.55,
+  "weight_bytes": 20552124256,
+  "file_count": 14,
+  "weight_files": 2,
+  "last_modified_utc": "2026-10-07T10:15Z",
+  "what": "fold-scratch",
+  "category": "DELETE",
+  "reason": "K3 dense fold bodies / fold scratch",
+  "omni_lab": {
+   "existing_rows_inside_unit": 1,
+   "exact_row": false,
+   "row_ids_to_mark_deleted": [
+    1272
+   ],
+   "create_unit_row": {
+    "model_key": "path:a76ef43ff8cd0ffb",
+    "host": "ai",
+    "path": "/mnt/lexar/omni-campaign/k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318/ancestry"
+   },
+   "ledger_checkpoint_ids": [],
+   "producing_runs": []
+  },
+  "digest_mode": "index+headers+listing",
+  "recipe_archive": "/mnt/lexar/omni-campaign/archive/recipes/path-a76ef43ff8cd0ffb__k3-diagnostic-recovery-oct07-048cff57-935c-4e2b-a31b-96a3c7fa6318-ancestry/",
+  "ledger_action": "omni_lab model_deletion row (no ledger checkpoint)",
+  "notes": [],
+  "wave": "W3-LEXAR",
+  "plan_index": 202
+ },
+ {
+  "path": "/mnt/lexar/omni-campaign/large-fold-opt-oct07",
+  "host": "ai",
+  "volume": "lexar",
+  "size_bytes_du": 20025956508,
+  "size_gb": 20.03,
+  "weight_bytes": 19620406592,
+  "file_count": 22915,
+  "weight_files": 1,
+  "last_modified_utc": "2026-10-10T00:15Z",
+  "what": "fold-scratch",
+  "category": "DELETE",
+  "reason": "large-fold optimisation pilot",
+  "omni_lab": {
+   "existing_rows_inside_unit": 1,
+   "exact_row": false,
+   "row_ids_to_mark_deleted": [
+    1269
+   ],
+   "create_unit_row": {
+    "model_key": "path:870845eda562af23",
+    "host": "ai",
+    "path": "/mnt/lexar/omni-campaign/large-fold-opt-oct07"
+   },
+   "ledger_checkpoint_ids": [],
+   "producing_runs": []
+  },
+  "digest_mode": "index+headers+listing",
+  "recipe_archive": "/mnt/lexar/omni-campaign/archive/recipes/path-870845eda562af23__omni-campaign-large-fold-opt-oct07/",
+  "ledger_action": "omni_lab model_deletion row (no ledger checkpoint)",
+  "notes": [],
+  "wave": "W3-LEXAR",
+  "plan_index": 203
+ },
+ {
+  "path": "/mnt/lexar/omni-campaign/clones/OC02-D-Q38-27BU-OMNI1D1.clone-pre-D2",
+  "host": "ai",
+  "volume": "lexar",
+  "size_bytes_du": 8557249742,
+  "size_gb": 8.56,
+  "weight_bytes": 8557063992,
+  "file_count": 5,
+  "weight_files": 1,
+  "last_modified_utc": "2026-10-15T21:52Z",
+  "what": "model",
+  "category": "DELETE",
+  "reason": "byte clone of OMNI1 / OMNI1D1 (duplicate)",
+  "omni_lab": {
+   "existing_rows_inside_unit": 1,
+   "exact_row": true,
+   "row_ids_to_mark_deleted": [
+    18
+   ],
+   "create_unit_row": null,
+   "ledger_checkpoint_ids": [
+    "OC02-D-Q38-27BU-OMNI1D1.clone-pre-D2"
+   ],
+   "producing_runs": []
+  },
+  "digest_mode": "full-sha256",
+  "recipe_archive": "/mnt/lexar/omni-campaign/archive/recipes/OC02-D-Q38-27BU-OMNI1D1.clone-pre-D2/",
+  "ledger_action": "oc_checkpoint.py set-status --cyril-ruling <owner order> --notes <deletion record> (status unchanged)",
+  "notes": [],
+  "wave": "W3-LEXAR",
+  "plan_index": 209
+ },
+ {
+  "path": "/mnt/lexar/omni-campaign/qimg-broad-capture-sep07",
+  "host": "ai",
+  "volume": "lexar",
+  "size_bytes_du": 6190869705,
+  "size_gb": 6.19,
+  "weight_bytes": 6189750732,
+  "file_count": 178,
+  "weight_files": 164,
+  "last_modified_utc": "2026-09-07T22:51Z",
+  "what": "media-unit",
+  "category": "DELETE",
+  "reason": "native media fold units / captures / pilots",
+  "omni_lab": {
+   "existing_rows_inside_unit": 8,
+   "exact_row": false,
+   "row_ids_to_mark_deleted": [
+    1587,
+    1588,
+    1589,
+    1590,
+    1591,
+    1592,
+    1593,
+    1594
+   ],
+   "create_unit_row": {
+    "model_key": "path:5efdb3114954ebbb",
+    "host": "ai",
+    "path": "/mnt/lexar/omni-campaign/qimg-broad-capture-sep07"
+   },
+   "ledger_checkpoint_ids": [],
+   "producing_runs": []
+  },
+  "digest_mode": "full-sha256",
+  "recipe_archive": "/mnt/lexar/omni-campaign/archive/recipes/path-5efdb3114954ebbb__omni-campaign-qimg-broad-capture-sep07/",
+  "ledger_action": "omni_lab model_deletion row (no ledger checkpoint)",
+  "notes": [],
+  "wave": "W3-LEXAR",
+  "plan_index": 213
+ },
+ {
+  "path": "/mnt/lexar/omni-campaign/distill/parity/k3cache-2026-10-14-b2-gpu6",
+  "host": "ai",
+  "volume": "lexar",
+  "size_bytes_du": 5817236979,
+  "size_gb": 5.82,
+  "weight_bytes": 5813307368,
+  "file_count": 32,
+  "weight_files": 9,
+  "last_modified_utc": "2026-10-15T15:53Z",
+  "what": "scratch",
+  "category": "DELETE",
+  "reason": "K3 cache parity scratch (b2 gpu6)",
+  "omni_lab": {
+   "existing_rows_inside_unit": 4,
+   "exact_row": false,
+   "row_ids_to_mark_deleted": [
+    1161,
+    1162,
+    1163,
+    1164
+   ],
+   "create_unit_row": {
+    "model_key": "path:18719e16e8bfb2f2",
+    "host": "ai",
+    "path": "/mnt/lexar/omni-campaign/distill/parity/k3cache-2026-10-14-b2-gpu6"
+   },
+   "ledger_checkpoint_ids": [],
+   "producing_runs": []
+  },
+  "digest_mode": "full-sha256",
+  "recipe_archive": "/mnt/lexar/omni-campaign/archive/recipes/path-18719e16e8bfb2f2__parity-k3cache-2026-10-14-b2-gpu6/",
+  "ledger_action": "omni_lab model_deletion row (no ledger checkpoint)",
+  "notes": [],
+  "wave": "W3-LEXAR",
+  "plan_index": 214
+ },
+ {
+  "path": "/mnt/lexar/omni-campaign/h3-noise-evaluation-native-01a11929-516e8e90-70f5-4cd5-a28c-b16d9a4a4e13",
+  "host": "ai",
+  "volume": "lexar",
+  "size_bytes_du": 4102885982,
+  "size_gb": 4.1,
+  "weight_bytes": 4094461696,
+  "file_count": 450,
+  "weight_files": 416,
+  "last_modified_utc": "2026-10-09T06:49Z",
+  "what": "media-unit",
+  "category": "DELETE",
+  "reason": "native media fold units / captures / pilots",
+  "omni_lab": {
+   "existing_rows_inside_unit": 10,
+   "exact_row": false,
+   "row_ids_to_mark_deleted": [
+    1194,
+    1195,
+    1196,
+    1197,
+    1198,
+    1199,
+    1200,
+    1201,
+    1202,
+    1203
+   ],
+   "create_unit_row": {
+    "model_key": "path:426f1c09e44eb9d2",
+    "host": "ai",
+    "path": "/mnt/lexar/omni-campaign/h3-noise-evaluation-native-01a11929-516e8e90-70f5-4cd5-a28c-b16d9a4a4e13"
+   },
+   "ledger_checkpoint_ids": [],
+   "producing_runs": []
+  },
+  "digest_mode": "full-sha256",
+  "recipe_archive": "/mnt/lexar/omni-campaign/archive/recipes/path-426f1c09e44eb9d2__omni-campaign-h3-noise-evaluation-native-01a11929-516e8e90-70f5-4cd5-a28c-b16d9a/",
+  "ledger_action": "omni_lab model_deletion row (no ledger checkpoint)",
+  "notes": [],
+  "wave": "W3-LEXAR",
+  "plan_index": 216
+ },
+ {
+  "path": "/mnt/lexar/omni-campaign/scratch/qtext-gpu0-2026-10-13",
+  "host": "ai",
+  "volume": "lexar",
+  "size_bytes_du": 14840630,
+  "size_gb": 0.01,
+  "weight_bytes": 1048992,
+  "file_count": 19,
+  "weight_files": 1,
+  "last_modified_utc": "2026-10-13T12:29Z",
+  "what": "scratch",
+  "category": "DELETE",
+  "reason": "stale scratch",
+  "omni_lab": {
+   "existing_rows_inside_unit": 2,
+   "exact_row": false,
+   "row_ids_to_mark_deleted": [
+    1192,
+    1193
+   ],
+   "create_unit_row": {
+    "model_key": "path:34fc774b3487a7c3",
+    "host": "ai",
+    "path": "/mnt/lexar/omni-campaign/scratch/qtext-gpu0-2026-10-13"
+   },
+   "ledger_checkpoint_ids": [],
+   "producing_runs": []
+  },
+  "digest_mode": "full-sha256",
+  "recipe_archive": "/mnt/lexar/omni-campaign/archive/recipes/path-34fc774b3487a7c3__scratch-qtext-gpu0-2026-10-13/",
+  "ledger_action": "omni_lab model_deletion row (no ledger checkpoint)",
+  "notes": [],
+  "wave": "W3-LEXAR",
+  "plan_index": 242
+ }
+]
