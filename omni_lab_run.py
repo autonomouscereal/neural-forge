@@ -19,6 +19,7 @@ import fnmatch
 import json
 import os
 import re
+import secrets
 import shlex
 import subprocess
 import sys
@@ -346,7 +347,8 @@ def build_spec(conn, args) -> dict:
     stamp = utc_stamp()
     short = re.sub(r"[^A-Za-z0-9.-]+", "-", model["model_key"])[-40:]
     core = {"model": model["model_key"], "suite": [suite["name"], suite["version"]], "engine": engine, "gen": gen,
-            "dtype": dtype, "cases": [c["case_pk"] for c in cases], "devices": devices, "cpu": bool(args.cpu), "t": stamp}
+            "dtype": dtype, "cases": [c["case_pk"] for c in cases], "devices": devices, "cpu": bool(args.cpu), "t": stamp,
+            "nonce": secrets.token_hex(4)}   # two identical runs in one second still get two keys
     run_key = f"eval:omni_lab:{stamp}:{db.sha256_json(core)[:12]}"
     name = args.name or f"{short} {suite['name']}@{suite['version']} {engine}" + (f" [{args.test}]" if args.test else "")
     shas = code_shas()
@@ -440,7 +442,8 @@ def _run(conn, args, t0: float) -> int:
             else:
                 spec["device"]["cards"], held = claim_cards(devices, allow_gpu5=args.allow_gpu5, busy_limit=args.busy_limit)
             spec["device"]["driver"] = (spec["device"]["cards"] or [{}])[0].get("driver")
-        run_dir = runs_root() / f"{spec['created_utc']}-{spec['engine']}-{re.sub(r'[^A-Za-z0-9.-]+', '-', spec['model']['model_key'])[-32:]}-{spec['suite']['name']}"
+        run_dir = runs_root() / (f"{spec['created_utc']}-{spec['engine']}-{re.sub(r'[^A-Za-z0-9.-]+', '-', spec['model']['model_key'])[-32:]}"
+                                  f"-{spec['suite']['name']}-{spec['run_key'][-6:]}")
         spec["run_dir"] = str(run_dir)
         spec["config"] = {
             "engine": spec["engine"], "dtype": spec["dtype"], "argv": sys.argv, "device_kind": spec["device"]["kind"],

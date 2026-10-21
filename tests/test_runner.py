@@ -262,6 +262,15 @@ class RunnerDbTests(unittest.TestCase):
         self.assertEqual(code, 0, out)
         type(self).rids = (rid, rid2)
 
+    def test_15_back_to_back_runs_get_their_own_rows(self):
+        # same model, suite and cases inside one second: two run keys, two run directories (was a FileExistsError)
+        a = self.run_echo("TEST-ECHO-MODEL", "tsuite@1", "--cases", "t-chat")
+        b = self.run_echo("TEST-ECHO-MODEL", "tsuite@1", "--cases", "t-chat")
+        self.assertEqual((a[0], b[0]), (0, 0), a[1] + b[1])
+        self.assertNotEqual(a[2], b[2])
+        dirs = self.q("SELECT run_dir FROM run WHERE id = ANY(%s)", ([a[2], b[2]],))
+        self.assertEqual(len({d[0] for d in dirs}), 2)
+
     def test_20_add_cases_blank_for_older_runs(self):
         extra = Path(self.tmp.name, "more.json")
         extra.write_text(json.dumps({"prompts": [{"id": "t-new", "category": "new", "prompt": "Name a prime."}]}),
@@ -278,7 +287,9 @@ class RunnerDbTests(unittest.TestCase):
         self.assertLess(elapsed, 2.0, out)
         line = next(ln for ln in out.splitlines() if ln.startswith("t-new"))
         cells = line.split()[2:]
-        self.assertEqual(cells.count("-"), 2, line)                      # both older runs never had t-new
+        self.assertGreaterEqual(len(cells), 3, out)
+        self.assertEqual(cells[:-1], ["-"] * (len(cells) - 1), line)   # every older run never had t-new
+        self.assertNotEqual(cells[-1], "-", line)                        # the newest run (last column) did
         type(self).rid3 = rid3
 
     def test_30_human_grade_wins(self):
