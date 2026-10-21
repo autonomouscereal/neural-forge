@@ -67,6 +67,37 @@ the version and sha256 of each applied file. `migrate` refuses to run if an appl
 
 A blank cell is a missing row. Add cases by creating a new suite version that links the old `test_case` rows plus the new ones. Older runs then show no result for the new cases. An edited prompt under the same `case_id` becomes a separate `test_case` row, so old and new answers are never compared as if they answered the same question.
 
+## Ingesters: test suites and eval results
+
+Server sources (run in `/home/cereal/omni-campaign/lab`), then the Codex task sets on the workstation:
+
+```
+/home/cereal/.venvs/chimera-intake/bin/python omni_lab.py ingest evals     # banks dossiers toolcall_bankruns student_tests s8_media p11_reads
+C:/Python314/python.exe omni_lab.py ingest codex_tasksets                  # workstation: proof_outputs/chimera_recovery_eval_*
+```
+
+| Source | Reads | Writes |
+|---|---|---|
+| `banks` | `$OC/calibration/banks/*.json`, R-Q `PROMPT_PACK` (by AST) in `import/rq27b/tree_c5e6052/scripts/import_receipt_qwen35.py` | suites `bank_v1@1` (16), `probe@1` (8), `smoke@1` (3), `toolcall_v1@1` (185), `bank_v2_draft@draft-<sha12>` (40, DRAFT), `rq_prompt_pack@c5e6052` (8) |
+| `codex_tasksets` | workstation `proof_outputs/chimera_recovery_eval_*/tasks.jsonl` | `codex_recovery_{bfcl,tools_executed,frozen,text,combined}` (62/168/230/44/274 members, 274 distinct cases: combined and frozen link the same rows); oracle in `test_case.reference` |
+| `dossiers` | `$OC/composite/{s0,s3,s8,d1}/review/oc-dossier-*.json` + `.finite_guard.json` + `review-*.json` | per dossier up to 3 eval runs (`bank_v1`, `smoke`, `probe`), placement per card with layer span, upper-bound columns as `metric upper_bound/*` |
+| `toolcall_bankruns` | `$OC/distill/toolcall/bank-runs/*.grade.json` + responses + serve/export receipts | eval run on the GGUF (engine `gguf`), server cards by UUID, `toolcall_selfgen.grade_case` pass/fail per case |
+| `student_tests` | `$L/scratch/student-tests-*/results.json` + `grades.json` | suites `student_tests_<date>@1`, `student_new_<date>@1`; the student eval run; reader grades (`human:claude`) for the student AND for the parent / OMNI1 runs it compared against |
+| `s8_media` | `$OC/composite/s8/media_out/{s8_media_forward,s8_media_decode.*}.json`, `qvl/answers.json` | `s8_media_smoke@1.1.0` (13 segments, artifacts = decoded wav/png/glb + latents), `s8_qvl_describe@1` (5) |
+| `p11_reads` | `$OC/distill/tps/**/p11_*_summary.json` | `p11_needles@v1-<needles sha12>`, one eval run per read |
+
+How eval rows are keyed and graded:
+- The model under test is the ledger checkpoint whose review record names the dossier's `dossier_sha256`, else the ledger directory, else a `path:<sha16>` row (same key `model_scan` uses). So the S3 native dossier lands on `OC02-F-Q38-27BU-C2K4352` and the composed D1 dossiers on `OC02-D-Q38-27BU-OMNI1D1`. The S0 parent dossier ran a Chimera import of the parent; it is its own row (stage `S0`) with an `export` lineage edge to `PARENT-Q38-27BU`.
+- A recorded prompt that hashes differently from its bank row becomes its own case and is named on the batch (`prompt-mismatch`); none did on 2026-10-21.
+- Grades are only what a file recorded: machine graders (`toolcall_selfgen.grade_case`, `student_test.code_check`, `p11_needle_engine.passkey_exact_teacher_forced`, `s8_media_decode.beats_noisy_input`) and reader grades from `grades.json` (`human:claude`: correct / partially correct / content miss / no content -> correct / partial / miss / none). A `not run` cell writes nothing, so it stays blank.
+- Artifact flags come from recorded fields only: `loop_detected` -> `loop`, empty response -> `empty`, cap termination -> `cap-ride`, a non-CONTENT `oc_calib.classify_form` box -> its name.
+
+Parent vs OMNI1 vs student, one line per case (`-` = the model never ran the case; `ungraded` = it ran, nobody graded it):
+
+```
+C:/Python314/python.exe omni_lab.py sql "SELECT tc.case_id, max(COALESCE(vm.grade,'ungraded')) FILTER (WHERE er.label='PARENT-Q38-27BU-NATIVE-NOTHINK') parent, max(COALESCE(vm.grade,'ungraded')) FILTER (WHERE er.label='OC02-OMNI1-NATIVE-NOTHINK') omni1, max(COALESCE(vm.grade,'ungraded')) FILTER (WHERE er.engine='qwen35-student') student FROM test_case tc JOIN suite_member sm ON sm.case_pk=tc.id JOIN test_suite ts ON ts.id=sm.suite_id LEFT JOIN v_eval_matrix vm ON vm.case_pk=tc.id LEFT JOIN eval_run er ON er.run_id=vm.eval_run_id WHERE ts.name IN ('bank_v1','student_tests_20261021') GROUP BY tc.case_id ORDER BY 1"
+```
+
 ## Rollback
 
 ```
