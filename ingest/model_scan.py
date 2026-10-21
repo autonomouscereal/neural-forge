@@ -196,7 +196,7 @@ def _write(conn, batch, host_id, path, files, kind_files) -> None:
         with conn.cursor() as cur:
             cur.execute("UPDATE model SET size_bytes = %s, dtype = COALESCE(%s, dtype), "
                         "parameter_count = COALESCE(parameter_count, %s), config = config || %s::jsonb, "
-                        "status = 'present' WHERE id = %s",
+                        "status = CASE WHEN status IN ('deleting', 'deleted') THEN status ELSE 'present' END WHERE id = %s",
                         (size, dtype, params, db.canonical_json({"scan": config}), existing))
         batch.wrote()
         return

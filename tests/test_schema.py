@@ -392,6 +392,45 @@ class DbTests(unittest.TestCase):
                          [("architecture",), ("modality",)])
         self.assertEqual(self.q("SELECT lane FROM v_run_summary WHERE id=%s", (rid,)), [("L-K3",)])
 
+    def test_17_deleted_status_survives_upserts(self):
+        """0006: a recorded deletion is never undone by a re-ingest; model_deletion keeps its constraints."""
+        import psycopg2
+        c = self.c
+        gone = db.upsert_model(c, "GONE-1", "chimera-omni", "fold-child", "hf", path="/x/gone", status="present")
+        busy = db.upsert_model(c, "GONE-2", "chimera-omni", "fold-child", "hf", path="/x/busy", status="present")
+        with c.cursor() as cur:
+            cur.execute("UPDATE model SET status='deleted', deleted_at=now(), delete_reason='test', "
+                        "rebuild_recipe_path='/r/GONE-1' WHERE id=%s", (gone,))
+            cur.execute("UPDATE model SET status='deleting' WHERE id=%s", (busy,))
+        for status in ("present", "missing"):
+            db.upsert_model(c, "GONE-1", "chimera-omni", "fold-child", "hf", path="/x/gone", status=status)
+            db.upsert_model(c, "GONE-2", "chimera-omni", "fold-child", "hf", path="/x/busy", status=status)
+        self.assertEqual(self.q("SELECT model_key, status, delete_reason, rebuild_recipe_path FROM model "
+                                "WHERE model_key IN ('GONE-1','GONE-2') ORDER BY 1"),
+                         [("GONE-1", "deleted", "test", "/r/GONE-1"), ("GONE-2", "deleting", None, None)])
+        live = db.upsert_model(c, "LIVE-1", "chimera-omni", "fold-child", "hf", status="present")
+        db.upsert_model(c, "LIVE-1", "chimera-omni", "fold-child", "hf", status="missing")
+        self.assertEqual(self.q("SELECT status FROM model WHERE id=%s", (live,)), [("missing",)])
+        self.assertEqual(self.q("SELECT count(*) FROM host WHERE name='workstation'"), [(1,)])
+        hid = self.q("SELECT id FROM host WHERE name='workstation'")[0][0]
+        with c.cursor() as cur:
+            cur.execute("INSERT INTO model_deletion (model_id, host_id, unit_path, plan_wave, size_bytes_du, digest_mode, "
+                        "listing_sha256, file_digests, recipe_archive_path, recipe_files, reason, owner_order, preflight) "
+                        "VALUES (%s,%s,'/x/gone','W2-HOME',10,'full-sha256','ab','{}','/r/GONE-1','[]','test','order','{}') "
+                        "RETURNING status", (gone, hid))
+            self.assertEqual(cur.fetchone()[0], "recorded")
+        c.commit()
+        for bad in ("INSERT INTO model_deletion (model_id, host_id, unit_path, plan_wave, size_bytes_du, digest_mode, "
+                    "listing_sha256, file_digests, recipe_archive_path, recipe_files, reason, owner_order, preflight) "
+                    f"VALUES ({gone},{hid},'/x/gone','W2-HOME',10,'full-sha256','ab','{{}}','/r','[]','r','o','{{}}')",
+                    "INSERT INTO model_deletion (model_id, host_id, unit_path, plan_wave, size_bytes_du, digest_mode, "
+                    "listing_sha256, file_digests, recipe_archive_path, recipe_files, reason, owner_order, preflight) "
+                    f"VALUES ({gone},{hid},'/x/other','W2-HOME',10,'md5','ab','{{}}','/r','[]','r','o','{{}}')",
+                    f"UPDATE model SET status='gone' WHERE id={gone}"):
+            with self.assertRaises(psycopg2.Error, msg=bad):
+                with c.cursor() as cur:
+                    cur.execute(bad)
+            c.rollback()
 
 @unittest.skipUnless(_have_rw(), "no omni_lab credential")
 class ReadOnlyRoleTests(unittest.TestCase):

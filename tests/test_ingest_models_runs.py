@@ -372,6 +372,27 @@ class IngestDbTests(unittest.TestCase):
         self.assertEqual(r, [("fold", "k3", "pass", 14400.0, True)])
         self.assertEqual(self.q("SELECT count(*) FROM run WHERE run_key LIKE '%%phase_cache%%'")[0][0], 0)
 
+    def test_08_deleted_rows_survive_rescan(self):
+        """A cleanup-recorded deletion stays 'deleted' through oc_ledger + model_scan re-runs (0006 guard)."""
+        clone = str(self.fx["clone_dir"]).replace("\\", "/")
+        rows = self.q("SELECT id, model_key FROM model WHERE path = %s", (clone,))
+        self.assertTrue(rows, clone)
+        # the clone row is ledger-owned (oc_ledger upsert) and its directory exists, so model_scan revisits it
+        # through the existing-row UPDATE; both writers must leave the recorded deletion alone
+        ids = [r[0] for r in rows]
+        with self.conn.cursor() as cur:
+            cur.execute("UPDATE model SET status = 'deleted', deleted_at = now(), delete_reason = 'test' "
+                        "WHERE id = ANY(%s)", (ids,))
+        self.conn.commit()
+        try:
+            for m in (oc_ledger, model_scan):
+                C.run_source(m, None, conn_factory=lambda: self.conn)
+            self.assertEqual(self.q("SELECT DISTINCT status FROM model WHERE id = ANY(%s)", (ids,)), [("deleted",)])
+        finally:
+            with self.conn.cursor() as cur:
+                cur.execute("UPDATE model SET status = 'present', deleted_at = NULL, delete_reason = NULL "
+                            "WHERE id = ANY(%s)", (ids,))
+            self.conn.commit()
 
 if __name__ == "__main__":
     unittest.main()

@@ -461,7 +461,10 @@ def upsert_model(conn, model_key: str, project: str, role: str, layout: str, fam
                  config: dict | None = None, sealed_verdict: str | None = None, status: str = "present",
                  created_at: Any = None, notes: str | None = None,
                  prov: tuple[str, str, str] | None = None, batch_id: int | None = None) -> int:
-    """Insert or refresh a model by model_key; NULL arguments never erase known values."""
+    """Insert or refresh a model by model_key; NULL arguments never erase known values.
+
+    A row marked 'deleting' or 'deleted' (migration 0006, cleanup records) keeps that status: a re-ingest
+    must not turn a recorded deletion back into present/missing."""
     src_path, src_sha, src_host = prov or (None, None, None)
     with conn.cursor() as cur:
         cur.execute(
@@ -478,7 +481,8 @@ def upsert_model(conn, model_key: str, project: str, role: str, layout: str, fam
             "parameter_count = COALESCE(EXCLUDED.parameter_count, model.parameter_count), "
             "size_bytes = COALESCE(EXCLUDED.size_bytes, model.size_bytes), dtype = COALESCE(EXCLUDED.dtype, model.dtype), "
             "config = model.config || EXCLUDED.config, "
-            "sealed_verdict = COALESCE(EXCLUDED.sealed_verdict, model.sealed_verdict), status = EXCLUDED.status, "
+            "sealed_verdict = COALESCE(EXCLUDED.sealed_verdict, model.sealed_verdict), "
+            "status = CASE WHEN model.status IN ('deleting', 'deleted') THEN model.status ELSE EXCLUDED.status END, "
             "created_at = COALESCE(EXCLUDED.created_at, model.created_at), notes = COALESCE(EXCLUDED.notes, model.notes), "
             "src_path = COALESCE(EXCLUDED.src_path, model.src_path), src_sha256 = COALESCE(EXCLUDED.src_sha256, model.src_sha256), "
             "src_host = COALESCE(EXCLUDED.src_host, model.src_host), "
