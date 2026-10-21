@@ -13,9 +13,10 @@ Credentials (never in code or in the repo):
   admin    OMNI_LAB_ADMIN_PG_    agent_memory   agent_memory_pg   (bootstrap and tests only)
 Each prefix accepts HOST, PORT, DB, USER and one of PASSWORD, PASSWORD_FILE, PASSWORD_COMMAND
 (same resolution order as the memory backend; "{python}" as the first word of a command is the
-running interpreter).  Missing ro/admin HOST/PORT fall back to the rw values.  A gitignored .env
-beside this file is loaded first; real environment variables win.  On the AI server the runtime
-env file is /home/cereal/.config/omni-lab/env (mode 600), sourced like chimera-intake/env.
+running interpreter).  Missing ro/admin HOST/PORT fall back to the rw values.  The first existing of
+$OMNI_LAB_ENV_FILE, a gitignored .env beside this file (workstation: helper commands only) and
+~/.config/omni-lab/env (AI server: mode 600, generated from the vault like chimera-intake/env) is
+loaded; real environment variables always win.
 """
 from __future__ import annotations
 
@@ -69,7 +70,17 @@ def load_local_env(path: Path) -> None:
             os.environ.setdefault(key, value)
 
 
-load_local_env(Path(os.environ.get("OMNI_LAB_ENV_FILE", "") or HERE / ".env"))
+def _first_env_file() -> Path | None:
+    """OMNI_LAB_ENV_FILE, else .env beside this file (workstation), else ~/.config/omni-lab/env (AI server)."""
+    for candidate in (os.environ.get("OMNI_LAB_ENV_FILE", ""), HERE / ".env", Path.home() / ".config/omni-lab/env"):
+        if candidate and Path(candidate).is_file():
+            return Path(candidate)
+    return None
+
+
+_ENV_FILE = _first_env_file()
+if _ENV_FILE is not None:
+    load_local_env(_ENV_FILE)
 
 
 def read_password_file(path_text: str) -> str:
