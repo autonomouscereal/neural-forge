@@ -149,11 +149,15 @@ class DbTests(unittest.TestCase):
                   "test_case", "suite_member", "grader", "test", "eval_run", "eval_result", "eval_grade",
                   "eval_artifact", "technique", "experiment", "experiment_eval", "lane", "ledger_event",
                   "dataset", "dataset_version", "run_dataset", "directive", "ruling", "document",
-                  "model_tensor_group", "arch_requirement", "arch_check"):
+                  "model_tensor_group", "arch_requirement", "arch_check", "model_deletion",
+                  "fold_shard", "fold_coverage", "fold_arm", "fold_component", "fold_behaviour", "fold_diagnostic",
+                  "fold_source", "experiment_alias", "experiment_link", "fold_finding", "fold_finding_experiment",
+                  "fold_finding_source"):
             self.assertIn(t, tables)
         views = {r[0] for r in self.q("SELECT table_name FROM information_schema.views WHERE table_schema='public'")}
         self.assertEqual(views, {"v_effective_grade", "v_eval_matrix", "v_results", "v_run_summary", "v_latest_models",
-                                 "v_model_modality_coverage", "v_arch_conformance", "v_directives_by_topic"})
+                                 "v_model_modality_coverage", "v_arch_conformance", "v_directives_by_topic",
+                                 "v_fold_arms", "v_technique_scoreboard", "v_findings", "v_fold_coverage"})
 
     # -- the full eval round trip ----------------------------------------------------------------
     def _fixture_eval(self, tag: str):

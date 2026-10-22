@@ -7,6 +7,8 @@
     omni_lab.py sql "SELECT ..."           read-only query as omni_lab_ro
     omni_lab.py ingest <source>... | models-runs | evals [--keep-going]
                                            run ingest/<source>.py (one ingest_batch each); idempotent
+    omni_lab.py ingest foldrec --dry-run [--inventory DIR]
+                                           parse/validate/resolve read-only (ingesters with a dry_run()); writes nothing
     omni_lab.py run --model M --suite S [--gpus 6,4,0 | --cpu] [--cases ...] [--cap N] [--save-test T]
                                            claim cards -> GPU worker -> results to console + database
     omni_lab.py run --test T --model M      re-run a saved test (suite + engine + gen + cards + case filter)
@@ -125,6 +127,15 @@ def cmd_ingest(args) -> int:
     worst = 0
     for name in names:
         module = ingest.load(name)
+        if args.dry_run:
+            if not hasattr(module, "dry_run"):
+                print(f"[{name}] refused: no --dry-run for this ingester", file=sys.stderr)
+                worst = 2
+                continue
+            report = module.dry_run(args)
+            module.print_report(report)
+            worst = max(worst, 1 if report.get("errors") else 0)
+            continue
         t0 = time.time()
         try:
             batch = ingest.common.run_source(module, args)
@@ -185,6 +196,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--keep-going", action="store_true", help="continue with the next source after a failure")
     p.add_argument("--notes", type=int, default=10, help="print up to N batch notes per source")
     p.add_argument("--inventory", help="inventory snapshot directory (knowledge ingesters)")
+    p.add_argument("--dry-run", action="store_true", help="read-only plan (ingesters that define dry_run: foldrec)")
     p.set_defaults(func=cmd_ingest)
     p = sub.add_parser("arch-check", help="load chimera_omni.conformance reports into the conformance tables")
     p.add_argument("--report", action="append", required=True, help="conformance report JSON (repeatable)")

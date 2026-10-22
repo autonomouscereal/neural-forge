@@ -67,6 +67,7 @@ the version and sha256 of each applied file. `migrate` refuses to run if an appl
   - `v_model_modality_coverage`: which modalities a model actually handled, measured from results.
   - `v_arch_conformance`, `v_directives_by_topic`.
 - **Grants (0005):** SELECT for `omni_lab_ro`, including tables created later.
+- **Folding record (0007):** `fold_arm` (one row per fold arm, 1:1 with `experiment`), `fold_component`, `fold_behaviour`, `fold_diagnostic`, `fold_source`, `experiment_alias`, `experiment_link`, `fold_finding` (+ `_experiment`, `_source`), `fold_shard`, `fold_coverage`; technique gains `code_location`, `first_date`, `status_text`, `detail`; experiment `evidence_level` also allows `notes`, `transcript`, `commit_msg`. Views `v_fold_arms`, `v_technique_scoreboard`, `v_findings`, `v_fold_coverage`. See "Neural Forge folding record".
 
 A blank cell is a missing row. Add cases by creating a new suite version that links the old `test_case` rows plus the new ones. Older runs then show no result for the new cases. An edited prompt under the same `case_id` becomes a separate `test_case` row, so old and new answers are never compared as if they answered the same question.
 
@@ -133,7 +134,7 @@ The comparison of the S0 parent import, OMNI1 and the full-KD run-1 student on b
 - **No media suites can run through the runner yet.** Media evals exist only as ingested S8 results (`s8_media_smoke`, `s8_qvl_describe`).
 - **No cron is installed.** Ingest is run by hand. No existing training job calls `log-run` yet, so new runs appear only after an `ingest`.
 - **Not ingested:** Codex sessions (`.codex/sessions`).
-- **Not audited for completeness:** the Neural Forge LFM2 / 4B ladder history beyond what `foldhist` and `fold_receipts` pick up.
+- **Folding record not loaded yet.** Migration 0007 is applied (2026-10-22) but the foldrec shards are still being extracted; `fold_arm` and its tables are empty until `ingest foldrec` runs. Until then the Neural Forge history in the database is only `foldhist` (43 summary rows) and `fold_receipts`.
 - **GPU mapping is approximate for status-line runs.** GPU indices from status lines are mapped through today's `nvidia-smi` order (`run_device.detail.mapping = 'index-from-status'`).
 
 ## Ingesters: models and runs
@@ -196,6 +197,60 @@ Parent vs OMNI1 vs student, one line per case (`-` = the model never ran the cas
 ```
 C:/Python314/python.exe omni_lab.py sql "SELECT tc.case_id, max(COALESCE(vm.grade,'ungraded')) FILTER (WHERE er.label='PARENT-Q38-27BU-NATIVE-NOTHINK') parent, max(COALESCE(vm.grade,'ungraded')) FILTER (WHERE er.label='OC02-OMNI1-NATIVE-NOTHINK') omni1, max(COALESCE(vm.grade,'ungraded')) FILTER (WHERE er.engine='qwen35-student') student FROM test_case tc JOIN suite_member sm ON sm.case_pk=tc.id JOIN test_suite ts ON ts.id=sm.suite_id LEFT JOIN v_eval_matrix vm ON vm.case_pk=tc.id LEFT JOIN eval_run er ON er.run_id=vm.eval_run_id WHERE ts.name IN ('bank_v1','student_tests_20261021') GROUP BY tc.case_id ORDER BY 1"
 ```
+
+## Neural Forge folding record (foldrec, migration 0007)
+
+Added 2026-10-22 because the 43 `foldhist` rows were summaries: months of folding work (May-Oct 2026) had no
+per-arm record. Extraction agents read the notes, docs, reports, receipts, commits and memory and write one
+shard each to `inventory/2026-10-22-foldrec/<shard>.json` (schema `foldrec-v1`). `ingest/foldrec.py` loads
+every shard in that folder.
+
+```
+C:/Python314/python.exe omni_lab.py ingest foldrec --dry-run      # parse, validate, merge, resolve read-only; writes nothing
+C:/Python314/python.exe omni_lab.py ingest foldrec                # one ingest_batch; re-runnable
+C:/Python314/python.exe omni_lab.py sql "SELECT key, program, components, behaviour_score, scorer, verdict_class FROM v_fold_arms ORDER BY date"
+C:/Python314/python.exe omni_lab.py sql "SELECT * FROM v_technique_scoreboard WHERE tested_at_4x ORDER BY best_behaviour_at_4x DESC NULLS LAST"
+```
+
+Run it on the workstation: the shards live there, and directive quotes are checked against the cited files
+and `agent_memory_events`.
+
+| Table / view | One row per |
+|---|---|
+| `fold_arm` | Fold arm, child or attempt. It is 1:1 with `experiment` (key = the source's own id) and holds program, wave, owner, parent, child, axes, ratios, objective, training, verdict, Cyril's reaction, every raw shard record (`record`) and the shards' disagreements (`conflicts`). |
+| `fold_component` / `fold_behaviour` / `fold_diagnostic` / `fold_source` | Component (kind, layers, technique, ratio, rank/k), behaviour score (suite, scorer, `12/15` as written plus parsed numbers), diagnostic (value as written plus `value_num` when it is one number), cited source (path, lines, commit, event, quote). `shards` says which shard gave each row. |
+| `experiment_alias` / `experiment_link` | Other id of an arm. Link between experiments: `same_as`, `rerun_of` (`KEY#x` or `KEY@w27` of `KEY`), `summarizes` (a foldhist id that several arms carry), `part_of`. |
+| `fold_finding` (+ `_experiment`, `_source`) | Law or conclusion with status (`proven` ... `closed_path`), scope, the arms it rests on and its sources. |
+| `fold_shard` / `fold_coverage` | Shard file, and each file it read (lines) or skipped (reason). |
+| `v_fold_arms` | Arm on one line: components, techniques, ratios, objective, first behaviour score + scorer, diagnostics, verdict, aliases, links. |
+| `v_technique_scoreboard` | Technique x component kind: arms, best behaviour, whether it was tested at >= 4x (ratio <= 0.25), best behaviour at >= 4x, parents tested, verdict counts, status. |
+| `v_findings`, `v_fold_coverage` | Finding with evidence counts. Source path with the shards that read or skipped it, and `cited_not_declared_read`. |
+
+Rules the ingester applies:
+
+- **Nothing is paraphrased.** Text columns hold the shard's text. JSON numbers keep their digits (`0.0310` stays
+  `0.0310`). Numeric columns are parsed copies, NULL when the text is not one number.
+- **Merging.** Records merge only when they have the same key. An alias never merges two records, because the
+  extractors give each attempt its own row and list the base id as an alias. When shards disagree, every variant
+  is kept in `fold_arm.conflicts` with its shard and sources. A disagreeing number or `verdict_class` is left
+  NULL in its column; nothing is picked.
+- **Existing rows.** An arm whose key is already an experiment from another ingester (for example the
+  `OC01-F-Q35-4B-*` foldhist rows) attaches to that row, and the other ingester's columns are left as they were.
+  Technique names match case- and space-insensitively; unknown names become new `technique` rows.
+- **Directives.** A Cyril quote is written to `directive` only after it is found in its source (a user-prompt
+  event, or the cited file; `...` quotes are checked fragment by fragment, in order). It is skipped when a
+  directive from another ingester already contains it, or when it is part of a longer foldrec quote. Keys
+  follow `ingest/directives.py`, so the same words are never stored twice.
+- **Refusals.** A shard that is not valid `foldrec-v1` JSON, or that reuses another shard's name, makes the ingest
+  refuse. An enum value outside the format becomes NULL (`other` for a component kind), and the raw value stays
+  in `record` and on the batch notes.
+
+Dry run on production, 2026-10-22, with extraction still running: 23 shards, 6,782 records, 2,743 arms. 465
+keys are described by more than one shard, and all of them carry kept conflicts. 9 arms attach to the foldhist
+`OC01-F-Q35-4B-*` rows. Also 3,508 techniques, 1,239 findings and 378 directives: 194 would be written; 30
+quotes are not found in their cited source; 12 cite a git commit message, which the ingester cannot read.
+Ingesting a frozen copy of those 23 shards into a throwaway database wrote 40,783 rows in 338 s. A second pass
+wrote 0.
 
 ## Running a test and comparing (the runner)
 
