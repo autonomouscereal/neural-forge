@@ -10,6 +10,9 @@ test suites (ingest.banks).  This module covers the training-side data:
     corpus/canonical                   chimera_corpus.corpus_version (raw SQL, read-only)     v<version_no>
     corpus/holdout_registry            $L/corpus/holdouts/HOLDOUT_REGISTRY_v<n>.json          v<n>
     corpus/external/<name>             $L/corpus/external/<name>/** (file listing only)       sha16 of the listing
+    corpus/derived/<name>              $L/corpus/derived/<name>/v<n>/manifest.json            v<n>
+                                       (derived training views of canonical intake items, e.g. hy3d_voxel64;
+                                       sealed = a `sealed` file + verify_receipt.json ok over this manifest)
     training_config/<stem>             $L/distill/{fullkd,media_m1}/<stem>_v<n>.json          v<n>
 
 manifest = the document's top-level fields (big blocks reduced to their size), splits = the per-route /
@@ -235,6 +238,35 @@ def ingest_external(conn, batch, tally) -> None:
                     audio or len(listing), total, False, None, prov)
 
 
+def ingest_derived(conn, batch, tally) -> None:
+    """$L/corpus/derived/<name>/v<n>/manifest.json -> dataset corpus/derived/<name>, version v<n>.  A version
+    directory is immutable once built; it is sealed when its `sealed` marker exists and its verify_receipt.json says
+    ok for exactly this manifest's sha256."""
+    base = Path(C.LX, "corpus", "derived")
+    if not base.is_dir():
+        return
+    for d in sorted(p for p in base.iterdir() if p.is_dir() and not p.name.startswith((".", "_"))):
+        for vdir in sorted((v for v in d.iterdir() if v.is_dir() and re.fullmatch(r"v\d+", v.name)),
+                           key=lambda v: int(v.name[1:])):
+            mpath = vdir / "manifest.json"
+            if not mpath.is_file():
+                continue
+            batch.saw()
+            doc = C.load_json(mpath)
+            if not isinstance(doc, dict):
+                batch.skip(f"{mpath}: unreadable")
+                continue
+            prov = batch.prov(mpath)
+            receipt = C.load_json(vdir / "verify_receipt.json") if (vdir / "verify_receipt.json").is_file() else None
+            sealed = ((vdir / "sealed").is_file() and isinstance(receipt, dict) and receipt.get("ok") is True
+                      and receipt.get("manifest_sha256") == prov[1])
+            desc = str(doc.get("schema") or doc.get("set") or "derived corpus view")[:300]
+            ds_id = put_dataset(conn, tally, batch, "media" if doc.get("schema", "").startswith("omni-campaign.raw") else "corpus",
+                                f"corpus/derived/{d.name}", "corpus", desc, prov)
+            put_version(conn, tally, batch, ds_id, vdir.name, vdir.as_posix(), compact(doc), splits_of(doc), count_of(doc),
+                        dir_bytes(vdir, set()), sealed, built_at(doc), prov)
+
+
 def ingest_training_configs(conn, batch, tally) -> None:
     for sub, project in (("fullkd", "chimera-omni"), ("media_m1", "media")):
         for p in sorted(Path(C.LX, "distill", sub).glob("*_v*.json")):
@@ -315,6 +347,7 @@ def run(conn, batch: C.Batch, args) -> None:
     ingest_distill_corpus(conn, batch, tally)
     ingest_holdouts(conn, batch, tally)
     ingest_external(conn, batch, tally)
+    ingest_derived(conn, batch, tally)
     ingest_training_configs(conn, batch, tally)
     ingest_canonical(conn, batch, tally)
     K.finish(batch, tally)

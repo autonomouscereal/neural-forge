@@ -259,6 +259,20 @@ class IngestDbTests(unittest.TestCase):
         ext.mkdir(parents=True)
         (ext / "a.flac").write_bytes(b"x" * 10)
         (ext / "b.flac").write_bytes(b"y" * 20)
+        dv = lx / "corpus" / "derived" / "hy3d_voxel64"
+        for n, sealed in ((1, True), (2, False)):
+            vd = dv / f"v{n}"
+            (vd / "volumes").mkdir(parents=True)
+            (vd / "volumes" / "a.npz").write_bytes(b"z" * 50)
+            (vd / "manifest.json").write_text(json.dumps({
+                "schema": "omni-campaign.raw3d.hy3d-voxel-set.v1", "version": f"v{n}", "items": 18 + n,
+                "splits": {"rows_by_split": {"train": 17 + n, "val": 1}}, "built_at_utc": "2026-10-22T12:00:00Z"}))
+            if sealed:
+                import hashlib as _h
+                (vd / "verify_receipt.json").write_text(json.dumps({
+                    "ok": True, "manifest_sha256": _h.sha256((vd / "manifest.json").read_bytes()).hexdigest()}))
+                (vd / "sealed").write_text("x")
+        (dv / ".v3.building").mkdir()
         fk = lx / "distill" / "fullkd"
         fk.mkdir(parents=True)
         (fk / "fullkd_data_v1.json").write_text(json.dumps({"schema": "s", "sources": ["a", "b", "c"]}))
@@ -365,6 +379,11 @@ class IngestDbTests(unittest.TestCase):
             ext = rows["corpus/external/librispeech"]
             self.assertEqual((ext[1], ext[2], ext[4]), (2, {"files_by_split": {"test-clean": 2}}, 30))
             self.assertEqual(rows["training_config/fullkd_data"][:2], ("v1", 3))
+            dvs = {v: (ic, sp, se) for k, v, ic, sp, se in self.q(
+                "SELECT d.key, dv.version, dv.item_count, dv.splits, dv.sealed FROM dataset d "
+                "JOIN dataset_version dv ON dv.dataset_id = d.id WHERE d.key = 'corpus/derived/hy3d_voxel64'")}
+            self.assertEqual(dvs, {"v1": (19, {"splits": {"rows_by_split": {"train": 18, "val": 1}}}, True),
+                                   "v2": (20, {"splits": {"rows_by_split": {"train": 19, "val": 1}}}, False)})
             self.assert_idempotent(corpora)
         finally:
             corpora.INTAKE_ENV = old
