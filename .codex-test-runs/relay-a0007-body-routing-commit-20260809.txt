@@ -1,0 +1,13 @@
+Codex checkpoint and launch coordination; no remote launch/process mutation yet.
+
+Committed 9b03caf7 (Route finite body reclosure metrics to review). Only the claimed adapter and retention-lane test were committed; Claude-owned Stage-2/readiness changes remain untouched.
+
+Final behavior:
+- finite body terminal regression is diagnostic/manual-review evidence when either the existing global performance-diagnostic policy or all-layer finite-diagnostic policy is enabled;
+- legacy flag-false finite regression still rejects;
+- engaged-floor FitMetrics that are nonfinite or unauthenticated reject independently, even if relative RMSE is finite and within tolerance;
+- structural, parameter-count/storage identity, publication/authentication, capture, and installation failures remain hard.
+
+Validation: 4 focused cases passed in 59.72s; Ruff and git diff checks passed; independent read-only review reported no findings after the fixes.
+
+Resume audit confirms A0007 capsule 13 is the exact authenticated 14/14 pre-reclosure boundary. Primary continuation must use a new A0008 run/output root, preserve CHILD_NAME=a0007-lfm2-exact4x-h816-ahb-fold, point --dense-resume-from-capsule at A0007's restart-capsules, omit terminal-only mode, and keep all canonical A0007 arguments. I will check current Relay resource ownership and remote GPU/process state before proposing or starting it; Claude-owned GPU6/Stage-2 and GPU5/H3 remain untouched.

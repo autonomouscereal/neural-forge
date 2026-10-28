@@ -346,12 +346,17 @@ def test_a_completed_route_solve_block_is_sealable(tmp_path):
         src_tree_sha="c" * 64,
         probe_set_sha="d" * 64,
         smoke_prompt_sha="e" * 64,
+        compute_architecture="sm86 NVIDIA GeForce RTX 3090",
     )
     solve = dict(receipt["solve"])
     # The production block, not a fixture that could drift away from it.
     solve.update(runner.route_solve_block(json.loads(run_receipt.read_text()), run_receipt))
     receipt["solve"] = solve
-    receipt["calibration"] = {"copy_exact_reproduction_relL2": 0.0, "passed": True}
+    receipt["calibration"] = {
+        "copy_exact_reproduction_relL2": 0.0,
+        "passed": True,
+        "applicable": True,
+    }
     receipt["behavior"] = {
         "free_run": {
             "probe_prompts": 16,

@@ -1,0 +1,19 @@
+W13K evidence and review request (coordination only; no mutation handoff)
+
+Current immutable source: commit 6f178f14add54ec882c09ad183f69a626a0cfb48.
+Fresh run root: /home/cereal/model-surgery-lab/artifacts/neural_forge_exact4x_20260730/catalog-integrated-carrier/a0025-exact4x-h816-mgv3-r12-w13k-cold
+Live process: PID 3262674, deployment /home/cereal/model-surgery-lab/deployments/neural-forge-6f178f14.
+
+The new bulk checkpoint derivation is directly covered by tests/test_hf_lfm2_child_replay_batch_checkpoint.py. The test proves that every bulk-produced request identity is byte-equal to the preserved single-request API while the complete family hash and implementation-source hash are each computed once. The immutable AI-server production matrix ran the checkpoint, compiler, and production runner suites together: 148 passed in 178.07 seconds. Local focused tests were 9/9; Ruff E4/E7/E9/F and diff-check were clean.
+
+Real W13K timing evidence now exists. Layer-0 pre-producer two-GPU replay completed at 2026-08-05T21:29:56.520Z (74.073208 seconds, observed 1.991996x speedup). The authenticated capture sealed at 21:30:16.820Z, 20.300 seconds later. The analogous W13I post-replay packaging interval was about 37m39s. Thus the current bridge plus bulk-planner path reduced that formerly repeated-work window about 111x end to end. W13K is now CPU-active in producer compilation, zero swap, with no error or objective stall.
+
+Structural proof already emitted in W13K: all 14 layers folded; complete_target_parameter_overwrite=true; target_nonzero_parameter_elements=53,552,368; target_unique_parameter_objects_written=134. The full child target is exactly 57,420,144 parameters from the 229,693,184-parameter parent (exact 4x). No gradients/training, pruning, quantization credit, shared parameters, or runtime-parent inference are admitted.
+
+Standalone proof remains a publication-boundary requirement, not an inherited assertion: after the child checkpoint is published, load it in a separate process with the parent model path unavailable and no parent process; verify exact parameter count and generate the same held-out prompts. Retain hashes, receipt, config, and output dossier.
+
+Manual semantic rubric: evaluate complete held-out responses rather than exact token matching. Generate to EOS with 1024 new tokens initially and retry at 2048 when the first run reaches its cap; cap hits are censored observations, not model failures. Judge task correctness, coherence over the whole response, context use, reasoning usefulness, and degeneration/repetition. Record safety refusal behavior separately and never count a safety refusal as an intelligence failure. Metrics remain diagnostics, not hard intelligence gates.
+
+Independent audit's current highest-value quality hypothesis: final greedy body reclosure may overwrite good accepted layer solutions. W13B had layer-0/layer-1 post-operator errors 0.0181/0.0400 before publication, after which body reclosure degraded layer 0 to 0.8358. W13K guards the initial writer reclosure, but its later causal completion can still replace attention-O and MLP-W2 projections. Do not redirect the live run. Once a current-schema layer-13 capsule exists, the bounded diagnostic is to materialize exact-count siblings from the same capsule and cached traces: A no body reclosure, B guarded writer-only reclosure, C current full causal completion. No parent forward, refold, training, pruning, or quantization. Generate identical held-out prompts under the rubric above and manually compare all three.
+
+Please critique this evidence and rank the A/B/C reclosure diagnostic against any higher-leverage fold-only alternative. Do not touch the canonical branch, deployment, run root, GPUs, process, or child artifacts; this is planning/review only.

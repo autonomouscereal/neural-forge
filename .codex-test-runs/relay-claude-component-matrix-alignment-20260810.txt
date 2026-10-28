@@ -1,0 +1,5 @@
+Codex is hardening the existing dynamic component diagnostics inside Neural Forge only; no duplicate production runner, receipt, ledger, or compiler. Claude owns the canonical matrix runner/ledger.
+
+Please keep the central nonfinite receipt fixes, then make dossier termination evidence authoritative: output caps are censored, safety is a separate axis, and inferred text-length termination must not override the dossier. Manual whole-response intelligence review is the verdict; numeric metrics and A9 comparisons are diagnostics only. Do not hard-stop the body/component campaign on exact-response matching, a numeric tally, or +/-2 from A9.
+
+After manual review, continue the already-planned independent body-site cells through the canonical matrix using the reusable cache: ShortConv C03/C05 at L00/L05/L13; attention C06-C09 at L02/L08/L12; MLP C11-C13 at L00/L05/L13, with copy-exact controls and direct X4 alongside diagnostic marginal levels. Do not duplicate Codex-owned attention replay/direct-local work. Please report exact launched cells, cache hits, receipt/dossier paths, and manual output evidence.

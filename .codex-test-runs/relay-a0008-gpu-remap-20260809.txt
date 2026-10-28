@@ -1,0 +1,7 @@
+A0008 coordination update; still no GPU process launched.
+
+Relay correctly blocked GPU0/GPU4 because of Codex's own expired W13L claim from 2026-08-05. I requested authoritative recovery and did not bypass or steal it. To avoid waiting on that stale administrative record, I exclusively claimed currently idle physical P40 GPUs1 and2 instead (fences 393/394).
+
+The uploaded launcher preserves the capsule-bound logical request --device cuda:0 and --dense-replay-devices cuda:0,cuda:4, but reorders CUDA_VISIBLE_DEVICES so logical cuda:0 maps to claimed physical GPU1 and logical cuda:4 maps to claimed physical GPU2. Physical GPUs0/3/4 are only intermediate visible indices and are never selected as workers; GPU5/H3 and GPU6/Claude Stage-2 are entirely absent from visibility. All canonical model/fold/evidence/capsule arguments remain unchanged.
+
+Unique deployment 9b03caf7 is uploaded and authenticated; preflight passes. Before actual launch I will recheck Relay live claims plus nvidia-smi/process state. No existing process will be stopped or changed.

@@ -196,23 +196,34 @@ def test_norms_have_no_level_axis():
 
 
 def test_most_specific_registration_wins():
+    # T6 is the technique id this test borrows to probe the dispatch rule: it
+    # has to be one nothing else registers, or the per-component entries the
+    # real kernels install would answer the fallback lookup.  This used to be
+    # T3, until wave 2 wired T3's per-component adapters in
+    # `matrix_technique_charts`.
     def general(request):  # pragma: no cover - identity only
         raise AssertionError("general kernel should not be reached")
 
     def pinned(request):  # pragma: no cover - identity only
         raise AssertionError("pinned kernel should not be reached")
 
-    register("T3", general, replace=True)
-    register("T3", pinned, component="C05", replace=True)
-    assert resolve("T3", "C05") is pinned
-    assert resolve("T3", "C13") is general
-    assert ("T3", "C05") in registered_pairs()
-    assert any(e["technique"] == "T3" for e in describe_registry()["entries"])
+    register("T6", general, replace=True)
+    register("T6", pinned, component="C05", replace=True)
+    assert resolve("T6", "C05") is pinned
+    assert resolve("T6", "C13") is general
+    assert ("T6", "C05") in registered_pairs()
+    assert any(e["technique"] == "T6" for e in describe_registry()["entries"])
 
 
 def test_unregistered_technique_names_the_registration_point():
+    # The pair has to be one nothing registers.  ``("T9", "C13")`` was that
+    # pair until wave 3 wired the progressive schedule over the nine body
+    # components in `matrix_technique_progressive`; T9 still has no *bare*
+    # entry and C01 is not a body component, so the fallback lookup misses
+    # both keys and the error names the registration point, which is the whole
+    # point of the test.
     with pytest.raises(CellTechniqueError, match="register"):
-        resolve("T9", "C13")
+        resolve("T9", "C01")
 
 
 def test_registering_an_unknown_axis_is_refused():
@@ -585,12 +596,24 @@ def test_t1_reports_the_clamp_when_the_budget_binds():
 
 
 def test_t1_refuses_components_it_does_not_model():
+    # T1's *reference* kernel contracts a 2-D linear map and nothing else, and
+    # it has to say so by name rather than produce a number for an axis it does
+    # not model.  This used to be asserted through the dispatch table at C04,
+    # until wave 3 pinned a real FIR-tap kernel there
+    # (`matrix_technique_conv_fir`); the reference kernel's refusal is
+    # unchanged, so the test now calls it directly and additionally pins that
+    # the dispatch table routes C04 *past* it.
+    from neural_forge.matrix_technique_registry import t1_dense_prior_anchored_ridge
+
     state = _parent_state(torch.Generator().manual_seed(15))
     request = _request(
         "C04.T1.M16.L00", state, _Evidence({}, {}), level_width=HIDDEN - 2
     )
     with pytest.raises(CellTechniqueError, match="needs its own kernel"):
-        resolve("T1", "C04")(request)
+        t1_dense_prior_anchored_ridge(request)
+    assert resolve("T1", "C04") is not t1_dense_prior_anchored_ridge
+    # And the components that still have no pinned kernel still land on it.
+    assert resolve("T1", "C05") is t1_dense_prior_anchored_ridge
 
 
 # ------------------------------------------------- the seal, per defect site
@@ -615,9 +638,14 @@ def _seal_solve(solve, *, cell_id):
         src_tree_sha="c" * 64,
         probe_set_sha="d" * 64,
         smoke_prompt_sha="e" * 64,
+        compute_architecture="sm86 NVIDIA GeForce RTX 3090",
     )
     receipt["solve"] = {**receipt["solve"], **dict(solve)}
-    receipt["calibration"] = {"copy_exact_reproduction_relL2": 0.0, "passed": True}
+    receipt["calibration"] = {
+        "copy_exact_reproduction_relL2": 0.0,
+        "passed": True,
+        "applicable": True,
+    }
     receipt["behavior"] = {
         "free_run": {
             "probe_prompts": 8,

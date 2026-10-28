@@ -29,6 +29,8 @@ import argparse
 import json
 import shutil
 import sys
+import time
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -113,12 +115,43 @@ TOY_PROBE_NEW_TOKENS = 6
 # ---------------------------------------------------------------------------
 
 
+class _ToyBodyCache:
+    """The toy body's incremental state: a running prefix sum and its count.
+
+    The real child is LFM2-shaped and carries a hybrid conv/attention cache
+    that ``transformers`` owns.  The toy cannot borrow that, so it carries the
+    exact state *its* mixer needs.  What matters is that the call contract is
+    the deployed one -- ``past_key_values`` in, ``past_key_values`` out,
+    attention mask over the whole context -- so the trainer's cached sampling
+    path is exercised end to end on CPU.  The real-architecture equivalence is
+    proved separately against ``transformers.Lfm2ForCausalLM`` in
+    ``tests/stage2/test_stage2_cached_sampling.py``.
+    """
+
+    __slots__ = ("prefix_sum", "length")
+
+    def __init__(self, prefix_sum: Tensor, length: int) -> None:
+        self.prefix_sum = prefix_sum
+        self.length = length
+
+
+class _ToyBodyOutput:
+    """``last_hidden_state`` + ``past_key_values``, the shape HF bodies return."""
+
+    __slots__ = ("last_hidden_state", "past_key_values")
+
+    def __init__(self, last_hidden_state: Tensor, past_key_values: Any) -> None:
+        self.last_hidden_state = last_hidden_state
+        self.past_key_values = past_key_values
+
+
 class _ToyBody(nn.Module):
     """Causal prefix-mean mixing plus a gated MLP, residual, one block.
 
     It is deliberately boring: the point of the toy is the *plumbing* and the
     accounting, not an architecture claim.  It accepts the exact keyword
-    signature the carrier decode runtime calls bodies with.
+    signature the carrier decode runtime calls bodies with, including the
+    cached one.
     """
 
     def __init__(self, hidden_size: int) -> None:
@@ -128,22 +161,45 @@ class _ToyBody(nn.Module):
         self.up = nn.Linear(hidden_size, 2 * hidden_size, bias=False)
         self.down = nn.Linear(2 * hidden_size, hidden_size, bias=False)
 
+    def _block(self, inputs_embeds: Tensor, pooled: Tensor) -> Tensor:
+        hidden = inputs_embeds + self.mix(self.norm(pooled))
+        return hidden + self.down(torch.nn.functional.silu(self.up(hidden)))
+
     def forward(
         self,
         inputs_embeds: Tensor,
         attention_mask: Tensor | None = None,
         use_cache: bool = False,
         past_key_values: Any = None,
-    ) -> Tensor:
-        del attention_mask, use_cache, past_key_values
+    ) -> Tensor | _ToyBodyOutput:
+        del attention_mask
         length = int(inputs_embeds.shape[1])
-        weights = torch.tril(
-            torch.ones(length, length, dtype=inputs_embeds.dtype)
+        if not use_cache and past_key_values is None:
+            weights = torch.tril(
+                torch.ones(length, length, dtype=inputs_embeds.dtype)
+            )
+            weights = weights / weights.sum(dim=1, keepdim=True)
+            return self._block(inputs_embeds, weights @ inputs_embeds)
+        previous_sum = (
+            torch.zeros_like(inputs_embeds[:, 0, :])
+            if past_key_values is None
+            else past_key_values.prefix_sum
         )
-        weights = weights / weights.sum(dim=1, keepdim=True)
-        pooled = weights @ inputs_embeds
-        hidden = inputs_embeds + self.mix(self.norm(pooled))
-        return hidden + self.down(torch.nn.functional.silu(self.up(hidden)))
+        previous_length = 0 if past_key_values is None else past_key_values.length
+        running = previous_sum.unsqueeze(1) + inputs_embeds.cumsum(dim=1)
+        counts = torch.arange(
+            previous_length + 1,
+            previous_length + length + 1,
+            device=inputs_embeds.device,
+            dtype=inputs_embeds.dtype,
+        ).reshape(1, length, 1)
+        hidden = self._block(inputs_embeds, running / counts)
+        if not use_cache:
+            return hidden
+        return _ToyBodyOutput(
+            hidden,
+            _ToyBodyCache(running[:, -1, :], previous_length + length),
+        )
 
 
 class _ToyChild(nn.Module):
@@ -434,6 +490,13 @@ def build_toy_published_child(root: Path) -> dict[str, Any]:
             package.receipt["semantic_source_lexicon_package_sha256"]
         ),
         "package_sha256": package.package_sha256,
+        # The carrier bridge artifact every arm's routes descend from.  It is
+        # the same digest for arm and control by design (section 5.4 item 2:
+        # the integer routing is shared verbatim), which is precisely why the
+        # stage-2 admission list keys on labels and not on this.
+        "source_artifact_sha256": str(
+            package.receipt["source_bridge_artifact_sha256"]
+        ),
         "spans": spans,
     }
 
@@ -563,6 +626,69 @@ def _sample_teacher_corpus(
             drawn = torch.multinomial(probabilities, 1, generator=generator)
             rows = torch.cat((rows, drawn), dim=1)
     return rows
+
+
+def _measure_on_policy_sampling_cache(
+    trainer: Stage2DistillationTrainer,
+    *,
+    prefix_tokens: int = 256,
+    continuation_tokens: int = 64,
+    repeats: int = 3,
+) -> dict[str, Any]:
+    """H4: cached vs uncached on-policy sampling, equal tokens and timed.
+
+    Run before the loop so the student is still at its initialization and the
+    two rollouts see identical weights.  The measurement is at a longer prefix
+    than the toy trains on, because the uncached path's cost is what grows with
+    context and the design's real shape is a 768-token prefix plus a 256-token
+    continuation.
+    """
+
+    objective = trainer.objective
+    trainer.objective = replace(objective, continuation_tokens=continuation_tokens)
+    prefix = torch.randint(
+        0,
+        TOY_DONOR_ROWS,
+        (TOY_MICRO_BATCH_SEQUENCES, prefix_tokens),
+        generator=torch.Generator().manual_seed(20260809),
+        dtype=torch.int64,
+    )
+    before = trainer.on_policy_sample_forward_calls
+    timings: dict[str, float] = {}
+    rollouts: dict[str, Tensor] = {}
+    for name, use_cache in (("uncached", False), ("cached", True)):
+        for greedy in (True, False):
+            key = f"{name}-{'greedy' if greedy else 'sampled'}"
+            trainer._sample_generator.manual_seed(20260809)
+            rollouts[key] = trainer.sample_on_policy_sequence(
+                prefix,
+                greedy=greedy,
+                use_cache=use_cache,
+            )
+        started = time.perf_counter()
+        for _repeat in range(repeats):
+            trainer.sample_on_policy_sequence(
+                prefix,
+                greedy=True,
+                use_cache=use_cache,
+            )
+        timings[name] = (time.perf_counter() - started) / repeats
+    trainer.objective = objective
+    trainer.on_policy_sample_forward_calls = before
+    return {
+        "prefix_tokens": prefix_tokens,
+        "continuation_tokens": continuation_tokens,
+        "sequences": int(prefix.shape[0]),
+        "greedy_tokens_identical": bool(
+            torch.equal(rollouts["uncached-greedy"], rollouts["cached-greedy"])
+        ),
+        "sampled_tokens_identical": bool(
+            torch.equal(rollouts["uncached-sampled"], rollouts["cached-sampled"])
+        ),
+        "uncached_seconds_per_rollout": timings["uncached"],
+        "cached_seconds_per_rollout": timings["cached"],
+        "speedup": timings["uncached"] / max(timings["cached"], 1e-9),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -724,6 +850,7 @@ def run_toy_validation(
         ),
         device_inventory=({"index": 0, "name": "cpu-toy", "device_type": "cpu"},),
     )
+    sampling_cache = _measure_on_policy_sampling_cache(trainer)
     receipt = trainer.run(verify_route_surface=verify_route_surface)
     equivalence = trainer.route_surface_equivalence or None
     corpus_check = verify_corpus_consumption(
@@ -773,6 +900,7 @@ def run_toy_validation(
         "train_routes": train_routes,
         "route_training_mask": student.route_training_mask(),
         "route_surface_equivalence": equivalence,
+        "on_policy_sampling_cache": sampling_cache,
         "loss_curve_points": len(losses),
         "first_window_mean_loss": sum(losses[:window]) / window,
         "last_window_mean_loss": sum(losses[-window:]) / window,

@@ -1,0 +1,13 @@
+W13L/a0026 is live on immutable b65c81f5, PID 3551402, PPID 1. Server matrix passed 228/1 skipped/0 failed in 137.11s. All 256 bridge pairs authenticated, zero parent cache regeneration, carrier exact target count 57,420,144, and all global-topology phases hit.
+
+The pinned 85,984,075-byte balanced residual basis produced an authenticated hit for key 52cbe3fd96650d284b2e2a03395515c3fb467ce846a014712f5d5c1a4e8f683d and completion 975e8286...; no rebuild. All 14 structural layers completed with full target overwrite, 53,552,368 dense-body elements, 134 target objects, zero swap. Layers 4-11 each took about 1.75-2.04 seconds.
+
+Layer0 benchmark: replay 73.769981s at 1.9888x; capture sealing 19.592s; first ShortConv producer compiled 35.304s after capture completion versus the old approximately 17-minute grouping-plan stall (about 29x faster for this segment), installed 2.908s later. No error/OOM/swap. Post-producer replay is active.
+
+Planning/review only: given this evidence, identify any missing cheap acceptance measurement before publication/manual review, or any likely remaining invariant computation severe enough to justify stopping. Do not mutate anything.
+
+2026-08-06 update: W13L has accepted and capsule-sealed layers 0-4. Layer 4's full-attention path completed successfully (producer 208.726s, consumer 58.981s, downstream 101.842s; merged replay 107.797s at 1.992x); peak RSS remains 99.48GB, swap 0. The approximately 260.6-second pre-replay interval was productive merged-capture preparation, not a hang.
+
+Two additional invariant-work caches are being validated locally without touching the live immutable deployment: a fold-lifetime tokenizer input-pair ledger and a bounded selected-parent tensor-component cache. The bridge library patch passed 76 tests and is under independent adversarial review. The first component-cache review found two fail-open gaps (`.data` content mutation and use after selective-session close), so that patch is rejected until fixed and re-reviewed. With five accepted layers already banked, current estimates do not justify restarting W13L; the caches will accelerate the next run unless measured remaining-time savings overtake the completed work.
+
+Planning/review only: please review this keep-running decision and identify any acceptance/publication evidence that should be prepared while W13L advances. Do not mutate shared files, processes, containers, or GPUs.

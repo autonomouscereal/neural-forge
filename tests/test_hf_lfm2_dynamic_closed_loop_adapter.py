@@ -48,6 +48,11 @@ from neural_forge.hf_lfm2_closed_loop_restart_capsule import (  # noqa: E402
     portable_child_topology_sha256,
 )
 from neural_forge.hf_closed_form_fit import FitMetrics  # noqa: E402
+from neural_forge.hf_lfm2_body_reclosure_phase_cache import (  # noqa: E402
+    Lfm2BodyReclosureArtifact,
+    Lfm2BodyReclosurePhaseCacheContext,
+    build_lfm2_body_reclosure_phase_request,
+)
 from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
     CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
     CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
@@ -112,9 +117,7 @@ class _DenseMap:
     def __init__(self, source_width: int, target_width: int) -> None:
         with torch.random.fork_rng(devices=[]):
             torch.manual_seed(1901)
-            raw = torch.randn(
-                source_width, target_width, dtype=torch.float64
-            )
+            raw = torch.randn(source_width, target_width, dtype=torch.float64)
         self.basis = torch.linalg.qr(raw, mode="reduced").Q.contiguous()
         self.source_width = source_width
         self.target_width = target_width
@@ -124,16 +127,13 @@ class _DenseMap:
 
     def encode(self, source_rows):
         return (
-            source_rows.detach().to(device="cpu", dtype=torch.float64)
-            @ self.basis
+            source_rows.detach().to(device="cpu", dtype=torch.float64) @ self.basis
         ).contiguous()
 
     def fold_consumer_weight(self, source_weight):
         return self.encode(source_weight)
 
-    def materialize_dense(
-        self, *, max_elements, dtype=None, device="cpu"
-    ):
+    def materialize_dense(self, *, max_elements, dtype=None, device="cpu"):
         assert self.basis.numel() <= max_elements
         return self.basis.to(
             device=device,
@@ -143,8 +143,7 @@ class _DenseMap:
 
 def _fold_norm(source, target, basis):
     value = torch.sqrt(
-        basis.square().T
-        @ source.weight.detach().to(dtype=torch.float64).square()
+        basis.square().T @ source.weight.detach().to(dtype=torch.float64).square()
     )
     target.weight.copy_(value.to(dtype=target.weight.dtype))
 
@@ -161,19 +160,16 @@ def _seed_child_from_basis(parent, child, mapping):
     basis = mapping.basis
     with torch.no_grad():
         child.model.embed_tokens.weight.copy_(
-            (
-                parent.model.embed_tokens.weight.detach().to(torch.float64)
-                @ basis
-            ).to(child.model.embed_tokens.weight.dtype)
+            (parent.model.embed_tokens.weight.detach().to(torch.float64) @ basis).to(
+                child.model.embed_tokens.weight.dtype
+            )
         )
         child.lm_head.weight.copy_(
-            (
-                parent.lm_head.weight.detach().to(torch.float64) @ basis
-            ).to(child.lm_head.weight.dtype)
+            (parent.lm_head.weight.detach().to(torch.float64) @ basis).to(
+                child.lm_head.weight.dtype
+            )
         )
-        for source_layer, target_layer in zip(
-            parent.model.layers, child.model.layers
-        ):
+        for source_layer, target_layer in zip(parent.model.layers, child.model.layers):
             _fold_norm(
                 source_layer.operator_norm,
                 target_layer.operator_norm,
@@ -191,23 +187,15 @@ def _seed_child_from_basis(parent, child, mapping):
                 (source_mlp.w3.weight, target_mlp.w3.weight),
             ):
                 folded = source_weight.detach().to(torch.float64) @ basis
-                folded = _group_rows(
-                    folded, int(target_weight.shape[0])
-                )
+                folded = _group_rows(folded, int(target_weight.shape[0]))
                 target_weight.copy_(folded.to(target_weight.dtype))
-            source_down = (
-                basis.T
-                @ source_mlp.w2.weight.detach().to(torch.float64)
-            )
+            source_down = basis.T @ source_mlp.w2.weight.detach().to(torch.float64)
             grouped_down = source_down.reshape(
                 int(source_down.shape[0]),
                 int(target_mlp.w2.weight.shape[1]),
-                int(source_down.shape[1])
-                // int(target_mlp.w2.weight.shape[1]),
+                int(source_down.shape[1]) // int(target_mlp.w2.weight.shape[1]),
             ).mean(dim=2)
-            target_mlp.w2.weight.copy_(
-                grouped_down.to(target_mlp.w2.weight.dtype)
-            )
+            target_mlp.w2.weight.copy_(grouped_down.to(target_mlp.w2.weight.dtype))
             if hasattr(source_layer, "self_attn"):
                 source = source_layer.self_attn
                 target = target_layer.self_attn
@@ -215,9 +203,7 @@ def _seed_child_from_basis(parent, child, mapping):
                 folded_q = _group_rows(
                     source_q @ basis, int(target.q_proj.weight.shape[0])
                 )
-                target.q_proj.weight.copy_(
-                    folded_q.to(target.q_proj.weight.dtype)
-                )
+                target.q_proj.weight.copy_(folded_q.to(target.q_proj.weight.dtype))
                 for source_weight, target_weight in (
                     (source.k_proj.weight, target.k_proj.weight),
                     (source.v_proj.weight, target.v_proj.weight),
@@ -229,33 +215,25 @@ def _seed_child_from_basis(parent, child, mapping):
                             int(target_weight.shape[0]),
                         ).to(target_weight.dtype)
                     )
-                source_out = source.out_proj.weight.detach().to(
-                    torch.float64
-                )
+                source_out = source.out_proj.weight.detach().to(torch.float64)
                 head_dim = int(source.head_dim)
                 source_heads = int(source_q.shape[0]) // head_dim
                 context_fold = source_out.reshape(
                     int(source_out.shape[0]), source_heads, head_dim
                 ).mean(dim=1)
                 target.out_proj.weight.copy_(
-                    (basis.T @ context_fold).to(
-                        target.out_proj.weight.dtype
-                    )
+                    (basis.T @ context_fold).to(target.out_proj.weight.dtype)
                 )
                 if hasattr(source, "q_layernorm"):
-                    target.q_layernorm.weight.copy_(
-                        source.q_layernorm.weight
-                    )
+                    target.q_layernorm.weight.copy_(source.q_layernorm.weight)
                 if hasattr(source, "k_layernorm"):
-                    target.k_layernorm.weight.copy_(
-                        source.k_layernorm.weight
-                    )
+                    target.k_layernorm.weight.copy_(source.k_layernorm.weight)
             else:
                 source = source_layer.conv
                 target = target_layer.conv
-                chunks = source.in_proj.weight.detach().to(
-                    torch.float64
-                ).chunk(3, dim=0)
+                chunks = (
+                    source.in_proj.weight.detach().to(torch.float64).chunk(3, dim=0)
+                )
                 target.in_proj.weight.copy_(
                     torch.cat(
                         [basis.T @ chunk @ basis for chunk in chunks],
@@ -336,6 +314,7 @@ def _adapter(
     progress_sink=None,
     replay_devices=None,
     child_replay_phase_cache_context=None,
+    body_reclosure_phase_cache_context=None,
     install_verification_mode=LFM2_INSTALL_VERIFICATION_FULL_RECAPTURE,
     replay_config_override=None,
     selected_layer_indices=None,
@@ -361,9 +340,7 @@ def _adapter(
         body_reclosure_mode=body_reclosure_mode,
         parent_residual_operators=parent_residual_operators,
         replay_config=(
-            replay_config
-            if replay_config_override is None
-            else replay_config_override
+            replay_config if replay_config_override is None else replay_config_override
         ),
         input_device="cpu",
         config=Lfm2DynamicClosedLoopAdapterConfig(
@@ -372,27 +349,13 @@ def _adapter(
             max_prior_delta_ratio=4.0,
             cluster_max_iterations=4,
             cluster_distance_chunk_size=16,
-            minimum_layer_relative_rmse_improvement=(
-                minimum_improvement
-            ),
-            minimum_final_norm_relative_rmse_improvement=(
-                minimum_improvement
-            ),
-            minimum_output_kl_improvement=(
-                minimum_output_improvement
-            ),
-            minimum_output_known_sequence_nll_improvement=(
-                minimum_output_improvement
-            ),
-            output_max_prior_delta_ratio=(
-                output_max_prior_delta_ratio
-            ),
-            output_validation_tolerance=(
-                output_validation_tolerance
-            ),
-            performance_metrics_diagnostic_only=(
-                performance_metrics_diagnostic_only
-            ),
+            minimum_layer_relative_rmse_improvement=(minimum_improvement),
+            minimum_final_norm_relative_rmse_improvement=(minimum_improvement),
+            minimum_output_kl_improvement=(minimum_output_improvement),
+            minimum_output_known_sequence_nll_improvement=(minimum_output_improvement),
+            output_max_prior_delta_ratio=(output_max_prior_delta_ratio),
+            output_validation_tolerance=(output_validation_tolerance),
+            performance_metrics_diagnostic_only=(performance_metrics_diagnostic_only),
             all_layer_finite_numeric_checks_diagnostic_only=(
                 all_layer_finite_numeric_checks_diagnostic_only
             ),
@@ -432,9 +395,8 @@ def _adapter(
         macro_cell_attractor_gate=macro_cell_attractor_gate,
         selective_session=selective_session,
         progress_sink=progress_sink,
-        child_replay_phase_cache_context=(
-            child_replay_phase_cache_context
-        ),
+        child_replay_phase_cache_context=(child_replay_phase_cache_context),
+        body_reclosure_phase_cache_context=(body_reclosure_phase_cache_context),
         selected_layer_indices=selected_layer_indices,
     )
     return adapter, child, mapping
@@ -443,9 +405,7 @@ def _adapter(
 class _ScriptedAttractorSnapshot:
     def __init__(self, phase):
         self.phase = phase
-        self.snapshot_sha256 = hashlib.sha256(
-            phase.encode("utf-8")
-        ).hexdigest()
+        self.snapshot_sha256 = hashlib.sha256(phase.encode("utf-8")).hexdigest()
         self.metrics = {
             "mean_entropy_parent_distance": 0.01,
             "mean_repetition_excess": 0.02,
@@ -458,9 +418,7 @@ class _ScriptedAttractorSnapshot:
 class _ScriptedAttractorDecision:
     def __init__(self, accepted):
         self.accepted = bool(accepted)
-        self.failed_checks = (
-            () if accepted else ("new_collapsed_records",)
-        )
+        self.failed_checks = () if accepted else ("new_collapsed_records",)
         self.decision_sha256 = hashlib.sha256(
             f"decision:{accepted}".encode("ascii")
         ).hexdigest()
@@ -487,9 +445,7 @@ class _ScriptedAttractorGate(Lfm2MacroCellAttractorGate):
         self._config = Lfm2MacroCellAttractorGateConfig()
         self._config_sha256 = canonical_sha256(self._config.as_dict())
         self._cache_key = canonical_sha256({"scripted_gate_cache": "v1"})
-        self._selection_sha256 = canonical_sha256(
-            {"scripted_gate_selection": "v1"}
-        )
+        self._selection_sha256 = canonical_sha256({"scripted_gate_selection": "v1"})
 
     def capture(self, child_model, *, phase):
         del child_model
@@ -534,9 +490,7 @@ def test_native_short_conv_reuses_exact_legacy_residual_assignment(
     )
 
     assert short_conv_indices
-    assert adapter._short_conv_assignment is (
-        adapter._short_conv_residual_assignment
-    )
+    assert adapter._short_conv_assignment is (adapter._short_conv_residual_assignment)
     assert any(
         coefficient != 1.0
         for coefficient in adapter._short_conv_residual_assignment.coefficients
@@ -553,9 +507,9 @@ def test_outer_transaction_restores_exact_state_parameter_and_gradient(
 ) -> None:
     adapter, child, _mapping = _adapter(sealed_parent)
     parameter = child.model.layers[0].feed_forward.w1.weight
-    parameter.grad = torch.arange(
-        parameter.numel(), dtype=parameter.dtype
-    ).reshape_as(parameter)
+    parameter.grad = torch.arange(parameter.numel(), dtype=parameter.dtype).reshape_as(
+        parameter
+    )
     state_before = adapter.child_state_fingerprint()
     topology_before = adapter.child_topology_fingerprint()
     parameter_id = id(parameter)
@@ -592,9 +546,7 @@ def test_moving_gauge_v3_publishes_complete_causal_plan_in_place(
         parent_residual_operators=basis.inventory.operators,
         output_interface_mode="identity-skip",
         progress_sink=(
-            lambda stage, metadata: progress_events.append(
-                (stage, dict(metadata))
-            )
+            lambda stage, metadata: progress_events.append((stage, dict(metadata)))
         ),
     )
     original_internal_recapture = adapter._body_internal_recapture
@@ -611,9 +563,7 @@ def test_moving_gauge_v3_publishes_complete_causal_plan_in_place(
         nonlocal initial_body_tensor_ref
         capture = original_replay_and_capture(scope, point, records, audit)
         if scope.kind == "body_reclosure":
-            external_body_selections.append(
-                capture.payload.selected_layer_indices
-            )
+            external_body_selections.append(capture.payload.selected_layer_indices)
         if point is CapturePoint.PRE_BODY_RECLOSURE:
             payload = self._capture_payload(capture)
             tensor = next(
@@ -626,9 +576,7 @@ def test_moving_gauge_v3_publishes_complete_causal_plan_in_place(
 
     def observed_internal_recapture(self, records, audit, **kwargs):
         nonlocal prior_tensor_ref
-        internal_selections.append(
-            tuple(kwargs["selected_layer_indices"])
-        )
+        internal_selections.append(tuple(kwargs["selected_layer_indices"]))
         internal_roles.append(kwargs["body_internal_role"])
         if not internal_tensor_refs:
             assert initial_body_tensor_ref is not None
@@ -664,15 +612,11 @@ def test_moving_gauge_v3_publishes_complete_causal_plan_in_place(
             tuple(parameter.shape),
             parameter.dtype,
         )
-        for name, parameter in child.named_parameters(
-            remove_duplicate=False
-        )
+        for name, parameter in child.named_parameters(remove_duplicate=False)
     )
     exact_count_before = sum(
         int(parameter.numel())
-        for parameter in {
-            id(value): value for value in child.parameters()
-        }.values()
+        for parameter in {id(value): value for value in child.parameters()}.values()
     )
 
     report = ChildClosedLoopCompiler(
@@ -689,29 +633,18 @@ def test_moving_gauge_v3_publishes_complete_causal_plan_in_place(
     assert body["compiled"]["metadata"]["body_reclosure_mode"] == (
         LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
     )
-    assert body["compiled"]["metadata"][
-        "body_coordinate_completion_result_sha256"
-    ]
-    assert body["compiled"]["metadata"][
-        "input_producer_reclosure_state_sha256"
-    ]
+    assert body["compiled"]["metadata"]["body_coordinate_completion_result_sha256"]
+    assert body["compiled"]["metadata"]["input_producer_reclosure_state_sha256"]
     assert body["compiled"]["metadata"]["causal_w2_reclosure_count"] == 2
-    assert body["compiled"]["metadata"][
-        "causal_operator_consumer_reclosure_count"
-    ] == 2
-    assert body["install"]["metadata"][
-        "fresh_primal_w2_reclosure_count"
-    ] == 2
-    assert body["install"]["metadata"][
-        "fresh_primal_operator_consumer_reclosure_count"
-    ] == 2
+    assert body["compiled"]["metadata"]["causal_operator_consumer_reclosure_count"] == 2
+    assert body["install"]["metadata"]["fresh_primal_w2_reclosure_count"] == 2
+    assert (
+        body["install"]["metadata"]["fresh_primal_operator_consumer_reclosure_count"]
+        == 2
+    )
     assert body["install"]["metadata"]["causal_installation_step_count"] == 2
-    assert body["validation"]["metrics"][
-        "input_producer_reclosure_complete"
-    ] is True
-    assert body["validation"]["metrics"][
-        "per_layer_causal_recapture_complete"
-    ] is True
+    assert body["validation"]["metrics"]["input_producer_reclosure_complete"] is True
+    assert body["validation"]["metrics"]["per_layer_causal_recapture_complete"] is True
     assert body["runs_before_final_normalization"] is True
     assert report["audit"]["body_reclosure_compile_calls"] == 1
     assert report["audit"]["parent_forward_calls"] == 0
@@ -726,15 +659,11 @@ def test_moving_gauge_v3_publishes_complete_causal_plan_in_place(
             tuple(parameter.shape),
             parameter.dtype,
         )
-        for name, parameter in child.named_parameters(
-            remove_duplicate=False
-        )
+        for name, parameter in child.named_parameters(remove_duplicate=False)
     )
     exact_count_after = sum(
         int(parameter.numel())
-        for parameter in {
-            id(value): value for value in child.parameters()
-        }.values()
+        for parameter in {id(value): value for value in child.parameters()}.values()
     )
     assert parameters_after == parameters_before
     assert exact_count_after == exact_count_before
@@ -814,20 +743,14 @@ def test_moving_gauge_v3_publishes_complete_causal_plan_in_place(
     assert len(steps) == 2
     for layer_index, step in enumerate(steps):
         assert step["layer_index"] == layer_index
-        assert step[
-            "operator_consumer_refreshed_after_producer_recapture"
-        ] is True
-        assert step[
-            "mlp_producers_fit_after_operator_consumer_recapture"
-        ] is True
+        assert step["operator_consumer_refreshed_after_producer_recapture"] is True
+        assert step["mlp_producers_fit_after_operator_consumer_recapture"] is True
         assert step["w2_solved_after_all_upstream_recaptures"] is True
         assert step["post_operator_producer_capture_sha256"]
         assert step["post_operator_consumer_capture_sha256"]
         assert step["post_mlp_producer_capture_sha256"]
         assert step["post_w2_capture_sha256"]
-    assert steps[1]["pre_operator_capture_sha256"] == steps[0][
-        "post_w2_capture_sha256"
-    ]
+    assert steps[1]["pre_operator_capture_sha256"] == steps[0]["post_w2_capture_sha256"]
 
 
 def test_moving_gauge_install_rejects_a_stale_causal_capture_plan(
@@ -856,9 +779,7 @@ def test_moving_gauge_install_rejects_a_stale_causal_capture_plan(
         ):
             tampered = True
             replacement_sha256 = (
-                "1" * 64
-                if capture.capture_sha256 == "0" * 64
-                else "0" * 64
+                "1" * 64 if capture.capture_sha256 == "0" * 64 else "0" * 64
             )
             return replace(
                 capture,
@@ -910,9 +831,7 @@ def _moving_gauge_install_fold(
             None
             if progress_events is None
             else (
-                lambda stage, metadata: progress_events.append(
-                    (stage, dict(metadata))
-                )
+                lambda stage, metadata: progress_events.append((stage, dict(metadata)))
             )
         ),
     )
@@ -953,17 +872,13 @@ def test_fingerprint_install_verification_reproduces_the_recaptured_child(
 
     recapture_events = []
     recapture_roles = []
-    recapture_adapter, recapture_child, recapture_report = (
-        _moving_gauge_install_fold(
-            sealed_parent,
-            basis=basis,
-            split_seed=split_seed,
-            install_verification_mode=(
-                LFM2_INSTALL_VERIFICATION_FULL_RECAPTURE
-            ),
-            progress_events=recapture_events,
-            internal_roles=recapture_roles,
-        )
+    recapture_adapter, recapture_child, recapture_report = _moving_gauge_install_fold(
+        sealed_parent,
+        basis=basis,
+        split_seed=split_seed,
+        install_verification_mode=(LFM2_INSTALL_VERIFICATION_FULL_RECAPTURE),
+        progress_events=recapture_events,
+        internal_roles=recapture_roles,
     )
     fingerprint_events = []
     fingerprint_roles = []
@@ -994,12 +909,8 @@ def test_fingerprint_install_verification_reproduces_the_recaptured_child(
     assert recapture_payload is not None
     assert fingerprint_payload is not None
     assert [
-        value["result_sha256"]
-        for value in fingerprint_payload.causal_w2_step_receipts
-    ] == [
-        value["result_sha256"]
-        for value in recapture_payload.causal_w2_step_receipts
-    ]
+        value["result_sha256"] for value in fingerprint_payload.causal_w2_step_receipts
+    ] == [value["result_sha256"] for value in recapture_payload.causal_w2_step_receipts]
 
     # 1 + 4L replays collapse to exactly one, and it is the terminal capture.
     assert len(recapture_roles) == 18
@@ -1007,9 +918,7 @@ def test_fingerprint_install_verification_reproduces_the_recaptured_child(
     assert fingerprint_roles[9] == ("terminal_receipt", (1,))
     assert fingerprint_roles[:9] == recapture_roles[:9]
 
-    recapture_metadata = dict(
-        recapture_report["body_reclosure"]["install"]["metadata"]
-    )
+    recapture_metadata = dict(recapture_report["body_reclosure"]["install"]["metadata"])
     fingerprint_metadata = dict(
         fingerprint_report["body_reclosure"]["install"]["metadata"]
     )
@@ -1031,22 +940,28 @@ def test_fingerprint_install_verification_reproduces_the_recaptured_child(
 
     # The single terminal capture is compared against the preview's final
     # sealed capture, which is the last causal step's post-W2 digest.
-    assert fingerprint_metadata["final_causal_recapture_sha256"] == (
-        fingerprint_payload.causal_w2_step_receipts[-1][
-            "post_w2_capture_sha256"
-        ]
-    )
-    assert recapture_metadata["final_causal_recapture_sha256"] == (
+    assert (
         fingerprint_metadata["final_causal_recapture_sha256"]
+        == (fingerprint_payload.causal_w2_step_receipts[-1]["post_w2_capture_sha256"])
+    )
+    assert (
+        recapture_metadata["final_causal_recapture_sha256"]
+        == (fingerprint_metadata["final_causal_recapture_sha256"])
     )
 
     # The validation receipt stops claiming a per-layer recapture it skipped.
-    assert recapture_report["body_reclosure"]["validation"]["metrics"][
-        "per_layer_causal_recapture_complete"
-    ] is True
-    assert fingerprint_report["body_reclosure"]["validation"]["metrics"][
-        "per_layer_causal_recapture_complete"
-    ] is False
+    assert (
+        recapture_report["body_reclosure"]["validation"]["metrics"][
+            "per_layer_causal_recapture_complete"
+        ]
+        is True
+    )
+    assert (
+        fingerprint_report["body_reclosure"]["validation"]["metrics"][
+            "per_layer_causal_recapture_complete"
+        ]
+        is False
+    )
 
     install_recaptures = [
         (stage, metadata)
@@ -1068,8 +983,7 @@ def test_fingerprint_install_verification_reproduces_the_recaptured_child(
         if stage == "moving_gauge_install_fingerprint_verified"
     ]
     assert [
-        (metadata["layer_index"], metadata["capture_boundary"])
-        for metadata in verified
+        (metadata["layer_index"], metadata["capture_boundary"]) for metadata in verified
     ] == [
         (-1, "post_initial_writers"),
         *(
@@ -1083,9 +997,7 @@ def test_fingerprint_install_verification_reproduces_the_recaptured_child(
             )
         ),
     ]
-    assert all(
-        len(metadata["fingerprint_sha256"]) == 64 for metadata in verified
-    )
+    assert all(len(metadata["fingerprint_sha256"]) == 64 for metadata in verified)
     assert len({metadata["fingerprint_sha256"] for metadata in verified}) == 9
     assert (
         len(
@@ -1291,13 +1203,11 @@ def test_install_fingerprints_bind_a_factorized_writer_to_its_artifact(
 
     with torch.no_grad():
         encoder.add_(1.0)
-    drifted, planned_again = (
-        adapter._moving_gauge_installed_writer_fingerprints(
-            {parameter_id: site},
-            {parameter_id: requested},
-            {parameter_id: artifact},
-            (parameter_id,),
-        )
+    drifted, planned_again = adapter._moving_gauge_installed_writer_fingerprints(
+        {parameter_id: site},
+        {parameter_id: requested},
+        {parameter_id: artifact},
+        (parameter_id,),
     )
     assert drifted != planned_again
     with pytest.raises(
@@ -1329,9 +1239,7 @@ def test_adapter_config_rejects_an_unknown_install_verification_mode() -> None:
         LFM2_INSTALL_VERIFICATION_FULL_RECAPTURE
     )
     with pytest.raises(ValueError, match="install_verification_mode"):
-        Lfm2DynamicClosedLoopAdapterConfig(
-            install_verification_mode="fingerprints"
-        )
+        Lfm2DynamicClosedLoopAdapterConfig(install_verification_mode="fingerprints")
 
 
 def test_moving_gauge_cleanup_releases_every_capture_and_rolls_back(
@@ -1370,9 +1278,7 @@ def test_moving_gauge_cleanup_releases_every_capture_and_rolls_back(
             cleanup_attempts.append(id(capture))
             if not injected:
                 injected = True
-                raise RuntimeError(
-                    "scripted first moving-gauge cleanup failure"
-                )
+                raise RuntimeError("scripted first moving-gauge cleanup failure")
 
     adapter._compile_moving_gauge_causal_completion = MethodType(
         observed_completion,
@@ -1476,13 +1382,11 @@ def test_moving_gauge_factor_writer_uses_cached_output_action_evidence() -> None
     assert action_aware.artifact_sha256 == repeated.artifact_sha256
     assert torch.equal(action_aware.encoder_weight, repeated.encoder_weight)
     assert torch.equal(action_aware.decoder_weight, repeated.decoder_weight)
-    action_effective = (
-        action_aware.decoder_weight.to(torch.float64)
-        @ action_aware.encoder_weight.to(torch.float64)
-    )
-    plain_effective = (
-        plain.decoder_weight.to(torch.float64)
-        @ plain.encoder_weight.to(torch.float64)
+    action_effective = action_aware.decoder_weight.to(
+        torch.float64
+    ) @ action_aware.encoder_weight.to(torch.float64)
+    plain_effective = plain.decoder_weight.to(torch.float64) @ plain.encoder_weight.to(
+        torch.float64
     )
     action_error = (
         ((design @ action_effective.T - desired).square().sum(dim=1) * weights)
@@ -1586,16 +1490,11 @@ def test_real_adapter_runs_all_layers_with_all_batch_live_child_recaptures(
 
     assert report["selected_layers"] == [0, 1]
     assert report["layers_executed_in_ascending_order"]
-    assert report["final_normalization"][
-        "runs_after_all_ascending_layers"
-    ]
+    assert report["final_normalization"]["runs_after_all_ascending_layers"]
     assert len(captures) == 13
+    assert all(len(replay) == len(adapter.parent_cache) for replay in captures)
     assert all(
-        len(replay) == len(adapter.parent_cache) for replay in captures
-    )
-    assert all(
-        replay.metadata["runtime"]["parent_forward_count"] == 0
-        for replay in captures
+        replay.metadata["runtime"]["parent_forward_count"] == 0 for replay in captures
     )
     assert all(
         replay.metadata["selection"]["capture"]["decode_trace_mode"]
@@ -1620,9 +1519,7 @@ def test_real_adapter_runs_all_layers_with_all_batch_live_child_recaptures(
     assert report["audit"]["child_replay_capture_calls"] == 13
     assert report["audit"]["output_interface_compile_calls"] == 1
     assert report["child_topology_preserved"]
-    assert report["output_interface"][
-        "post_install_full_live_child_replayed"
-    ]
+    assert report["output_interface"]["post_install_full_live_child_replayed"]
     assert report["output_interface"][
         "teacher_forced_terminal_acceptance_is_necessary_not_sufficient"
     ]
@@ -1635,26 +1532,16 @@ def test_real_adapter_runs_all_layers_with_all_batch_live_child_recaptures(
     output_metrics = report["output_interface"]["validation"]["metrics"]
     assert output_metrics["full_vocabulary_metrics"]
     assert output_metrics["tied_embedding_feedback_included"]
-    assert output_metrics[
-        "kl_known_sequence_nll_and_eos_are_terminal_acceptance_gates"
-    ]
-    assert output_metrics[
-        "parent_distribution_cross_entropy_is_redundant_with_kl"
-    ]
+    assert output_metrics["kl_known_sequence_nll_and_eos_are_terminal_acceptance_gates"]
+    assert output_metrics["parent_distribution_cross_entropy_is_redundant_with_kl"]
     assert output_metrics["live_candidate_vocabulary_size"] == 41
     assert output_metrics["live_candidate_rows"] > 0
     assert mapping.map_sha256 == adapter.map_sha256
     for layer in report["layer_reports"]:
         metrics = layer["validation"]["metrics"]
-        assert metrics[
-            "heldout_endpoint_compared_to_projected_parent"
-        ]
-        assert layer["consumer"][
-            "fitted_after_installed_producer_recapture"
-        ]
-        assert layer["downstream"][
-            "compiled_after_installed_consumer_recapture"
-        ]
+        assert metrics["heldout_endpoint_compared_to_projected_parent"]
+        assert layer["consumer"]["fitted_after_installed_producer_recapture"]
+        assert layer["downstream"]["compiled_after_installed_consumer_recapture"]
 
 
 def test_scope_local_profiles_and_capture_hash_bind_exact_selection(
@@ -2089,8 +1976,7 @@ def test_selected_parent_profiles_are_exact_refcounted_and_switch_fail_closed(
             assert not any(name.endswith(".logits") for name in names)
             assert not any(".layer.001." in name for name in names)
             assert all(
-                name in adapter_module._SELECTIVE_INPUT_TENSORS
-                or ".layer.000." in name
+                name in adapter_module._SELECTIVE_INPUT_TENSORS or ".layer.000." in name
                 for name in names
             )
             assert not any(
@@ -2149,8 +2035,7 @@ def test_selected_parent_profiles_are_exact_refcounted_and_switch_fail_closed(
             )
             for layer_index in range(len(adapter.child_layers)):
                 assert any(
-                    f".layer.{layer_index:03d}.residual.pre" in name
-                    for name in names
+                    f".layer.{layer_index:03d}.residual.pre" in name for name in names
                 )
                 assert any(
                     f".layer.{layer_index:03d}.residual.post_layer" in name
@@ -2237,9 +2122,7 @@ def test_selected_parent_component_cache_reuses_exact_layer_horizon_once(
         load_selections = []
         source_payloads = []
         component_hash_calls = []
-        original_component_hash = (
-            adapter_module._lfm2_circuit_tensor_sha256
-        )
+        original_component_hash = adapter_module._lfm2_circuit_tensor_sha256
 
         def observed_load(self, index, tensor_names):
             payload = original_load(self, index, tensor_names)
@@ -2303,9 +2186,7 @@ def test_selected_parent_component_cache_reuses_exact_layer_horizon_once(
         )
         assert layer0_profile.profile_sha256 == expected_layer0_sha256
         assert all(payload.released for payload in source_payloads)
-        layer0_components = tuple(
-            adapter._selected_parent_component_cache.values()
-        )
+        layer0_components = tuple(adapter._selected_parent_component_cache.values())
         assert len(component_hash_calls) == len(layer0_components)
         assert len(set(component_hash_calls)) == len(layer0_components)
         layer0.release()
@@ -2326,9 +2207,7 @@ def test_selected_parent_component_cache_reuses_exact_layer_horizon_once(
             merged_requests=merged_requests,
         )
         merged_names = merged.profile.ordered_tensor_names_by_batch
-        merged_components = tuple(
-            adapter._selected_parent_component_cache.values()
-        )
+        merged_components = tuple(adapter._selected_parent_component_cache.values())
         merged_hash_calls = component_hash_calls[hash_offset:]
         assert len(merged_hash_calls) == len(merged_components)
         assert len(set(merged_hash_calls)) == len(merged_components)
@@ -2456,9 +2335,7 @@ def test_selected_parent_component_cache_reports_reload_and_hash_cost(
                 (0,),
                 body_internal=False,
             )
-            profile_inventories.append(
-                borrow.profile.ordered_tensor_names_by_batch
-            )
+            profile_inventories.append(borrow.profile.ordered_tensor_names_by_batch)
             borrow.release()
             adapter._release_idle_selected_parent_profile()
 
@@ -2471,8 +2348,7 @@ def test_selected_parent_component_cache_reports_reload_and_hash_cost(
         )
         merged_inventory = merged.profile.ordered_tensor_names_by_batch
         merged_descriptor_inventories = tuple(
-            reference.record["tensors"]
-            for reference in session.batch_references
+            reference.record["tensors"] for reference in session.batch_references
         )
         profile_inventories.append(merged_inventory)
         merged.release()
@@ -2484,16 +2360,12 @@ def test_selected_parent_component_cache_reports_reload_and_hash_cost(
             (1,),
             body_internal=False,
         )
-        profile_inventories.append(
-            layer1.profile.ordered_tensor_names_by_batch
-        )
+        profile_inventories.append(layer1.profile.ordered_tensor_names_by_batch)
         layer1.release()
         adapter._release_idle_selected_parent_profile()
         new_wall_seconds = time.perf_counter() - new_started
 
-        new_source_load_count = (
-            adapter._selected_parent_component_source_load_count
-        )
+        new_source_load_count = adapter._selected_parent_component_source_load_count
         new_source_loaded_logical_bytes = (
             adapter._selected_parent_component_source_loaded_logical_bytes
         )
@@ -2512,9 +2384,7 @@ def test_selected_parent_component_cache_reports_reload_and_hash_cost(
         exact_hash_wall_seconds = (
             adapter._selected_parent_component_exact_hash_wall_seconds
         )
-        unique_component_load_count = (
-            adapter._selected_parent_component_load_count
-        )
+        unique_component_load_count = adapter._selected_parent_component_load_count
         adapter.release_transient_fold_evidence()
 
     legacy_load_count = 0
@@ -2557,9 +2427,7 @@ def test_selected_parent_component_cache_reports_reload_and_hash_cost(
         for inventory_by_batch in profile_inventories
         for names in inventory_by_batch
     )
-    expected_unique_component_count = sum(
-        len(names) for names in merged_inventory
-    )
+    expected_unique_component_count = sum(len(names) for names in merged_inventory)
     expected_unique_component_bytes = sum(
         int(descriptors[name]["size_bytes"])
         for descriptors, names in zip(
@@ -2576,10 +2444,7 @@ def test_selected_parent_component_cache_reports_reload_and_hash_cost(
     assert new_source_load_count == 2 * cache.batch_count
     assert new_source_load_count < legacy_load_count
     assert unique_component_load_count == expected_unique_component_count
-    assert (
-        new_source_loaded_logical_bytes
-        == expected_unique_component_bytes
-    )
+    assert new_source_loaded_logical_bytes == expected_unique_component_bytes
     assert new_source_loaded_logical_bytes < legacy_loaded_logical_bytes
     assert new_wall_seconds > 0.0
     assert legacy_wall_seconds > 0.0
@@ -2609,16 +2474,11 @@ def test_selected_parent_component_cache_reports_reload_and_hash_cost(
         },
         "schema": "neural-forge-selected-parent-cache-benchmark-v1",
         "savings": {
-            "end_to_end_wall_ratio": (
-                legacy_wall_seconds / new_wall_seconds
-            ),
+            "end_to_end_wall_ratio": (legacy_wall_seconds / new_wall_seconds),
             "logical_byte_reload_ratio": (
-                legacy_loaded_logical_bytes
-                / new_source_loaded_logical_bytes
+                legacy_loaded_logical_bytes / new_source_loaded_logical_bytes
             ),
-            "source_load_call_ratio": (
-                legacy_load_count / new_source_load_count
-            ),
+            "source_load_call_ratio": (legacy_load_count / new_source_load_count),
         },
     }
     print("SELECTED_PARENT_CACHE_BENCHMARK=" + json.dumps(report, sort_keys=True))
@@ -3193,14 +3053,10 @@ def test_macro_cell_attractor_gate_is_reported_for_every_layer(
     for layer in report["layer_reports"]:
         compiled = layer["producer"]["compiled"]
         metrics = layer["validation"]["metrics"]
-        assert compiled["metadata"][
-            "macro_cell_attractor_gate_enabled"
-        ]
+        assert compiled["metadata"]["macro_cell_attractor_gate_enabled"]
         assert metrics["macro_cell_attractor_gate_enabled"]
         assert metrics["macro_cell_attractor_gate_accepted"]
-        assert metrics[
-            "macro_cell_exact_token_metrics_used_for_acceptance"
-        ] is False
+        assert metrics["macro_cell_exact_token_metrics_used_for_acceptance"] is False
         assert metrics["macro_cell_parent_forward_calls"] == 0
         assert metrics["macro_cell_training_steps"] == 0
 
@@ -3214,9 +3070,9 @@ def test_macro_cell_attractor_rejection_rolls_back_whole_child_exactly(
         macro_cell_attractor_gate=gate,
     )
     parameter = child.model.layers[0].feed_forward.w1.weight
-    parameter.grad = torch.arange(
-        parameter.numel(), dtype=parameter.dtype
-    ).reshape_as(parameter)
+    parameter.grad = torch.arange(parameter.numel(), dtype=parameter.dtype).reshape_as(
+        parameter
+    )
     parameter_id = id(parameter)
     gradient_id = id(parameter.grad)
     gradient_before = parameter.grad.detach().clone()
@@ -3226,8 +3082,7 @@ def test_macro_cell_attractor_rejection_rolls_back_whole_child_exactly(
     with pytest.raises(
         ClosedLoopFoldError,
         match=(
-            "macro-cell free-rollout attractor gate rejected: "
-            "new_collapsed_records=1>0"
+            "macro-cell free-rollout attractor gate rejected: new_collapsed_records=1>0"
         ),
     ):
         ChildClosedLoopCompiler(
@@ -3278,8 +3133,9 @@ def test_adapter_opt_in_coupled_attention_value_output_path(
     assert score_metadata["attention_score_candidate_gate_accepted"]
     assert score_metadata["attention_score_fit_report_sha256"] is not None
     assert score_metadata["attention_score_validation_report_sha256"] is not None
-    assert consumer_metadata["attention_fixed_query_key_sha256"] == (
-        score_metadata["attention_score_state_sha256"]
+    assert (
+        consumer_metadata["attention_fixed_query_key_sha256"]
+        == (score_metadata["attention_score_state_sha256"])
     )
     assert consumer_metadata["attention_score_path_fixed"]
     assert consumer_metadata["attention_value_context_solver"] == (
@@ -3287,9 +3143,7 @@ def test_adapter_opt_in_coupled_attention_value_output_path(
     )
     assert consumer_metadata["attention_fit_nonincreasing"]
     assert score_metadata["attention_score_parent_forward_calls"] == 0
-    assert score_metadata[
-        "attention_score_numeric_weight_matching_used"
-    ] is False
+    assert score_metadata["attention_score_numeric_weight_matching_used"] is False
 
 
 def test_attention_score_gate_rejection_rolls_back_whole_child_exactly(
@@ -3303,9 +3157,9 @@ def test_attention_score_gate_rejection_rolls_back_whole_child_exactly(
         attention_score_minimum_fraction=0.0,
     )
     parameter = child.model.layers[0].feed_forward.w1.weight
-    parameter.grad = torch.arange(
-        parameter.numel(), dtype=parameter.dtype
-    ).reshape_as(parameter)
+    parameter.grad = torch.arange(parameter.numel(), dtype=parameter.dtype).reshape_as(
+        parameter
+    )
     parameter_id = id(parameter)
     gradient_id = id(parameter.grad)
     gradient_before = parameter.grad.detach().clone()
@@ -3344,10 +3198,7 @@ def test_adapter_single_pass_is_explicit_and_audits_forward_savings(
 
     def observed_capture(child_model, replay_batches, **kwargs):
         assert child_model is child
-        assert (
-            kwargs["replay_capture_mode"]
-            == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
-        )
+        assert kwargs["replay_capture_mode"] == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
         result = original_capture(
             child_model,
             tuple(replay_batches),
@@ -3387,9 +3238,7 @@ def test_adapter_single_pass_is_explicit_and_audits_forward_savings(
             "saved_child_forwards": 4,
         }
         contracts = {
-            batch.capture["causal_equivalence_contract"][
-                "contract_sha256"
-            ]
+            batch.capture["causal_equivalence_contract"]["contract_sha256"]
             for batch in replay.iter_batches()
         }
         assert len(contracts) == 1
@@ -3486,10 +3335,7 @@ def test_output_interface_required_improvement_rejects_live_candidate(
 
     with pytest.raises(
         ClosedLoopFoldError,
-        match=(
-            "full_vocabulary_parent_kl,"
-            "known_sequence_token_nll"
-        ),
+        match=("full_vocabulary_parent_kl,known_sequence_token_nll"),
     ):
         ChildClosedLoopCompiler(
             adapter,
@@ -3526,9 +3372,7 @@ def test_performance_diagnostic_only_accepts_finite_layer_final_and_output(
         ),
     ).run()
 
-    decisions = [
-        layer["validation"] for layer in report["layer_reports"]
-    ]
+    decisions = [layer["validation"] for layer in report["layer_reports"]]
     decisions.append(report["final_normalization"]["validation"])
     decisions.append(report["output_interface"]["validation"])
     for decision in decisions:
@@ -3540,9 +3384,10 @@ def test_performance_diagnostic_only_accepts_finite_layer_final_and_output(
         assert metrics["counterfactual_performance_threshold_passed"] is False
     output_metrics = report["output_interface"]["validation"]["metrics"]
     assert output_metrics["failed_gate_count"] >= 2
-    assert output_metrics[
-        "kl_known_sequence_nll_and_eos_are_terminal_acceptance_gates"
-    ] is False
+    assert (
+        output_metrics["kl_known_sequence_nll_and_eos_are_terminal_acceptance_gates"]
+        is False
+    )
 
 
 def test_all_layer_numeric_policy_accepts_finite_layer_final_and_output(
@@ -3680,9 +3525,7 @@ def test_output_performance_diagnostic_only_rejects_nonfinite_json_safely(
 
 def test_adapter_config_rejects_unknown_replay_mode() -> None:
     with pytest.raises(ValueError, match="replay_capture_mode"):
-        Lfm2DynamicClosedLoopAdapterConfig(
-            replay_capture_mode="not-a-replay-mode"
-        )
+        Lfm2DynamicClosedLoopAdapterConfig(replay_capture_mode="not-a-replay-mode")
 
 
 def test_adapter_config_rejects_unknown_opt_in_modes() -> None:
@@ -3694,9 +3537,7 @@ def test_adapter_config_rejects_unknown_opt_in_modes() -> None:
             attention_consumer_mode="not-an-attention-mode"
         )
     with pytest.raises(ValueError, match="output_interface_mode"):
-        Lfm2DynamicClosedLoopAdapterConfig(
-            output_interface_mode="not-an-output-mode"
-        )
+        Lfm2DynamicClosedLoopAdapterConfig(output_interface_mode="not-an-output-mode")
     with pytest.raises(
         Lfm2DynamicClosedLoopAdapterError,
         match="attention_score_top_k must be at least two",
@@ -3728,12 +3569,8 @@ def _capture_one_point(adapter, *, scope, point, selective=False):
             "capture_sha256": capture.capture_sha256,
             "replay_sha256": payload.replay_sha256,
             "selection_sha256": payload.selection_sha256,
-            "child_evidence_profile_role": (
-                payload.child_evidence_profile_role
-            ),
-            "child_evidence_profile_sha256": (
-                payload.child_evidence_profile_sha256
-            ),
+            "child_evidence_profile_role": (payload.child_evidence_profile_role),
+            "child_evidence_profile_sha256": (payload.child_evidence_profile_sha256),
             "pairing_sha256": payload.paired.pairing_sha256,
             "actual_child_forwards": payload.actual_child_forwards,
         }
@@ -3758,9 +3595,7 @@ def test_two_cpu_shard_workers_seal_the_adapter_capture_bytes(
         sealed_parent,
         existing_mapping=mapping,
         replay_devices=("cpu", "cpu"),
-        progress_sink=lambda stage, metadata: events.append(
-            (stage, dict(metadata))
-        ),
+        progress_sink=lambda stage, metadata: events.append((stage, dict(metadata))),
     )
     assert sharded_adapter.config.replay_devices == ("cpu", "cpu")
     sharded = _capture_one_point(sharded_adapter, scope=scope, point=point)
@@ -3810,9 +3645,7 @@ def test_adapter_reuses_only_child_replay_and_repairs_current_parent_evidence(
     )
     capture_calls = []
     pairing_calls = []
-    original_capture = (
-        replay_checkpoint_module.capture_lfm2_child_replay_resumable
-    )
+    original_capture = replay_checkpoint_module.capture_lfm2_child_replay_resumable
     original_pair = adapter_module.pair_lfm2_parent_child_replay
 
     def observed_capture(*args, **kwargs):
@@ -3837,9 +3670,7 @@ def test_adapter_reuses_only_child_replay_and_repairs_current_parent_evidence(
     adapter, _child, _mapping = _adapter(
         sealed_parent,
         child_replay_phase_cache_context=context,
-        progress_sink=lambda stage, metadata: events.append(
-            (stage, dict(metadata))
-        ),
+        progress_sink=lambda stage, metadata: events.append((stage, dict(metadata))),
     )
     scope = FoldScope("layer", 0)
     point = CapturePoint.PRE_PRODUCER
@@ -3853,8 +3684,7 @@ def test_adapter_reuses_only_child_replay_and_repairs_current_parent_evidence(
     cache_events = [
         metadata
         for stage, metadata in events
-        if stage
-        == adapter_module.LFM2_CHILD_REPLAY_PHASE_CACHE_RESOLVED_STAGE
+        if stage == adapter_module.LFM2_CHILD_REPLAY_PHASE_CACHE_RESOLVED_STAGE
     ]
     assert [event["cache_hit"] for event in cache_events] == [False, True]
     assert cache_events[0]["current_invocation_child_forwards"] > 0
@@ -3870,17 +3700,13 @@ def test_all_checkpoint_reconstruction_is_not_reported_as_sharding(
     tmp_path,
 ) -> None:
     root = tmp_path / "child-replays"
-    context = DynamicChildReplayPhaseCacheContext(
-        cache=DynamicFoldPhaseCache(root)
-    )
+    context = DynamicChildReplayPhaseCacheContext(cache=DynamicFoldPhaseCache(root))
     events = []
     adapter, _child, _mapping = _adapter(
         sealed_parent,
         child_replay_phase_cache_context=context,
         replay_devices=("cpu", "cpu"),
-        progress_sink=lambda stage, metadata: events.append(
-            (stage, dict(metadata))
-        ),
+        progress_sink=lambda stage, metadata: events.append((stage, dict(metadata))),
     )
     scope = FoldScope("layer", 0)
     point = CapturePoint.PRE_PRODUCER
@@ -3896,8 +3722,7 @@ def test_all_checkpoint_reconstruction_is_not_reported_as_sharding(
     resolved = [
         metadata
         for stage, metadata in events
-        if stage
-        == adapter_module.LFM2_CHILD_REPLAY_PHASE_CACHE_RESOLVED_STAGE
+        if stage == adapter_module.LFM2_CHILD_REPLAY_PHASE_CACHE_RESOLVED_STAGE
     ]
     assert len(resolved) == 2
     assert resolved[1]["producer_invoked"] is True
@@ -3974,9 +3799,7 @@ def test_unsafe_replay_device_requests_fall_back_and_record_the_reason(
         sealed_parent,
         existing_mapping=mapping,
         replay_devices=devices,
-        progress_sink=lambda stage, metadata: events.append(
-            (stage, dict(metadata))
-        ),
+        progress_sink=lambda stage, metadata: events.append((stage, dict(metadata))),
     )
     observed = _capture_one_point(adapter, scope=scope, point=point)
 
@@ -4004,9 +3827,7 @@ def test_an_instrumented_child_is_never_replicated(sealed_parent) -> None:
     adapter, child, _mapping = _adapter(
         sealed_parent,
         replay_devices=("cpu", "cpu"),
-        progress_sink=lambda stage, metadata: events.append(
-            (stage, dict(metadata))
-        ),
+        progress_sink=lambda stage, metadata: events.append((stage, dict(metadata))),
     )
     handle = child.register_forward_hook(lambda *arguments: None)
     try:
@@ -4047,17 +3868,15 @@ def test_sharded_captures_reproduce_the_serial_closed_loop_fold(
         sealed_parent,
         existing_mapping=mapping,
         replay_devices=("cpu", "cpu"),
-        progress_sink=lambda stage, metadata: events.append(
-            (stage, dict(metadata))
-        ),
+        progress_sink=lambda stage, metadata: events.append((stage, dict(metadata))),
     )
     sharded = ChildClosedLoopCompiler(sharded_adapter, compiler_config).run()
 
     # Process-local digests mix Parameter object identity, so the committed
     # children are compared through the portable capsule digests.
-    assert portable_child_state_sha256(
-        sharded_child
-    ) == portable_child_state_sha256(serial_child)
+    assert portable_child_state_sha256(sharded_child) == portable_child_state_sha256(
+        serial_child
+    )
     assert portable_child_topology_sha256(
         sharded_child
     ) == portable_child_topology_sha256(serial_child)
@@ -4070,16 +3889,18 @@ def test_sharded_captures_reproduce_the_serial_closed_loop_fold(
         for name, record in sharded_layer["captures"].items():
             # Every capture point, not only the one a focused test drives,
             # seals the same envelope under a shard plan.
-            assert record["capture_sha256"] == (
-                serial_layer["captures"][name]["capture_sha256"]
+            assert (
+                record["capture_sha256"]
+                == (serial_layer["captures"][name]["capture_sha256"])
             )
-        assert sharded_layer["validation"]["decision_sha256"] == (
-            serial_layer["validation"]["decision_sha256"]
+        assert (
+            sharded_layer["validation"]["decision_sha256"]
+            == (serial_layer["validation"]["decision_sha256"])
         )
     for section in ("final_normalization", "output_interface"):
-        assert json.dumps(
-            sharded[section]["captures"], sort_keys=True
-        ) == json.dumps(serial[section]["captures"], sort_keys=True)
+        assert json.dumps(sharded[section]["captures"], sort_keys=True) == json.dumps(
+            serial[section]["captures"], sort_keys=True
+        )
 
     resolved_events = [
         metadata
@@ -4089,8 +3910,7 @@ def test_sharded_captures_reproduce_the_serial_closed_loop_fold(
     # One resolution per capture point, and every one of them sharded.
     assert len(resolved_events) == serial["audit"]["child_replay_capture_calls"]
     assert all(
-        metadata["replay_sharding_enabled"] is True
-        for metadata in resolved_events
+        metadata["replay_sharding_enabled"] is True for metadata in resolved_events
     )
 
 
@@ -4149,16 +3969,14 @@ def test_merged_layer_captures_reproduce_the_unmerged_fold(
 
     # Process-local digests mix Parameter object identity, so the committed
     # children are compared through the portable capsule digests.
-    assert portable_child_state_sha256(
-        merged_child
-    ) == portable_child_state_sha256(baseline_child)
+    assert portable_child_state_sha256(merged_child) == portable_child_state_sha256(
+        baseline_child
+    )
     assert portable_child_topology_sha256(
         merged_child
     ) == portable_child_topology_sha256(baseline_child)
 
-    merge_reports = [
-        value["merged_captures"] for value in merged["layer_reports"]
-    ]
+    merge_reports = [value["merged_captures"] for value in merged["layer_reports"]]
     assert [
         value["post_downstream_served_next_layer_pre_producer"]
         for value in merge_reports
@@ -4179,8 +3997,7 @@ def test_merged_layer_captures_reproduce_the_unmerged_fold(
             assert record["point"] == reference["point"]
             assert record["record_keys"] == reference["record_keys"]
         seals = {
-            record["capture_sha256"]
-            for record in merged_layer["captures"].values()
+            record["capture_sha256"] for record in merged_layer["captures"].values()
         }
         assert len(seals) == len(merged_layer["captures"])
         assert baseline_layer["validation"]["accepted"] is True
@@ -4223,12 +4040,15 @@ def test_merged_capture_envelope_matches_the_payload_authenticator(
         assert post_downstream.capture_sha256 != pre_producer.capture_sha256
         # Drift guard: the shared envelope helper reproduces the seal that
         # `_replay_and_capture_child_with_parent_profile` built inline.
-        assert adapter_module._capture_envelope_sha256(
-            scope=FoldScope("layer", 0),
-            point=CapturePoint.POST_DOWNSTREAM,
-            record_keys=post_downstream.record_keys,
-            payload=primary,
-        ) == post_downstream.capture_sha256
+        assert (
+            adapter_module._capture_envelope_sha256(
+                scope=FoldScope("layer", 0),
+                point=CapturePoint.POST_DOWNSTREAM,
+                record_keys=post_downstream.record_keys,
+                payload=primary,
+            )
+            == post_downstream.capture_sha256
+        )
 
         profile = primary.child_evidence_profile
         assert profile is not None
@@ -4287,22 +4107,20 @@ def test_merged_captures_take_a_two_role_selected_parent_profile(
             validation_fraction=0.25,
             split_seed="lfm2-merged-selective-profile-v1",
         )
-        post_downstream, pre_producer = (
-            adapter.replay_and_capture_child_merged(
+        post_downstream, pre_producer = adapter.replay_and_capture_child_merged(
+            (
                 (
-                    (
-                        FoldScope("layer", 0),
-                        CapturePoint.POST_DOWNSTREAM,
-                        split.validation,
-                    ),
-                    (
-                        FoldScope("layer", 1),
-                        CapturePoint.PRE_PRODUCER,
-                        split.fit,
-                    ),
+                    FoldScope("layer", 0),
+                    CapturePoint.POST_DOWNSTREAM,
+                    split.validation,
                 ),
-                audit,
-            )
+                (
+                    FoldScope("layer", 1),
+                    CapturePoint.PRE_PRODUCER,
+                    split.fit,
+                ),
+            ),
+            audit,
         )
         try:
             profile = adapter._active_selected_parent_profile
@@ -4438,16 +4256,14 @@ def test_merged_selective_captures_reproduce_the_unmerged_selective_fold(
 
     # Process-local digests mix Parameter object identity, so the committed
     # children are compared through the portable capsule digests.
-    assert portable_child_state_sha256(
-        merged_child
-    ) == portable_child_state_sha256(baseline_child)
+    assert portable_child_state_sha256(merged_child) == portable_child_state_sha256(
+        baseline_child
+    )
     assert portable_child_topology_sha256(
         merged_child
     ) == portable_child_topology_sha256(baseline_child)
 
-    merge_reports = [
-        value["merged_captures"] for value in merged["layer_reports"]
-    ]
+    merge_reports = [value["merged_captures"] for value in merged["layer_reports"]]
     assert [
         value["post_downstream_served_next_layer_pre_producer"]
         for value in merge_reports
@@ -4461,14 +4277,14 @@ def test_merged_selective_captures_reproduce_the_unmerged_selective_fold(
     ):
         assert set(baseline_layer["captures"]) == set(merged_layer["captures"])
         seals = {
-            record["capture_sha256"]
-            for record in merged_layer["captures"].values()
+            record["capture_sha256"] for record in merged_layer["captures"].values()
         }
         assert len(seals) == len(merged_layer["captures"])
         assert baseline_layer["validation"]["accepted"] is True
         assert merged_layer["validation"]["accepted"] is True
-        assert merged_layer["validation"]["decision_sha256"] == (
-            baseline_layer["validation"]["decision_sha256"]
+        assert (
+            merged_layer["validation"]["decision_sha256"]
+            == (baseline_layer["validation"]["decision_sha256"])
         )
     assert merged["audit"]["parent_forward_calls"] == 0
     assert merged["audit"]["parent_trace_regeneration_calls"] == 0
@@ -4541,9 +4357,7 @@ def test_restart_capsule_identity_bindings_are_sealed(sealed_parent) -> None:
     }
     assert identity["adapter_identity_sha256"] == canonical_sha256(body)
     # The capsule module authenticates the same seal it will pin.
-    assert dict(
-        lfm2_restart_capsule_adapter_identity(adapter)
-    ) == dict(identity)
+    assert dict(lfm2_restart_capsule_adapter_identity(adapter)) == dict(identity)
 
 
 def test_mid_body_resume_is_refused_when_body_reclosure_needs_the_stack(
@@ -4624,9 +4438,7 @@ def test_compiler_binds_a_strict_layer_subset_before_the_transaction(
 
     assert report["available_layers"] == [0, 1]
     assert report["selected_layers"] == [0]
-    assert [
-        value["scope"]["layer_index"] for value in report["layer_reports"]
-    ] == [0]
+    assert [value["scope"]["layer_index"] for value in report["layer_reports"]] == [0]
     assert adapter._selected_layers == (0,)
     assert adapter._constructor_selected_layers is None
     assert portable_child_state_sha256(child) != state_before
@@ -4873,9 +4685,7 @@ def test_restart_capsule_resume_reproduces_the_uninterrupted_fold(
     assert resumed["layers_executed_in_this_process"] == [1]
     assert resumed["merge_adjacent_layer_captures_requested"] is True
     assert resumed["restart_capsule"]["capsules_written"] == 1
-    assert resumed["restart_capsule"]["resume_admission"][
-        "resume_layer_index"
-    ] == 1
+    assert resumed["restart_capsule"]["resume_admission"]["resume_layer_index"] == 1
     assert resumed["layer_reports"][0]["executed_in_this_process"] is False
     assert resumed["layer_reports"][1]["executed_in_this_process"] is True
     # Layer 0 ran no capture, compile, install, or validation stage.
@@ -5050,12 +4860,11 @@ def test_moving_gauge_restart_ledger_reproduces_uninterrupted_child(
     assert final_report["audit"]["validation_calls"] == 3
     assert final_report["output_interface_fold_enabled"] is True
     assert final_report["output_interface"]["install"] is not None
-    assert final_report["output_interface"]["compiled"]["metadata"][
-        "identity_skip"
-    ] is False
-    assert cold["output_interface"]["compiled"]["metadata"][
-        "identity_skip"
-    ] is False
+    assert (
+        final_report["output_interface"]["compiled"]["metadata"]["identity_skip"]
+        is False
+    )
+    assert cold["output_interface"]["compiled"]["metadata"]["identity_skip"] is False
     assert final_report["audit"]["parent_forward_calls"] == 0
     assert final_report["audit"]["training_steps"] == 0
     assert portable_child_state_sha256(final_resume_child) == cold_state
@@ -5128,14 +4937,15 @@ def test_moving_gauge_restart_ledger_reproduces_uninterrupted_child(
     assert terminal_provenance["restart_continuation_mode"] == (
         RESTART_CONTINUATION_TERMINAL_ONLY_NO_RECLOSURE
     )
-    assert terminal_report["restart_capsule"]["resume_admission"][
-        "restart_continuation_mode"
-    ] == RESTART_CONTINUATION_TERMINAL_ONLY_NO_RECLOSURE
-    assert terminal_report["restart_capsule"]["resume_admission"][
-        "adapter_admission"
-    ]["restart_continuation_mode"] == (
-        RESTART_CONTINUATION_TERMINAL_ONLY_NO_RECLOSURE
+    assert (
+        terminal_report["restart_capsule"]["resume_admission"][
+            "restart_continuation_mode"
+        ]
+        == RESTART_CONTINUATION_TERMINAL_ONLY_NO_RECLOSURE
     )
+    assert terminal_report["restart_capsule"]["resume_admission"]["adapter_admission"][
+        "restart_continuation_mode"
+    ] == (RESTART_CONTINUATION_TERMINAL_ONLY_NO_RECLOSURE)
 
     full_ledger = cold_adapter.accepted_layer_completion_ledger()
     cold_adapter._authenticate_accepted_layer_completion_ledger(
@@ -5184,9 +4994,7 @@ def test_moving_gauge_restart_ledger_reproduces_uninterrupted_child(
         Lfm2DynamicClosedLoopAdapterError,
         match="foreign policy or source binding",
     ):
-        foreign_adapter._authenticate_accepted_layer_completion_ledger(
-            full_ledger
-        )
+        foreign_adapter._authenticate_accepted_layer_completion_ledger(full_ledger)
 
     equivalent_replay_adapter, _equivalent_child, _equivalent_mapping = _adapter(
         sealed_parent,
@@ -5226,9 +5034,7 @@ def test_moving_gauge_restart_ledger_reproduces_uninterrupted_child(
     relocated_config_adapter.child_model.config._name_or_path = (
         "C:/relocated/equivalent-lfm2-child"
     )
-    relocated_config_adapter._authenticate_accepted_layer_completion_ledger(
-        full_ledger
-    )
+    relocated_config_adapter._authenticate_accepted_layer_completion_ledger(full_ledger)
     relocated_config_adapter.child_model.config.hidden_act = "relu"
     with pytest.raises(
         Lfm2DynamicClosedLoopAdapterError,
@@ -5247,23 +5053,23 @@ def test_moving_gauge_restart_ledger_reproduces_uninterrupted_child(
     trace_evidence_adapter.tokenizer_bridge_trace_adapter = SimpleNamespace(
         evidence_sha256="a" * 64
     )
-    first_trace_identity = lfm2_restart_capsule_adapter_identity(
-        trace_evidence_adapter
-    )
+    first_trace_identity = lfm2_restart_capsule_adapter_identity(trace_evidence_adapter)
     trace_evidence_adapter.tokenizer_bridge_trace_adapter = SimpleNamespace(
         evidence_sha256="a" * 64
     )
-    assert lfm2_restart_capsule_adapter_identity(
-        trace_evidence_adapter
-    ) == first_trace_identity
+    assert (
+        lfm2_restart_capsule_adapter_identity(trace_evidence_adapter)
+        == first_trace_identity
+    )
     trace_evidence_adapter.tokenizer_bridge_trace_adapter = SimpleNamespace(
         evidence_sha256="b" * 64
     )
-    assert lfm2_restart_capsule_adapter_identity(
-        trace_evidence_adapter
-    )["adapter_identity_sha256"] != first_trace_identity[
-        "adapter_identity_sha256"
-    ]
+    assert (
+        lfm2_restart_capsule_adapter_identity(trace_evidence_adapter)[
+            "adapter_identity_sha256"
+        ]
+        != first_trace_identity["adapter_identity_sha256"]
+    )
     with pytest.raises(
         Lfm2DynamicClosedLoopAdapterError,
         match="foreign policy or source binding",
@@ -5374,9 +5180,7 @@ def test_moving_gauge_writer_reclosure_acceptance_config_threads_the_policy() ->
         moving_gauge_boundary_regression_tolerance=0.05,
     )
 
-    assert default_config.moving_gauge_writer_reclosure_acceptance == (
-        "unguarded"
-    )
+    assert default_config.moving_gauge_writer_reclosure_acceptance == ("unguarded")
     assert default_config.moving_gauge_boundary_regression_tolerance == 0.0
     # The default lane must build the exact policy the r12 reclosure sealed.
     assert policy_for(default_config).authentication_sha256 == (
@@ -5404,16 +5208,12 @@ def test_moving_gauge_writer_reclosure_acceptance_config_threads_the_policy() ->
         match="finite and non-negative",
     ):
         Lfm2DynamicClosedLoopAdapterConfig(
-            moving_gauge_writer_reclosure_acceptance=(
-                "require_boundary_improvement"
-            ),
+            moving_gauge_writer_reclosure_acceptance=("require_boundary_improvement"),
             moving_gauge_boundary_regression_tolerance=-1.0,
         )
 
 
-def test_moving_gauge_writer_norm_ratio_ceiling_config_threads_the_policy() -> (
-    None
-):
+def test_moving_gauge_writer_norm_ratio_ceiling_config_threads_the_policy() -> None:
     """NOTES-W13M section 1.2: the ceiling is opt-in and digest-preserving."""
 
     from neural_forge.hf_lfm2_moving_gauge_residual_reclosure import (
@@ -5442,8 +5242,7 @@ def test_moving_gauge_writer_norm_ratio_ceiling_config_threads_the_policy() -> (
     )
 
     assert (
-        Lfm2DynamicClosedLoopAdapterConfig()
-        .moving_gauge_writer_reclosure_norm_ratio_ceiling
+        Lfm2DynamicClosedLoopAdapterConfig().moving_gauge_writer_reclosure_norm_ratio_ceiling
         is None
     )
     # An unset ceiling builds the exact guarded policy sealed before it existed.
@@ -5459,9 +5258,7 @@ def test_moving_gauge_writer_norm_ratio_ceiling_config_threads_the_policy() -> (
         "writer_reclosure_norm_ratio_ceiling"
     ] == pytest.approx(1.5)
     # And the default lane is still the r12 unguarded policy, untouched.
-    assert policy_for(
-        Lfm2DynamicClosedLoopAdapterConfig()
-    ).authentication_sha256 == (
+    assert policy_for(Lfm2DynamicClosedLoopAdapterConfig()).authentication_sha256 == (
         Lfm2MovingGaugeReclosurePolicy().authentication_sha256
     )
 
@@ -5471,9 +5268,7 @@ def test_moving_gauge_writer_norm_ratio_ceiling_config_threads_the_policy() -> (
         )
     with pytest.raises(ValueError, match="must be positive"):
         Lfm2DynamicClosedLoopAdapterConfig(
-            moving_gauge_writer_reclosure_acceptance=(
-                "require_boundary_improvement"
-            ),
+            moving_gauge_writer_reclosure_acceptance=("require_boundary_improvement"),
             moving_gauge_writer_reclosure_norm_ratio_ceiling=0.0,
         )
     with pytest.raises(
@@ -5481,9 +5276,7 @@ def test_moving_gauge_writer_norm_ratio_ceiling_config_threads_the_policy() -> (
         match="finite and non-negative",
     ):
         Lfm2DynamicClosedLoopAdapterConfig(
-            moving_gauge_writer_reclosure_acceptance=(
-                "require_boundary_improvement"
-            ),
+            moving_gauge_writer_reclosure_acceptance=("require_boundary_improvement"),
             moving_gauge_writer_reclosure_norm_ratio_ceiling=-1.0,
         )
 
@@ -5555,13 +5348,8 @@ def test_unguarded_body_reclosure_lifts_no_acceptance_keys(
     )
     assert "boundary_acceptance" not in payload.report
     assert "boundary_acceptance_sha256" not in payload.report
-    assert (
-        "boundary_acceptance"
-        not in payload.replacement_state.report["diagnostics"]
-    )
-    assert _lifted_boundary_acceptance_ledger(
-        payload.replacement_state.report
-    ) is None
+    assert "boundary_acceptance" not in payload.replacement_state.report["diagnostics"]
+    assert _lifted_boundary_acceptance_ledger(payload.replacement_state.report) is None
     assert _boundary_acceptance_metadata(payload.report) == {}
 
 
@@ -5578,9 +5366,7 @@ def test_guarded_body_reclosure_lifts_the_sealed_acceptance_ledger(
 
     adapter, body = _moving_gauge_v3_body_reclosure(
         sealed_parent,
-        moving_gauge_writer_reclosure_acceptance=(
-            "require_boundary_improvement"
-        ),
+        moving_gauge_writer_reclosure_acceptance=("require_boundary_improvement"),
         moving_gauge_boundary_regression_tolerance=1e9,
     )
     payload = adapter._body_reclosure_payload
@@ -5591,8 +5377,8 @@ def test_guarded_body_reclosure_lifts_the_sealed_acceptance_ledger(
     lifted = payload.report["boundary_acceptance"]
 
     # The full ledger, bound to the digest the reclosure published for it.
-    assert payload.report["boundary_acceptance_sha256"] == (
-        sealed_ledger["report_sha256"]
+    assert (
+        payload.report["boundary_acceptance_sha256"] == (sealed_ledger["report_sha256"])
     )
     assert lifted["report_sha256"] == sealed_ledger["report_sha256"]
     assert payload.report["writer_reclosure_acceptance"] == (
@@ -5615,25 +5401,22 @@ def test_guarded_body_reclosure_lifts_the_sealed_acceptance_ledger(
 
     # ``CompiledFoldStage.as_dict`` publishes ``metadata`` and nothing else, so
     # this is the surface W13M grepped and found empty.
-    assert metadata["boundary_acceptance_sha256"] == (
-        sealed_ledger["report_sha256"]
-    )
-    assert metadata["writer_reclosure_acceptance"] == (
-        "require_boundary_improvement"
-    )
+    assert metadata["boundary_acceptance_sha256"] == (sealed_ledger["report_sha256"])
+    assert metadata["writer_reclosure_acceptance"] == ("require_boundary_improvement")
     assert metadata["boundary_acceptance_evaluated_writer_overwrites"] == 4
     assert metadata["boundary_acceptance_accepted_writer_overwrites"] == 4
     assert metadata["boundary_acceptance_refused_writer_overwrites"] == 0
-    assert json.loads(
-        metadata["boundary_acceptance_refused_transition_indices_json"]
-    ) == []
+    assert (
+        json.loads(metadata["boundary_acceptance_refused_transition_indices_json"])
+        == []
+    )
     replayed = json.loads(metadata["boundary_acceptance_decisions_json"])
     assert [value["write_norm_ratio"] for value in replayed["decisions"]] == [
         value["write_norm_ratio"] for value in lifted["decisions"]
     ]
-    assert [
-        value["accepted"] for value in replayed["decisions"]
-    ] == [value["accepted"] for value in lifted["decisions"]]
+    assert [value["accepted"] for value in replayed["decisions"]] == [
+        value["accepted"] for value in lifted["decisions"]
+    ]
     # Nothing ceiling-shaped unless a ceiling was configured.
     assert "writer_reclosure_norm_ratio_ceiling" not in metadata
     assert "boundary_acceptance_norm_ceiling_refusals" not in metadata
@@ -5647,9 +5430,7 @@ def test_body_reclosure_norm_ratio_ceiling_refuses_and_records_the_refusal(
 
     permissive_adapter, _permissive = _moving_gauge_v3_body_reclosure(
         sealed_parent,
-        moving_gauge_writer_reclosure_acceptance=(
-            "require_boundary_improvement"
-        ),
+        moving_gauge_writer_reclosure_acceptance=("require_boundary_improvement"),
         moving_gauge_boundary_regression_tolerance=1e9,
     )
     permissive_ratios = [
@@ -5660,9 +5441,7 @@ def test_body_reclosure_norm_ratio_ceiling_refuses_and_records_the_refusal(
     ]
     adapter, body = _moving_gauge_v3_body_reclosure(
         sealed_parent,
-        moving_gauge_writer_reclosure_acceptance=(
-            "require_boundary_improvement"
-        ),
+        moving_gauge_writer_reclosure_acceptance=("require_boundary_improvement"),
         moving_gauge_boundary_regression_tolerance=1e9,
         moving_gauge_writer_reclosure_norm_ratio_ceiling=1.5,
     )
@@ -5674,8 +5453,9 @@ def test_body_reclosure_norm_ratio_ceiling_refuses_and_records_the_refusal(
     assert max(permissive_ratios) > 1.5
     assert ledger["boundary_metric_refused_writer_overwrites"] == 0
     assert ledger["norm_ratio_ceiling_refused_writer_overwrites"] >= 1
-    assert ledger["refused_writer_overwrites"] == (
-        ledger["norm_ratio_ceiling_refused_writer_overwrites"]
+    assert (
+        ledger["refused_writer_overwrites"]
+        == (ledger["norm_ratio_ceiling_refused_writer_overwrites"])
     )
     assert all(
         value["refusal_reason"] == "write_norm_ratio_above_ceiling"
@@ -5684,9 +5464,416 @@ def test_body_reclosure_norm_ratio_ceiling_refuses_and_records_the_refusal(
     )
     assert ledger["maximum_accepted_write_norm_ratio"] <= 1.5
     assert metadata["writer_reclosure_norm_ratio_ceiling"] == 1.5
-    assert metadata["boundary_acceptance_norm_ceiling_refusals"] == (
-        ledger["norm_ratio_ceiling_refused_writer_overwrites"]
+    assert (
+        metadata["boundary_acceptance_norm_ceiling_refusals"]
+        == (ledger["norm_ratio_ceiling_refused_writer_overwrites"])
     )
-    assert metadata[
-        "boundary_acceptance_maximum_accepted_write_norm_ratio"
-    ] <= 1.5
+    assert metadata["boundary_acceptance_maximum_accepted_write_norm_ratio"] <= 1.5
+
+
+def _tiny_body_cache_model(width: int = 2):
+    return torch.nn.Linear(width, width, bias=False)
+
+
+def _direct_body_cache_request(model, *, pre_state=None):
+    return build_lfm2_body_reclosure_phase_request(
+        portable_pre_child_state_sha256=(
+            portable_child_state_sha256(model) if pre_state is None else pre_state
+        ),
+        portable_pre_child_topology_sha256=(portable_child_topology_sha256(model)),
+        pre_capture_sha256="b" * 64,
+        math_contract={"schema": "adapter-test-math-v1"},
+        evidence_contract={"schema": "adapter-test-evidence-v1"},
+        abi_contract={"schema": "adapter-test-abi-v1"},
+        acceptance_policy={
+            "terminal_composition_regression_tolerance": 0.25,
+        },
+    )
+
+
+def test_body_reclosure_cache_context_none_preserves_the_unwired_path(
+    monkeypatch,
+) -> None:
+    adapter = object.__new__(Lfm2DynamicClosedLoopAdapter)
+    adapter.body_reclosure_phase_cache_context = None
+
+    def unexpected_lookup(*_args, **_kwargs):
+        raise AssertionError("the unwired cache path performed a lookup")
+
+    monkeypatch.setattr(
+        adapter_module,
+        "lookup_lfm2_body_reclosure_phase",
+        unexpected_lookup,
+    )
+    assert (
+        adapter._body_reclosure_phase_request(
+            child_capture=object(),
+            capture=object(),
+            split_sha256="a" * 64,
+            row_alignment_sha256="b" * 64,
+            completion_body={},
+            completion_receipts=(),
+        )
+        is None
+    )
+
+
+def test_body_reclosure_cache_request_is_terminal_policy_neutral() -> None:
+    digest = "a" * 64
+    model = _tiny_body_cache_model()
+    adapter = object.__new__(Lfm2DynamicClosedLoopAdapter)
+    adapter.body_reclosure_phase_cache_context = object()
+    adapter.child_model = model
+    adapter.tokenizer_bridge_artifact = None
+    adapter.identity_tokenizer_evidence_sha256 = digest
+    adapter.heterogeneous_layout_selection_receipt = None
+    adapter.body_reclosure_mode = LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
+    adapter.body_coordinate_completion_recipe = "bridge-procrustes-isometric"
+    adapter.map_sha256 = digest
+    adapter.parent_residual_operator_manifest_sha256 = digest
+    adapter.moving_gauge_writer_reclosure_acceptance = "unguarded"
+    adapter.moving_gauge_boundary_regression_tolerance = 0.0
+    adapter.moving_gauge_writer_reclosure_norm_ratio_ceiling = None
+    adapter.parent_cache = SimpleNamespace(
+        cache_key=digest,
+        parent_fingerprint=digest,
+    )
+    adapter.source_graph_fingerprint = digest
+    adapter.replay_config = SimpleNamespace(
+        as_dict=lambda: {"schema": "adapter-test-replay-v1"}
+    )
+    capture = SimpleNamespace(paired=SimpleNamespace(pairing_sha256=digest))
+    child_capture = SimpleNamespace(capture_sha256=digest)
+    completion_body = {
+        "completion_binding": {"completion_binding_sha256": digest},
+        "selected_layer_indices": [0],
+        "completed_layer_indices": [0],
+        "receipt_chain_head_sha256": digest,
+        "portable_initial_child_state_sha256": digest,
+        "portable_final_child_state_sha256": digest,
+        "portable_child_topology_sha256": digest,
+    }
+    completion_receipts = (
+        {
+            "layer_index": 0,
+            "layer_ordinal": 0,
+            "selected_layer_indices": [0],
+            "completion_binding_sha256": digest,
+            "trajectory_split_sha256": digest,
+            "adapter_stage_split_sha256": {"producer": digest},
+            "portable_state_chain": {
+                "child_state_sha256_before": digest,
+                "child_state_sha256_after": digest,
+                "child_topology_sha256_before": digest,
+                "child_topology_sha256_after": digest,
+            },
+        },
+    )
+    adapter.config = Lfm2DynamicClosedLoopAdapterConfig(
+        terminal_composition_regression_tolerance=0.25,
+        performance_metrics_diagnostic_only=False,
+    )
+    strict = adapter._body_reclosure_phase_request(
+        child_capture=child_capture,
+        capture=capture,
+        split_sha256=digest,
+        row_alignment_sha256=digest,
+        completion_body=completion_body,
+        completion_receipts=completion_receipts,
+    )
+    adapter.config = Lfm2DynamicClosedLoopAdapterConfig(
+        terminal_composition_regression_tolerance=999.0,
+        performance_metrics_diagnostic_only=True,
+        all_layer_finite_numeric_checks_diagnostic_only=True,
+    )
+    diagnostic = adapter._body_reclosure_phase_request(
+        child_capture=child_capture,
+        capture=capture,
+        split_sha256=digest,
+        row_alignment_sha256=digest,
+        completion_body=completion_body,
+        completion_receipts=completion_receipts,
+    )
+
+    assert strict is not None and diagnostic is not None
+    assert strict.phase_key.phase_key_sha256 == (diagnostic.phase_key.phase_key_sha256)
+    assert strict.request_sha256 == diagnostic.request_sha256
+    assert strict.document["acceptance_policy_serialized"] is False
+
+
+def test_cold_body_cache_publication_waits_for_fresh_validation(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    model = _tiny_body_cache_model()
+    with torch.no_grad():
+        model.weight.fill_(1.0)
+    request = _direct_body_cache_request(model, pre_state="0" * 64)
+    adapter = object.__new__(Lfm2DynamicClosedLoopAdapter)
+    adapter.child_model = model
+    adapter.body_reclosure_phase_cache_context = Lfm2BodyReclosurePhaseCacheContext(
+        DynamicFoldPhaseCache(tmp_path / "body-cache")
+    )
+    adapter._body_reclosure_phase_cache_pending = None
+    adapter._body_reclosure_phase_cache_hit = None
+    adapter._moving_gauge_factor_artifacts_by_parameter_id = lambda _value: {}
+    adapter._moving_gauge_input_producer_parameters = lambda: {"weight": model.weight}
+    replacement_state = SimpleNamespace(
+        verify_authentication=lambda: True,
+        boundaries=(object(),),
+        transitions=(),
+    )
+    input_state = SimpleNamespace(verify_authentication=lambda: True)
+    payload = SimpleNamespace(
+        phase_cache_request=request,
+        phase_cache_hit=None,
+        replacement_state=replacement_state,
+        input_producer_state=input_state,
+        factor_writer_artifacts=(),
+        causal_operator_factor_writer_artifacts=(),
+        causal_w2_parameter_ids=(),
+        causal_operator_parameter_ids=(),
+        parameter_ids=("weight",),
+        report={"report_sha256": "c" * 64},
+    )
+    publications = []
+
+    def publish(context, published_request, artifact):
+        publications.append((context, published_request, artifact))
+        return SimpleNamespace(
+            request=published_request,
+            artifact=artifact,
+            completion_sha256="d" * 64,
+        )
+
+    monkeypatch.setattr(
+        adapter_module,
+        "publish_lfm2_body_reclosure_phase",
+        publish,
+    )
+    adapter._prepare_body_reclosure_cache_publication(
+        payload=payload,
+        fit_preview_capture_sha256="e" * 64,
+    )
+    assert adapter._body_reclosure_phase_cache_pending is not None
+    assert publications == []
+
+    metrics = FitMetrics(
+        rows=2,
+        output_width=2,
+        rmse=0.1,
+        target_rms=1.0,
+        relative_rmse=0.1,
+        mean_cosine_similarity=0.9,
+        finite=True,
+    )
+    published = adapter._publish_validated_body_reclosure_cache(
+        post_capture_sha256="f" * 64,
+        terminal_baseline=metrics,
+        terminal_candidate=metrics,
+        heldout_terminal_relative_rmse=0.1,
+    )
+    assert published is not None
+    assert len(publications) == 1
+    assert publications[0][1] is request
+    assert adapter._body_reclosure_phase_cache_pending is None
+
+
+def _cached_install_subject(*, artifact_model=None):
+    model = _tiny_body_cache_model()
+    with torch.no_grad():
+        model.weight.zero_()
+    request = _direct_body_cache_request(model)
+    adapter = object.__new__(Lfm2DynamicClosedLoopAdapter)
+    adapter.child_model = model
+    manifest_model = model if artifact_model is None else artifact_model
+    manifest_adapter = object.__new__(Lfm2DynamicClosedLoopAdapter)
+    manifest_adapter.child_model = manifest_model
+    restore_manifest, _current, aliases = (
+        manifest_adapter._body_reclosure_parameter_restore_manifest()
+    )
+    source = torch.full_like(manifest_model.weight, 2.0)
+    with torch.no_grad():
+        model.weight.fill_(2.0)
+    post_state = portable_child_state_sha256(model)
+    with torch.no_grad():
+        model.weight.zero_()
+    preview_sha256 = "e" * 64
+    artifact = Lfm2BodyReclosureArtifact(
+        tensors={"weight": source},
+        aliases=aliases,
+        artifact_metadata={
+            "math_artifact_sha256": "c" * 64,
+            "portable_post_child_state_sha256": post_state,
+            "portable_post_child_topology_sha256": (
+                portable_child_topology_sha256(model)
+            ),
+            "post_capture_sha256": "d" * 64,
+            "cold_math_report_sha256": "c" * 64,
+            "restore_manifest": dict(restore_manifest),
+            "validation_manifest": {
+                "fit_preview_capture_sha256": preview_sha256,
+            },
+        },
+    )
+    hit = SimpleNamespace(
+        request=request,
+        artifact=artifact,
+        completion_sha256="f" * 64,
+    )
+    payload = SimpleNamespace(
+        phase_cache_hit=hit,
+        phase_cache_request=request,
+        fit_batch_indices=(0,),
+        mode=LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
+    )
+    adapter._records = (object(),)
+    adapter.child_layers = (object(),)
+    adapter._emit_body_progress = lambda *_args, **_kwargs: None
+    adapter._body_internal_recapture = lambda *_args, **_kwargs: object()
+    adapter._authenticated_capture_sha256_and_release = lambda _capture: preview_sha256
+    adapter._body_reclosure_installed_artifact_sha256 = None
+    return adapter, model, payload
+
+
+def test_cached_body_restore_is_in_place() -> None:
+    adapter, model, payload = _cached_install_subject()
+    parameter = model.weight
+    physical_before, exact_count, _ = adapter._physical_parameter_contract()
+    state_before = adapter.child_state_fingerprint()
+    topology_before = adapter.child_topology_fingerprint()
+
+    receipt = adapter._install_cached_body_reclosure(
+        scope=FoldScope("body_reclosure"),
+        compiled=SimpleNamespace(artifact_sha256="1" * 64),
+        payload=payload,
+        audit=ClosedLoopAudit(),
+        state_before=state_before,
+        topology_before=topology_before,
+        physical_before=physical_before,
+        unique_count_before=exact_count,
+    )
+
+    assert receipt.accepted is True
+    assert model.weight is parameter
+    assert id(model.weight) == id(parameter)
+    assert torch.equal(model.weight, torch.full_like(model.weight, 2.0))
+    assert dict(receipt.metadata)["parameter_rebinding_count"] == 0
+
+
+def test_body_reclosure_compile_cache_hit_skips_the_cold_solver(
+    sealed_parent,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    parent, _cache, _replay_config = sealed_parent
+    basis = build_lfm2_weight_complete_basis(parent, 4)
+    context = Lfm2BodyReclosurePhaseCacheContext(
+        DynamicFoldPhaseCache(tmp_path / "body-cache-integration")
+    )
+    compiler_config = ClosedLoopCompilerConfig(
+        validation_fraction=0.25,
+        split_seed="lfm2-body-phase-cache-integration-v1",
+        fold_body_reclosure=True,
+        fold_output_interface=False,
+    )
+    cold_adapter, _cold_child, _ = _adapter(
+        sealed_parent,
+        existing_mapping=basis,
+        body_reclosure_mode=LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
+        parent_residual_operators=basis.inventory.operators,
+        output_interface_mode="identity-skip",
+        body_reclosure_phase_cache_context=context,
+    )
+    cold = ChildClosedLoopCompiler(cold_adapter, compiler_config).run()
+    assert (
+        cold["body_reclosure"]["validation"]["metrics"][
+            "body_reclosure_phase_cache_published"
+        ]
+        is True
+    )
+
+    hit_adapter, _hit_child, _ = _adapter(
+        sealed_parent,
+        existing_mapping=basis,
+        body_reclosure_mode=LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
+        parent_residual_operators=basis.inventory.operators,
+        output_interface_mode="identity-skip",
+        body_reclosure_phase_cache_context=context,
+    )
+
+    def cold_solver_was_entered(*_args, **_kwargs):
+        cold_request = cold_adapter._body_reclosure_phase_cache_request
+        hit_request = hit_adapter._body_reclosure_phase_cache_request
+        differing = [
+            key
+            for key in cold_request.document
+            if cold_request.document[key] != hit_request.document[key]
+        ]
+        cold_evidence = cold_request.document["evidence_contract"]
+        hit_evidence = hit_request.document["evidence_contract"]
+        evidence_differences = [
+            key for key in cold_evidence if cold_evidence[key] != hit_evidence[key]
+        ]
+        raise AssertionError(
+            "cache hit entered the cold moving-gauge solver; differing "
+            f"request fields: {differing}; evidence fields: "
+            f"{evidence_differences}"
+        )
+
+    monkeypatch.setattr(
+        adapter_module,
+        "compile_lfm2_moving_gauge_residual_reclosure",
+        cold_solver_was_entered,
+    )
+    hit = ChildClosedLoopCompiler(hit_adapter, compiler_config).run()
+    assert (
+        hit["body_reclosure"]["compiled"]["metadata"]["body_reclosure_phase_cache_hit"]
+        is True
+    )
+    assert (
+        hit["body_reclosure"]["compiled"]["metadata"][
+            "body_reclosure_phase_cache_solvers_executed"
+        ]
+        == 0
+    )
+
+
+def test_cached_body_tamper_and_structural_mismatch_fail_before_mutation() -> None:
+    adapter, model, payload = _cached_install_subject()
+    with torch.no_grad():
+        payload.phase_cache_hit.artifact.tensors["weight"].add_(1.0)
+    before = model.weight.detach().clone()
+    physical_before, exact_count, _ = adapter._physical_parameter_contract()
+    with pytest.raises(Exception, match="changed after authentication"):
+        adapter._install_cached_body_reclosure(
+            scope=FoldScope("body_reclosure"),
+            compiled=SimpleNamespace(artifact_sha256="1" * 64),
+            payload=payload,
+            audit=ClosedLoopAudit(),
+            state_before=adapter.child_state_fingerprint(),
+            topology_before=adapter.child_topology_fingerprint(),
+            physical_before=physical_before,
+            unique_count_before=exact_count,
+        )
+    assert torch.equal(model.weight, before)
+
+    foreign = _tiny_body_cache_model(width=3)
+    adapter, model, payload = _cached_install_subject(artifact_model=foreign)
+    before = model.weight.detach().clone()
+    physical_before, exact_count, _ = adapter._physical_parameter_contract()
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="restore topology, aliases, or tensor inventory",
+    ):
+        adapter._install_cached_body_reclosure(
+            scope=FoldScope("body_reclosure"),
+            compiled=SimpleNamespace(artifact_sha256="1" * 64),
+            payload=payload,
+            audit=ClosedLoopAudit(),
+            state_before=adapter.child_state_fingerprint(),
+            topology_before=adapter.child_topology_fingerprint(),
+            physical_before=physical_before,
+            unique_count_before=exact_count,
+        )
+    assert torch.equal(model.weight, before)

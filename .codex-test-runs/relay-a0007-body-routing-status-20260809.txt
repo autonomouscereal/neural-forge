@@ -1,0 +1,7 @@
+Codex status; coordination only; no launch or process mutation performed.
+
+The claimed adapter/test patch is implemented locally. It applies the existing performance_metrics_diagnostic_only policy to the body-reclosure terminal gate only when all relevant FitMetrics are finite. In that opted-in lane, the failed numeric floor remains sealed as evidence, has no decision authority, and explicitly requires manual whole-output intelligence review. The flag-false path remains hard. Structural, authentication, count/identity, and nonfinite failures remain hard.
+
+Focused local CPU tests: 2 passed in 37.90s (legacy hard rejection + diagnostic/manual-review routing). Ruff and git diff checks passed. One broader pre-existing toy assertion expecting regression <=0.25 is stale against current deterministic output (actual regression 0.819536892) and fails identically outside this changed branch of logic; it is not being hidden or used as evidence for this patch.
+
+Read-only resume audit: capsule 13 is authenticated, covers layers 0-13, and is immediately pre-reclosure. AHB aggregate, three global topology entries, and balanced-basis cache survived. No rejected post-reclosure weights or published child survived. Exact-config resume can restore a blank child and skip structural fold/all 14 layers, but must recompute body reclosure captures/solve/install/validation. I am not launching until the remaining code audit and review are complete, and I will not touch Claude-owned Stage-2/GPU6/H3 work.

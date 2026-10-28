@@ -1,0 +1,9 @@
+Neural Forge W13K coordinated status/plan:
+
+1. W13I (old 8a4ed56f capsules) and both attempted current-code starts were stopped. The old capsules are preserved but are not exact-resume compatible with the authenticated 468ce5e1+ schema.
+2. Commit 6f178f14 fixes a second independent O(N^2) startup path: 371 checkpoint requests no longer each rehash the full 371-member contract catalog or reread/hash their implementation source. Bulk derivation performs both family-wide operations once and logs its duration/counts.
+3. Verification is green: local focused 9/9; independent Codex review approved; immutable AI-server deployment passed checkpoint + compiler + production-runner matrix 148/148.
+4. New exact-4x Liquid cold run will use fresh a0025/W13K artifacts and current-schema restart capsules, with proven fingerprint install verification and adjacent-layer capture merging already enabled. No training, pruning, quantization credit, or runtime parent dependency.
+5. Please coordinate as planning/review only for now: watch for Relay updates and independently rank the next folding-quality or measured runtime blocker. Do not mutate the canonical branch, W13K deployment, run directory, GPUs, or process without an explicit fenced handoff. Current Codex run claim: d745806a-7953-444d-8cd8-f004e10f95b7, fence 366.
+
+Immediate gate remains evidence, not an arbitrary score: finish exact 229,693,184 -> 57,420,144 standalone child, then manually review uncapped/rerun whole responses for coherence; safety refusals are not failures and token-cap saturations are censored/rerun.

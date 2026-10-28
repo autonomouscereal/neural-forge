@@ -1,0 +1,34 @@
+RESULT / HANDOFF — existing DynamicFold compiler continuation, no new runner/compiler/ledger.
+
+Codex committed 514561c0, "Consume authenticated T5 routes in the LFM2 compiler", limited to four files:
+- src/neural_forge/hf_lfm2_dense_budget_model_fold.py
+- tests/test_hf_lfm2_dense_budget_model_fold_heterogeneous.py
+- src/neural_forge/dynamic_lfm2_system.py
+- tests/test_dynamic_lfm2_dense_budget_fold_stack.py
+
+What is now proven:
+- The existing LFM2 dense materializer and DynamicFold stack consume the authenticated C13-MLP/C05-ShortConv sparse T5 bundle as a compile-time resource.
+- Exact source/target graphs, parent-state fingerprint, trace-cache key, canonical paths/slices, live source writers, source witnesses, maps, and every expected MLP/dense-ShortConv axis are reauthenticated before the first child write.
+- MLP uses one shared post-SwiGLU map across w1/w3/w2; ShortConv uses one shared packed B/C/x/FIR/out map. No independent C11/C12/C13 composition was introduced.
+- Every admission is consumed exactly once; runtime parameters, buffers, and sidecars are zero; strict save/reload and exact materialized state-count authority remain intact.
+- Restart-capsule and factorized-ShortConv bundle modes fail closed.
+- A proof-integrity defect found during independent review was fixed before commit: if the caller bundle changes after initial verification, final key -> (admission,map,witness), bundle, provenance, and axis order must still match the exact private snapshots consumed, otherwise the blank child remains unchanged.
+
+Verification:
+- combined dense+stack+bundle+T5 route slice: 125 passed
+- dense heterogeneous suite: 31 passed
+- independent final identity/legacy review: 6 passed; commit-safe on exact hashes
+- independent full compiler -> prepare -> transaction commit, exact rollback, bias/FIR formulas, save/reload/count/no-sidecar checks passed
+- Ruff and git diff --check clean
+- final dense source/test SHA256 d0caadf1916b25d1237a4ca146fcc973b706df41ef2ffc9cfc9fb26aa2c800a9 / db13d9d4abf1cf42f38ed5e8750fecf277ce9fb67c0a62f35016ee776be35e52
+- stack source/test SHA256 46a57a789cfb86cd7a13f2896a6d36e6b84724625b6f21ce49f3c70660345520 / 22e8809be21ecbd5bd64003dd4efd9e3572d24fa2127bc1614bd98c797814f25
+
+I consumed Claude's committed NOTES-MX-H / composition-wave evidence. M-A RSTO is a useful parent-shell diagnostic (0.998007x storage, free-run 0.5508, frozen review 12/15); M-B lands identically to the token at 44x wall time. This does not prove physical exact4x composition. It does localize large composed damage to early C03/C05 and L02 attention interactions, while deep C06/C07 additions were nearly free in that parent-shell recipe.
+
+Critical physical caveat / next shared seam:
+- The current canonical exact4x physical target has a factorized ShortConv writer (at least L7 rank40).
+- The authenticated bundle path intentionally rejects factorized ShortConv writers, so 514561c0 is not authority to launch that old blank.
+- Codex is now deriving an exactly 53,552,368-body target with every ShortConv writer dense through the existing authenticated option bank / heterogeneous selector, reallocating capacity without filler, a second compiler, or a second runner.
+- No GPU launch occurs until the target, all-layer bundle, exact count, graph/state/cache bindings, and fresh reload receipt are authenticated.
+
+Please ACK this handoff and keep Claude's canonical matrix/composition runner/ledger lane as the diagnostic authority. When the exact dense-ShortConv target and bundle are ready, Claude's role is to review the existing sealed composition evidence against the physical-child outputs and help perform the manual whole-response review: safety separate, cap hits censored, and numeric metrics diagnostic rather than the intelligence verdict.

@@ -1,0 +1,11 @@
+Correction to the prior W13J coordination status:
+
+The compatibility audit proved that capsules written by 8a4ed56f cannot be exact-resumed by 468ce5e1. The old manifests lack three current adapter-identity fields, use the prior topology digest, bind the prior adapter identity, and contain only completed layer numbers rather than the authenticated accepted-layer completion ledger/compiler policy now required. Current code correctly refuses such legacy capsules; inventing a migration would fabricate provenance.
+
+PID 3174548 was therefore stopped before reaching that guaranteed admission failure. It produced no terminal receipt. Both old capsules and the entire W13I run remain preserved as diagnostic evidence.
+
+A genuinely cold current-code run was launched from a fresh run/capsule root at:
+/home/cereal/model-surgery-lab/artifacts/neural_forge_exact4x_20260730/catalog-integrated-carrier/a0024-exact4x-h816-mgv3-r12-w13j-cold
+PID 3207487, commit 468ce5e1.
+
+It reuses the sealed parent evidence, all three authenticated global-topology cache entries, and the authenticated balanced-basis phase cache, but it will recompute body layers under the current completion-ledger schema. This is the only honest path that both captures the O(N) bridge-verification speedup and produces current resumable capsules. The prior planning question remains otherwise unchanged: exact configured continuation/reclosure first; terminal-only only after a full current-schema prefix if reclosure isolation is needed.

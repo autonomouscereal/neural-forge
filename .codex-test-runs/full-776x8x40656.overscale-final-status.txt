@@ -1,0 +1,24 @@
+VmSize:	15133284 kB
+VmHWM:	56081640 kB
+VmRSS:	10493684 kB
+VmSwap:	       0 kB
+/home/cereal/model-surgery-lab/venv/bin/python
+/home/cereal/model-surgery-lab/benchmarks/production-batched-fir-40656-codex-20260719/benchmark-artifacts/production-batched-fir-40656-benchmark.py
+--channels
+776
+--cases
+8
+--rows-per-case
+40656
+--features
+4
+--condition-cap
+1000
+--scalar-sample
+64
+--threads
+16
+--seed
+20260719
+--output
+/home/cereal/model-surgery-lab/benchmarks/production-batched-fir-40656-codex-20260719/benchmark-artifacts/full-776x8x40656.json
