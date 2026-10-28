@@ -1,0 +1,845 @@
+# Chimera Omni architecture v2 (2026-10-21)
+
+Requested by Cyril on 2026-10-21 (`agent_memory_events.id=1230100`): option 3 from
+`ARCHITECTURE_REVIEW_2026-10-21.md`, with tweaks. This is the specification of record for the on-device v2 model.
+
+**Evidence key.**
+- **[V]** I ran or printed it in this session.
+- **[R]** It comes from a document, the gathered fact sheets or a design pass, and I did not re-check it.
+- **[W]** It comes from a web page read through a summarising fetch. Re-check it when the file is downloaded.
+- **UNVERIFIED** is stated outright.
+
+Every phone speed in this document is a projection from the fitted Sprite decode model (section 7). None was measured on the phone.
+
+**Abbreviations.**
+- `CO` = the chimera-omni repo.
+- `OCL` = this reports directory.
+- `L` = `/mnt/lexar/omni-campaign`.
+
+**What exists now [V].**
+- **Repo branch** `claude/arch-v2-20261021` (local only, never pushed), in the worktree `C:/Users/cereal/Documents/ai training/.agent-worktrees/chimera-omni-5d4d4e1dcd/workers/claude/arch-v2-20261021`.
+  - Commits `4922c05` and `e885de6` on top of `11adb32`.
+  - Suite: 629 passed, 19 skipped. The baseline on `11adb32` was 615 passed, 19 skipped.
+  - The main checkout's uncommitted curated-data work was not touched.
+- **omni_lab:**
+  - 13 new `directive` rows from the 10-21 prompt (batch 87).
+  - `arch_requirement` R1-R16 (batch 88; the re-run in batch 89 changed nothing).
+  - Census and checks for 5 models: `arch:co2-2b`, `arch:co2-4b`, `arch:co2-proxy`, `arch:k3-test` and OMNI1.
+  - Probe runs 37892-37896. Runs 37883-37886 and 37891 are marked superseded.
+  - omni-lab commit `18c562d`, synced to the server copy with matching sha256.
+- **Conformance reports:** `OCL/arch_v2/conformance/*.json`.
+
+**Second pass, same day: proof and 2B staging [V] (full results in section 14).**
+- **Repo:** commits `f0cd0f5`, `7158c85`, `5360fb8`, `fb45750` and `9c3e231` on the same branch, all local.
+  - One-sequence mixed-modality layout (`v2_layout.py`).
+  - Chunked GDN scan, T1 (`chunked_gated_delta_rule`).
+  - Proxy proof and data builder.
+  - Ablation A6b (`native_unit_norm`).
+  - 2B lane scripts.
+  - Suite: **644 passed, 19 skipped**.
+- **Proxy proof:** ran on P40 GPU5 under `lanes.py claim-run` (claims 38001 and 38012), in four arms.
+  - **Every arm fails the pre-registered rules.** None passes video pan or audio generation.
+  - The plain untyped v2 boundary also fails audio understanding on both seeds.
+  - A6b (per-row RMS level) fixes audio understanding with no type table: 0.773, against 0.747 for the typed control.
+- **2B:** **not launched.** The queue run 38015 was refused, with five missing conditions (section 14.4).
+- **omni-lab:** commit `8328b6b` (`log-eval` / `ingest/proof_eval.py`), synced to the server with matching sha256.
+
+**Third pass, 2026-10-21 to 22: every modality in AND out [V] (full results in sections 14.5-14.9).**
+- **Repo:** commits `7e0c53f`, `48e8f2d` (round-3 fixes), `24e197c`, `f37327b`, `221e8d4` and `d6027f3` on the same branch, all local. Suite: **689 passed, 19 skipped**.
+- **Proof:** speech, music and raw 3D were added in and out, plus an image mirror edit. Data `v2proxy_all_v1` adds MAESTRO piano vs ACE band and ModelNet10 as 16^3 SDF volumes. There is one pre-registered rule per behaviour (omni_lab review run 38033). Four rounds ran, each with 2 untyped seeds and a typed control: 15 arms on P40 GPU3 / GPU5 under `claim-run`.
+- **Result: FAIL in every arm.**
+  - All six understanding behaviours pass on both untyped seeds (rounds 5 and 7). Video pan went from 0.500 to 1.000.
+  - Raw out passed on both seeds for music (round 4) and 3D (round 5), and on one seed for image.
+  - Mirror edit, video out and speech out never passed in any arm, typed control included.
+  - Three shared generation mechanisms (A8, CFG, x0 skip) and a 4:1 proxy width did not fix them. None is adopted.
+- **2B:** still not launched (proxy proof not passed).
+
+**What was not done.**
+- No 2B or 4B training.
+- Nothing was downloaded. In particular, Qwen3.5-2B is not on disk.
+- Nothing ran on the phone.
+
+---
+
+## 1. The decision
+
+**Trunk.** The base is Design 0's trunk: the Qwen3.5 small-model hybrid.
+- Three Gated-DeltaNet layers to one exact gated-GQA layer, with every pretrained global layer kept.
+- Initialised from the Qwen3.5 text weights. They are hybrid from pretraining, so this is not the hybrid *conversion* that MiniMax warns against.
+- Our additions:
+  - Block AttnRes depth mixing.
+  - One untyped raw-signal boundary.
+  - One shared x0 flow head.
+
+**Grafts from the judges and the critique.** I adopted every graft the two judges converged on and every critique fix:
+
+| From | Adopted | Where |
+|---|---|---|
+| Judge A | The Qwen-native 3:1 schedule is the default for **both** sizes. The 6:1 schedule, query-head pruning and the KV merge are gated speed arms, each with its own revert path | §3, A3b/A11/A14 |
+| Judge A | Value residual on the global layers | A4 (not built) |
+| Judge A, critique 10 | DEPTH_ATTN_RES is a required fused kernel, costed **per sublayer** (2 per layer) | §8 |
+| Judge A, critique 10 | The phone microbenchmark (A13) runs before any training spend | §11 |
+| Judge A | Drop the grounding, sync, tool and music-code vocabulary bands | §4 |
+| Judge A | The far-block decode mode is runtime-only, behind a gate of at least 99% of dense | §6 |
+| Judge A + B | Extend split-KV FLASH_ATTN_EXT to head dim 256 and KV beyond 32k (costed kernel work) | §8 |
+| Judge B, critique 7 | All modalities are in every batch from step 0. No text-only stage after the heal | §9 |
+| Judge B, critique 8 | A non-redundant **3,072-value** raw unit (32x32x3, matching the Qwen-VL merged token). 6,144 remains ablation A6 | §4 |
+| Judge B | Media rows enter through `llama_batch.embd`. The media input projection and the head stay at Q8 under QAT | §8, §9 |
+| Judge B | The MoE ablation includes a router-entropy-by-modality check | A10 |
+| Judge B | Speech chunking with a time-to-first-audio budget | §5 |
+| Critique 1 | **The linear layers train as GDN** in v1. KDA's per-channel decay is A2, run once a torch chunked KDA kernel passes parity on a P40 | §3 |
+| Critique 2 | Chunked LM head and loss, `--sdpa-gqa repeat`, a host-offloaded or factored optimizer, and a re-measured P40 throughput | §9 |
+| Critique 3 | The reverse GDN scan over a media span (A8) is a **required** gate before S3 | §5, §11 |
+| Critique 4 | The untyped boundary (A6) is the first media gate. The AV proof reruns untyped | §11 |
+| Critique 5, 6 | v1 video means understanding plus short low-res generation; mixing is by token budget; grids are multiples of 32 | §4, §9 |
+| Critique 9 | Training-only STFT and boundary losses; gate speech on ASR WER | §5 |
+| Critique 11, 12 | Phone image generation is UNVERIFIED and starts at 512²; the default is a Q2 body with Q4 embed/head and Q8 media IO | §7 |
+| Critique 13 | `arch_requirement` rows and structural tests exist before S0 | **done** (§12) |
+
+**One correction to the designs, found this session [V].**
+- Design 0 said Block AttnRes with the repo's `identity` init (bias 40) makes a Qwen import "exactly function-preserving". **It does not.**
+  - The block schedule resets the partial sum at every depth boundary (`modeling/chimera.py` `_forward_trunk`).
+  - The identity init reads only that partial sum, so it drops the residual stream.
+  - Measured on the proxy: max logit error **75.4** on a logit scale of 67.
+- The `zero` init is the function-preserving one.
+  - A zero pseudo-query averages the depth sources. Those sources sum to the plain residual stream, and every consumer is pre-normed, so the function is unchanged up to the RMSNorm epsilon.
+  - Measured error: **2.6e-4** on the same scale.
+- v2 therefore uses `attnres_init="zero"`. This is pinned by `test_uniform_attnres_init_reproduces_the_plain_residual_and_identity_does_not`.
+
+---
+
+## 2. Requirements trace (omni_lab `arch_requirement`, `v_arch_conformance`)
+
+Each requirement cites `directive` rows that hold Cyril's verbatim, dated words. The resolver refuses any fragment it cannot find. Statuses come from the conformance reports [V]:
+- **2B / 4B**: static census only.
+- **proxy**: static census plus the dynamic probes.
+- **OMNI1**: a header-only census of the real checkpoint.
+
+| Id | Requirement (short) | 2B / 4B | proxy | OMNI1 | How v2 meets it |
+|---|---|---|---|---|---|
+| R1 | one model, all modalities in and out | partial | partial | **fail** | Token I/O, one raw boundary and one raw head in one checkpoint. Partial until per-modality evals exist |
+| R2 | dense; MoE only if it wins at equal size | pass | pass | pass | Dense FFN in every layer (§6) |
+| R3 | same token space and weights for every modality at every layer | partial | **pass** | **fail** | No type table and no charted block. The proxy probe shows each modality's loss reaching every trunk tensor |
+| R4 | no encoders, decoders, adapters or codecs; raw media | pass | pass | **fail** | Raw pixels, samples and voxels in and out. No VAE and no codec band |
+| R5 | no towers, no modality routing | partial | **pass** | **fail** | Relabelling or dropping type ids is bit-identical on the proxy |
+| R6 | K3 = knowledge source; architecture = inspiration | unknown | unknown | unknown | K3 is the main text/tool teacher (§9); K3 mechanisms only via ablation |
+| R7 | H3 (H3 SOL) absorbed for video and audio | partial | partial | **fail** | Raw AV in the shared trunk; H3 SOL as the teacher (§9) |
+| R8 | 256k context | pass | fail (4k proxy) | pass | 262,144 positions, native to the parents (§7) |
+| R9 | standard GGUF / llama.cpp | partial | partial | **fail** | qwen35 ops plus one new op (AttnRes); the `chimera-omni` GGUF arch is not built |
+| R10 | intelligence before speed | unknown | unknown | unknown | Every speed arm is behaviour-gated against dense |
+| R11 | full-duplex speech | unknown | unknown | unknown | Speech chunking (§5); needs a streaming eval |
+| R12 | tokenizer-agnostic corpus | unknown | unknown | unknown | Data rule (§10) |
+| R13 | on-device first: 2B then 4B, Sprite-compatible | partial | partial | **fail** | 1.92B and 4.26B; every block kind maps to a Hexagon op |
+| R14 | about 99% of full attention, with depth; no trained sparse attention | pass | pass | pass | 6 or 8 exact global layers at 3:1, plus AttnRes; sparse only as a gated runtime decode mode |
+| R15 | lookup tables only in a dense or fixed pattern | pass | pass | pass | None in v1; A9 |
+| R16 | v1 teachers: K3, Qwen-Image 2.1, H3 SOL | unknown | unknown | unknown | §9 |
+
+**Negative controls [V].**
+- `arch:k3-test` (the legacy 5-layer K3 toy that `architecture.py` used to present as "the architecture") **fails** R3 and R5. The relabel probe changes its output by 2.03, and the gradient probe finds 16 type-table rows reached by one modality only.
+- The OMNI1 census reproduces the review's numbers exactly, from headers alone:
+  - 27,535,655,753 params.
+  - Charted blocks h3 267,889,176; qimg 154,985,727; ace 102,811,904; hy3d 46,156,031; qvl32 19,594,291.
+  - The music-code band is 2 x 335,544,320.
+  - So the census instrument agrees with the audit.
+
+---
+
+## 3. Configs (exact; `CO/src/chimera_omni/config.py`)
+
+`chimera_omni_v2_config()` returns `co2-2b`, and `architecture_manifest()` with no argument now describes it.
+
+**Shared by every v2 profile [V]:**
+- Block pattern `(kda, kda, kda, gated_gqa)`.
+  - `kda_decay_kind="gdn"`, `kda_decay_rank=0`, SiLU output gate, fla q/k norm, query scale 1/sqrt(128), no conv bias, short conv 4.
+- `residual_mode="block_attnres"`, `attnres_block_size=4`, `attnres_init="zero"`.
+- Gated GQA with QK-norm and Qwen's sigmoid output gate. Partial RoPE: 64 of 256 dims, theta 1e7.
+- Dense SiLU-GLU FFN.
+- `native_feature_dim=3072`, `native_type_conditioning="none"`, `native_head_intermediate_size=2*width`.
+- `native_bidirectional_refinement=True` on `gated_gqa`. `native_loss_reduction="type_balanced"` (a loss weight, not a module).
+- `aux_heads=()`, `mtp_heads=0`, `tie_word_embeddings=True`.
+- Vocabulary: 248,320 text + 512 control = 248,832.
+- `max_sequence_length=262144`, `rms_norm_eps=1e-6`.
+
+| | `co2-2b` (first ship, proof model) | `co2-4b` (quality target) | `co2-proxy` (CPU tests) |
+|---|---|---|---|
+| Parent shape source | Qwen3.5-2B `text_config` [W] | Qwen3.5-4B `text_config` [V, printed from disk] | n/a |
+| Layers | 24 = 18 GDN + 6 GQA | 32 = 24 GDN + 8 GQA | 8 = 6 + 2 |
+| Width / FFN | 2048 / 6144 | 2560 / 9216 | 64 / 192 |
+| GQA heads (q / kv x dim) | 8 / 2 x 256 | 16 / **4** x 256 | 4 / 2 x 16 |
+| GDN heads (v / qk x dim) | 16 / 16 x 128 | 32 / 16 x 128 | 4 / 2 x 16 |
+| Depth blocks (AttnRes) | 6 | 8 | 2 |
+| Raw boundary (in) | 10,661,888 | 14,638,080 | 206,208 |
+| Raw head (out) | 29,362,176 | 41,945,600 | 409,664 |
+| Tied embedding / LM head | 509,607,936 | 637,009,920 | 69,632 |
+| **Total parameters [V, meta-device build]** | **1,923,133,041** | **4,264,073,793** | **1,121,409** |
+
+**Why the 4B keeps 4 KV heads.** Merging them to 2 is a speed-arm surgery (A3b) with a revert path, not the default. That follows "intelligence before speed" (R10) and judge A's pre-registered-fallback graft. The cost is that 256k of q8 KV for the 4B (4.25 GiB) does not fit one HTP session (§7).
+
+**Not in v2:**
+- The `csa`, `hca` and `local` kinds. `SparseLatentAttention` is block-mean summaries, not DeepSeek's real CSA/HCA.
+- `gated_mla`, `charted`, SiTU, MTP heads in the shipped graph, and the aux heads.
+- Untyped configs **refuse** charted blocks in `validate()`.
+
+**Parent provenance.**
+- The Qwen3.5-0.8B and 4B configs were printed from `/home/cereal/models/*/config.json` this session [V]. 4B: 32 layers, 2560, 9216, 16/4, head 256, linear 16 key / 32 value heads x 128, rope `partial_rotary_factor 0.25`, theta 1e7, `mrope_section [11,11,10]` interleaved, 262,144 positions, tied 248,320 vocab, 1 MTP layer.
+- The 2B values come from the HF `config.json` [W]: 24 layers, 2048, 6144, 8/2 x 256, linear 16/16 x 128, interval 4, same rope.
+- **Qwen3.5-2B is not on disk** [V: `ls` found nothing], and its licence is UNVERIFIED. The fallback is a 4B to 2B fold with our tooling.
+
+---
+
+## 4. The raw-modality boundary and token budget
+
+**One raw unit: 3,072 real values in [-1, 1].** It is cut by the existing `native_media.py` functions. `test_one_raw_unit_holds_every_modality_without_padding_or_pooling` proves each layout is exact, lossless and unpadded [V].
+
+| Modality | Unit | Function / arguments | Time grid |
+|---|---|---|---|
+| Image, OCR | 32x32 RGB patch | `image_to_native_patches(patch=32)` | one tick |
+| Video | one 32x32 RGB frame patch | `video_to_native_patches(patch=32, tubelet=1, fps=12.5)` | **80 ms per frame** |
+| Audio (speech, music, sfx) | 3,072 samples of one channel at **38.4 kHz** = 80 ms | `waveform_to_native_segments(segment=3072, sample_rate_hz=38400)` | **80 ms** |
+| 3D (feasibility-gated) | 8x8x8 voxels x 6 channels (SDF, R, G, B, roughness, metallic) | `volume_to_native_patches(patch=8)` | z index |
+
+**Design notes.**
+- 3072 / 38,400 = 0.08 s = 1/12.5 fps. Audio and video therefore share one physical 80 ms clock, and AV sync is a matter of position, not a head.
+- 38.4 kHz has a Nyquist of 19.2 kHz. 48 kHz goes to 38.4 kHz with a 4:5 polyphase resample.
+- Stereo is two tokens per tick, one per channel; this is the existing "one token per channel per window" rule. Nothing is duplicated, and no channel has a gated path.
+- The PBR channels match what Hunyuan3D 2.1 emits.
+
+**In and out.**
+- **In:** `x = feature_proj(raw) + position_proj(thwr) + position_fourier_proj(Fourier(thwr)) + noise_proj(Fourier(sigma))`, then RMSNorm. Every modality uses the same three linears; there are no type tables (`modeling/chimera.py` `NativeContinuousMediaBridge`, untyped branch).
+- **Out:** RMSNorm, then a GLU MLP (width to 2 x width), then 3,072 values (`UnifiedNativeMediaEmissionHead.mlp`), with no type affine.
+- Type ids are accepted only as loss-balancing labels. Leaving them out entirely gives the same outputs; the invariance probe has a variant `absent`.
+
+**In-band typing.** A media span is ordinary tokens:
+- `<|media|>` + text header (for example `video 12.5fps 448x256 4s`) + `<|/hdr|>` + raw rows + `<|/media|>`.
+- Those markers come from the 512-row control band. Each raw row sits on one shared placeholder control id.
+- The probe uses exactly this layout: header tokens, a shared placeholder, then the raw rows.
+
+**Bands dropped versus Codex's v30 vocabulary:**
+- media (2,048), grounding (1,024), sync (128), tool (384) and music codes (65,536).
+- Tool calls use Qwen's own text tool tokens. Grounding is text coordinates. Music is raw audio.
+
+**Token rates (per second of media, or per item):**
+
+| Item | Tokens | Notes |
+|---|---|---|
+| Speech, mono | 12.5 / s | 1 min = 750; 256k holds about 5.8 h |
+| Music, stereo | 25 / s | |
+| Image 512² / 1024² | 256 / 1,024 | grids must be multiples of 32 (critique 6) |
+| Video 448x256 at the full 12.5 fps | 1,400 / s | 1 min = 84k, so 256k holds about 3 min |
+| Video understanding default (2 fps declared in the header) | 224 / s | |
+| 3D 64³ / 128³ | 512 / 4,096 | 128³ is feasibility-gated |
+
+**Positions.**
+- *Today [V]:* gated GQA ranks positions 1-D over valid tokens, and media rows also carry Fourier THWR features.
+- *To build (S0 item P1):* Qwen3.5's interleaved mRoPE for media rows, which the parents already use (`mrope_section [11,11,10]`).
+  - T = start + the 80 ms tick, H/W = patch row/column, R only in Fourier.
+  - The text position after a span is max + 1.
+  - It is exact for text (T=H=W), so the import is unaffected.
+- The Hexagon RoPE op supports imrope with a 32-aligned offset; media position jumps on the NPU are UNVERIFIED.
+
+---
+
+## 5. Heads, objectives and generation
+
+**Heads.**
+- Tied `lm_head` for text and tools. Teacher KL runs over the first 248,320 rows, so the Q38 and Strata caches apply as-is.
+- One raw x0 flow head for every raw modality.
+- MTP is a training auxiliary only (Qwen's MTP layer, not shipped); speculative decode measured as a net loss on 1-bit kernels [R].
+
+**Objectives.**
+- **Text and tools:** CE + top-k KL against same-vocab teachers + K3 cross-tokenizer KD + the unlikelihood term. This is run 1's proven mix [R].
+- **Media generation:** rectified flow predicting **x0** and deriving velocity at sampling.
+  - Lesson from 08-28: velocity does not train at small scale [R].
+  - Per-type sigma shifts (`media/training.py` `FLOW_TYPE_SHIFTS`) are sampler hyperparameters.
+  - Raw MSE uses type-balanced reduction.
+  - Audio adds training-only multi-resolution STFT/mel and chunk-boundary continuity losses (critique 9).
+- **Media understanding:** CE on text answers after clean raw spans. A training-only REPA projection aligns trunk layer about 8 to the cached QVL32 ViT features (`L/teacher_cache/qvl32_vit/qvl32_vit_l13`); the projection is discarded before export.
+  - Whether that cache is stored before or after the 2x2 merge is UNVERIFIED. If it is pre-merge, pool 4:1 to the 32 px unit.
+
+**Generation protocol.**
+1. Causal text and header.
+2. A noised media span refined N times. Media queries see the prefix and the whole span, in the GQA layers today.
+3. **A8, required before S3:** a reverse GDN scan over the span with the *same* GDN weights (two GATED_DELTA_NET calls), so the 18 of 24 recurrent layers stop being raster-causal inside an image (critique 3).
+4. A causal commit pass writes the clean span into the KV cache and GDN state.
+5. 16 Euler steps, distilled to 4 in v1.
+
+**Editing:** source image as clean context, then the instruction, then a noised target span.
+
+**Speech streaming:**
+- Chunks of 4-8 audio tokens (320-640 ms), 4 flow steps each, run as small prefill passes.
+- Time to first audio is projected at about 0.36-0.44 s for a short prompt; UNVERIFIED, phone experiment P1/P2 in A13.
+- Gate on Qwen3-ASR WER of the generated speech, not on MSE.
+
+**Draft then refine (the H3 SOL structure).** The same weights run a low-res draft and a refine pass at the target resolution, conditioned on the upsampled draft. This needs no new module. Whether Cyril wants that copied is an open question (§13).
+
+---
+
+## 6. Attention and depth: "99% of full residual attention with more depth, some sparse speed"
+
+**Full attention is kept and exact [V config].**
+- 6 (2B) or 8 (4B) global softmax layers, one per 3:1 period, so every token sees every earlier token in a quarter of the layers.
+- No trained sparse attention anywhere.
+- Evidence: hybrid-ratio study arXiv 2507.06457 [R] — loss is flat across ratios, but recall collapses below roughly 3:1 to 6:1. Qwen3.5-2B and 4B ship exactly 3:1 at 262k [W/V].
+- MiniMax's M2 post [R] is why we start from a model that was hybrid from pretraining rather than converting one.
+
+**More depth without losing the residual: Block AttnRes** (arXiv 2603.15031 [R]).
+- Before every mixer and every FFN, a learned pseudo-query attends over the completed 4-layer depth blocks plus the current partial sum.
+- This is the mechanism behind Cyril's "[Cyril quote withheld]": each sublayer can read any earlier depth block directly, instead of one fixed sum.
+- Zero init is function-preserving [V, §1].
+- Decode keeps at most 9 vectors per token per sublayer, with no cache.
+- Evidence so far is on MoE bases; small-dense gains are UNVERIFIED, so A1 decides.
+- **Extra depth (A11):** insert 4-8 GDN+FFN layers with zero-initialised output projections, which are identities at init. Each layer costs 0.18-0.33 ms on the phone, so it must pay for itself per millisecond.
+
+**Where the speed comes from, without touching intelligence:**
+- 3/4 of the layers have O(1) recurrent state (18 MiB for the 2B, 48 MiB for the 4B, f32).
+- Split-KV flash attention: the operator measured 53-55% faster at 4k/32k [R].
+- Small KV: 6 layers x 2 heads for the 2B.
+- **Far-context decode mode (runtime only, beyond 32k):**
+  - Dense attention to sink tokens + the last 8k + the top-64 blocks of 128 by block-mean key score.
+  - Text queries stay dense over the near window. This is the lesson from our Sol-H3 adaptation, which kept text queries dense and added a text KV sink [R].
+  - It ships only at **99% or more of dense** on RULER plus multi-hop at 64k-256k (A3); otherwise decode stays exact.
+  - It is not trained in, so it cannot harm the weights.
+
+**Not adopted.**
+- **DSA / indexer (DeepSeek V3.2):** the vendor claims parity [R], and I found no independent study showing degradation [R]. Cyril's criticism is recorded as owner judgement and unverified in the public record. The NPU also has no `LIGHTNING_INDEXER` [R].
+- **MLA:** no controlled 1-4B ablation found [R], and NPU support is UNVERIFIED. Revisit only through an ablation.
+- **Value residual** (ResFormer, arXiv 2410.17897 [R]): free at decode because the mixed V is cached. Ablation A4; not built.
+
+---
+
+## 7. 256k context: KV arithmetic and the phone
+
+Positions are native 262,144 with theta 1e7 [V parents' configs], so no context-extension retraining is needed. Training keeps 32k-64k sequences in every stage (§9). RULER and multi-hop run on the server at 32k, 64k, 128k and 256k, logged in omni_lab.
+
+**KV and state [V arithmetic, `scratchpad/v2_budget.py`].** Values per token = global layers x KV heads x 256 x 2.
+
+| | 2B (6 x 2 KV) | 4B (8 x 4 KV) | 4B with the A3b 2-KV merge |
+|---|---|---|---|
+| Per token, F16 / q8_0 | 12.0 / 6.4 KiB | 32.0 / 17.0 KiB | 16.0 / 8.5 KiB |
+| 32k, F16 / q8_0 | 0.375 / 0.199 GiB | 1.00 / 0.531 GiB | 0.50 / 0.27 GiB |
+| 256k, F16 / q8_0 | 3.00 / **1.59** GiB | 8.00 / **4.25** GiB | 4.00 / 2.12 GiB |
+| GDN state (f32, fixed) | 18 MiB | 48 MiB | 48 MiB |
+
+**One HTP session (about 3.5 GB) [R limit].**
+- 2B at Q2 (0.72 GB) + 1.59 GiB of q8 KV at 256k + about 0.15 GB of compute fits.
+- 4B at Q1 (0.74 GB) + 0.53 GiB at 32k fits.
+- 4B at 256k with 4 KV heads does **not** fit. It needs either the KV kept in CPU RAM or the A3b merge.
+- Staying in one session also avoids the multi-session GDN corruption bug [R].
+
+**Projected decode in tok/s.** The model is t = (weight bytes + GDN state read/write) / BW + layers x c + equivalent heads x ctx x k. Ranges run between two corners:
+- BW 37 GB/s, c = 0.33 ms, k = 8.4 ns (no split-KV);
+- BW 43 GB/s, c = 0.18 ms, k = 4 ns (split-KV).
+
+The fit reproduces Bonsai-4B Q1 at 39.5 and a 2B Q4 at 33 [R]. The table excludes AttnRes cost, which assumes the fused kernel. Decomposed, AttnRes costs about 2.8-5.6 ms per token on the 2B and 3.7-7.5 ms on the 4B (per *sublayer*, judge A's correction).
+
+| Config (file size) | short | 4k | 32k | 256k exact |
+|---|---|---|---|---|
+| 2B, Q1 body + Q2 head (0.38 GB) | 55-77 | 47-69 | 23-39 | 4-9 |
+| **2B, Q2 body + Q4 head (0.72 GB)**, default | 37-48 | 33-45 | 19-30 | 4-8 |
+| 2B, Q4 (1.10 GB) | 27-34 | 25-32 | 16-24 | 4-8 |
+| 4B, Q1 body + Q2 head (0.74 GB) | 31-42 | 25-36 | 10-17 | 2-3 |
+| 4B, Q2 body + Q4 head (1.42 GB) | 20-25 | 17-23 | 8-14 | 2-3 |
+
+**What this means for the phone.**
+- Only the 2B at 1-2 bits reaches Cyril's 50 tok/s target, and only at short context.
+- The 4B needs 1-bit to stay above 30.
+- At 256k, exact decode is bandwidth- and attention-floored at under 10 tok/s.
+- Prefilling 256k takes about 3-11 minutes and hits the 95 °C trip [R].
+- So on the phone, 256k is a *capacity* that fills over time with prefix and state checkpoints. **Phone v1 decodes exact attention up to 32k.** 256k is verified on the server, and the far-block mode reaches the phone only through the A3 gate (critique 10).
+
+---
+
+## 8. On-device op plan (Sprite llama.cpp fork, Hexagon v79)
+
+**Ops that exist today [R, `ggml-hexagon.cpp` at native `292a145`]:**
+- MUL_MAT for Q1_0, Q2_0, Q4_0 and Q8_0 (HMX for prefill).
+- GATED_DELTA_NET (scalar and per-channel gate, so GDN now and KDA later) and SSM_CONV.
+- FLASH_ATTN_EXT (F16/Q8 KV, masks, sinks).
+- ROPE imrope; RMS/L2 norm; GLU; sigmoid; softmax; top-k; get/set_rows; concat; roll.
+- Media rows enter through `llama_batch.embd`. Patchify, unpatchify and the Euler loop run on the host CPU, and the media projections are plain MUL_MAT.
+
+**New or extended kernels**, in this order (each about 1 day plus qualification: simulator gate, phone numerics against CPU, whole-model parity, APK; precedent LUT and split-KV [R]):
+
+| # | Kernel | Why | Fallback |
+|---|---|---|---|
+| K1 | **DEPTH_ATTN_RES**, fused HVX: norm, dot with the pseudo-query over at most 9 vectors, softmax, weighted sum | 48 (2B) or 64 (4B) calls per token; decomposed costs 2.8-7.5 ms | 5 existing ops per call |
+| K2 | FLASH_ATTN_EXT split-KV for **head dim 256** and KV beyond 32,768 | Today it handles head 128 and KV up to 32k only; every 32k+ number above depends on it | non-split FA (the slower corner) |
+| K3 | GDN state save/restore for the denoising loop (`llama_state_seq_get/set` or a `seq_cp` scratch sequence) | Every flow step must restart from the end-of-prefix state | host copy; UNVERIFIED on Hexagon |
+| K4 | Reversed `get_rows` for the A8 span scan | Bidirectional media in the recurrent layers | host-side reverse |
+| K5 | BLOCK_SPARSE_FA (block-mean scores, top-k, gathered FA) | Far-context decode beyond 32k | top_k + get_rows + FA; ships only if A3 passes |
+| (K6) | Fix the multi-session GDN bug | Only needed if a config cannot fit one session | GDN on CPU [R] |
+
+**Not used:** LIGHTNING_INDEXER, DSV4_HC_*, SSM_SCAN, MLA, MUL_MAT_ID.
+
+**GGUF.** A new `chimera-omni` architecture extends `export/gguf_writer.py` `QWEN35_ARCH` with AttnRes tensors, the raw boundary and the raw head. Not built. Until it is, R9 stays partial.
+
+---
+
+## 9. Initialisation and training
+
+**Initialisation.**
+- `co2-2b`: Qwen3.5-2B text trunk. Download it to Lexar (317 GB free; the AI share is full). Its ViT is discarded.
+- `co2-4b`: Qwen3.5-4B text trunk (on disk), or the best OC01 4B fold child (X00/X31, 10-15/15). Choose with A0b.
+- Fallback for the 2B: fold 4B to 2B.
+- New tensors start function-preserving:
+  - AttnRes queries at zero.
+  - Bridge and head random. They touch only media rows, so text is exactly the parent's at step 0 (A0 gate).
+  - Control rows at the mean of the text embeddings.
+- The 0.8B import plus qwen35 GGUF round-trip is already proven [R: `CO/receipts/qwen35_0p8b_*`].
+
+**Hardware reality and the critique fixes.**
+- The training lane is P40 fp32. SM61 has no bf16, Triton does not run (`streamed_kd_trainer.py:333` [R]), and the training venv's torch cu128 has no SM61 kernels, so P40 runs use a cu124/cu126 torch.
+- A 2B with fp32 Adam needs about 31 GB against 24 GB per card [V arithmetic: 1.92e9 x 16 B]. Use a host-offloaded optimizer state (the streamed engine) or a factored optimizer.
+- Mandatory:
+  - Chunked lm_head and chunked CE/top-k-KL (one 64k x 248,832 fp32 logit tensor is 65 GB).
+  - `--sdpa-gqa repeat`.
+  - The memory-efficient attention kernel with the explicit media mask.
+  - P2P between P40s is broken, so transfers go through the host [R].
+- The "86M tok/day for the 2B" is **UNVERIFIED**. Re-measure it on a 0.8B P40 cell before sizing any stage.
+- The linear layers train as **GDN** using the existing torch chunk rule (scalar decay). The repo's `KimiDeltaAttention` forward is a per-position Python loop, which is fine for the proxy and useless at 4k+ (critique 1). Building a P40-capable chunked GDN/KDA in torch is training-engine work item T1.
+- The training engine must run the Chimera layout with media rows. Today's measured engines are Qwen3_5 text-only (review §7, root cause 5). This is the biggest item, T2.
+
+**Stages.** Each stage is an omni_lab run. Grading is behaviour-first on frozen evals and never gates on token match.
+
+| Stage | What | Gate |
+|---|---|---|
+| S0 graft + heal | Import, add the boundary and head, about 10% media mixed into a short heal | Logit KL against HF Qwen < 1e-4 on 512 text prompts at step 0; GGUF parity once the arch exists; the 0.8B first |
+| S1 to S4 joint | **Every batch carries every modality from here on.** Mixing is by token budget per modality, with text and tool ≥ 40% of tokens every step, so video cannot swamp text. Text/tool KD (K3 main; Q38-27BU and Strata same-vocab logits; tool corpora) + understanding CE + REPA + x0 flow + speech-in/out dialogue. Long sequences (32k-64k) are in every stage, starting on the 0.8B | Scorecard drift per stage (A12); per-modality evals; A6 and A8 passed before S3 data spend |
+| S5 on-policy | Student samples scored by K3 and Strata (reverse KL); `kd1m-opd` on the 0.8B ladder is the precedent | behaviour eval |
+| S6 deploy | QAT to a Q2 body + Q4 embed/head + **Q8 media IO**, Q1 as an arm; 16 to 4 flow-step distillation | Tool-call replay sweep (Bonsai fragility [R]) + per-modality media evals, not perplexity |
+
+**Teachers.** Media teachers all work in their own VAE latent spaces, so against a raw student they give data (outputs), not logits; REPA is the only feature-level link.
+
+| Modality | Teacher | Where [R unless noted] | Notes |
+|---|---|---|---|
+| Text, tools | **Kimi K3** (main), via sequence-level targets, span-aligned cross-tokenizer KL (`k3_teacher_cache*.py`) and S5 scoring | `/mnt/lexar/models/moonshotai/Kimi-K3` | Same-vocab dense KD from Q38-27BU (15 GB cache) and Flash Next Strata IQ3_S (14 GB). Never Claude/Codex outputs; never small models for data generation |
+| Images + editing | **Qwen-Image 2.1** (bf16 / int8_convrot) | ComfyUI 0.37, ports 2833N | Prompt to 1024² pairs and edit triplets. 2.1 doing edits as one unified model is [R], so verify; otherwise `qwen_image_edit_2509_fp8`. The old qimg cache (old model) is not used. Run on the P40 cu126 instances when idle, to keep GPU4 for video |
+| Video, joint AV | **H3 SOL** = NVIDIA Sol-H3 as Codex adapted it: H3 Turbo 4-step draft at 896x512, then LTX 2.3 refine to 1344x768, with H3 audio muxed back | image `comfyui:gauntlet-sol-sm86-v001-20260913`, SM86 only, so GPU4 | Same-origin AV (the old h3 items paired LibriSpeech with unrelated clips). About 240 clips/day is UNVERIFIED. GPU4 serves Sprite first; log teacher throughput per day in omni_lab |
+| Vision understanding, OCR | Qwen3-VL-32B (H3's bf16 text encoder copy) for captions, QA and OCR; `qvl32_vit` features for REPA | GPU time is a decision for Cyril (§13) | |
+| Music | ACE-Step 1.5 turbo waveforms + 1,024 CC FLAC clips | | ACE LM codes are not used (codec) |
+| Speech | Qwen3-TTS 12Hz (out); Qwen3-ASR-1.7B and granite-speech-4.1-2b (in); Cyril's own `speech-native-caches-v2` (cleared); LibriSpeech | `/mnt/lexar/models` | |
+| 3D | Hunyuan3D 2.1, mesh voxelised to SDF + PBR | | Feasibility-gated |
+
+---
+
+## 10. Data needs per modality
+
+| Modality | Have [R] | v1 need (first estimate, UNVERIFIED) | Gap action |
+|---|---|---|---|
+| Text, tools | `H/distill/corpus` (text 186 MB, toolcall_flash_v1, bfcl_native_v1, long), native-text-v2/v3 (675/772 MB); Q38/Strata/K3 caches at 4,096 positions | 50-100M KD tokens per size | Extend the K3 cache; long-sequence CE beyond the cached positions |
+| Image understanding / OCR | 5,896 rows / 7,572 images (vision_in), some low quality; 73 GB of QVL32 features | 10^5+ captioned images | Caption Qwen-Image 2.1 outputs with QVL32; filter vision_in |
+| Image generation / editing | 2,048 prompts; native-qimg-full-v3 (628 MB); 8 procedural edit fixtures | 10^4-10^5 pairs; a licensed edit set | Qwen-Image 2.1 generation on idle cards |
+| Video, joint AV | 512 mismatched h3 clips; 439 same-origin Gauntlet takes; h3 native batches | 10^3-10^4 same-origin clips for understanding plus short low-res generation | H3 SOL on GPU4 idle time |
+| Speech | LibriSpeech 5.7 GB; Cyril's speech caches 6.4 GB; speech-teachers-v1 4.1 GB | hundreds of hours in, TTS pairs out | Qwen3-TTS synthesis; ASR transcripts |
+| Music | 1,024 FLAC + ACE caches | 10^4 clips | ACE-Step 1.5 generation |
+| 3D | 256 object images; HY3D trajectory caches (latent) | 10^3-10^4 voxelised objects | HY3D 2.1 to mesh to voxels; gated |
+
+All canonical records stay tokenizer-agnostic (R12). Token corpora and caches are derived views. New drops go to `/mnt/ai_data/chimera-intake/*` versioned intake.
+
+---
+
+## 11. Ablation plan (each mechanism proven small, in omni_lab)
+
+**How every arm runs.**
+- It is an omni_lab `run` (`omni_lab.py log-run` or `run`) with an `experiment` row.
+- The proxy and 0.8B arms run on an **experiment P40 only** (GPU3/GPU5), with `flock $OC/distill/queues/gpu<N>.lock`, MemAvailable ≥ 40 GiB and a cu124/126 torch.
+- Two seeds where noise matters.
+- Structural changes also re-run `python -m chimera_omni.conformance --dynamic` and `omni_lab.py arch-check`.
+
+| Id | Question | Scale | Pass |
+|---|---|---|---|
+| **A13 (first)** | Phone microbenchmark: q heads x KV heads x head dim 128/256 x F16/Q8 at 4k/32k/128k; fused vs decomposed AttnRes; 1,024-token bidirectional prefill-loop timing; speech-chunk TTFA (P1/P2); end-to-end 2B Q2 decode against §7 | Sprite phone | Turns §7 into measurements |
+| A0 / A0b | Graft parity: Qwen3.5-0.8B to Chimera v2 (AttnRes zero, bridge/head present); 4B init: Qwen3.5-4B vs OC01 X00/X31 | 0.8B, 4B | KL < 1e-4; scorecard |
+| A1 | Depth mixing: plain vs Block AttnRes (4-layer) vs per-sublayer AttnRes vs MUDD-lite (arXiv 2502.12170) | 0.8B, 20-50M tok | Beats plain beyond seed noise on held-out KD loss, scorecard, multi-hop, RULER-32k |
+| A2 | GDN vs KDA (exact init from GDN) | 0.8B, after T1 | Gain at equal tokens; no NPU speed loss |
+| A3 / A3b | Far-block decode vs exact at 64k-256k; 4B KV merge 4 to 2 with a KD heal | server llama.cpp | ≥ 99% of dense on RULER + multi-hop / within noise |
+| A4 | Value residual on vs off | 0.8B | gain |
+| A5 | Positions: imrope (P1) vs 1-D + Fourier; NoPE globals | 0.8B + AV harness | RULER, motion direction, AV sync |
+| **A6 (first media gate)** | Untyped shared boundary vs the legacy typed bridge, rerunning the 3.19M AV proof (`src/chimera_omni/proof/h3_hybrid_av_flow.py`, which used typed ids); then 3,072 vs 6,144 (2-frame tubelet, 25 fps) | proxy, 0.8B on real 256²-512² images + LibriSpeech | Untyped ≥ typed within noise |
+| A7 | Head: linear vs GLU MLP; x0 vs velocity; 16 to 4 steps; plus a *cost-of-sharing* measurement against the MoT/LMFusion gap. **Rule: escalate to Cyril, never quietly reintroduce towers** | 0.8B | |
+| **A8 (required before S3)** | Global-layer-only refinement vs + the reverse GDN span scan | 0.8B image arm at 1,024 tokens | Better image metrics; else raise the global share for generation passes, never a separate module |
+| A9 | Lookup memory: (a) text-keyed PLE (needs Cyril's ruling: a text-only path), (b) LSH-keyed modality-symmetric table | 0.8B | gain at equal compute, no media regression |
+| A10 | MoE from scratch at **equal total params**, with router-entropy-by-modality (de-facto modality routing is fatal) | proxy / 0.8B-class | Only if Cyril asks; must beat dense |
+| A11 | +4-8 zero-init GDN layers (depth) | 0.8B | gain per phone ms |
+| A12 | Forgetting: scorecard drift at 20/40/60% text replay | 0.8B | sets the replay floor |
+| A14 | 6:1 global surgery / 16 to 8 q-head pruning (speed tier) | 0.8B, 4B | within 1% on multi-hop, RULER multi-key NIAH, BFCL |
+
+---
+
+## 12. What carries over, what is retired
+
+**Carries over:**
+- The repo's dense trunk code: GDN/KDA, gated GQA, Block AttnRes, the media refinement mask, x0 flow training (`media/training.py`), `native_media.py`, the qwen35 importer and GGUF writer.
+- The 3.19M AV proof, kept as a regression harness (to be rerun untyped, A6).
+- From Codex's branch `codex/work/codex/native-unified-modalities-oct14-v30-23a` (33dd188, 8deb4ea; merges forward over 11adb32): `native_inputs.py` request/message/tool framing, JSON-Schema tool validation and label masking, plus `native_supervision.py`.
+  - **Not merged in this pass.**
+  - When it is merged, drop the "charted modalities require a frontend" rule and retarget `native_vocabulary.py` to 248,832 rows.
+- The full-KD trainers and teacher-cache tools in `OCL/distill/tools/`.
+- The Q38, Strata, K3 and qtext_vl caches, the corpora, and run 1 as evidence that full-parameter KD recovers fast.
+- The omni_lab DB, now including the conformance tables.
+
+**Retired from the shipped path:**
+- `charted.py`, `modeling/charted.py`, `modeling/{qimg,hy3d}.py`, `importing/{qimg,hy3d}.py`, `media/routing.py`.
+  - These remain in the repo for the legacy tests. An untyped config refuses charted blocks.
+- The typed bridge and head tables (legacy configs keep them, so installed checkpoints still load).
+- The `csa`/`hca`/`local`/`gated_mla` kinds, from the v2 profiles.
+- The music-code, media, grounding, sync and tool bands.
+- OMNI1 and the M1 media weights (5120-wide, type-routed; the census fails them on R1, R3, R4, R5, R7, R9 and R13).
+
+**Repo default.** `architecture_manifest()` and `docs/ARCHITECTURE.md` now describe v2. `k3_aligned_test_config` is labelled a legacy toy, and `docs/KIMI_K3_ALIGNMENT.md` carries a historical banner.
+
+---
+
+## 13. Questions for Cyril
+
+1. **Phone bar.** What minimum tok/s, at what context, on your phone? Is 256k a model capability (verified on the server, with the phone at exact 32k until the kernels land) or a phone-speed requirement? This decides 2B vs 4B first, Q1 vs Q2, and whether the speed tier (A14) is ever used.
+2. **Starting from Qwen3.5-2B/4B text weights.** Is that acceptable as "our own architecture"? The topology would be Qwen's hybrid plus our depth mixing, raw boundary and flow head, with the ViT discarded. Training a 2B from scratch on the P40 lane is not feasible.
+3. **Compute for teacher data.** Can some fast-card time (GPU4's idle time is already planned; another 3090 needs your OK) go to H3 SOL, Qwen-Image 2.1 and QVL32 captioning? Without it, v1 video stays at understanding plus short low-res generation, and the image and caption volume stays small.
+4. **"H3 SOL as our video basis".** I read it as the video and AV *teacher*. Do you also want its draft-then-refine *structure* copied into our sampler (same weights, two resolutions, no new module)?
+5. **(Only if A9a wins) a text-keyed lookup table.** Media rows cannot index it, so it would be a text-only pathway. Allowed or not?
+
+---
+
+## 14. Proof results (second pass, 2026-10-21) [V]
+
+### 14.1 The v2 code path, finished on the branch
+
+**One sequence.** `src/chimera_omni/v2_layout.py` lays out every media span the same way: `<|media|> header <|/hdr|> <|raw|> x rows [<|/media|>]`.
+- `collate(align="right")` handles understanding: any number of spans, with causal text labels.
+- `collate(align="left")` handles generation: an open media suffix, refined bidirectionally by the shared x0 head.
+- Padded media rows sit on padding slots, so every layer sees them as invalid tokens.
+
+**Tests.** `tests/test_v2_mixed_sequence_torch_optional.py` (CPU, co2-proxy) shows:
+- One sequence holding an image (4 rows), a video (4 rows), an audio clip (3 rows) and text trains with one loss. The backward pass reaches every `blocks.*` tensor. The only exception is layer 0's attention-side depth mix, which has no completed block yet.
+- Flipping the raw values of any one span changes the answer logits.
+- A generation batch with image rows and audio rows trains the head with refinement on.
+- Padding is inert: a sample's outputs match alone and inside a padded batch, within 1e-4.
+- The untyped model's logits are bit-identical under relabelled or absent type ids. The typed control's are not.
+
+**T1, the training scan.** `layers.chunked_gated_delta_rule` is the UT-transform chunked gated delta rule in pure torch, so it runs on SM61. It comes with a vectorised short conv and is switched on by `use_chunked_gdn_scan(model, 64)`. The reference loop stays the default.
+- Parity in `tests/test_chunked_gdn_scan_torch_optional.py`:
+  - fp64 scan against the loop, including initial state and lengths that are not a multiple of the chunk: 1e-10.
+  - Model logits with left padding, right padding and holes: < 2e-5.
+  - Gradients: relative difference < 1e-3.
+  - Cached-decode continuation after a chunked prefill: matches.
+- Speed on the proxy proof step:
+  - CPU, 8 threads: 4.6 s down to about 1.0 s (cProfile).
+  - P40, with two arms sharing GPU5: 0.40 s per step.
+
+**A6b, `native_unit_norm="rms"`.** Each raw row is divided by its own RMS, and log10 RMS goes back in through one shared Fourier projection (`amplitude_proj`, 1,024 parameters on the proxy).
+- It is the same op for every modality, with no type table. The conformance probes still pass: no modality-specific tensor, and type-id invariant.
+- It is off in every profile, and the default manifest is unchanged.
+
+**Suite:** 644 passed, 19 skipped (`PYTHONPATH=src Python311 -m pytest tests -o addopts=""`). At `e885de6` it was 629 / 19.
+
+### 14.2 The proxy proof: setup
+
+**Data** (`proof/v2_proxy_data.py`, built on the server CPU). npz sha `1b7685a4…`, at `L/scratch/arch-v2-proxy-proof/data/`.
+- **COCO 2017 photos.** The dominant object, at 25% or more of the image area, is exactly one of airplane, zebra, giraffe or pizza.
+  - Train: 1,642 (308 / 500 / 334 / 500). Test: 50 per class.
+  - Each photo is 96x64. The image task uses the centre 64x64 (4 raw rows).
+  - The video task pans a 64x64 window left or right across the photo: 4 frames at 12.5 fps, 16 rows.
+- **Audio.** 0.64 s windows at 38.4 kHz (8 rows), RMS-normalised to 0.1, with labels female / male / music.
+  - Speech: LibriSpeech dev-clean speakers for training, held-out test-clean speakers for test.
+  - Music: ACE-Step renders, split by file (189 train / 47 test).
+  - 400 / 50 windows per class.
+- **Text.** Upper-case 100 held-out random letter strings of length 3-6.
+
+**Model and training.**
+- `co2-proxy` exactly (1,121,409 params), with the chunked scan.
+- The embedding is initialised at std 1/sqrt(64). This applies to the from-scratch proof only; the 2B imports Qwen's embedding.
+- One AdamW step per iteration on understanding CE (16 rows, each half packed with all four tasks in random order) plus x0 flow (8 "draw <class>" image suffixes and 8 "say <class>" audio suffixes).
+- 3,000 steps.
+
+**Card.** P40 GPU5 (L-EXP) under `lanes.py claim-run`.
+- Wrapper runs: 38001 (round 1) and 38012 (round 2).
+- Training runs: 38000 untyped s0, 38002 typed, 38013 A6b s0, 38014 untyped s1.
+- An earlier workstation-CPU attempt (37995 / 37996) is marked stopped. The P40 locks were held by the flash-score queue until 18:44Z, and an orphan process wrote into the same directory, so those partial logs are not evidence.
+
+**Grading** (pre-registered `PASS_RULES`, written before the first run).
+- Understanding: greedy-decoded answer text must equal the label exactly.
+- Generation: the decoded pixels or samples must be classified as the requested class by an independent logistic regression trained on the real training split. This instrument scores 0.675 (image) and 0.900 (audio) on real held-out media. The output must also carry real signal.
+
+### 14.3 The proxy proof: results
+
+omni_lab suite `arch_v2_proxy_mixed@1`, 720 cases. Eval runs: 38011 untyped s0, 38017 untyped s1, 38020 A6b s0, 38010 typed control.
+
+| Behaviour (n) | chance | rule | untyped s0 | untyped s1 | **A6b s0** | typed control |
+|---|---|---|---|---|---|---|
+| text: upper-case held-out strings (100) | 0 | ≥ 0.50 | **1.000** | **1.000** | **1.000** | 1.000 |
+| image in → class (200) | 0.25 | ≥ 0.45 | **0.725** | **0.730** | **0.720** | 0.750 |
+| video in → pan direction (200) | 0.50 | ≥ 0.70 | 0.500 | 0.500 | 0.500 | 0.500 |
+| audio in → female / male / music (150) | 0.33 | ≥ 0.53 | 0.333 | 0.333 | **0.773** | 0.747 |
+| raw image out, judged (40) | 0.25 | ≥ 0.45 | **0.525** | **0.675** | **0.675** | 0.725 |
+| raw audio out, judged (30) | 0.33 | ≥ 0.53 | 0.000 | 0.000 | 0.000 | 0.000 |
+| packed sequence, audio answer exact (100) | | (diagnostic) | 0.50 | 0.00 | 0.70 | 0.69 |
+| **pre-registered verdict** | | | FAIL | FAIL | FAIL | FAIL |
+
+**What it shows.**
+1. **The mechanics work in one trunk with one set of weights.**
+   - Text and image understanding are learned through the shared trunk from raw pixels, with no encoder.
+   - Class-conditional raw image generation comes out of the same shared x0 head.
+   - Text is unaffected by sharing the trunk with three media types (1.000 in every arm).
+2. **The plain untyped boundary has a real defect, and it is a level problem, not a sharing problem.**
+   - The plain untyped boundary never learned audio understanding. Both seeds answered one constant class (s0 always "male", s1 always "music").
+   - The typed control learned it, which is the per-type gain that Cyril's rule forbids.
+   - Audio rows carry about 5x less raw energy than image rows (RMS 0.1 against about 0.5), so through one shared `feature_proj` they arrive dominated by the position and sigma terms.
+   - A6b fixes it with a shared op, no type table, and matches or beats the control (0.773 against 0.747).
+   - **Recommendation:** adopt `native_unit_norm="rms"` in the v2 profiles once a second A6b seed confirms it. This is one seed today.
+3. **Two failures are common to every arm, so they are not about typing.**
+   - **Video pan:** every arm answers "left" for every clip. Temporal direction over 16 rows was not learned at 1.1M params and 3,000 steps. This is UNVERIFIED as a capacity limit; it may need the multimodal positions (P1, A5).
+   - **Raw audio out:** every arm generates near-silence (RMS 0.002-0.015 against 0.10 real). This is the x0-MSE collapse to the conditional mean that critique 9 predicted. The training-only STFT/mel and boundary losses are now required before any speech or music generation claim.
+4. **Image generation passes the rule but is weak.**
+   - The grids (`runs/*/generated_image_grid.png`) are blurry class-coloured blobs: sky-grey for airplane, orange for pizza.
+   - Each 32 px patch is its own blob, not one coherent 64x64 object.
+   - The instrument is coarse (0.675 on real photos). Treat this as "conditioning reaches raw pixels", not as image quality.
+
+**The proof did not pass its behaviour checks.** By the task's own condition, the 2B run is not launched.
+
+**Command:**
+
+```
+omni_lab.py compare 38011 38017 38020 38010 --cases "v2p-aud-00*,v2p-aud-05*,v2p-aud-10*"
+```
+
+The totals line from that command:
+
+```
+r38011  pass=10 FAIL=20   (untyped s0: always "male")
+r38017  pass=10 FAIL=20   (untyped s1: always "music")
+r38020  pass=23 FAIL=7    (A6b)
+r38010  pass=23 FAIL=7    (typed control)
+```
+
+### 14.4 The 2B training lane (staged, not launched)
+
+**Scripts.** `scripts/arch_v2_2b_lane.py` (plan and preflight) and `scripts/arch_v2_2b_queue.sh` are installed at `$OC/distill/queues/`.
+
+The queue:
+- takes `gpu1.lock` and `gpu2.lock` non-blocking;
+- runs the preflight and fails closed;
+- logs an omni_lab run;
+- launches only on a clean preflight.
+
+**First mixture `MIXTURE_V1`**, mixed by token budget, with every modality in every batch:
+
+| Modality | Share | On disk now [V] | Still needed |
+|---|---|---|---|
+| text + tools | 45% | distill text, `toolcall_flash_v1`, `bfcl_native_v1`; Q38-27BU cache (15 GB); Strata cache (15 GB, all four groups sealed 18:44Z); K3 provisional (824 MB) | K3 cache extension; CE on long sequences beyond 4,096 positions |
+| image understanding | 10% | COCO 2017: 118,287 images + captions; QVL32 L13 features (73 GB) | QVL32 captions / QA / OCR on Qwen-Image 2.1 outputs |
+| image generation + editing | 10% | COCO images + captions; native-qimg-full-v3 | Qwen-Image 2.1 pairs and edit triplets |
+| video + joint AV | 8% | `video_in.jsonl` (512 rows, local mp4s present) | H3 SOL same-origin clips, 10^3-10^4 |
+| speech in + out | 15% | LJSpeech (13,100 + transcripts); Cyril's speech-native-caches-v2; Qwen3-TTS / ASR, granite | multi-speaker *train* speech (LibriSpeech on disk is dev/test only); TTS pairs |
+| music | 7% | 236 ACE renders; MAESTRO v3 (CC BY-NC-SA: non-commercial) | ACE generation to about 10^4 |
+| 3D | 5% | **nothing raw**: only HY3D latent trajectories | Hunyuan3D 2.1 meshes voxelised to SDF + PBR |
+
+**Preflight, omni_lab run 38015 (status `refused`, 19:40Z).** The cards and host memory passed: GPU1 and GPU2 were free at 5 MiB, MemAvailable 214 GiB. The missing conditions, verbatim:
+1. **Proxy proof.** Experiment `ARCH-V2-A6P-PROXY-MIXED-20261021` child eval status = fail.
+2. **Init weights.** `/home/cereal/models/Qwen3.5-2B` is absent: not downloaded, licence unchecked. The fallback is a 4B to 2B fold.
+3. **Owner ruling on init.** `$OC/rulings/arch_v2_init_source.json` is absent (§13 Q2).
+4. **Trainer (T2).** `chimera_omni/training/v2_trainer.py` is absent. A 2B in fp32 on P40s needs:
+   - an offloaded or factored optimizer (fp32 Adam is about 31 GB against 24 GB per card);
+   - a chunked LM head and CE;
+   - host-staged transfers between the cards.
+5. **3D data.** There is no raw voxel set.
+
+**What would clear it, in order:**
+- Second A6b seed, then adopt A6b.
+- STFT/mel loss for raw audio out, then rerun the proof.
+- Video positions (P1) or more proxy steps for pan.
+- Cyril's Q2 ruling and the 2B weights, or the 4B to 2B fold.
+- Build T2.
+- Voxelise HY3D outputs, or rule 3D out of the first mixture.
+
+**Status after the third pass (2026-10-22).**
+- Done: the second A6b seed (A6b on, both seeds pass audio / speech understanding in rounds 5 and 7); the STFT / mel loss (in, round 3); video positions (P1, pan 1.000).
+- Still open: the proxy proof itself. Raw generation fails edit / video / speech in every arm (section 14.9).
+- Raw 3D now exists for the proxy: ModelNet10, 16^3 SDF. It does not exist for the 2B mixture.
+
+### 14.5 Round 4: every modality in AND out (third pass, 2026-10-21) [V]
+
+**Base.** The round-3 fixes from the diagnosis (commit `48e8f2d`: 2-frame video tubelets, one dataset gain to RMS 0.5, the level-driven noise schedule, the low-sigma STFT / mel / level / boundary audio terms, a rotating column axis in the proxy's mRoPE, A6b on in every profile, draft-then-refine with the same weights, and the `co2-proxy-media` profile, width 256 with a 512-wide head) had never been run. Round 4 is their first run, with every modality added.
+
+**What changed in the proof** (commit `24e197c`, `proof/v2_proxy_{data,mixed,mixed_lab}.py`).
+- **Data v2** `v2proxy_all_v1.npz` (sha `7af008b0…`, `L/scratch/arch-v2-proxy-proof/data/`, built on the server CPU):
+  - images: the same COCO photos (1,642 train / 200 test);
+  - speech: LibriSpeech female / male, dev-clean speakers for training, held-out test-clean speakers for test (400 / 50 windows per class);
+  - music: **piano** = MAESTRO v3 solo piano (MAESTRO's own train / test split, 40 / 10 recordings, read straight from the zip) against **band** = our ACE-Step renders (split by file); 400 / 50 windows per class;
+  - 3D: **ModelNet10** (downloaded 2026-10-21 to `L/corpus/external/modelnet10/`) chair / table / monitor / toilet, ModelNet's own train / test folders, 300 / 50 meshes per class. Each mesh is voxelised to a 16^3 truncated SDF (surface sampled at 64^3, hole-filled solid, exact distance transform, min-pooled to 16^3 so thin legs survive, truncated at 2 cells). PBR channels are 0 (ModelNet has no materials). 8 raw rows per shape.
+- **Six understanding tasks and six generation behaviours**, one model, one optimizer, one loss per step:
+  text (upper-case), image class, video pan, speech speaker, music source, 3D shape; and image (class-conditioned), image **mirror edit** (the source photo is a clean context span before the request), video (direction + class), speech (speaker), music (source), 3D volume (shape).
+- **Instruments** (independent, trained on real training media only; validity on real held-out media printed in every report): image LR 0.675, pan displacement 1.000, one 4-way audio LR (female / male / piano / band) 0.820 on speech and 0.970 on music, 3D LR 0.980, mirror test (copy of the source passes 0.000, the true mirror 1.000).
+- **PASS_RULES**, one per behaviour, registered in omni_lab **before any round-4 run**: review run **38033** (21:45:42Z), rules sha `57ec7274…`, `v2_proxy_mixed --print-rules`. min = chance + 0.20 everywhere, as in rounds 1-3; generation also needs instrument validity and a real-signal check (pixel std > 0.25x real; RMS 0.25-4x real; occupancy 0.25-4x real).
+
+**Runs.** `co2-proxy-media` (9,847,105 params), 6,000 steps, P40 GPU3 + GPU5 under `lanes.py claim-run` (wrappers 38037 GPU3 / 38036 GPU5), two arms per card, ~0.78 s/step. Training runs 38039 (untyped s0), 38038 (untyped s1), 38041 (typed control), 38040 (untyped s0, draft-then-refine 1/2, diagnostic). Eval runs **38060, 38061, 38062, 38063**, suite `arch_v2_proxy_mixed@3`, experiment `ARCH-V2-ALLMOD-PROXY-R4-20261021`.
+
+| Behaviour (n) | chance | rule | untyped s0 | untyped s1 | typed | s0 draft 1/2 (diag.) |
+|---|---|---|---|---|---|---|
+| text upper (100) | 0 | ≥ 0.50 | **1.000** | **1.000** | 1.000 | 1.000 |
+| image in → class (200) | 0.25 | ≥ 0.45 | **0.740** | **0.770** | 0.720 | 0.745 |
+| video in → pan (200) | 0.50 | ≥ 0.70 | **0.995** | **1.000** | 1.000 | 1.000 |
+| speech in → speaker (100) | 0.50 | ≥ 0.70 | 0.690 ✗ | **0.760** | 0.760 | 0.770 |
+| music in → source (100) | 0.50 | ≥ 0.70 | **0.940** | **0.970** | 0.930 | 0.930 |
+| 3D in → shape (200) | 0.25 | ≥ 0.45 | **0.975** | **0.980** | 0.985 | 0.980 |
+| image out (40) | 0.25 | ≥ 0.45 | **0.475** | 0.225 ✗ | 0.650 | 0.600 |
+| image mirror edit (40) | 0.50 | ≥ 0.70 | 0.650 ✗ | 0.600 ✗ | 0.525 ✗ | 0.575 ✗ |
+| video out → direction (40) | 0.50 | ≥ 0.70 | 0.400 ✗ | 0.400 ✗ | 0.550 ✗ | 0.625 ✗ |
+| speech out → speaker (40) | 0.50 | ≥ 0.70 | 0.125 ✗ | 0.050 ✗ | 0.375 ✗ | 0.000 ✗ |
+| music out → source (40) | 0.50 | ≥ 0.70 | **0.850** | **0.750** | 0.525 ✗ | 0.925 |
+| 3D out → shape (40) | 0.25 | ≥ 0.45 | **0.825** | 0.250 ✗ | 0.875 | 0.575 |
+| **verdict** | | | FAIL | FAIL | FAIL | FAIL |
+
+`omni_lab.py compare 38060 38061 38063 38062` totals: `r38060 pass=938 FAIL=202`, `r38061 pass=914 FAIL=226`, `r38063 pass=947 FAIL=193`, `r38062 pass=950 FAIL=190` (1,140 cases each).
+
+**What it shows.**
+1. **Every modality goes IN through the one untyped trunk.** All six understanding behaviours pass on seed 1 and five of six on seed 0 (speech 0.690 against 0.70), and match the typed control. **Video pan, which every round-1 arm failed at 0.500, is now 0.995-1.000**: the round-3 data rules (2-frame tubelets, mRoPE with a rotating column axis, both photo orientations) fixed it.
+2. **Raw out works for music and 3D, from the same head.** Music source 0.850 / 0.750 untyped (the typed control fails on level, not class: 19 of 20 "band" outputs are under 0.25x real RMS). 3D shape 0.825 on seed 0.
+3. **Generation is the weak side, and the typed control fails it too**, so it is not a sharing problem:
+   - the generated rows are **independent per-row blobs**: each 32x32 (image) or 32x16 (video) patch is its own colour blob with no coherence across a frame (contact sheets at `L/scratch/arch-v2-proxy-proof/runs/view/r4_{video,edit}.png`). So the pan instrument reads noise (0.40 both untyped seeds) and the mirror edit does not even keep the source's coarse colours (median 16x16 MSE to the mirror 0.30 vs to the source 0.29, seed 0);
+   - **untyped speech requests decode as music**: "say female / male" was judged piano or band on 27 / 40 (s0) and 26 / 40 (s1). The header was "audio 38400hz mono" for both speech and music, so only the verb differed; the typed control, whose table separates them, produced speech but judged "female" on 39 of 40 requests;
+   - seed variance is large on generation (image out 0.475 vs 0.225, 3D out 0.825 vs 0.250).
+4. **Draft then refine helps** (diagnostic arm): video out 0.400 → 0.625, music 0.925, image 0.600; speech still 0.000.
+
+### 14.6 Round 5: A8, classifier-free guidance, kind-naming audio headers [V]
+
+**Changes** (commit `f37327b`; tests `tests/test_v2_round5_generation_torch_optional.py`). All shared, none indexed by type, none adds a parameter; the PASS_RULES are unchanged.
+- **A8 `native_reverse_media_scan`** (`config.py`, `modeling/layers.py ChimeraBlock._with_reverse_media_scan`): in a generation pass every recurrent (GDN) layer also scans the open media suffix backward with its own weights; suffix rows take the mean of the two directions. Text, clean context spans and every understanding pass stay exactly causal (pinned).
+- **Classifier-free guidance** (`v2_refine.sample_suffix / draft_then_refine`): 10% of generation samples drop the request (data only); sampling uses x0_u + w (x0_c - x0_u), w = 3.0, chosen before the run. Guidance 1 is bit-identical to the plain sampler (pinned).
+- **Kind-naming audio headers**: "speech 38400hz mono" / "music 38400hz mono" instead of "audio 38400hz mono" for both. This is the in-band text equivalent of the kind the typed control reads from its table. The prompts change, so it is suite version 4.
+- **Draft then refine** at 1/2 on every arm.
+- Settings pre-registered as review run **38066** before launch. Suite: 686 passed, 19 skipped.
+
+**Runs.** GPU3 + GPU5 (wrappers 38067 / 38068), ~1.05 s/step. Training runs 38070 (untyped s0), 38069 (untyped s1), 38072 (typed), 38071 (s0 without A8, diagnostic). Eval runs **38110, 38111, 38112, 38113**, suite `arch_v2_proxy_mixed@4`, experiment `ARCH-V2-ALLMOD-PROXY-R5-20261021`.
+
+| Behaviour | rule | untyped s0 | untyped s1 | typed | s0 no A8 (diag.) |
+|---|---|---|---|---|---|
+| text / image / video / speech / music / 3D in | | **1.000 / 0.765 / 1.000 / 0.780 / 0.950 / 0.985** | **1.000 / 0.715 / 1.000 / 0.770 / 0.930 / 0.990** | 1.000 / 0.750 / 1.000 / 0.740 / 0.890 / 0.985 | 1.000 / 0.735 / 1.000 / 0.700 / 0.970 / 0.995 |
+| image out | ≥ 0.45 | **0.700** | 0.350 ✗ | 0.725 | 0.675 |
+| image mirror edit | ≥ 0.70 | 0.600 ✗ | 0.475 ✗ | 0.600 ✗ | 0.525 ✗ |
+| video out | ≥ 0.70 | 0.375 ✗ | 0.500 ✗ | 0.500 ✗ | 0.500 ✗ |
+| speech out | ≥ 0.70 | 0.000 ✗ | 0.000 ✗ | 0.000 ✗ | 0.000 ✗ |
+| music out | ≥ 0.70 | 0.625 ✗ | 0.600 ✗ | 0.575 ✗ | 0.450 ✗ |
+| 3D out | ≥ 0.45 | **0.450** | **1.000** | 1.000 | 0.625 |
+| **verdict** | | FAIL | FAIL | FAIL | FAIL |
+
+`omni_lab.py compare 38110 38111 38113 38112` totals: `r38110 pass=933 FAIL=207`, `r38111 pass=928 FAIL=212`, `r38113 pass=924 FAIL=216`, `r38112 pass=946 FAIL=194`.
+
+**What it shows.**
+1. **Understanding is now stable: all six behaviours pass on both untyped seeds** (speech 0.780 / 0.770).
+2. **None of the three changes fixed generation.** Speech out is judged band or piano on every request in every arm, video out and the edit stay at chance, and music out fell (its outputs miss the level gate: 0.60-0.65 signal-ok). A8 on vs off (s0) is within seed noise. 3D out reached 1.000 on seed 1 and the typed control.
+3. **The real defect is in the x0 head's reach, not in conditioning.** The mean x0 MSE over the last 20 logs of r5-untyped-s0 is **0.314 for speech and 0.351 for music against a signal variance of 0.25**: the model does worse than predicting silence. Image rows reach 0.105. The 256-wide trunk cannot carry a 3,072-value audio row through the bridge and back out of the head, even at low noise where the answer is nearly the input. Round 4 shows the same numbers (0.337 / 0.332), so it is not caused by the round-5 changes. The 2B carries the same row in 2,048 dims (1.5:1, not 12:1), so this may be a proxy limit; it is UNVERIFIED at 2B.
+
+### 14.7 Round 6: a parameter-free x0 skip [V]
+
+**Change** (commit `221e8d4`): `ChimeraConfig.native_x0_skip_rms` (s = the one data-rule level, 0.5). The x0 head writes the residual of the optimal linear estimate from the noisy row itself, x0 = c_skip(σ) x_t + c_out(σ) F with c_skip = (1-σ)s²/V, c_out = σs/√V, V = (1-σ)²s² + σ² (EDM-style preconditioning for rectified flow). No parameter; σ = 0 (context rows) returns x_t exactly; pinned in `tests/test_v2_round5_generation_torch_optional.py`. Everything from round 5 kept. Settings pre-registered as review run **38106**. Suite: 688 passed, 19 skipped.
+
+**Runs.** Training runs 38107 (untyped s0) and 38109 (typed) on GPU3 from 01:38:50Z (wrapper 38108). GPU5 was held by another session's media-judge claim from 01:35Z, so the GPU5 arms, 38120 (untyped s1) and 38121 (s0 without CFG), waited on the lock under `claim-run --wait` and started at 01:57:56Z (wrapper 38119). Eval runs **38156, 38157, 38158, 38159**, suite `arch_v2_proxy_mixed@4`, experiment `ARCH-V2-ALLMOD-PROXY-R6-20261021`.
+
+| Behaviour | rule | untyped s0 | untyped s1 | typed | s0 no CFG (diag.) |
+|---|---|---|---|---|---|
+| text / image / video / music / 3D in | | 1.000 / 0.745 / 1.000 / 0.920 / 0.985 | 1.000 / 0.765 / 1.000 / 0.910 / 0.975 | 1.000 / 0.705 / 1.000 / 0.900 / 0.985 | 1.000 / 0.750 / 1.000 / 0.930 / 0.990 |
+| speech in | ≥ 0.70 | 0.600 ✗ | 0.650 ✗ | 0.680 ✗ | 0.620 ✗ |
+| image out | ≥ 0.45 | 0.400 ✗ | 0.275 ✗ | 0.675 | 0.625 |
+| image mirror edit | ≥ 0.70 | 0.575 ✗ | 0.550 ✗ | 0.475 ✗ | 0.450 ✗ |
+| video out | ≥ 0.70 | 0.350 ✗ | 0.375 ✗ | 0.625 ✗ | 0.400 ✗ |
+| speech out | ≥ 0.70 | 0.000 ✗ | 0.000 ✗ | 0.000 ✗ | 0.000 ✗ |
+| music out | ≥ 0.70 | 0.500 ✗ | 0.500 ✗ | 0.500 ✗ | 0.500 ✗ |
+| 3D out | ≥ 0.45 | 0.175 ✗ | 0.250 ✗ | 0.775 | 0.600 |
+| **verdict** | | FAIL | FAIL | FAIL | FAIL |
+
+`omni_lab.py compare 38156 38157 38159 38158` totals: `r38156 pass=878 FAIL=262`, `r38157 pass=882 FAIL=258`, `r38159 pass=906 FAIL=234`, `r38158 pass=918 FAIL=222`.
+
+**What it shows.**
+1. **The skip fixed the level and the x0 MSE, not the content.** Raw-audio x0 MSE over the last 20 logs fell to 0.146-0.184 on the untyped seeds (round 5: 0.31-0.35; variance 0.25) and every generated clip now passes the level check (RMS ~0.12-0.16 against 0.10 real). But every speech AND music request, in every arm, is judged "piano": the outputs are level-correct noise whose class does not follow the request.
+2. **It cost understanding and 3D out.** Speech understanding fell below the rule in all four arms (0.60-0.68; round 5: 0.70-0.78), and 3D out collapsed to one or two shapes on both untyped seeds.
+3. **CFG at w = 3 hurt** (s0 with vs without): image out 0.400 vs 0.625, 3D out 0.175 vs 0.600.
+4. Round 6 is the worst round on totals. None of the round-5 or round-6 generation switches is adopted.
+
+### 14.8 Round 7: the media proxy at width 768 [V]
+
+**Change** (commit `d6027f3`): profile `co2-proxy-media-wide`: width 768, FFN 2,304, head 1,536, head dims 192, 72,401,729 parameters, with depth, heads, rotary and layout the same as `co2-proxy-media`. A 3,072-value raw row is now 4:1 over the width instead of 12:1. The 2B is 1.5:1; 4:1 is the ratio at which plain transformers generate raw 32x32 pixel patches with x0 prediction (JiT, 2025 [R]). The generation switches are the round-4 recipe plus draft 1/2 and kind headers: A8, CFG and the x0 skip are off, because rounds 5 and 6 measured no benefit or worse. Same 6,000 steps and learning rate. Settings pre-registered as review run **38152**. Suite: 689 passed, 19 skipped.
+
+**Timing probe** (40 steps each, GPU3, under claim-run): 0.88 s/step at width 256, 1.01 at 512, 1.41 at 768; peak 4.5 / 8.6 / 13.1 GB. One 768 arm fits per P40, so the three arms ran one per card, in sequence.
+
+**Runs.** Training runs 38154 (untyped s1, GPU5), 38167 (typed, GPU3 after another session's media-judge claim released it at 04:01:21Z), 38197 (untyped s0, GPU5 after s1, from 05:48:16Z). About 1.24 s/step. Wrappers 38153 (GPU5 s1), 38166 (GPU3 typed), 38196 (GPU5 s0). Eval runs **38238 (s0), 38239 (s1), 38240 (typed)**, suite `arch_v2_proxy_mixed@4`, experiment `ARCH-V2-ALLMOD-PROXY-R7-20261021`.
+
+| Behaviour | rule | untyped s0 | untyped s1 | typed |
+|---|---|---|---|---|
+| text / image / video / music / 3D in | | **1.000 / 0.700 / 1.000 / 0.880 / 0.970** | **1.000 / 0.745 / 0.995 / 0.900 / 0.970** | 1.000 / 0.740 / 0.995 / 0.930 / 0.975 |
+| speech in | ≥ 0.70 | **0.750** | **0.770** | 0.600 ✗ |
+| image out | ≥ 0.45 | 0.250 ✗ | 0.150 ✗ | 0.250 ✗ |
+| image mirror edit | ≥ 0.70 | 0.525 ✗ | 0.575 ✗ | 0.575 ✗ |
+| video out | ≥ 0.70 | 0.500 ✗ | 0.525 ✗ | 0.500 ✗ |
+| speech out | ≥ 0.70 | 0.000 ✗ | 0.000 ✗ | 0.000 ✗ |
+| music out | ≥ 0.70 | 0.450 ✗ | 0.425 ✗ | 0.100 ✗ |
+| 3D out | ≥ 0.45 | 0.075 ✗ | 0.150 ✗ | 0.200 ✗ |
+| **verdict** | | FAIL | FAIL | FAIL |
+
+`omni_lab.py compare 38238 38239 38240` totals: `r38238 pass=869 FAIL=271`, `r38239 pass=882 FAIL=258`, `r38240 pass=860 FAIL=280`.
+
+**What it shows.** At the same 6,000 steps and learning rate, the 7x larger proxy understands every modality as well as the narrow one: all six pass on both untyped seeds. But it generates worse than round 4 on every behaviour (image out 0.150-0.250, 3D out 0.075-0.200, music out 0.425-0.450). Raw-audio x0 MSE over the last 20 logs is still above the signal variance (speech 0.305-0.337, music 0.306-0.335, against 0.25), and edit x0 MSE is no lower than image x0 MSE (0.147 vs 0.145 on s0, 0.117 vs 0.104 on s1). So width alone, at this budget, does not unlock generation. Whether a longer schedule would is not measured.
+
+### 14.9 Where the proof stands after four rounds [V]
+
+**Pre-registered verdict: FAIL in every arm of every round (4, 5, 6 and 7; 15 arms, `omni_lab` eval runs 38060-38063, 38110-38113, 38156-38159, 38238-38240).** The iteration budget (three architecture rounds after round 4) is spent. By the task's own condition the 2B is not launched.
+
+**Every modality goes IN through the one untyped trunk.** Text, image class, video pan, speech speaker, music source and 3D shape pass their rules on both untyped seeds in rounds 5 and 7. The misses elsewhere are all speech speaker: round 4 s0 at 0.690, and round 6 s0 / s1 at 0.600 / 0.650. Every result is at the level of the typed control. Video pan went from 0.500 (round 1, every arm) to 0.995-1.000 once the round-3 data rules were in. Speech speaker sits on the 0.70 line (0.60-0.78 across all arms).
+
+**Raw OUT is proven only in part.**
+- **Passed on both untyped seeds of one round:** music out (round 4: 0.850 / 0.750) and 3D out (round 5: 0.450 / 1.000).
+- **Passed on one seed only:** image out (round 4 s0 0.475, round 5 s0 0.700; the other seed 0.225 / 0.350).
+- **Never passed, in any arm of any round, typed control included:** image mirror edit (best 0.650), video out (best 0.625), speech out (best 0.375, typed round 4; every untyped arm ≤ 0.125).
+- Because the typed control fails the same three, **the defect is not the untyped sharing.** It is the generation side of the proxy as trained here: 9.8M (or 72M) parameters for 6,000 steps, with about 24k examples per generation behaviour.
+
+**What the measurements say about the three that never pass.**
+- **Edit:** the model never uses its source. Edit x0 MSE equals class-conditional image x0 MSE in every round (for example 0.099 against 0.105, round 5 s0), and the decoded outputs are class-coloured 2x2 blob mosaics unrelated to the source photo (`runs/view/r4_edit.png`). The route exists (the context span reaches the suffix, pinned in tests); it is not learned at this budget.
+- **Video out:** frames are per-row blobs with no coherent content to move, so the displacement instrument reads noise (0.35-0.63).
+- **Speech out:**
+  - In rounds 5-7 speech requests decode as music (band or piano) on all but a handful of the 40 per arm, even with the kind header and in the typed control.
+  - Without the skip, raw-audio x0 MSE stays above the signal variance (0.31-0.35 against 0.25, also at width 768). With the skip it reaches 0.146-0.184 and the level is right, but the content still does not follow the request.
+  - The generated spectra are wrong in a measurable way (`code/hf_energy.py`, median fraction of energy above 8 kHz):
+    - real speech and music test windows: 0.0000-0.0002;
+    - generated speech in the untyped arms: 0.0266 (round 4 s0), 0.0242 (round 5 s0), 0.0064 (round 7 s1);
+    - with the x0 skip: 0.3750 (round 6 s0), i.e. level-correct white noise;
+    - the round-4 typed control comes closest at 0.0004.
+
+**Mechanisms tried and not adopted** (all shared, none type-indexed, all switches stay off in the profiles): A8 reverse media scan, classifier-free guidance (w = 3), the parameter-free x0 skip, and a 4:1 proxy width. **Kept in the round-7 recipe:** kind-naming audio headers (a proof data rule, not a profile field). They are neutral on the gates and are the in-band form of the kind the typed control reads from its table. Draft-then-refine helped video and music out in the round-4 diagnostic arm.
+
+**Not established, and the obvious next measurements (not run):**
+1. **Budget.** Every failing behaviour sits near chance with large seed variance (image out 0.700 vs 0.350 on two seeds). The next run is a longer schedule on one configuration (round 4 + draft 1/2), with per-behaviour learning curves, before any further architecture change.
+2. **Edit:** a copy-only control (the source, unflipped, as the target) to tell "cannot route a context span" from "cannot mirror".
+3. **Speech out:** a speech-only generation arm, to separate a capacity limit from interference with the five other generation tasks.
+
+**The init ruling is unaffected.** Every proxy here is trained from random init as an architecture probe, and no proxy weight goes anywhere. The base model stays fold-built (`V2_INIT_RULE`; the 2B preflight refuses anything else).
+
+---
+
+## Appendix: evidence index
+
+- **Repo (branch `claude/arch-v2-20261021`):** `src/chimera_omni/{config.py, architecture.py, conformance.py, modeling/chimera.py}`, `tests/test_v2_architecture_torch_optional.py`, `docs/ARCHITECTURE.md`.
+- **Conformance reports:** `OCL/arch_v2/conformance/{co2-2b.static, co2-4b.static, co2-proxy.dynamic, k3-test.dynamic, omni1.static}.json`. The OMNI1 report was produced on the AI server from headers only (sha256 `9d59a23a…`, copy at `L/scratch/arch-v2-conformance/`).
+- **omni_lab:**
+  - `arch_requirement` (16 rows) and `directive` ids 681-693.
+  - `model` ids 1780-1783 (design-stage, layout `chimera.config.v1`, path NULL, no weights) and 15 (OMNI1).
+  - Probe runs 37892-37896.
+  - Inventory: `omni-lab/inventory/2026-10-21-arch-v2/`.
+- **Arithmetic:** `C:/Users/cereal/AppData/Local/Temp/claude/C--Users-cereal/0c189f21-3de3-4c40-b42c-db54c9d84462/scratchpad/v2_budget.py` (KV, state, decode corners) and `.../scratchpad/v2_smoke.py` (meta parameter counts, AttnRes init comparison).
+- **Second pass (section 14):**
+  - **Repo:** `src/chimera_omni/{v2_layout.py, modeling/layers.py (chunked_gated_delta_rule, use_chunked_gdn_scan), modeling/chimera.py (native_unit_norm), proof/v2_proxy_data.py, proof/v2_proxy_mixed.py, proof/v2_proxy_mixed_lab.py}`, `scripts/arch_v2_2b_{lane.py,queue.sh}`, `tests/test_{v2_mixed_sequence,chunked_gdn_scan}_torch_optional.py`.
+  - **Server:** `L/scratch/arch-v2-proxy-proof/{data, code/chimera-omni-{7158c85,fb45750}, runs/{untyped,typed,untyped-unitnorm,untyped-s1}}`. Each run directory holds its checkpoint, report, train log and generated PNG/WAV.
+  - **Lane:** `$OC/distill/queues/arch_v2_2b_{queue.sh,lane.py}` and `L/distill/arch_v2_2b/20261021T194042Z/preflight.json`.
+  - **omni_lab training runs:** 38000, 38002, 38013, 38014 (wrappers 38001 and 38012; CPU attempts 37995 and 37996, stopped).
+  - **omni_lab evals:** eval runs 38010, 38011, 38017, 38020. Suite `arch_v2_proxy_mixed@1` (720 cases). Experiments `ARCH-V2-A6P-PROXY-MIXED-20261021` and `ARCH-V2-A6B-UNITNORM-20261021`. Lane queue run 38015.
+  - omni-lab `8328b6b` (`log-eval`).
+- **Third pass (sections 14.5-14.9):**
+  - **Repo:** `src/chimera_omni/proof/v2_proxy_{data,mixed,mixed_lab}.py` (data v2, proof v3, suite v3/v4); `config.py` (`native_reverse_media_scan`, `native_x0_skip_rms`, profile `co2-proxy-media-wide`); `modeling/layers.py` (`ChimeraBlock._with_reverse_media_scan`); `modeling/chimera.py` (`_x0_skip`); `v2_refine.py` (guidance); `tests/test_v2_round5_generation_torch_optional.py` (9 tests).
+  - **Server:** `L/scratch/arch-v2-proxy-proof/data/v2proxy_all_v1.{npz,manifest.json}` (sha `7af008b0…`); `L/corpus/external/modelnet10/ModelNet10.zip`; `code/{chimera-omni-24e197c,-f37327b,-221e8d4,-d6027f3, gpu_job_r4.sh, post_r4.sh, read_reports.py, hf_energy.py, width_timing.py, pass_rules_r4.json, r{5,6,7}_settings.json}`; `runs/r{4,5,6,7}-*` (report, checkpoint, train log, generated media); `runs/lab_ARCH-V2-ALLMOD-PROXY-R{4,5,6,7}-20261021/`; `runs/view/r4_{video,edit}.png`.
+  - **omni_lab:**
+    - pre-registration: review runs 38033 (PASS_RULES), 38066 / 38106 / 38152 (round settings);
+    - training runs 38038-38041, 38069-38072, 38107 / 38109 / 38120 / 38121, 38154 / 38167 / 38197; wrappers 38036 / 38037, 38067 / 38068, 38108 / 38119, 38153 / 38166 / 38196;
+    - eval runs 38060-38063, 38110-38113, 38156-38159, 38238-38240;
+    - suites `arch_v2_proxy_mixed@3` / `@4`; experiments `ARCH-V2-ALLMOD-PROXY-R{4,5,6,7}-20261021`.
+- **Inputs [R]:** `ARCHITECTURE_REVIEW_2026-10-21.md`, the Sprite docs (`D:/SpriteBuild/claude-20261019/docs/SPRITE_*_20261020.md`), and the workflow's repo/device/literature fact sheets, two designs, two judges and critique.
+- **Literature (2025-2026, [R]):**
+  - arXiv 2507.06457 (hybrid ratio), 2510.26692 (Kimi Linear), 2603.15031 (AttnRes), 2502.12170 (MUDDFormer), 2512.24880 (mHC), 2410.17897 (value residual), 2601.07372 (Engram), 2503.15798 (MoLE), 2502.08606 (distillation scaling), 2508.15884 (Jet-Nemotron), 2504.17768 (Sparse Frontier).
+  - The NeurIPS 2025 gated-attention paper, the Qwen3.5-2B and Gemma 4 model cards, and MiniMax's M2 full-attention post.
