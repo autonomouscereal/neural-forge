@@ -41,12 +41,16 @@ Linking.
   * Directives go into directive only after the quote is found in its source (agent_memory_events user prompt
     via read-only SQL, or the cited file) and only when no directive already contains the exact quote.  Keys
     follow ingest/directives.py ('ev:<id>:<sha8>' / 'doc:<sha8 path>:<line>:<sha8>'), so the two ingesters
-    never write the same words twice.  A quote with '...' is checked fragment by fragment, in order, and stored
-    as the exact source spans joined by ' ... '.  When a cited event does not hold the words but a cited file
-    does, the file is the source and the summary says so.  Unverifiable quotes are skipped and noted.
+    never write the same words twice, and a key another ingester already holds is never overwritten (skipped as
+    'key-taken').  A quote is matched whole first; one with '...' that is not in its source whole is checked
+    fragment by fragment, in order, and stored as the exact source spans joined by ' ... '.  When a cited event
+    does not hold the words but a cited file does, the file is the source and the summary says so.
+    Unverifiable quotes are skipped and noted.
 
 Re-runnable: rows are keyed on natural keys, child rows on (owner, ordinal) with surplus ordinals deleted, so
 an unchanged shard set writes nothing.  Rows of arms that disappeared from the shards are reported, not deleted.
+foldrec's own directive rows that no shard wants any more are deleted (unless a ruling, a superseding
+directive or an arch_requirement names them), so a re-run never leaves the same words in two rows.
 
     python -m ingest.foldrec [--inventory DIR] [--dry-run]
     omni_lab.py ingest foldrec [--inventory DIR] [--dry-run]
@@ -653,6 +657,19 @@ def directive_present(conn, texts: list[str]) -> str | None:
     return None
 
 
+def directive_key_owner(conn, key: str) -> str | None:
+    """Writer (ingest_batch.source, '?' when unknown) of an existing directive row with this key that foldrec did
+    NOT write; None when the key is free or foldrec's own.  ingest/directives.py keys a quote the same way, so a
+    quote it stored with other whitespace or dots has foldrec's key: that row is never overwritten."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT b.source FROM directive d LEFT JOIN ingest_batch b ON b.id = d.ingest_batch_id "
+                    "WHERE d.directive_key = %s", (key,))
+        row = cur.fetchone()
+    if row is None or row[0] == SOURCE:
+        return None
+    return row[0] or "?"
+
+
 class EventReader:
     """agent_memory_events rows by id, read-only (admin profile, a READ ONLY session); None = not readable here."""
 
@@ -681,15 +698,17 @@ ELLIPSIS_RE = re.compile(r"\s*(?:\.\.\.|…)\s*")
 
 
 def anchor_quote(quote: str, text: str | None) -> str | None:
-    """The exact source span(s) a quote stands for.  A quote with '...' / an ellipsis character is matched
+    """The exact source span(s) a quote stands for.  The whole quote is tried first (Cyril writes '....' himself,
+    so dots in a quote are often his own words).  Otherwise a quote with '...' / an ellipsis character is matched
     fragment by fragment, in order; the result is the exact span of each fragment joined by ' ... '."""
     if not text:
         return None
+    whole = anchor(quote, text)
+    if whole is not None:
+        return whole
     parts = [p for p in ELLIPSIS_RE.split(quote) if p.strip()]
-    if not parts:
+    if not parts or parts == [quote]:                     # no ellipsis: the whole quote was the only try
         return None
-    if parts == [quote]:                                  # no ellipsis
-        return anchor(quote, text)
     spans, pos = [], 0
     for part in parts:
         m = re.compile(r"\s+".join(re.escape(tok) for tok in part.split())).search(text, pos)
@@ -784,6 +803,11 @@ def plan_directives(conn, plan: Plan, events: EventReader) -> tuple[list[dict], 
             outcomes.append((sh.name, "same-key-merged", values["directive_key"]))
     kept: list[dict] = []
     for c in sorted(cands.values(), key=lambda v: (-len(v["verbatim"]), v["directive_key"])):
+        owner = directive_key_owner(conn, c["directive_key"])
+        if owner is not None:
+            outcomes.append((c["_shards"][0], "key-taken",
+                             f"{c['directive_key']} written by {owner}: {c['_quote'][:70]!r}"))
+            continue
         other = directive_present(conn, [c["_quote"], c["verbatim"]])
         if other:
             outcomes.append((c["_shards"][0], "already-present", f"as {other}: {c['_quote'][:70]!r}"))
@@ -804,6 +828,20 @@ def plan_directives(conn, plan: Plan, events: EventReader) -> tuple[list[dict], 
         row["_shard"] = shards[0]
         rows.append(row)
     return rows, outcomes
+
+
+def stale_directives(conn, keep_keys: list[str]) -> list[tuple[int, str, bool]]:
+    """foldrec-written directive rows no shard wants any more: (id, key, referenced).  A row goes stale when its
+    words now sit in another row (a longer foldrec quote, another ingester's row) or the quote left the shards
+    (a checker removed it).  referenced = a ruling, a superseding directive or an arch_requirement names it."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT d.id, d.directive_key, "
+                    "EXISTS (SELECT 1 FROM ruling r WHERE r.directive_id = d.id) "
+                    "OR EXISTS (SELECT 1 FROM directive s WHERE s.supersedes_id = d.id) "
+                    "OR EXISTS (SELECT 1 FROM arch_requirement a WHERE d.id = ANY(a.directive_ids)) "
+                    "FROM directive d JOIN ingest_batch b ON b.id = d.ingest_batch_id "
+                    "WHERE b.source = %s AND NOT (d.directive_key = ANY(%s)) ORDER BY d.id", (SOURCE, keep_keys))
+        return [(i, k, bool(ref)) for i, k, ref in cur.fetchall()]
 
 
 def runs_for_paths(conn, paths: list[str]) -> list[int]:
@@ -1060,6 +1098,18 @@ def run(conn, batch: C.Batch, args) -> None:
             **values, "src_sha256": p[1], "src_host": p[2], "ingest_batch_id": batch.id})
         tally.add("directive", state)
         states["written"] += 1
+    # foldrec's own rows that no shard wants any more go (so the same words are never stored twice); a row
+    # something references stays and is noted
+    with conn.cursor() as cur:
+        for did, key, referenced in stale_directives(conn, [r["directive_key"] for r in rows]):
+            if referenced:
+                batch.notes.append(f"directive {key} (id {did}) is no longer in any shard but is referenced (kept)")
+                states["stale-kept"] += 1
+                continue
+            cur.execute("DELETE FROM directive WHERE id = %s", (did,))
+            tally.c[("directive", "deleted")] += cur.rowcount
+            batch.wrote(cur.rowcount)
+            states["stale-deleted"] += 1
 
     with conn.cursor() as cur:
         cur.execute("SELECT arm_key FROM fold_arm WHERE NOT (arm_key = ANY(%s)) ORDER BY arm_key",
@@ -1072,7 +1122,7 @@ def run(conn, batch: C.Batch, args) -> None:
     K.finish(batch, tally)
     pruned = sorted((t, n) for (t, s), n in tally.c.items() if s == "deleted")
     if pruned:
-        batch.tally_lines.append("deleted (surplus ordinals / stale aliases+links): "
+        batch.tally_lines.append("deleted (surplus ordinals / stale aliases+links / stale directives): "
                                  + " ".join(f"{t}={n}" for t, n in pruned))
     batch.tally_lines.append(f"arms={len(plan.arms)} attached-to-existing={attached} shards={len(plan.shards)} "
                              f"problems={len(plan.problems)} directives: "
@@ -1136,6 +1186,11 @@ def dry_run(args, conn=None) -> dict:
             states[how] += 1
         rep["directive_states"] = dict(states)
         rep["directive_failures"] = [f"{shard}: {how}: {detail}" for shard, how, detail in outcomes]
+        stale = stale_directives(conn, [r["directive_key"] for r in rows])
+        rep["directive_states"]["stale-delete"] = sum(1 for s in stale if not s[2])
+        rep["directive_states"]["stale-kept"] = sum(1 for s in stale if s[2])
+        rep["directive_failures"] += [f"stale: {k} (id {i}){' referenced, kept' if ref else ''}"
+                                      for i, k, ref in stale]
         conn.rollback()
     finally:
         if own:

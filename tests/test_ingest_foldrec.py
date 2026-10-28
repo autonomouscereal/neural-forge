@@ -229,6 +229,10 @@ class PureTests(unittest.TestCase):
         self.assertEqual(foldrec.anchor_quote("keep going...", src), "keep going")
         self.assertIsNone(foldrec.anchor_quote("...", src))
         self.assertIsNone(foldrec.anchor_quote("a b", None))
+        # dots that are Cyril's own are matched whole, not split as an elision
+        cyril = "it to be round.... so yes the ball round \n\nof course keep"
+        self.assertEqual(foldrec.anchor_quote("round.... so yes the ball round of course", cyril),
+                         "round.... so yes the ball round \n\nof course")
         plan = foldrec.Plan()
         plan.arms = [{"key": "A", "aliases": []}, {"key": "A@w3", "aliases": ["A"]}, {"key": "A#x", "aliases": ["A"]},
                      {"key": "AB", "aliases": ["A"]}]
@@ -495,6 +499,44 @@ class FoldrecDbTests(unittest.TestCase):
                 self.ingest(foldrec, tmp)
         self.assertEqual(self.q("SELECT status FROM ingest_batch WHERE source='foldrec' ORDER BY id DESC LIMIT 1"),
                          [("failed",)])
+
+    def test_40_directive_key_of_another_ingester_is_never_overwritten(self):
+        # ingest/directives.py keys a quote like foldrec does; its row may hold the words with other whitespace,
+        # so the quote is not a substring of it.  The 2026-10-28 production ingest overwrote such a row.
+        quote = "keep every closed path"
+        key = f"doc:{foldrec.K.sha_text(self.doc_path.as_posix(), 8)}:5:{foldrec.K.sha_text(quote, 8)}"
+        with self.conn.cursor() as cur:
+            cur.execute("INSERT INTO directive (directive_key, said_at, channel, verbatim, summary) "
+                        "VALUES (%s, '2026-08-10', 'doc', 'keep every\n\nclosed path', 'written by directives')", (key,))
+            # foldrec rows from the shard-a/b runs: shard-k alone wants none of them, so they go, except one a
+            # ruling cites
+            cur.execute("SELECT d.id FROM directive d JOIN ingest_batch b ON b.id=d.ingest_batch_id "
+                        "WHERE b.source='foldrec' AND d.verbatim='keep the negatives'")
+            cited = cur.fetchone()[0]
+            cur.execute("INSERT INTO ruling (ruling_key, decided_at, who, authority, decision, directive_id) "
+                        "VALUES ('TEST-RULING', now(), 'cyril', 'owner', 'keep them', %s)", (cited,))
+        self.conn.commit()
+        n_foldrec = self.q("SELECT count(*) FROM directive d JOIN ingest_batch b ON b.id=d.ingest_batch_id "
+                           "WHERE b.source='foldrec'")[0][0]
+        self.assertGreaterEqual(n_foldrec, 3)
+        with open(self.doc_path, "a", encoding="utf-8", newline="\n") as fh:
+            fh.write("Cyril: \"keep every closed path\"\n")
+        with tempfile.TemporaryDirectory() as tmp:
+            write_shards(Path(tmp), {"shard-k": {
+                "schema": "foldrec-v1", "shard": "shard-k", "extracted_at": "2026-10-28T00:00:00Z",
+                "sources_read": [], "sources_not_read": [], "experiments": [], "findings": [], "techniques": [],
+                "directives": [{"date": "2026-08-10", "quote": quote, "topic": "process",
+                                "source": {"ev": None, "path": self.doc_path.as_posix(), "line": 5},
+                                "speaker_check": "x"}]}})
+            b = self.ingest(foldrec, tmp)
+        self.assertEqual(self.q("SELECT verbatim, summary, ingest_batch_id FROM directive WHERE directive_key=%s", (key,)),
+                         [("keep every\n\nclosed path", "written by directives", None)])
+        self.assertEqual(self.q("SELECT count(*) FROM directive WHERE ingest_batch_id=%s", (b.id,)), [(0,)])
+        self.assertIn(f"key-taken: {key} written by ?", " ".join(b.notes))
+        self.assertEqual(self.q("SELECT d.id FROM directive d JOIN ingest_batch b ON b.id=d.ingest_batch_id "
+                                "WHERE b.source='foldrec'"), [(cited,)])
+        self.assertIn(f"(id {cited}) is no longer in any shard but is referenced (kept)", " ".join(b.notes))
+        self.assertIn("stale-deleted=" + str(n_foldrec - 1), " ".join(b.tally_lines))
 
 
 if __name__ == "__main__":
