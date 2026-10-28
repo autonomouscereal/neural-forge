@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# run_p11_omni1_v110.sh <gpu-index> -- S0 P11 rerun: the OMNI1 256k needle baseline with p11_needle_engine 1.1.0
+# (plan Step 5c; needed before the D2 seal, not before the D2 start).  Prepared 2026-10-14 by lane p2p11; NOT
+# launched -- the card is decided later.  Launch it detached once its card is free:
+#   setsid nohup bash $OC/distill/tools/run_p11_omni1_v110.sh 4 > $OC/distill/tps/p11-v110/driver-gpu4.log 2>&1 < /dev/null &
+#
+# WHY A RERUN.  The 2026-10-13 baseline (1.0.0) is hit=0 exact=0 everywhere because it scored only the strict
+# argmax: OMNI1 puts a control token on top at the answer slot.  `rescore` (receipt
+# $OC/distill/tps/p2p11/p11_omni1_rescore_v110_of_v100.json) recovered what 1.0.0 kept, but the content / digit
+# readouts stay partly unknown without the logits; 1.1.0 saves the top-16 of every scored row.  Same needle file
+# (needles_v1, sha 052e2caf...), so D2 / D4 compare like with like.
+#
+# JOBS (one status line each in $Q/p11.status):
+#   1 recurrence-parity  fp32 on the card (TRITON_F32_DEFAULT=ieee for this job only; the read keeps the defaults of
+#                        2026-10-13): tree forward_with_state vs loop, fla-naive-chunk and the TRITON fla kernel,
+#                        KDA layers auto (first three + the middle one), L 256 / 4,096, E2 chunks 96 / 1,024.  The fla
+#                        kernel had never been checked in fp32 (the CPU arm of 2026-10-14 checked E2's mapping through
+#                        fla's own torch references).  A FAIL stops the job: no read on a recurrence that is wrong.
+#   2 parity             the E2 gate exactly as 2026-10-13 (bf16, kda fla, L 4,096, chunk 1,024, 256 MiB score budget)
+#   3 read               32k (2 depths + no-needle control), 128k, 256k (2 depths each), label p11_omni1_v110
+# CARD RULES (refused otherwise): 0 / 4 RTX 3090 only when no codex-d1-native* container runs and the card holds
+# < 2,000 MiB; 6 RTX 8000 only with $Q/gpu6.slot.p11 written by the gpu6 lane owner; P40s refused (no triton on
+# sm61: the fla kernel cannot run); GPU5 never.  HOST: MemAvailable >= 40 GiB (2026-10-13 peak RSS 17.7 GB).
+# ETA: 2026-10-13 on one 3090: parity 20 min, read 1 h 57 min (32k 13.5 min, 128k 27 min, 256k 75 min); + ~20 min
+# for job 1 -> about 2 h 40 min.
+set -uo pipefail
+GPU_INDEX=${1:?usage: run_p11_omni1_v110.sh <gpu-index 0|4|6>}
+OC=/home/cereal/omni-campaign
+Q=$OC/distill/queues
+OUT=$OC/distill/tps/p11-v110
+PY=/home/cereal/model-surgery-lab/venv/bin/python
+T=$OC/distill/tools/p11_needle_engine.py
+WANT_T=${WANT_T:-8654249be910f8d08af11cb18adc1a76c2774eeb2376b8cf80b4f28164faf241}
+M=/mnt/lexar/omni-campaign/omni1/OC02-F-Q38-27BU-OMNI1
+NEEDLES=$OC/distill/p11/needles_v1
+STATUS=$Q/p11.status
+LANE=p2p11
+stamp() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+status() { echo "$(stamp) $*" >> $STATUS; echo "[$(stamp)] STATUS $*"; }
+refuse() { echo "REFUSED: $*"; status "lane=$LANE job=p11-v110 gpu=$GPU_INDEX state=refused reason=\"$*\""; exit 2; }
+
+case $GPU_INDEX in
+  0|4) d1=$(docker ps --filter name=codex-d1-native --format '{{.Names}}') || refuse "docker ps failed: cannot prove D1 is off GPU0 / GPU4"
+       d1=$(echo "$d1" | head -1)
+       [ -z "$d1" ] || refuse "D1 container $d1 is running (it owns GPU0 + GPU4 until it exits)"
+       LOCK=$Q/gpu$GPU_INDEX.lock ;;
+  6)   [ -f $Q/gpu6.slot.p11 ] || refuse "GPU6 needs a slot file $Q/gpu6.slot.p11 from the gpu6 lane owner"
+       LOCK=$Q/gpu6.p11.lock ;;
+  *)   refuse "GPU$GPU_INDEX cannot run the fla kernel P11 reads with (0 / 4 after D1, 6 with a slot file)" ;;
+esac
+[ "$(sha256sum $T | cut -c1-64)" = "$WANT_T" ] || refuse "$T sha256 $(sha256sum $T | cut -c1-16) is not the pinned 1.1.0 ${WANT_T:0:16}"
+[ "$(sha256sum $NEEDLES/needles.safetensors | cut -c1-64)" = "052e2cafcc6a6a8f517f232e2c2acacd6a77648632bffa77af8b3cfceabd6a5a" ] \
+  || refuse "needles_v1 changed: the baseline must read the 2026-10-13 needle file"
+mkdir -p $OUT
+exec 9> $LOCK
+flock -n 9 || refuse "another job holds $LOCK"
+used=$(nvidia-smi --query-gpu=index,memory.used --format=csv,noheader,nounits | awk -F', ' -v g=$GPU_INDEX '$1==g{print $2}')
+[ "${used:-99999}" -lt 2000 ] || refuse "GPU$GPU_INDEX holds ${used} MiB"
+mem_avail_gib() { awk '/MemAvailable/ {print int($2 / 1048576)}' /proc/meminfo; }
+held=0
+while [ "$(mem_avail_gib)" -lt 40 ]; do
+  [ $held -ge 21600 ] && refuse "MemAvailable stayed below 40 GiB for 6 h"
+  [ $((held % 1800)) -eq 0 ] && echo "[$(stamp)] MemAvailable $(mem_avail_gib) GiB < 40; waiting"
+  sleep 120; held=$((held + 120))
+done
+release() { if [ "$GPU_INDEX" = 6 ]; then rm -f $Q/gpu6.slot.p11; fi; }
+trap release EXIT
+export CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=$GPU_INDEX   # torch's default order differs from nvidia-smi here
+export PYTHONPATH=$OC/distill/tools OC_CALIBRATION_DIR=$OC/calibration OMP_NUM_THREADS=16 MKL_NUM_THREADS=16
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+COMMON=(--model $M --chimera-src $OC/import/rq27b/tree_ef1ffb9 --needles $NEEDLES --device cuda:0)
+status "lane=$LANE job=p11-v110 gpu=$GPU_INDEX state=started tool=${WANT_T:0:16} $(nvidia-smi --query-gpu=name,memory.used --format=csv,noheader -i $GPU_INDEX)"
+
+TRITON_F32_DEFAULT=ieee nice -n 15 $PY $T recurrence-parity "${COMMON[@]}" --dtype float32 --layers auto --lengths 256,4096 --chunks 96,1024 \
+  --arms loop,fla-naive-chunk,fla --out $OUT/p11_omni1_recurrence_parity_gpu${GPU_INDEX}_fp32_fla.json > $OUT/1_recurrence.log 2>&1
+rc=$?
+line=$(grep '^RECURRENCE PARITY' $OUT/1_recurrence.log | tail -1 | cut -c1-500)
+status "lane=$LANE job=p11-v110 step=recurrence-parity rc=$rc $line"
+if [ $rc -ne 0 ] && [ "${P11_FORCE:-0}" != 1 ]; then refuse "fp32 recurrence parity rc=$rc: $line"; fi
+
+nice -n 15 $PY $T parity "${COMMON[@]}" --dtype bfloat16 --kda-kernel fla --length 4096 --chunk 1024 --attn-budget-mib 256 \
+  --parity-min-top1 0.90 --out $OUT/p11_omni1_v110_e2_parity_gpu_bf16_fla_L4096.json > $OUT/2_parity.log 2>&1
+rc=$?
+status "lane=$LANE job=p11-v110 step=e2-parity rc=$rc $(grep '^E2 PARITY' $OUT/2_parity.log | tail -1 | cut -c1-400)"
+[ $rc -eq 0 ] || refuse "E2 parity rc=$rc"
+
+nice -n 15 $PY $T read "${COMMON[@]}" --dtype bfloat16 --kda-kernel fla --lengths 32768,131072,262144 --chunk 8192 \
+  --attn-budget-mib 2048 --parity-length 0 --out-dir $OUT --label p11_omni1_v110 > $OUT/3_read.log 2>&1
+rc=$?
+status "lane=$LANE job=p11-v110 step=read rc=$rc $(grep '^P11 SUMMARY' $OUT/3_read.log | tail -1 | cut -c1-900)"
+status "lane=$LANE job=p11-v110 gpu=$GPU_INDEX state=end rc=$rc"
+exit $rc

@@ -1,0 +1,355 @@
+# V2 fold-init plan: building `co2-2b` (then `co2-4b`) entirely from our folds (2026-10-21, written 2026-10-22)
+
+Ruling of record: `cyril-v2-arch-and-fold-init-2026-10-21` (`distill/STAGE_D_RULINGS_2026-10-12.md` lines 113-127).
+Binding sentence: **"[Cyril quote withheld]"**
+
+Evidence key, as in `ARCHITECTURE_V2_2026-10-21.md`: **[V]** read or printed by me this session; **[R]** from a document or receipt I did not re-run; **[E]** an estimate with its arithmetic shown; **UNVERIFIED** stated outright.
+
+Paths: `OC` = `/home/cereal/omni-campaign`, `L` = `/mnt/lexar/omni-campaign`, `OCL` = this reports directory, `CO` = the chimera-omni worktree branch `claude/arch-v2-20261021` (`C:/Users/cereal/Documents/ai training/.agent-worktrees/chimera-omni-5d4d4e1dcd/workers/claude/arch-v2-20261021`, local commits only, never pushed).
+
+---
+
+## 1. Problem
+
+The v2 base (`co2-2b`: 24 layers, width 2048, 1,923,133,041 params [V spec section 3]) must exist as a checkpoint before any training, and every one of its tensors must be *produced by a fold* of our existing fold artifacts (K3 dense fold, S5 union, run-1 trunk, S3, media units), never copied from Qwen3.5-2B/4B or any other existing model. The sources are 64-93 layers deep and 5,120-7,168 wide; the target is 24-32 layers and 2,048-2,560 wide with a different vocabulary size, an untyped raw boundary and a raw x0 head that no source has. This document fixes which source supplies which v2 tensor, the width/depth/mixer folds, the fit objective, the calibration data, what has to be refolded, the compute, and the behaviour checks the folded base must pass before anything trains on top.
+
+---
+
+## 2. Sources and their geometry [V unless marked]
+
+| Id | Artifact | Path | Geometry | Role in v2 |
+|---|---|---|---|---|
+| **T** | run-1 full-KD student (trained trunk) | `L/distill/fullkd/run1/out/student` (49 GB, 13 shards, `Qwen3_5ForConditionalGeneration` text config) | 64 layers, `full_attention_interval 4` (16 periods of 3 GDN + 1 gated GQA), hidden 5120, FFN 16640, GQA 24 q / 4 kv x 256, GDN 48 v / 16 k x 128, conv 4, vocab 248,320, untied | **Default primary trunk source** (mixers, FFN channels, embed/head) |
+| **S5** | union child (fold-only) `OC02-F-Q38-27BU-C2K4352K3U` | `OC/composite/c10/S5-C2K4352K3U/child` (51 GB, Chimera layout) | 64 layers, same block pattern, hidden 5120, FFN 16640 = **4,352 trunk coreset + 12,288 K3 channels** (`launch_s5.sh --k3-channels 12288`; 4,352 + 12,288 = 16,640 [V arithmetic; channel order to be confirmed from `OC/composite/s5/union_receipt.json` at step P0]), vocab 317,952 (248,320 text + ledger bands), union target `a003 = trunk/additive:0.03` | **Control-arm trunk source** (fold-only lineage; its mixers are Qwen3.8-27BU's verbatim because C2 folds only FFNs [R `qwen-fold/README.md`]) |
+| **K3D** | K3 all-experts dense fold | `OC/k3-run-oct09-claude/fold/dense/L00..L92` (76 GB; L0 verbatim dense MLP, L1-92 form E, K = 17,408 latent channels, 370,675,200 params per MoE layer [R `K3_RESULTS_2026-10-08.md`]); receipt `receipts/k3_dense_pass_receipt.json` run `04db523ceafa`, tool 1.2.5, `layers_folded` 1-92; `OC/composite/c10/S5-C2K4352K3U/k3_dense_1_92/L*/ffn.safetensors` are symlinks into it | 93 layers, hidden 7168, K3 tokenizer (163,840 rows) | **Primary knowledge source for FFN channels** (lifted exactly as C10 does, charted to v2 width) |
+| **K3 rows** | K3 held FFN-input rows (folded stream) | `OC/k3-run-oct09-claude/fold/resid/L61..L92` (32 layers, 20 GB) | rows x 7168 | Only L61-92 exist; **L1-60 must be refolded** (section 7) |
+| **S3** | Qwen3.8-27BU C2 coreset trunk | `L/s3-fold-sep07-codex/S3-C2K4352-sep07` (28 GB, HF layout) and the Chimera-native S3 `L/s3-native-v2-3a25a459.../actual/native-s3-text-stage/native` (the S5 `--trunk`) | 64 layers, FFN 4352 | Parent-side FFN targets in the S5 arm (as S5 used it); otherwise superseded by S5/T |
+| **Q38** | Qwen3.8-27B-Uncensored (parent) | S0 import `/mnt/ai_data/omni-campaign/s0-probe-sep04` (NAS; may be hung [R memory `omni-state-2026-10-18`]) | 64 layers, 5120, FFN 16640 | Pristine `MLP_parent` targets for the S5 arm only (C10's `--parent-trunk`). Never copied. |
+| **M** | five media units (charted parent DiT blocks) | `OC/composite/s7/units/{ace/ace_dit_L12, h3/h3_dit_L25_curve6, hy3d/hy3d_dit_L10, qimg/qimg_mmdit_L30_img, qvl32/qvl32_vit_L13}` (2.2 GB; schema `chimera_omni.composite.charted_block.v1`; ACE `charts.safetensors` chart_in [2048 x 5120] / chart_out [5120 x 2048] [V `S7_M1_CHARTS_SUMMARY.json`]) | one parent block each; charts bound to the typed `interface_latent` rows, which v2 forbids | FFN channels and attention heads lifted into the trunk pools (section 4.4); **their charts are refolded against v2 rows** (section 7) |
+| **Teacher caches** | QVL32 ViT L13 features (73 GB), speech-teachers-v1, ACE/HY3D latent caches, Q38/Strata/K3 logit caches | `L/teacher_cache/*`, `L/distill/corpus` [R spec sections 10, 14.4] | | Boundary-row and x0-head fit targets (section 4.5); the logit caches are for training on top, not for the fold |
+| **Corpus** | evidence corpus + K3 pairing | `OC/composite/corpus/{omni-evidence-27b-v1.json, boundary_map.json, k3_input_ids.safetensors, qwen_input_ids.safetensors, row_meta.json}` [V] (24 rows x 4,096; fit 69,743 / held 23,186 tokens; `boundary_map` = Qwen<->K3 byte-boundary token pairs [R `K3_RESULTS`]) | | Text calibration + the only K3 pairing |
+| **Proxy media data** | `v2proxy_all_v1.npz` (sha `7af008b0...`) | `L/scratch/arch-v2-proxy-proof/data/` [V listing] | COCO 1,642/200 images, LibriSpeech f/m 400/50, MAESTRO vs ACE 400/50, ModelNet10 300/50 per class, 16^3 SDF | Media calibration rows (section 6) |
+
+Target geometry (from `CO/src/chimera_omni/config.py` `chimera_omni_v2_2b_config` / `_4b_config` [V]):
+
+| | `co2-2b` | `co2-4b` |
+|---|---|---|
+| Layers / periods of `(kda,kda,kda,gated_gqa)` | 24 / 6 | 32 / 8 |
+| Width / FFN | 2048 / 6144 | 2560 / 9216 |
+| GQA q / kv x dim, partial RoPE | 8 / 2 x 256, 64 dims, theta 1e7, mRoPE | 16 / 4 x 256 |
+| GDN v / k x dim | 16 / 16 x 128 | 32 / 16 x 128 |
+| AttnRes | block 4, `init="zero"` | same |
+| Vocab (tied) | 248,320 + 512 control = 248,832 | same |
+| Raw boundary in / x0 head out | 10,661,888 / 29,362,176 params | 14,638,080 / 41,945,600 |
+| `init_source` already states | "fold: K3 dense fold L1-92 + run-1 full-KD student + S5 child + S3 Qwen fold + s7 media units, charted onto the co2-2b geometry (C17 cross-width charts, refolded from the archived recipes where deleted); the Qwen3.5 small-model shape is the layout only" | "the same ... or the best OC01 4B fold child (A0b)" |
+
+T's GDN head dim is 128 like v2's, and its GQA head dim is 256 like v2's [V T config]. Whether T's partial rotary (64 of 256, theta 1e7) and output gate match v2's is UNVERIFIED until T's `config.json` is printed in full at P0 (the 4B parent prints `partial_rotary_factor 0.25`, theta 1e7 [V spec section 3]). Matching head dims are what make head-level transplant exact and are the reason T/S5 (not K3) supply the mixers.
+
+**Not a source, by ruling:** Qwen3.5-2B/4B weights and the OC01 `X00`/`X31` children (folds *of Qwen3.5-4B*; recipes archived at `L/archive/recipes/OC01-F-Q35-4B-X*`). The spec's `co2-4b` fallback "or the best OC01 4B fold child (A0b)" is withdrawn by this plan: those children are placements of a model Cyril excluded. The Qwen3.5 small-model shape remains the layout only.
+
+---
+
+## 3. Design in one paragraph
+
+The v2 residual stream is *defined* as the image of the source trunk's residual stream under one fixed orthonormal width chart `C` (5120 -> 2048, rank-2048 PCA of the pooled post-attention residual rows). Every v2 tensor is then a fold: reads from the stream become `C^T diag(w_norm) W_src^T` (norm weights folded in), writes to the stream become `W_src C`, heads are selected whole (exact per head) from a pool of 2-3 same-kind source layers and their output projections are ridge-refitted against the pooled source writes, FFNs are a union coreset (C2/C10/C14 machinery) over the pooled trunk channels, the K3 form-E channels lifted through the refolded C17 charts, and the media-unit channels, with the down projection ridge-refitted on the **folded prefix's own rows** (dual stream, the K3 ruling's item 2). The raw boundary rows and the x0 head are closed-form ridge fits from raw units to teacher activations and from folded-trunk features to clean raw units. Nothing is copied; nothing is trained; every finite fit number is a diagnostic; the only gates are structural/non-finite checks, the >= 4x per-component rule, and decoded behaviour.
+
+Data flow:
+
+```
+T (or S5) shards --qwen35 importer (exact)--> T-chimera ckpt --teacher-forced tap--> taps/L{k}/ffn_input_rows (fp16)
+                                                                         |
+K3 body shards + K3D form-E --k3_dense_rows (folded stream only)--> k3_rows/L{l}/held_rows (L1-60 new, L61-92 reuse)
+                                                                         |
+            c17_chart_fit (K3 7168 <-> T 5120, 92:64, ridge, CPU fp64) --> c17/charts_v2/L{k}/ridge.safetensors
+                                                                         |
+taps (all layers) --c20_stream_chart (PCA rank 2048 + norm scalars)--> stream_chart.safetensors  (C, C^T, s_k)
+                                                                         |
+for v2 layer k = 0..23 (sequential, one P40):                            v
+   pool_T(k) = 2-3 T layers of the slot kind    pool_K3(k) = 3-4 K3 layers    units(k)
+   x_k = folded v2 prefix rows (text + media calibration sequences, v2_layout)
+   mixer: select heads from pool_T(k) by write energy on x_k; q/k/v/gate/conv/decay/norm charted exactly;
+          out = ridge(selected head outputs on x_k -> sum of pooled source writes . C)
+   ffn:   candidates = pool_T(k) channels . C^T  U  lift(K3 form-E via C_K3->T o C)  U  lift(unit FFN via refolded unit chart)
+          select 6144 (c14 stage 1 on x_k); down = ridge(candidate activations on x_k -> Y_k)
+          Y_k = FFN_T(x) . C + 0.03 . TERM_K3 + TERM_units (media rows)
+   record: compression per source, fit/held relL2, prefix divergence at the block end (diagnostics)
+embed/head: W_tied = H_T . C (default); control rows = mean of the folded text rows
+boundary:   B_in = ridge(raw unit -> teacher feature . chart)      x0 head: down = ridge(head features on media rows -> clean unit)
+checks:     structural + conformance --dynamic + >=4x receipt + frozen review + frozen-feature probes + x0 reconstruction (section 8)
+```
+
+---
+
+## 4. Design: which source supplies which v2 tensor
+
+### 4.1 The width fold (5120 -> 2048; 7168 -> 2048 for K3)
+
+**Decision: one global orthonormal stream chart `C` per source stream, not per-layer charts, for the stream itself.** A residual stream only makes sense in one basis: a write made at layer k in basis `C_k` is read at layer k+1 through `C_{k+1}`; if they differ the error `C_k C_{k+1}^+ - I` lands in every token. Per-layer charts are exactly what C17 fits, but C17 charts between two *independently existing* streams (K3 and the trunk), and that is still how K3 and the units enter (4.3-4.4).
+
+- `C` [5120 x 2048], orthonormal columns: the top-2048 principal directions of the **centred** post-attention residual rows pooled over all 64 T layers on the text calibration corpus (subsample about 500k rows; the gram is 5120^2 in fp64 on the CPU: seconds). v2 has no biases, so the row mean is kept as the first chart direction instead of a bias (its energy recorded), the way C17's SVD arm folds the mean into its biases.
+- **Norm fold.** Every pre-norm read `y = (h / rms(h)) * w . W^T` becomes, with `h_src ~ h_v2 C^T`: `y ~ (h_v2 / rms_v2) . s_k . C^T diag(w) W^T`. So the v2 projection is `C^T diag(w) W_src^T` (exact linear algebra) and the v2 RMSNorm weight is the scalar `s_k = mean(rms_src / rms_v2)` on the calibration rows (one scalar per norm; the elementwise `w` has been absorbed). Record `s_k` and its spread; the spread is the only approximation.
+- **Diagnostics recorded, never gates:** retained energy per layer under `C`, per-layer relL2 of `h_src` vs `h_v2 C^T`, the spread of `s_k`.
+- **Ablation arm F-C2 (experiments lane):** per-AttnRes-block charts `C_b` (6 charts) with the block boundary absorbing the basis change through the zero-init AttnRes (the partial sum resets at every depth boundary [V spec section 1]). Not the default: it is novel; the global chart is the boring option.
+- K3 and the units reach the v2 stream through chart **composition**: `C_{K3->v2} = C_{K3->T} . C`, where `C_{K3->T}` is the refolded C17 ridge chart (7168 -> 5120, per trunk layer, fitted on paired tokens). Composition is exact linear algebra and lets the CPU C17 refold run in parallel with everything else. **Arm F-K3DIRECT** refits C17 directly against the folded v2 prefix rows (K3 7168 <-> v2 2048) inside the sequential loop; closer to the ruling's "fitted on its own prefix", but it serialises about 12 h of CPU fitting into the GPU loop. Build the composed version first, the direct one as the second arm.
+
+### 4.2 The depth fold
+
+**Trunk (T or S5) -> v2: period-aligned, kind-preserving.** Both have the `(kda,kda,kda,gated_gqa)` period, so align *periods*, then slot j of the v2 period receives slot j of every pooled source period. Floor-interval map (C17's convention):
+
+| v2 period p (`co2-2b`, 6 periods) | source periods `[floor(16p/6), floor(16(p+1)/6))` | v2 layers | source layers pooled per slot |
+|---|---|---|---|
+| 0 | {0, 1} | 0-3 | 2 |
+| 1 | {2, 3, 4} | 4-7 | 3 |
+| 2 | {5, 6, 7} | 8-11 | 3 |
+| 3 | {8, 9, 10} | 12-15 | 3 |
+| 4 | {11, 12} | 16-19 | 2 |
+| 5 | {13, 14, 15} | 20-23 | 3 |
+
+`co2-4b` (8 periods): exactly 2 source periods per v2 period. The map lives in `alignment.json` (schema as C17's `{schema, summary, table}`), written before any fit (step P2).
+
+**K3 (92 MoE layers + dense L0) -> v2 layers: floor-interval 92:24.** v2 layer k receives K3 MoE layers `[1 + floor(92k/24), 1 + floor(92(k+1)/24))`: 20 layers get 4 K3 layers, 4 get 3; K3 dense L0 joins v2 layer 0's pool (as C17's `--dense-layer0 trunk0`). For the 4B, 92:32 (28 layers get 3, 4 get 2). K3's own mixer kinds (3 KDA : 1 MLA, AttnRes block 12) do not line up with v2's slots; that is irrelevant for FFN pooling (an FFN is an FFN) and is one reason K3 mixers are an arm, not the default (4.3).
+
+**Units -> v2 layers:** each unit is one parent block at a known relative depth (`charted_block.json` `insert_after` and the parent's depth [R]); it lands on the v2 layer at the same relative depth, recorded in `alignment.json`. Arm F-UMID: all five on the AttnRes block that holds layer 12 (OMNI1 put them mid-trunk at blocks 32-36 of 69 [V OMNI1 config]).
+
+**Multi-layer merge is the one genuinely lossy step.** Pooling 2-3 source layers into one means one v2 layer must write what 2-3 source layers wrote, from the input the *first* of them saw. The ridge refit of every output projection takes `x_k` (v2 prefix rows) as input and `sum over l in pool of write_l(h_l) . C` as target; the held relL2 of that fit is the merge's honest diagnostic (expect worse than C17's single-layer numbers; it is recorded, never a gate).
+
+### 4.3 The mixer mapping
+
+| v2 block kind | Default source (exact head transplant) | Fold | Arm (experiments lane) |
+|---|---|---|---|
+| `kda` with `kda_decay_kind="gdn"` (v2 GDN, 16 v / 16 k x 128) | the pooled T (or S5 = Q38) GDN layers: 2-3 x (48 v / 16 k x 128) | Score each source v-head by its write energy (norm of `o_h . out[:, h]`) on `x_k`; take the top 16 v-heads **with their own k-head** (T shares one k-head across 3 v-heads; a k-head taken twice becomes two independent exact copies in v2, which has 1:1 heads). Per selected head: `q_proj / k_proj / v_proj / output_gate / write_strength / decay_down` rows charted by `C^T diag(w)`; `conv` (depthwise, per channel), `decay_bias`, `decay_log_scale` (`A_log`), head-wise gate norm copied per head (exact, no width involved); `out` refit by ridge against the pooled writes. The recurrence per head is unchanged, so GDN state semantics survive the fold. | **F-K3MIX:** K3 KDA heads (head dim 128 [R Kimi Linear]) as candidates, q/k/v charted through `C_{K3->v2}`, per-channel decay collapsed to the per-head scalar `mean(A_log)` (a recorded approximation). Build only after the default base passes section 8. |
+| `gated_gqa` (8 q / 2 kv x 256, sigmoid output gate, QK-norm, partial RoPE 64 @ 1e7, mRoPE) | the pooled T gated-GQA layers: 2-3 x (24 q / 4 kv x 256), same head dim; same gate and rotary UNVERIFIED for T until P0 | Score kv-heads by the write energy of their q-group; take the top 2 kv-heads with their 6 q-heads each, then the top 4 q-heads per group by write energy (8 q total). `q_proj`, `gate_proj` (Qwen's fused `[query|gate]` is split by the importer [V `importing/qwen35.py:12`]), `k_proj`, `v_proj` rows charted; `q_norm / k_norm` per head copied; `out` ridge-refit. Text rows see identical RoPE; media rows get v2's mRoPE sections (`V2_MROPE_SECTION`), a v2 property, not a fold choice. | **F-K3MLA:** K3 gated-MLA heads with `kv_down . kv_up` composed into dense k/v projections and 128/192-dim heads zero-padded to 256 (exact for the dot product); K3's MLA is NoPE, v2 applies partial RoPE: recorded. |
+| `DepthAttentionResidual` (AttnRes) | none | `query = 0`, `prefix_logit_bias` per config: function-preserving [V spec section 1]; it is the one tensor that is *not* a fold and is zero by construction, which the ruling allows (new tensors that add nothing at step 0). | A1 later |
+| `FeedForward` (6144, SiLU-GLU) | union coreset (4.4) | | |
+
+### 4.4 The FFN union coreset (where K3's knowledge enters)
+
+Per v2 layer k, candidates on the folded prefix rows `x_k`:
+
+1. **Trunk channels:** the 2-3 pooled T layers' `[gate|up]` rows, charted `C^T diag(w) .` (16,640 x 2-3 = 33k-50k channels). Target `FFN_T(h_l) . C` summed over the pool.
+2. **K3 channels:** the 3-4 pooled K3 form-E layers (17,408 latent channels each = 52k-70k), lifted exactly as C10 lifts them (`c10_union_install.py`, "The lift, form E -> trunk width": routed gate/up rows `W1_s . W_down . T`, down prior `U . W_up . diag(g) . W2p / rms_mean`, shared experts, `routed_expert_norm` linearised at the mean rms, biases recorded as `chart_bias` diagnostics), with `T = C_out^T` and `U = C_in^T` taken from the **composed** charts `C_{K3->T} o C`. K3 dense L0 joins layer 0 as a plain SiTU MLP.
+3. **Unit channels:** the FFN of each unit landing on layer k, lifted through the unit's refolded chart (section 7, item 4); its attention heads join the mixer pool of the same layer, zero-padded to the v2 head dims (ACE/qimg 128-dim heads, QVL32 80-dim [R unit specs; print at P0]).
+
+Selection: `c14_union_coreset.CoresetFold` stage 1 (energy ranking on `x_k`; mixed text + media rows so media-firing channels can be chosen; **no per-source quota table**, which would be a type table by another name), 6,144 kept. **Per-component compression: 6,144 from >= 85k candidates (2 x 16,640 + 3 x 17,408 = 85,504 at the smallest pool) = 13.9x; trunk-only 5.4x; K3-only 8.5x.** Every component clears the 4x rule from tensor shapes alone, and the receipt verifies it from shapes (`fold_component` rows, section 5).
+
+Refit: `down` [2048 x 6144] by prior-anchored ridge (C10's `w2` refit, streamed engine `--chunk 8192 --gram-block 16384` as in `launch_s5.sh`) against
+
+```
+Y_k(x) = FFN_T,pool(x) . C  +  w_k3 . TERM_K3,pool(x)  +  TERM_units(x)   [units only on media rows]
+```
+
+with `w_k3 = 0.03` = S5's design of record (`a003 = trunk/additive:0.03`, chosen by the C10 design sweep because the full additive union collapsed the trunk [R `launch_s5.sh` header, `c10/design_sweep/VERDICT.md`]). **Arm F-K3W:** `w_k3 = 0.1` (the sweep's runner-up `g01`). This is a design parameter chosen from measurements, not a gate (S7 decision policy).
+
+### 4.5 The tensors no source has: embed/head, control rows, raw boundary, x0 head
+
+| Tensor | Fold | Why this is a fold and not placement |
+|---|---|---|
+| tied `embed`/`lm_head` [248,832 x 2048] rows 0..248,319 | **Default `W = H_T . C`** (the head side: logits `h_v2 W^T ~ h_src H_T^T` exactly up to the chart). Input-side mismatch between `E_T C` and `W` per row recorded (cos histogram). **Arms:** F-TIEJ joint least squares `W = (E_T C + H_T C) / 2`; F-UNTIED (adds 509.6M params; phone budget hit; reference only). T's embedding rows are charted and tied, never copied | the matrix is the chart image of two source matrices; it has a different width and tying than any source |
+| 512 control rows | mean of the folded text rows (spec section 9) | derived from folded rows |
+| raw boundary in `B` [3072 -> 2048] (plus A6b per-row RMS level, no parameters) | one shared projection (untyped), fitted by ridge from raw units to **teacher activations charted into the v2 stream**: image/video frames -> cached QVL32 L13 features (`L/teacher_cache/qvl32_vit/qvl32_vit_l13`, 73 GB; pooled/resampled from the 28 px merged token to the 32 px unit; pre/post-merge UNVERIFIED [R spec section 5]) through the refolded QVL32 unit chart; speech -> speech-teacher encoder features (`speech-teachers-v1`) on the same 80 ms windows; music -> ACE unit block-input rows; 3D -> HY3D L10 block-input rows (with the time-token row, PREP-B [R `S7_DECISIONS` D3]). One ridge over the *union* of all modalities' pairs (one matrix, every modality: R3/R5), per-modality residuals recorded | "where foldable, otherwise folded from teacher activations" (task text); QVL32's patch embed is the one raw-domain linear read that exists and it is charted; the rest are closed-form fits to parent activations |
+| x0 head (`native_head_intermediate_size = 2 * width` GLU MLP, 2048 -> 4096 -> 3072) | `up/gate` rows: the top-4096 channels of the folded final FFN's charted rows (so the head's nonlinearity fires on real features); `down` = ridge from those head features at the media rows of clean calibration spans to the **clean raw unit** (x0 at sigma = 0) plus noised copies at the sampler's sigmas (x0 target unchanged) | same C10 pattern (fixed gate/up, refit down); the target is the raw unit, so no decoder, no VAE |
+| final `norm` | scalar `s_final` as in 4.1 | |
+
+### 4.6 The objective, per Cyril's folding rules
+
+- **Closed form only.** Every fit is a ridge or an SVD; no optimizer, no backward pass (the 2026-08-13 A1 ruling: "finding optimized folded versions, not training").
+- **Dual stream / own prefix.** Layer k is fitted on the rows the already-folded v2 prefix produces (`x_k`), against the source's writes at the paired positions (item 2 of the K3 ruling), so each fold's error is absorbed by the next fit.
+- **Multi-token where possible.** (a) Targets are teacher-forced source writes over full 4,096-token sequences and full media spans, so every row's target carries its whole context. (b) **Block-end target arm F-BE:** for the last layer of each AttnRes depth block, the `down` / `out` targets are the source residual at the *block end* charted, minus the v2 prefix residual (what the block still has to write), i.e. a 4-layer look-ahead; closed form, first-order. Default off; built as an arm because it is the only place where "multi-token" changes the fit itself. (c) The whole-prefix divergence on held tokens (`stream_divergence.held.relL2`, as `k3_dense_pass` records) is computed at every block end and **recorded**.
+- **Finite numbers are diagnostics.** relL2, cos, retained energy, update scale, chart-bias energy, merge loss: all recorded in the receipt and in omni_lab `metric` rows; none stops a layer (`--acceptance record` semantics everywhere). Structural, load, identity, provenance and non-finite checks remain functional refusals.
+- **>= 4x per component** is a structural rule verified from tensor shapes in the receipt (4.4).
+- **Token match is never a gate.** The held top-1 vs T is recorded as a diagnostic column only.
+
+---
+
+## 5. Schema (omni_lab, raw SQL, forward-only migration `0006_fold_component.sql`)
+
+omni_lab already has `run` (kind `fold`), `model`, `model_lineage`, `metric`, `experiment`, `experiment_eval` [V guide]. What is missing is the per-component accounting the 4x rule and the source attribution need. One migration, three tables, one view. Write access through `omni_lab_db.py` profiles only (vault key `omni_lab_pg`); the fold tool writes with `omni_lab.py log-run` plus a small `log-fold-component` subcommand added to `omni_lab_run.py` (psycopg2, parameterised, 10 s statement timeout, `|| true` in the queue).
+
+```sql
+-- migrations/0006_fold_component.sql
+CREATE TABLE fold_alignment (
+    id               BIGSERIAL PRIMARY KEY,
+    run_id           BIGINT NOT NULL REFERENCES run(id),
+    target_model_id  BIGINT NOT NULL REFERENCES model(id),
+    target_layer     INTEGER NOT NULL,
+    target_kind      TEXT NOT NULL,                     -- kda | gated_gqa | ffn | embed | boundary | head
+    source_model_id  BIGINT NOT NULL REFERENCES model(id),
+    source_layers    INTEGER[] NOT NULL,
+    alignment_rule   TEXT NOT NULL,                     -- 'period:16->6' | 'floor:92->24' | 'relative_depth'
+    alignment_sha256 CHAR(64) NOT NULL,                 -- sha of alignment.json
+    UNIQUE (run_id, target_layer, target_kind, source_model_id)
+);
+
+CREATE TABLE fold_component (
+    id                BIGSERIAL PRIMARY KEY,
+    run_id            BIGINT NOT NULL REFERENCES run(id),
+    target_model_id   BIGINT NOT NULL REFERENCES model(id),
+    target_layer      INTEGER,                          -- NULL for embed / boundary / head
+    component         TEXT NOT NULL,                    -- ffn.up | ffn.down | mixer.q_proj | ... | embed | boundary.in | head.down
+    method            TEXT NOT NULL,                    -- chart | head_select | union_coreset | ridge_teacher_act | zero | mean_rows
+    candidate_params  BIGINT NOT NULL,                  -- what was on offer (from tensor shapes)
+    installed_params  BIGINT NOT NULL,                  -- what the child stores (from tensor shapes)
+    compression       NUMERIC(12,4) GENERATED ALWAYS AS (candidate_params::numeric / NULLIF(installed_params, 0)) STORED,
+    fit_rel_l2        DOUBLE PRECISION,                 -- diagnostics only
+    held_rel_l2       DOUBLE PRECISION,
+    held_cos          DOUBLE PRECISION,
+    retained_energy   DOUBLE PRECISION,
+    prefix_divergence DOUBLE PRECISION,                 -- stream_divergence.held.relL2 after this layer
+    finite            BOOLEAN NOT NULL,                 -- functional
+    receipt_path      TEXT NOT NULL,
+    receipt_sha256    CHAR(64) NOT NULL,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT fold_component_method_not_copy CHECK (method <> 'copy'),
+    CONSTRAINT fold_component_finite_or_refused CHECK (finite OR installed_params = 0)
+);
+CREATE INDEX fold_component_run_idx ON fold_component (run_id, target_layer);
+
+CREATE TABLE fold_component_source (                    -- per-source share inside a union component
+    fold_component_id BIGINT NOT NULL REFERENCES fold_component(id) ON DELETE CASCADE,
+    source_model_id   BIGINT NOT NULL REFERENCES model(id),
+    source_layers     INTEGER[] NOT NULL,
+    candidate_params  BIGINT NOT NULL,
+    installed_params  BIGINT NOT NULL,
+    PRIMARY KEY (fold_component_id, source_model_id)
+);
+
+CREATE VIEW v_fold_compression AS
+SELECT fc.run_id, m.name AS target_model, fc.target_layer, fc.component, fc.method,
+       fc.candidate_params, fc.installed_params, fc.compression,
+       (fc.compression >= 4.0) AS clears_4x,
+       fc.held_rel_l2, fc.held_cos, fc.prefix_divergence, fc.finite
+FROM fold_component fc JOIN model m ON m.id = fc.target_model_id;
+
+GRANT SELECT ON fold_alignment, fold_component, fold_component_source, v_fold_compression TO omni_lab_ro;
+```
+
+`model_lineage` gets one `fold` edge per source (T or S5, K3D, each unit, S3/Q38 when used) to the new `co2-2b-F*` model rows, with the receipt sha; `ledger_event` mirrors the `$OC/ledger.jsonl` registration (`oc_checkpoint.py`), which stays the authority.
+
+---
+
+## 6. Calibration data (mixed modalities, one sequence layout)
+
+Every fit row is a position in a sequence laid out by `CO/src/chimera_omni/v2_layout.py` (`<|media|> header <|/hdr|> <|raw|> rows ...`), so media rows sit in the stream exactly as they will at runtime. Built once as `L/scratch/v2-fold/calib/v2fold_calib_v1.{safetensors,manifest.json}` with a sha recorded in omni_lab `dataset_version` before any fit.
+
+| Band | Source | Rows (fit / held) [E] | Pairing |
+|---|---|---|---|
+| Text | `omni-evidence-27b-v1` (24 x 4,096 Qwen tokens; fit 69,743 / held 23,186 [R]) | 93k | K3 pairing via `boundary_map.json` (the only K3 pairing; K3 contributes targets on these rows only) |
+| Image | `v2proxy_all_v1` COCO 1,642 train / 200 test photos as 32 px units (a 256^2 image = 64 rows) | about 105k / 13k | QVL32 L13 features for the boundary fit; captions as the text prefix (COCO 2017 captions on disk [R spec section 14.4]) |
+| Video | `video_in.jsonl` 512 clips [R] plus the panned COCO clips of the proxy (12.5 fps, 2-frame tubelets as in round 3) | about 40k / 5k | frame features as above |
+| Speech | LibriSpeech dev-clean (fit) / test-clean (held) speakers f/m, 80 ms units at 38.4 kHz | 32k / 4k | speech-teacher encoder features |
+| Music | MAESTRO (own split) plus ACE renders | 32k / 4k | ACE unit input rows |
+| 3D | ModelNet10 16^3 SDF, 8 rows per shape, with the time-token row (D3) | 10k / 1.6k | HY3D unit input rows |
+
+Held splits are drawn on **trunk tokens / whole media items** (C17's rule: no token on both sides). Media rows carry *no* K3 target and no T target (both text-only); their FFN target is `TERM_units` and their mixer target is the pooled T mixers evaluated on the charted media rows (what T would write for that row: a consistent definition, recorded as such).
+
+---
+
+## 7. What must be refolded (deleted by the 2026-10-21 cleanup, or never valid for v2)
+
+| # | Item | Why | How (reuse) | Cost [E] |
+|---|---|---|---|---|
+| 1 | **Trunk taps of T** (and of S5 for the control arm): `ffn_input_rows.safetensors` per layer (schema `chimera-omni-ffn-input-taps-v1`) | the S3 taps `s3native-c2k4352-held-all` were deleted with `OC/composite/c17/trunk_taps` (recipe `L/archive/recipes/path-29c4322d1d5f9f19__c17-charts/` holds only `layer.json` + receipt; the rows are gone [V tar listing]) and were against S3, not T | import T into Chimera layout with `CO/src/chimera_omni/importing/qwen35.py` (exact; proven on the 0.8B [R receipts `qwen35_0p8b_*`]; 27B geometry UNVERIFIED until run), then `run_omni_frozen_review.py --stream --teacher-forced --tap-residuals --tap-out ... --held-only` on P40 GPU3 | load 49 GB from Lexar at 241-308 MB/s [R] = 3-4 min; 64 layers x (93k text rows, about 0.4 GFLOP/row/layer) = 64 x 30 s fp32 on a P40 = about 35 min; rows 93k x 5120 x fp16 = 0.95 GB/layer, 61 GB total to Lexar (452 GB free [V]) |
+| 2 | **K3 folded-stream rows L1-60** | only L61-92 survive (`fold/resid`, 32 dirs [V]) | new `k3_dense_rows.py` (reusing `k3_stream.StreamRun`, `k3_layer.StreamedLayer`, `k3_common`; **folded stream only, no expert dequant**): K3 non-expert body per layer from `/mnt/lexar/models/moonshotai/Kimi-K3` plus `K3D/L{l}/ffn.safetensors`, writes `held_rows.safetensors` with `input_ids_sha256` = corpus sha `7578ff9e...` so C17's identity check holds | per layer: about 0.9 GB body + 0.87 GB form-E read = 7 s; compute 93k rows x about 1.2 GFLOP = 1.1e14 flop = about 60 s fp32 on a P40; 60 layers = about 70 min plus 40 GB of rows |
+| 3 | **C17 charts K3 -> T** (92:64, ridge, per trunk layer) | deleted; and the old ones were fitted against S3 rows, not T | `c17_chart_fit.py` as-is (`launch_c17_0_41.sh` / `_42_63.sh` recipe: `--alignment 92:64 --dense-layer0 trunk0 --k3-stream folded --trunk-rows-key normed --skip-control-charts`, 3 detached CPU workers, `THREADS=24`, `nice 15`) with `--k3-resid` = item 2 plus the surviving L61-92, `--trunk-taps` = item 1 | 2,028 s per layer measured [V archived `L51/layer.json` `seconds`]; 64 layers / 3 workers = **about 12 h wall on CPU**, about 12 GB on root (341 GB free [V]) |
+| 4 | **Unit charts** (`chart_in` / `chart_out` of the five units) | bound to the typed `interface_latent` rows, which v2 has no way to produce [R `S7_M1_CHARTS_SUMMARY.json` `binding_warning`] | `s7_chart_fit.py` per unit with host rows = the folded v2 prefix rows at the unit's layer on the media calibration items (`s7_host_rows.py` pattern, `--interface` replaced by the v2 rows; HY3D with the time-token row, PREP-B) | minutes per unit (ridge on <= 2048-wide rows) |
+| 5 | **Nothing else.** K3D (76 GB), S5, T, S3, OMNI1 and the units' block tensors are intact and protected | | | |
+
+---
+
+## 8. Behaviour checks the folded base must pass before training on top
+
+**Pre-registration.** The rules below are logged in omni_lab as a `review` run (one rule per behaviour, rules file sha in the run) **before** the first fold run, exactly as the proxy's PASS_RULES were (run 38033). They are not weakened afterwards; a changed rule is a new review run and a new suite version.
+
+| Id | Check | Instrument | Pass rule (pre-registered) | Kind |
+|---|---|---|---|---|
+| F0 | Structural | `safetensors_io` load, `ChimeraConfig.validate()` (untyped refuses charted blocks), every tensor finite, shapes = `co2-2b` meta build (1,923,133,041 params) | all true | functional gate |
+| F1 | Provenance and compression | `v_fold_compression`: every `fold_component` row has `method <> 'copy'` (enforced by the CHECK), `clears_4x` for every union/select component, `fold_alignment` complete for 24 layers, lineage edges to every source | all true | functional gate (the ruling's "entire weight from folding") |
+| F2 | Conformance | `python -m chimera_omni.conformance --dynamic` on the folded checkpoint: R3 (every modality's loss reaches every trunk tensor), R5 (relabel/drop of type ids is bit-identical) | pass, as the proxy did [V spec section 2] | functional gate |
+| F3 | Text coherence (the fold-init success bar) | `run_omni_frozen_review.py` (bank v1 `0ee6bf14...`, greedy, 1,024 cap, emit-zero floor, three-prompt smoke) on the 2B; dossier into omni_lab `eval_run` plus a review package for Cyril | **Collapse-only**, per Cyril's artifact-tolerant read: emit-zero floor passes; the three-prompt smoke and >= 8 of 15 bank prompts produce on-topic language outside loops/termination artifacts (machine pre-screen: distinct-token ratio and loop detector as diagnostics; the human grade wins in `v_effective_grade`). Held top-1 vs T, KL vs T: **diagnostic columns only** | behaviour gate (human-reviewed) |
+| F4 | Modality **in** carried by the fold | frozen-feature linear probes at layers 8 and 16 on held media rows for the five understanding tasks (image class, pan, speaker, music source, 3D shape), the proxy's instruments reused (`proof/v2_proxy_mixed.py`) | each task: probe accuracy >= chance + 0.20 **and** > the same probe on a random-init `co2-2b` of identical geometry (the August proof's untrained-baseline logic, 1.0 vs 0.219) | behaviour gate |
+| F5 | Raw **out** route live | one-step x0 prediction at sigma in {0.1, 0.5} on held clean spans, decoded to pixels / wav / voxels | per modality: x0 MSE < the noised input's MSE and the real-signal check (pixel std > 0.25x real, RMS 0.25-4x, occupancy 0.25-4x); non-finite = fail | behaviour gate (route) |
+| F6 | Raw out quality | the proxy's generation instruments on 16-step Euler samples | **recorded, not gated** for the fold-only base; they become gates at stage S1 | diagnostic |
+| F7 | Context | 50k-token mixed sequence forward: finite, GDN state bounded, no NaN at 64k | finite | functional gate (phone minimum per ruling) |
+| F8 | Negative control | the same checks on a random-init `co2-2b` (recorded seed). A *placement* control (Qwen3.5 weights in the v2 geometry) is **not built**: the ruling forbids it, and building it "for comparison" would put the forbidden model on disk | F3/F4 must beat the random-init control | control |
+
+A candidate passes when F0-F5 and F7 pass. Then: checkpoint, register in the ledger (`oc_checkpoint.py`), **clone** (`co2-2b-F<arm>-clone-pretrain`) before any training touches it (09-01 ruling), and package F3 for Cyril's review. Training on top (spec section 9, stages S1+) starts only after his review.
+
+---
+
+## 9. Trade-offs
+
+| Choice | Rejected alternative | Why |
+|---|---|---|
+| **T (run-1 student) as the default trunk source; S5 as the control arm** | S5 only (purest fold-only lineage) | T = S5's fold plus the full-KD that Cyril's 09-01 order allowed on top of a fold, and it is the better-behaved trunk (S5: held top-1 vs trunk 0.734, rq 0.862 [V `s5_metrics_full.json`]). The v2 weights are *folded from* T, not copied; the lineage is fold -> distill -> fold. **Flagged for Cyril (section 11): if he reads "built from folding" as fold-only lineage, the S5 arm is the base and T is dropped.** |
+| **One global orthonormal stream chart** | per-layer ridge charts (C17 style) for the stream | a residual stream needs one basis; per-layer charts put a basis-change error into every token. Per-block charts kept as arm F-C2 |
+| **Composed K3 charts `C_{K3->T} o C`** | direct per-layer K3 <-> v2 charts in the loop | composition is exact linear algebra and lets the 12 h CPU refold run in parallel; the direct fit is arm F-K3DIRECT |
+| **Exact head transplant from T/S5 for mixers; K3 mixers as arms** | K3 KDA/MLA heads as the default mixer source (K3 = primary) | T/S5 have the same head dims as v2, so heads move exactly; K3's per-channel decay and NoPE MLA need approximations. K3's *knowledge* enters through every layer's FFN union (the ruling's "all experts, all layers"), which is where it lived in S5 too |
+| **`w_k3 = 0.03` as default, 0.1 as arm** | full additive K3 term | the C10 design sweep measured the full union collapsing the trunk (top-1 7/210) [R `S7_DECISIONS` D4 note]; 0.03 is the design of record |
+| **Union coreset over mixed rows, no per-source quotas** | reserved channel quotas per source or per modality | a quota is a type table by another name (R3/R5); the energy ranking on mixed rows lets media channels win where they fire |
+| **Tied embed from the head side** | joint LS (arm), untied (arm) | logit fidelity is what the frozen review reads; the input-side mismatch is measured, and untying costs 510M phone-side params |
+| **Boundary/head as ridge fits to teacher activations and clean units** | random init of boundary and head (spec section 9's earlier text) | the ruling forbids a non-folded weight; a closed-form fit to parent activations is a fold of the parent's behaviour, and it gives F4/F5 something to measure |
+| **AttnRes query = 0** | random or copied | zero is function-preserving [V spec section 1]; it stores nothing |
+| **Closed-form everywhere** | a few hundred SGD steps to "heal" the merge | Cyril: no training before capability; the A1 ruling allows closed-form optimised folds only |
+| **Reuse `c17_chart_fit.py`, `c10_union_install.py` lifts, `c14_union_coreset.CoresetFold`, `run_omni_frozen_review.py`, `v2_proxy_mixed.py` instruments; new tools only as thin drivers** | a new monolithic "v2 folder" | the existing tools carry receipts, tests and the owner-policy semantics (`--acceptance record`, bias diagnostics) already |
+| **P40 GPU3/GPU5 plus CPU, layer-streamed** | borrowing GPU6/GPU0/GPU4 | nothing here needs bf16 or more than about 6 GB VRAM per layer; the only long pole is the CPU C17 refold, which no card speeds up in fp64 |
+| **No OC01 X00/X31 fallback for the 4B** | spec section 9 / A0b "best OC01 4B fold child" | those children are folds of Qwen3.5-4B, i.e. the excluded model with a different name; the 4B uses the same sources and recipe as the 2B |
+
+---
+
+## 10. Plan (ordered; every step is an omni_lab run; nothing touches the main chimera-omni checkout)
+
+**P0: pre-registration and inventory (CPU, about 1 h).**
+1. Log the section-8 rules as an omni_lab `review` run (`omni_lab.py log-run start --kind review --name "V2-FOLD-INIT pass rules"`; rules file `OCL/arch_v2/fold_init/PASS_RULES_v1.json`, sha in the run).
+2. Print and record at step 0 (into `OCL/arch_v2/fold_init/INVENTORY.json` and omni_lab `model_tensor_group`): T's full `text_config` (rotary factor/theta, output gate, head counts), S5's union receipt channel order (`OC/composite/s5/union_receipt.json`), K3D `done.json` sha per layer, the five units' `charted_block.json` specs (head dims, FFN widths, `insert_after`), the QVL32 and speech-teacher cache layouts, the proxy data sha. Any mismatch with section 2 is corrected in this document before P2.
+3. Apply migration `0006_fold_component.sql` (`omni_lab.py db migrate --dry-run`, then migrate; both hosts, sha parity) and add `log-fold-component` to `omni-lab/omni_lab_run.py` (plus a unit test with the throwaway-DB pattern).
+
+**P1: refold inputs (parallel; CPU nice 15 plus GPU3).**
+4. `k3_dense_rows.py` (new, `OCL/composite/tools/`, with `test_k3_dense_rows.py`): folded-stream rows L1-60 -> `L/scratch/v2-fold/k3_rows/L{l}/held_rows.safetensors`; symlink L61-92 from `OC/k3-run-oct09-claude/fold/resid`. GPU3 via `python3 $OC/distill/tools/lanes.py claim-run --lane L-EXP --agent claude --gpus 3 --job v2fold-k3rows --log ... --omni-lab-kind fold -- ...`. About 1.5 h [E].
+5. Import T to Chimera layout (`CO/scripts/import_qwen35_trunk.py`, new thin driver over `importing/qwen35.py`) -> `L/scratch/v2-fold/T-chimera/` (49 GB); byte-level identity receipt. Then taps (section 7, item 1) on GPU3 after step 4: about 1 h [E]. Same for S5 (already Chimera layout; taps only) for the control arm.
+6. C17 refold (section 7, item 3): `launch_c17_v2_0_41.sh` / `_42_63.sh` copied from the archived recipe with `--k3-resid` / `--trunk-taps` pointed at steps 4-5, `--out OC/composite/c17/charts_v2`; 3 CPU workers; about 12 h wall [E]. Merge mode afterwards, receipt to omni_lab.
+7. Build the calibration set (section 6) with `CO/src/chimera_omni/proof/v2_proxy_data.py` plus a new `CO/scripts/v2_fold_calib.py` (CPU): sha into `dataset_version`.
+
+**P2: charts and alignment (CPU, under 1 h).**
+8. `c19_v2_alignment.py` (new): writes `alignment.json` (period map, 92:24 map, unit placement) for `co2-2b` and `co2-4b`; `fold_alignment` rows.
+9. `c20_stream_chart.py` (new): `C`, norm scalars `s_k`, retained-energy diagnostics -> `L/scratch/v2-fold/stream_chart_T.safetensors` (plus S5).
+10. Unit chart refold (section 7, item 4) needs v2 prefix rows, so it runs *inside* step 11 at each unit's layer; the host-row writer is prepared here.
+
+**P3: the sequential fold (GPU5, one card per arm; GPU3 for the second arm).**
+11. `c21_v2_fold.py` (new; imports `c14_union_coreset.CoresetFold`, the C10 lift functions, `qf_attn.py` / `qf_gdn.py` head-selection helpers, `v2_layout`): for k in 0..23: mixer head selection + charts + `out` ridge; FFN union (trunk, K3 lift, unit lift) + `down` ridge with `Y_k`; unit chart refit when a unit lands; held diagnostics; `fold_component` rows; per-layer `done.json` plus `--resume`; `--acceptance record` only; `--min-free-gib 60`. Embed/head/control rows at the start; boundary (`c22_boundary_head_fold.py`, new) before layer 0 so media rows exist in `x_0`; x0 head after layer 23. Output `L/scratch/v2-fold/children/co2-2b-F-T-a003/` (fp32, 7.7 GB). Launch: `lanes.py claim-run --lane L-EXP --agent claude --gpus 5 --job v2fold-2b-FT --log ... --omni-lab-kind fold -- nice -n 15 <venv-p40>/python c21_v2_fold.py ...`. The P40 torch env is the one recorded in omni_lab `env` for the proxy runs (38038 and later), **not** `model-surgery-lab/venv` (torch 2.11.0+cu128, no SM61 kernels [V]).
+    Per layer [E]: reads 2-3 T layers (0.77 GB bf16 each) plus 3-4 K3 form-E (866 MB each) = about 5 GB at 250 MB/s = 20 s; evaluations on about 250k rows = 3-5 min; stage-1 ranking plus the 6144^2 streamed ridge = 1-2 min; unit work = about 1 min. **About 8-12 min per layer, 4-5 h per 2B candidate; 6-8 h for the 4B.**
+12. Arms, in this order, two at a time on GPU3/GPU5: `F-T-a003` (default), `F-S5-a003` (control, lineage-pure), then `F-T-K3W0.1`, `F-T-BE`, `F-T-TIEJ`, `F-T-K3DIRECT`, `F-C2`, `F-K3MIX` / `F-K3MLA` (only after a base passes). Each is an omni_lab `experiment` under technique `v2-fold-init`.
+
+**P4: checks (GPU3, about 1 h per candidate).**
+13. `c23_v2_fold_checks.py` (new): F0-F2, F7 structural; F3 via `run_omni_frozen_review.py` (dossier -> `eval_run`, review package to `OC/oc02/human-review/co2-2b-F*`); F4/F5/F6 via the `v2_proxy_mixed.py` instruments on held media (random-init control built once by `chimera_omni_v2_config()` with a recorded seed); results as `eval_result` / `eval_artifact` rows; `omni_lab.py compare` across arms.
+14. Register passing candidates in the ledger, clone, and write the results package into `ARCHITECTURE_V2_2026-10-21.md` as section 15 (evidence index extended) and into this document's section 12.
+
+**P5: `co2-4b`.** Same tools with `--profile co2-4b` (2:1 period map, 92:32), after the 2B passes or Cyril asks for it first.
+
+**Code locations.** New tools in `OCL/composite/tools/` (`k3_dense_rows.py`, `c19_v2_alignment.py`, `c20_stream_chart.py`, `c21_v2_fold.py`, `c22_boundary_head_fold.py`, `c23_v2_fold_checks.py`, each with a `test_*.py` beside it, as the directory does); repo-side drivers on the branch `claude/arch-v2-20261021` under `CO/scripts/` (`import_qwen35_trunk.py`, `v2_fold_calib.py`) with tests in `CO/tests/`; omni-lab change in `C:/Users/cereal/Documents/ai training/omni-lab/` (migration plus `omni_lab_run.py`), synced to `/home/cereal/omni-campaign/lab/` with matching sha256. Server scratch: `L/scratch/v2-fold/`. All commits local; never push; never touch the main chimera-omni checkout. Every job: `nice 15` on the CPU, `lanes.py claim-run` on a P40, `log-run` with `|| true`, receipts with sha256.
+
+**Time budget [E, sum of the estimates above]:** P0-P1 about 14 h wall (the CPU C17 refold is the long pole; the GPU work in P1 is about 3 h), P2 under 1 h, P3 about 5 h per 2B arm (two arms in parallel), P4 about 1 h per arm. **The first two 2B candidates with their checks: about one day of wall time after P0**; each further pair of arms about 6 h. Disk: about 100 GB new on Lexar (rows plus taps), 12 GB on root (charts), 8 GB per fp32 candidate.
+
+---
+
+## 11. Risks, gates and what needs Cyril
+
+| Item | Kind | Action |
+|---|---|---|
+| **T as a fold source.** T is a trained model (full-KD on the S5 fold). If "built initially from folding" means fold-only lineage, the S5 arm is the base and T is only a target. | **needs Cyril's ruling** | Build both arms (they cost the same); present the F3 packages side by side; do not train on either until he picks |
+| Merge loss from 2-3 -> 1 layers and 5120 -> 2048 width is unprecedented in this campaign (the deepest fold so far was 27B -> 25B S5 and the 4B X* children). Coherence at 2B fold-only may be low. | risk | Pre-registered collapse-only bar (F3); per Cyril, any retained coherent language is a success for a fold init; everything else is recorded |
+| The C10 design sweep's collapse at full K3 weight may recur at `w_k3 = 0.1` | risk | arm, not default |
+| T's rotary/gate config may differ from v2 (UNVERIFIED) | risk | printed at P0 step 2; if it differs, heads are still transplanted and the difference is recorded as a fold deviation |
+| QVL32 cache pre/post 2x2 merge UNVERIFIED; speech-teacher cache layout UNVERIFIED | risk | resolved at P0 step 2 from the cache manifests; the boundary fit targets fall back to the unit input rows for that modality |
+| NAS `/mnt/ai_data` (Q38 S0 import, the S5 arm's `--parent-trunk`) may be hung [R] | risk | the S5 arm uses S5's own FFN writes as targets if the NAS is down; recorded |
+| Lexar read contention with GPU0/4/6 data generation (same disk) | ops | reads are sequential and bounded (about 100 GB total); `nice 15`; no card outside GPU3/GPU5 |
+| Disk floors | ops | `--min-free-gib 60` on root, 100 GB on Lexar; nothing is deleted; protected fold sources are read-only inputs |
+| omni_lab migration `0006` | touches the shared DB (also used by other lanes) | additive only (new tables, view, grant); dry-run first; the nightly omni_lab backup exists [R guide]; apply on both hosts with sha parity |
+| Ledger registration of new children | shared state | via `oc_checkpoint.py` only; candidates registered as `candidate`, never over an existing id |
+| No production service, no credential, no GPU0/4/6, no push, no main-checkout change | none | |
+| Cards: if a step needs a fast card (none is expected: every stage is layer-streamed fp32 under 6 GB), stop and report | per task rule | |
+
+**Flagged for the caller to gate:** (1) Cyril's ruling on T vs S5 as the trunk source; (2) the omni_lab migration on the shared database; (3) ledger registration of new candidate children. Nothing else in this plan touches production data, credentials or a running service.
+
+## 12. Results
+
+None yet. This section is filled by P4 step 14.

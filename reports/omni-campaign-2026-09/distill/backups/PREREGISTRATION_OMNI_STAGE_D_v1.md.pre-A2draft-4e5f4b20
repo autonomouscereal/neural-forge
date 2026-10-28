@@ -1,0 +1,109 @@
+# PREREGISTRATION_OMNI_STAGE_D_v1 -- OMNI1 stage D (D1-D4), fixed before the first weight-changing step
+
+Written 2026-10-13 by the trainer-prep lane. Binds `distill/DISTILL_DESIGN_2026-10-12.md` (section 2, 4, 5, 6) and `distill/STAGE_D_RULINGS_2026-10-12.md`; where the two differ, the rulings win (they are later and they are Cyril's).
+
+**How this document is sealed.** The frozen body is every byte from the heading `## 1. Scope` up to and including the newline before the heading `## Amendments`. `distill/tools/stage2_training_receipt.py` (the CAMPAIGN section 1.8 copy of neural-forge's receipt module) pins that body's sha256 and byte length; every stage-D training receipt carries the pin, and a trainer given `--preregistration` refuses to start if the body no longer hashes to it. Changes after sealing go under `## Amendments` (dated, with the reason), never into the body.
+
+## 1. Scope
+
+- The student is OMNI1 = `OC02-F-Q38-27BU-OMNI1` (27,535,655,753 parameters; registered 2026-10-13T05:01:45Z, record `OC02-F-Q38-27BU-OMNI1-0001-register`, `3f38c5cf771fad29`; s7_omni1_check PASS). Stage D starts from its byte clone `OC02-F-Q38-27BU-OMNI1.clone-pre-D1` (ledger step S9), never from OMNI1 itself.
+- Teachers: Qwen3.8-27B-Uncensored (the trunk parent, "Q38"), Kimi K3 (teacher-forced logits only), and the media parents (ACE-Step 1.5 DiT + LM `qwen_1.7b_ace15`, Qwen-Image FP8 + `qwen_2.5_vl_7b_fp8_scaled`, Hunyuan3D 2.1, MiniMax H3, the Qwen3-VL-32B ViT). Every teacher output is read from a sealed stage-C cache; no teacher runs inside a training loop except on-policy scoring, which is itself written as a cache first.
+- Owner rulings that bind here (STAGE_D_RULINGS 2026-10-12): GO is standing; K3 gets the full 2.0M-token budget in four passes and is never skipped; H3 is included (2,048 targets unless the P4 measurement exceeds 20 s per forward, then 1,024); no depth cut (full-depth LoRA; tokens are cut only if the chosen engine measures below 60 tok/s); on-policy sampler upside path option (ii) Q8_0 proxy on GPU6, planning path option (i) Q4_K_M proxy on the P40s as a recorded transient exception to R3, fraction 0.25 after 20M off-policy tokens.
+- Not in scope: stage T (the curated finetune) and the single Q4 export after it.
+
+## 2. Rules common to every D stage
+
+1. **Vocabulary mask.** Every text loss (D1 diagnostic KL, D2, D3d, D4) and every on-policy sample is computed over vocab rows **[0, 248,320)** only: the student's head is sliced to those rows before the log-softmax. Rows [248,320, 252,416) are the ledger bands and [252,416, 317,952) the C18 music band (64,000 written rows); no text loss reads or pushes them. The music band is trained only by D3c, against the ACE LM.
+2. **Teacher targets.** Q38: top-64 log-probabilities (bf16) + int32 ids from `qtext_teacher_cache.py`, with the mass outside the top-64 as one tail bucket. K3: top-32 log-probabilities (`logit - lse` over all 163,840 K3 logits) from `k3_teacher_cache.py`, mapped to Qwen ids by IDENTICAL byte string into [0, 248,320) (`xtok`); a K3 id with no identical-byte Qwen token is id -1 and its mass joins the tail bucket with the out-of-top-32 mass; used ONLY at aligned byte boundaries (a Qwen position and a K3 position that have consumed the same bytes and both still have an in-row next token). A corpus file's in-band `real_lengths` bounds every target: padding is never a training position.
+3. **Engines.** The text student runs on `streamed_kd_trainer.py` (>= 1.3.1). The upside engine (streamed bf16 fwd+bwd, GPU0 + GPU4 data parallel) is used if its gradient parity arm passes (done: "GRAD-PARITY PASS", worst relative difference 0.000e+00, receipt `distill/trainer-lane/receipts/final-v1.3.0-66b0854f/grad_parity_q35_08b_p40.json`) and S0 P2 measures at least 151 tok/s; otherwise the measured split cell (GPU6 + GPU4, fp16 LoRA, dynamic loss scale init 2^10). D1 runs on `d1_trunk_recovery.py` (>= 1.2.4) two-card data parallel on GPU0 + GPU4.
+4. **Hardware.** No P2P anywhere (all reductions host-staged). GPU5 is never used. CPU jobs run at nice 15.
+5. **Rolling safety checkpoints.** Every 30 minutes, with optimizer state, keep 2, on root (`--safety-minutes 30 --safety-keep 2`); resume is exact (sampler counters, optimizer, scaler) and refuses a changed base, data or config. D1's per-layer rung files are its rolling checkpoints (one layer is well under 30 minutes).
+6. **Skip guard.** A run that keeps skipping steps (non-finite gradients, fp16 overflow) halts with a safety checkpoint and exit 3 after 8 consecutive skips or more than 20% of the last 100 steps, and waits for a ruling (design risk row 2).
+7. **Ledger.** Each stage ends in a registered DELTA: `OC02-D-Q38-27BU-OMNI1D<n>` registered with `oc_checkpoint.py register --delta-base <previous clone>` (D1: base `OC02-F-Q38-27BU-OMNI1.clone-pre-D1`), then its byte clone `OMNI1D<n>.clone-pre-D<n+1>`, then the review package. D4 materialises the one merged checkpoint `OC02-D-Q38-27BU-OMNI1D4` and its clone `OMNI1D4.clone-pre-T1`. Parents, registered children and clones are never modified.
+8. **Receipts.** Every training receipt records: this document's frozen-body sha256 (the pin), the base identity (directory digest or a delta-compose plan sha), every teacher cache's sealed manifest sha256, the data config sha256, every tool's version and sha256, the exact trainable census, per-step losses, and peak VRAM / host RSS.
+
+## 3. Rungs
+
+### D1 -- per-layer trunk recovery (prefix-fed)
+
+- **Data:** `distill/corpus/text` rows [0, 977) (shards `text-00000` .. `text-00003`, packed 4,096, every row fully real): 977 x 4,096 = **4,001,792 tokens**, the shortest whole-row prefix of at least the design's 4M. The last 61 rows (rows // 16) are held for diagnostics; 916 rows (3,751,936 tokens) are trained.
+- **Per text layer i, in order 0..63:** target y_p(i) = the parent layer applied to the PARENT prefix; prediction p = x_m + FFN_trunk(norm2(x_m)) with x_m = h_c(i) + attn_c,i(h_c(i)) from the CHILD prefix, trunk channels [0, 4,352) only. **The K3 term is excluded from the prediction** and kept in the child's prefix advance h_c(i+1) = x_m + FFN_full(norm2(x_m)).
+- **Loss (weight 1.0, the only term):** mean over tokens of ||p_t - y_t|| / ||y_t|| + (1 - cos(p_t, y_t)) (`--loss-site residual`).
+- **Trainable (one layer at a time):** fused `ffn.up.weight` gate rows [0, 4,352) and up rows [16,640, 20,992), `ffn.down.weight` columns [0, 4,352), `norm2.weight`: 3 x 5,120 x 4,352 + 5,120 = 66,851,840 per layer, **4,278,517,760** over 64 layers. Frozen: attention / KDA, the K3 rows and columns [4,352, 16,640), embed, head, every media tensor.
+- **Optimiser (d1 defaults, pinned):** Adam beta (0.9, 0.95), eps 1e-8, lr 2e-5, 10 warm-up steps, cosine to 0.1 x lr, clip 1.0, 2 epochs, 32,768 tokens per step (micro 8,192), fp32 master and training matmuls, bf16 frozen forwards and host streams, seed 0.
+- **Diagnostics (never refusals):** per layer on held tokens, before and after: residual relL2 / cos / D1 loss of the trunk-only prediction and of the full layer (with K3) vs y_p(i); FFN-level relL2; K3-term energy relative to the trunk FFN output; the loss curve. After L63: frozen-head KL(parent || child) and top-1 agreement over rows [0, 248,320), for the D1 child and the original child.
+- **Output:** `D1_delta.safetensors` (bf16, slice replaces) converted to the ledger recipe `DELTA.json` (op `replace`) and registered as `OC02-D-Q38-27BU-OMNI1D1` on base `OC02-F-Q38-27BU-OMNI1.clone-pre-D1`; clone `OMNI1D1.clone-pre-D2`.
+
+### D2 -- end-to-end LoRA KD, text + K3
+
+- **Data (23.0M short + 1.0M long):** 18.85M registry off-policy tokens (`distill/corpus/text`), 1.15M on-policy (sampler per section 1; if no sampler is ready when D2 reaches its on-policy point, the 1.15M come from the off-policy registry and that is recorded), 1.0M self-generated tokens (sampled by the parent Q4_K_M, sealed `fe1f0784777b8fdf`, 1,008,982 tokens, rescored in bf16), and the 2.0M K3 rows (`distill/corpus/k3`, four passes, 1,991,482 real Qwen tokens, 1,867,899 aligned pairs). Then the long rung: `distill/corpus/long`, 31 documents x 32,768 tokens, KL to Q38 at L = 32,768.
+- **Rungs (adapter snapshots):** 5M / 12M / 20M / 23.0M tokens, then the long rung last.
+- **Loss, per next-token position p, summed and divided by the step's global position count:**
+  - text, self-gen and long rows: w_q38 = **1.0** x KL(Q38 top-64 + tail || student);
+  - K3 rows: w_q38 = **lambda_K3 x a** on every stored position and w_k3 = **lambda_K3 x (1 - a)** on aligned positions, with the Q38 anchor **a = 0.5** and **lambda_K3 = 0.3** at the start (G3 fallback: 0.1 with the gain frozen at 1.0 until the 12M rung). w_k3 multiplies KL(K3 top-32 mapped + tail || student);
+  - on-policy rows: generalised JSD, beta 0.5, over the same buckets instead of the forward KL;
+  - LM cross-entropy floor **0.1** on every position whose next token is a real in-row token;
+  - EOS supervision **0.1** (extra CE) where that next token is an EOS id (248046, 248044);
+  - unlikelihood **0.1** x sum over up to 8 tokens that would repeat a 3-gram already in the row (the gold token is never a candidate).
+- **Trainable (LoRA sites and ranks):** trunk FFN gate / up / down r64 (alpha 64) on the trunk channels [0, 4,352) only = 116,391,936; GDN `linear_attn.in_proj_qkv` and `linear_attn.out_proj` r64; gated-GQA `self_attn.v_proj` and `self_attn.o_proj` r64 (design upper bound for the attention sites: 123,731,968); K3 down columns [4,352, 16,640) LoRA r32 (alpha 32) = 35,651,584; K3 per-column gain, 12,288 per layer = 786,432, **fp32, initialised to exactly 1.0**, applied to the K3 channel activation (equivalently a per-column scale of the K3 down columns). The exact total is the trainer's census at launch and is recorded. Frozen: GQA q/k, RoPE / partial RoPE, KDA decay (`A_log`, `dt_bias`, `in_proj_a`, `in_proj_b`), `in_proj_z`, every norm, embed, head, all media tensors.
+- **Optimiser (pinned):** AdamW beta (0.9, 0.95), eps 1e-8, weight decay 0, LoRA lr 1e-4, gain lr 1e-3, 20 warm-up steps, cosine to 0.1 x lr, grad clip 1.0; fp16 split cell only: dynamic loss scale init 2^10, growth interval 200. Seed 20261012.
+- **Output:** `OMNI1D2` delta (ops `lora` + `scale`, base digests pinned) on `OMNI1D1.clone-pre-D2`; clone `OMNI1D2.clone-pre-D3`.
+
+### D3 -- media + vision-in / video-in distillation (hybrid module)
+
+- Lanes in order ACE, Qwen-Image, Hunyuan3D, H3 (H3 included by ruling). Engine: the hybrid module (qwen3_5 layers + the Chimera unit at depth d + interface rows + flow head); **it must pass its parity arm (hybrid forward vs the Chimera charted forward on OMNI1 for each unit, zero writes on rows a unit does not own) before any D3 step.**
+- **D3a** per-unit refit on host rows recaptured on the D2 child: ACE 102,811,904 + H3 267,889,176 + QIMG 154,985,727 + HY3D 46,156,031 + QVL32 19,594,291 = 591,437,129 parameters.
+- **D3b** guided-velocity KD against the cached teacher velocities, backprop through layers d..63 above each unit, x_d cached; trainable the unit + interface-out rows C15 f[0, 640) + LoRA r16 on layers d..63. Loss: mean squared error of the guided velocity, weight 1.0 per lane.
+- **D3c** C18 music band rows [252,416, 317,952) in embed + head (2 x 65,536 x 5,120 = 671,088,640, sparse-row lazy Adam on the host) + LoRA r16 on all layers; loss KL(ACE LM top-64 + tail || student band rows), weight 1.0.
+- **D3d** vision-in and video-in answer KD through the QVL32 unit + C11 rows (1,536 x 5,120) + the shared LoRA r16; text loss over rows [0, 248,320) as in D2 (weight 1.0); QVL32 feature KD against ViT block 13 at weight **0.1**.
+- **Stop-spending line:** a modality whose decodes are still noise after 25% of its D3 budget is paused and reported, not continued.
+- Data, token counts and teacher caches as DISTILL_DESIGN section 3 and 4 (D3 row); LTX-rollout v9_base rows excluded. Output: `OMNI1D3` delta (each unit's ratios carried, R2b) -> `OMNI1D3.clone-pre-D4`.
+
+### D4 -- consolidation replay and the one merge
+
+- Replay from existing caches only: 3M Q38 text (including 0.5M long), 1M K3 rows, 300 pairs each for vision, ACE, QIMG, HY3D and H3; text losses over [0, 248,320) with the D2 weights. All D2 + D3 trainables at **lr x 0.3**.
+- Then an exact fp32 merge of every LoRA into its base tensor, and the K3 gain folded **once, here, in fp32, cast once**: `down[:, 4352:] <- (down[:, 4352:] + s_k3 * B_k3 @ A_k3) * gain` (after the K3 LoRA merge). Output: the merged `OC02-D-Q38-27BU-OMNI1D4` (root) and its clone `OMNI1D4.clone-pre-T1`.
+
+## 4. Gates: functional vs diagnostic
+
+Owner policy 2026-10-06: finite fit numbers (relL2, KL, NLL, cos, PSNR, velocity MSE) are **diagnostics**, printed beside every gate, never a refusal. Structural, identity and non-finite failures are **functional** and stop the stage.
+
+| Gate | Kind | What is checked | On failure |
+|---|---|---|---|
+| G0 structural | **functional** | OMNI1 registered and its MANIFEST verifies; loads strict in Chimera; one forward finite; `OMNI1.clone-pre-D1` exists and its digest equals OMNI1's; S0-P1 reads every text tensor into the qwen3_5 layout tensor-exact (uniform FFN 16,640, no gain tensor) | No D spend; fix step 1 (S7 install / clone) |
+| G1 text identity | **functional** | R-Q top-1 OMNI1 vs S5 on text-only inputs (expected about 1.0: charted blocks write exact zeros off their rows) ; new failure classes on bank v1 | Below about 0.99, or loops on lanes where S5 had none: diagnose S7 before D1 |
+| G2 text start point | diagnostic (recorded) | bank v1 content lanes, artifact-tolerant; R-Q top-1 vs parent | Recorded and read by Cyril; GO is standing (ruling) |
+| G3 K3 | diagnostic (recorded) | bank v1 and R-Q with the K3 columns on and zeroed; per-route bits-per-byte probe | Sets lambda_K3 and the route mix (rule in D2); K3 is never skipped |
+| G4 media, per modality | structural part **functional**, content diagnostic | a structurally valid decode (audio rms > 0, non-constant pixels, mesh faces > 0, frames > 0, vision answers present, QVL32 features non-zero) | Undecodable: that lane returns to the S7 fix, the others proceed. Noise content is the expected S8 state and is what D3 fixes |
+| In-run | **functional** | non-finite loss / gradient / stream; persistent skips (section 2.6); identity drift on resume; a target outside its row or outside [0, 248,320) | Halt with a checkpoint; ruling |
+
+## 5. Promotion between stages (ruling of 2026-10-12)
+
+A stage starts from the previous stage's clone when, against that previous stage: bank v1 content (artifact-tolerant; loops, echo, missing EOS and cap-rides do not count, only content misses do) is **at least** the previous stage's, and **no modality regressed in content**. Otherwise the next stage starts from the earlier clone (CP R2) and the regression is reported. Cyril's read of each package is asynchronous: training does not wait for it. Per-stage success readings (recorded, not gates): D1 bank v1 content >= OMNI1's S8 and R-Q vs parent >= S8; D2 bank v1 >= D1, R-Q >= D1, bank v2 vision lanes not regressed, 256k needle read >= the P11 baseline, K3-zeroed ablation reported both ways; D3 decodes beside the parent's on the same prompt, content no worse than S8 on any modality, text bank v1 >= D2; D4 everything side by side (parent / OMNI1 / D4).
+
+## 6. What may change without an amendment
+
+Paths, card assignments inside the rules of section 2.4, micro-batch / accumulation splits that keep the global tokens per step, and tool patch versions whose tests pass. Everything else in sections 1-5 (data, losses and weights, masks, trainable sites and ranks, optimiser values, rungs, gates, promotion) changes only by a dated amendment below, written before the step it affects.
+
+## Amendments
+
+### A1, 2026-10-14: D1 runs on Codex's source-isolated successor dataset; the K3-before-D1 launch gate is replaced
+
+**Status: a catch-up record, written late.** Codex (root thread `01a1326f`, then cloud thread `01a10f78`) made both changes in its own successor copy, `distill/codex-preparation-01a1326f-20261013/d1-source-successor-v2/PREREGISTRATION_D1_SOURCE_SUCCESSOR_2026-10-13.md` (sha256 `7d2b8601435b753bdcba65e79dd50f7b5ac3966c8c3ad1f8d4a394563ca92e9e`, written 2026-10-13 about 19:12Z, before D1's first weight update). This canonical copy still said "(none)". Section 6 asks for an amendment before the affected step; that did not happen here, and this entry records the change rather than authorising it in advance. The successor copy carries this frozen body byte-for-byte; its pin is checked below.
+
+**1. D1 data (replaces section 3 D1 "Data").**
+- Dataset: `distill/codex-preparation-01a1326f-20261013/d1-source-successor-v2/d1_source_ids.safetensors`, sha256 `74f79199297891af208bfcb340a99d6bc846a2337ce08a9599f83bc11f2892ad`; manifest `manifest.json` in the same directory, sha256 `a488e75b46a667ebe91c23a08e5ce50a07a49be8208520f9af2d71bc060bbf88`.
+- Shape: 979 rows x 4,096, packed in two streams with explicit real lengths. **917 fit rows / 62 held rows** (`--held-rows 62`).
+- Real tokens: **3,752,131 fit** (5,855 documents: text_instruction 2,238,591, text_code 1,111,423, text_reasoning 402,117) and **250,280 held** (331 documents). Total 4,002,411 real tokens. 7,573 padded positions, never training targets. Whole-document overshoot over the 4,001,792-token original budget: 619 tokens.
+- Sources: whole parent-tokenized admitted train conversations for fit, admitted validation conversations for held. Fit and held source groups are disjoint; no test row enters either pool. Global cross-route and frozen-evaluation source groups are excluded from both.
+- Reason, as measured by Codex: the original rows [0, 977) prefix contained 1,498,741 tokens across 3,010 documents that were incompatible with the recovery splits, including 371,547 test and 351,492 validation tokens, and one document crossed the fit/held boundary. Codex's audit also found zero violations of the original frozen-carve assignment. Source audit: `d1-source-audit-v2/report.json`, sha256 `abf51e7283a486e76977f728abb36a7cc77c030033d6c4930381005f0cd07a32`.
+- **Unchanged:** the per-layer prefix-fed objective and loss, the trainable sites and census (66,851,840 per layer), the optimiser values, layer order, base `OC02-F-Q38-27BU-OMNI1.clone-pre-D1`, and the exclusion of the K3 term from the prediction. The original rows [0, 977) prefix is kept as evidence and must not be used for an `OMNI1D1` (see `queues/d1_launch.sh`, superseded 2026-10-14).
+
+**2. The D1 launch gate (replaces "K3 cache sealed before D1" in `queues/d1_launch.sh` 1.1.0).**
+- Removed prerequisite: K3 passes 0-3 complete, with four sealed external K3 caches. D1 reads no K3 cache. The old gate existed to keep D1 and a K3 pass from competing for host RAM.
+- Replacement (Codex `resource_policy.json`, schema `chimera_recovery.d1_resource_policy.v1`, 2026-10-13): no live K3 teacher-cache process; no foreign process or legacy queue on the selected GPUs; MemAvailable at least 100 GiB at start; the exact live two-GPU PG/Docker assignment; a fresh root resource proof before every optimiser apply; unchanged source, base and recipe seals. The trainer runs with `--no-pin` (no pinned host buffers; set in `d1_allocated_entry.py` and `d1_allocated_contract.py`). The policy's reviewed trainer sha256 is `c6b2525b70e1d8c74aeb5a40434e00cc25e43b1647c1afc903046a8da3c4ed03`.
+- Host-RAM rule that still binds every other lane: a K3 pass or a HostResidentReader job starts only after its own MemAvailable gate, and waits rather than competing with D1.
+
+**3. Not adopted by this entry.** The successor document also carries Codex's "recovery preparation amendment" (sections A-D: the recovery corpus, a structured-chat tool lane with `--w-ul 0`, modality data requirements, and D3b AdamW values). None of those are adopted here. Each one needs its own dated amendment, written before the step it affects.
+
+**Pin check.** The frozen body is untouched: `stage2_training_receipt.py check-prereg` on this file must print sha256 `c24d21e08815d7acd2ce14aea989d16f84f167eb24a40597966be19284cb1370`, length 15,339. The receipt is quoted in `CHIMERA_OMNI_STEP1_RESULTS.md`, section 6.

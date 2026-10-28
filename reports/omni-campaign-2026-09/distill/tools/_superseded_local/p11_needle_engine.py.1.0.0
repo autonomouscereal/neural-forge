@@ -1,0 +1,1002 @@
+#!/usr/bin/env python3
+"""p11_needle_engine.py -- E2: the P11 needle engine (streamed, teacher-forced, exact sequence-chunked).
+
+Lane gpu4 (Claude, 2026-10-13). Design of record: distill/DISTILL_DESIGN_2026-10-12.md §4 S0 P11 and §6 (256k plan);
+STAGE_D_WAVE1_STATUS §4.4 E2. It EXTENDS composite/tools/run_omni_frozen_review.py `--stream --teacher-forced`
+(1.2.0) by import, not by edit: that file is step 1's live S8 runner and is never modified here. Everything the
+stock streamed engine does (meta construction + assign-loading of one block at a time, fp32 RoPE inv_freq, the
+head assign with the exact streamed-block gap set, the band logit mask, the GPU occupancy rule) is used from it.
+
+WHAT E2 ADDS
+
+  A stock streamed layer at L = 262,144 materialises 262,144 x 16,640 x 2 B = 8.7 GB per FFN half (17.4 GB for the
+  fused gate|up), fp32 attention scores [24, L, L], and the tree's KDA/short-conv reference is a per-position Python
+  loop (~25 h per 256k read). E2 runs each streamed block over the sequence in row chunks of --chunk tokens with
+  the residual updated in place:
+
+    KDA (gdn)   norm1 -> q/k/v projections -> causal depthwise short conv with the 3-tap history CARRIED across
+                chunks -> q/k l2-norm (fla form) + query scale -> gated delta rule with the recurrent state CARRIED
+                -> head-wise RMSNorm, SiLU gate, out projection; then x += ffn(norm2(x)) on the same rows.
+                Recurrence kernels: `tree`  (the tree's own forward_with_state per chunk: exact, slow),
+                                    `loop`  (vectorised conv + the tree's per-position delta-rule loop),
+                                    `fla`   (vectorised conv + fla chunk_gated_delta_rule with initial/final state).
+    gated GQA   pass 1: k/v projections, k RMSNorm, partial RoPE at absolute positions, kept fp32 for all L;
+                pass 2 per row chunk: q projection/norm/RoPE, then per query sub-chunk scores = q.k^T / sqrt(D) in
+                fp32 against keys [0, end), causal mask on the diagonal block, softmax, @ v; output gate, out proj;
+                then x += ffn(norm2(x)). Exact: a query row's softmax over [0, end) equals the tree's softmax over
+                [0, L) with the masked tail at finfo.min (exp underflows to exactly 0); only the reduction length
+                differs.
+    charted     identity on text rows (the tree's ChartedSourceBlock returns exact zeros where it owns no row;
+                the parity arm BUILDS each charted block and asserts block(x) == x bitwise).
+    embed/head  embed lookup on the CPU (exact anywhere); the final RMSNorm + lm_head run on the CPU for the scored
+                rows only (a 262,144 x 317,952 logit tensor is never formed).
+
+PARITY ARM (`parity`, also run by `read --parity-length 4096` before any needle read): the same streamed blocks
+run (a) unchunked through the stock layer (`block(x, token_valid_mask=...)`, the stock streamed engine's call) and
+(b) chunked through E2, layer-synchronously from the same embedded input. Per layer it records whether the two
+residuals are bit-equal and the max abs diff (and, where they differ, the LOCAL diff of E2 run on the reference
+input); at the end the scored-position logits are compared (max abs diff, top-1 agreement). `--chunk` defaults
+smaller than the parity length so the chunk boundaries are actually crossed.
+
+NEEDLE READ (`build-needles`, `read`): documents of exactly 32,768 / 131,072 / 262,144 tokens (chat template,
+thinking off, the review's render_prompt), haystack = held-out eval-split rows (distill/corpus/eval_split) in a
+seeded order, one passkey needle (7 random digits, a named archive) at each of 2 depths, the question at the end,
+and the answer digits + <|im_end|> teacher-forced. A no-needle control at 32k reads the same question. Read per
+document: first-digit argmax hit / rank / logprob, every-digit argmax hit (exact passkey under teacher forcing),
+mean NLL over the digits, stop predicted after the digits. Finite numbers are diagnostics (OMNI1 is the baseline
+D2/D4 must not fall below, same engine + same needle file); a non-finite logit or a shape/identity failure is
+functional (exit 3).
+
+    build-needles --tokenizer-dir T --filler eval_rows.jsonl --out DIR [--lengths 4096,32768,131072,262144]
+    parity        --model M --needles DIR --length 4096 --device cpu --dtype float32 --kda-kernel loop --out R.json
+    read          --model M --needles DIR --lengths 32768,131072,262144 --device cuda:0 --dtype bfloat16
+                  --kda-kernel fla --parity-length 4096 --out-dir $OC/distill/tps --label p11_omni1
+
+Exit codes: 0 written, 3 refusal / functional failure (receipt written when one can be), 1 unexpected error.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import importlib.util
+import json
+import math
+import os
+import random
+import sys
+import time
+from pathlib import Path
+from typing import Any, Callable, Sequence
+
+TOOL_NAME = "p11_needle_engine"
+TOOL_VERSION = "1.0.0"
+NEEDLE_SCHEMA = "omni-campaign.p11.needles.v1"
+RECEIPT_SCHEMA = "omni-campaign.p11.read.v1"
+PARITY_SCHEMA = "omni-campaign.p11.e2-parity.v1"
+OC = Path(os.environ.get("OC", "/home/cereal/omni-campaign"))
+DEFAULT_REVIEW_TOOL = OC / "composite" / "tools" / "run_omni_frozen_review.py"
+DEFAULT_TREE = OC / "import" / "rq27b" / "tree_ef1ffb9"
+DEFAULT_CALIBRATION = OC / "calibration"
+EXIT_REFUSED = 3
+KEY_DIGITS = 7
+SENTINEL = "⟦P11-DOCUMENT⟧"
+ARCHIVES = ("Kestrel", "Marlow", "Juniper", "Halcyon", "Corvid", "Thistle", "Ostrander", "Vellum", "Quarry", "Brightwater",
+            "Ironbark", "Saffron", "Lantern", "Moraine", "Pellucid", "Tamarack", "Wren", "Cobalt", "Ember", "Fallow")
+
+
+class Refusal(RuntimeError):
+    def __init__(self, message: str, *, receipt: dict[str, Any] | None = None):
+        super().__init__(message)
+        self.receipt = receipt
+
+
+def log(message: str) -> None:
+    print(f"[{time.strftime('%H:%M:%S')}] {message}", flush=True)
+
+
+def file_sha256(path: str | Path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for block in iter(lambda: handle.read(1 << 22), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def ids_sha256(ids: Sequence[int]) -> str:
+    return hashlib.sha256(b"".join(int(i).to_bytes(4, "little", signed=True) for i in ids)).hexdigest()
+
+
+def write_json(path: str | Path, obj: Any) -> str:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + f".tmp{os.getpid()}")
+    tmp.write_text(json.dumps(obj, indent=1, sort_keys=True, default=str) + "\n", encoding="utf-8")
+    os.replace(tmp, path)
+    return file_sha256(path)
+
+
+def rss_gb() -> dict[str, float | None]:
+    out: dict[str, float | None] = {"rss_gb": None, "peak_rss_gb": None}
+    try:
+        for line in Path("/proc/self/status").read_text().splitlines():
+            if line.startswith("VmRSS:"):
+                out["rss_gb"] = round(int(line.split()[1]) / 1e6, 3)
+            elif line.startswith("VmHWM:"):
+                out["peak_rss_gb"] = round(int(line.split()[1]) / 1e6, 3)
+    except OSError:
+        pass
+    return out
+
+
+def chunks(length: int, size: int) -> list[tuple[int, int]]:
+    if size < 1:
+        raise Refusal(f"chunk size must be >= 1, got {size}")
+    return [(s, min(length, s + size)) for s in range(0, length, size)]
+
+
+# ======================================================================================
+# binding the stock streamed engine (read-only import of step 1's runner)
+# ======================================================================================
+
+
+def load_review_tool(path: str | Path) -> Any:
+    path = Path(path)
+    if not path.is_file():
+        raise Refusal(f"no review runner at {path}")
+    spec = importlib.util.spec_from_file_location("run_omni_frozen_review_for_p11", path)
+    if spec is None or spec.loader is None:
+        raise Refusal(f"cannot import {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["run_omni_frozen_review_for_p11"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+# ======================================================================================
+# needle documents (pure apart from the tokenizer)
+# ======================================================================================
+
+
+def needle_sentence(archive: str, key: str) -> str:
+    return f"The secret passkey for the {archive} archive is {key}. Remember this passkey."
+
+
+def question_text(archive: str) -> str:
+    return f"What is the secret passkey for the {archive} archive? Answer with the passkey digits only."
+
+
+def filler_rows(path: str | Path, *, seed: int) -> list[str]:
+    """Held-out eval-split rows as haystack text, in a seeded order (instruction + response per row)."""
+
+    rows: list[str] = []
+    with open(path, "r", encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            text = "\n".join(str(row.get(k, "")).strip() for k in ("instruction", "response") if str(row.get(k, "")).strip())
+            if text:
+                rows.append(text)
+    if not rows:
+        raise Refusal(f"{path}: no filler rows")
+    random.Random(int(seed)).shuffle(rows)
+    return rows
+
+
+def tokenize_filler(encode: Callable[[str], list[int]], rows: Sequence[str], need: int) -> tuple[list[int], list[int], int]:
+    """Concatenated filler ids (each row + a blank line) and the row-boundary offsets; rows cycle if short."""
+
+    ids: list[int] = []
+    bounds: list[int] = [0]
+    cycles = 0
+    while len(ids) < need:
+        for text in rows:
+            ids.extend(encode(text + "\n\n"))
+            bounds.append(len(ids))
+            if len(ids) >= need:
+                break
+        else:
+            cycles += 1
+            continue
+        break
+    return ids, bounds, cycles
+
+
+def assemble(*, length: int, prefix: list[int], suffix: list[int], question: list[int], needle: list[int] | None,
+             answer: list[int], stop: int, filler: list[int], bounds: list[int], depth: float) -> dict[str, Any]:
+    """One document of EXACTLY `length` ids: prefix + filler[:i] + needle + filler[i:F] + question + suffix + answer + stop."""
+
+    fixed = len(prefix) + len(suffix) + len(question) + len(answer) + 1 + (len(needle) if needle else 0)
+    budget = int(length) - fixed
+    if budget <= 0:
+        raise Refusal(f"length {length} leaves no room for filler ({fixed} fixed ids)")
+    if len(filler) < budget:
+        raise Refusal(f"filler has {len(filler)} ids, document needs {budget}")
+    body = filler[:budget]
+    insert = None
+    if needle:
+        target = depth * budget
+        candidates = [b for b in bounds if 0 < b < budget] or [int(round(target))]
+        insert = min(candidates, key=lambda b: (abs(b - target), b))
+        body = body[:insert] + list(needle) + body[insert:]
+    ids = list(prefix) + body + list(question) + list(suffix) + list(answer) + [int(stop)]
+    if len(ids) != int(length):
+        raise Refusal(f"assembled {len(ids)} ids, wanted {length}")
+    prompt_len = len(ids) - len(answer) - 1
+    return {
+        "ids": ids, "prompt_tokens": prompt_len, "answer_tokens": len(answer), "filler_tokens": budget,
+        "needle_start": None if insert is None else len(prefix) + insert,
+        "needle_end": None if insert is None else len(prefix) + insert + len(needle),
+        "needle_depth_actual": None if insert is None else insert / budget,
+        # position t predicts ids[t + 1]: the digits are predicted at prompt_len - 1 ..; the stop right after them
+        "scored_positions": list(range(prompt_len - 1, prompt_len + len(answer))),
+    }
+
+
+def build_needles(*, tokenizer: Any, render: Callable[[list[dict[str, Any]]], str], filler_path: str | Path,
+                  lengths: Sequence[int], depths: Sequence[float], control_lengths: Sequence[int], seed: int,
+                  stop_token: str = "<|im_end|>") -> dict[str, Any]:
+    def encode(text: str) -> list[int]:
+        return [int(x) for x in tokenizer(text, add_special_tokens=False, return_tensors=None)["input_ids"]]
+
+    stop = tokenizer.convert_tokens_to_ids(stop_token)
+    if not isinstance(stop, int) or stop < 0 or stop == getattr(tokenizer, "unk_token_id", None):
+        raise Refusal(f"the tokenizer has no {stop_token!r} token")
+    rendered = render([{"role": "user", "content": SENTINEL}])
+    if rendered.count(SENTINEL) != 1:
+        raise Refusal("the chat template did not render the document sentinel exactly once")
+    head, tail = rendered.split(SENTINEL)
+    prefix, suffix = encode(head), encode(tail)
+    rows = filler_rows(filler_path, seed=seed)
+    filler, bounds, cycles = tokenize_filler(encode, rows, max(int(n) for n in lengths) + 64)
+    rng = random.Random(int(seed) * 1_000_003 + 11)
+    docs: list[dict[str, Any]] = []
+    archives = list(ARCHIVES)
+    rng.shuffle(archives)
+    k = 0
+    for length in lengths:
+        plan = [(d, True) for d in depths] + ([(float(depths[0]), False)] if int(length) in {int(c) for c in control_lengths} else [])
+        for depth, with_needle in plan:
+            archive = archives[k % len(archives)]
+            k += 1
+            key = str(rng.randint(1, 9)) + "".join(str(rng.randint(0, 9)) for _ in range(KEY_DIGITS - 1))
+            answer = encode(key)
+            if len(answer) != KEY_DIGITS:
+                raise Refusal(f"the tokenizer splits the {KEY_DIGITS}-digit key into {len(answer)} ids, expected one per digit")
+            needle = encode(needle_sentence(archive, key) + "\n\n")
+            question = encode("\n\n" + question_text(archive))
+            doc = assemble(length=int(length), prefix=prefix, suffix=suffix, question=question,
+                           needle=needle if with_needle else None, answer=answer, stop=stop, filler=filler, bounds=bounds,
+                           depth=float(depth))
+            doc_id = f"L{int(length)}-d{int(round(float(depth) * 100)):02d}" + ("" if with_needle else "-control")
+            doc.update({"id": doc_id, "length": int(length), "depth": float(depth), "needle": with_needle,
+                        "archive": archive, "key": key, "answer_ids": answer, "stop_id": int(stop),
+                        "ids_sha256": ids_sha256(doc["ids"])})
+            docs.append(doc)
+    return {"docs": docs, "prefix_sha256": ids_sha256(prefix), "suffix_sha256": ids_sha256(suffix),
+            "prefix_tokens": len(prefix), "suffix_tokens": len(suffix), "filler_tokens_available": len(filler),
+            "filler_rows": len(rows), "filler_cycles": cycles, "template_rendered_sha256": hashlib.sha256(rendered.encode()).hexdigest()}
+
+
+def save_needles(out: Path, built: dict[str, Any], meta: dict[str, Any]) -> dict[str, Any]:
+    import torch
+    from safetensors.torch import save_file
+
+    out.mkdir(parents=True, exist_ok=True)
+    tensors = {d["id"]: torch.tensor(d["ids"], dtype=torch.int32) for d in built["docs"]}
+    save_file(tensors, str(out / "needles.safetensors"))
+    manifest = {"schema": NEEDLE_SCHEMA, "tool": TOOL_NAME, "tool_version": TOOL_VERSION, "tool_sha256": file_sha256(__file__),
+                **meta, **{k: v for k, v in built.items() if k != "docs"},
+                "needles_sha256": file_sha256(out / "needles.safetensors"),
+                "docs": [{k: v for k, v in d.items() if k != "ids"} for d in built["docs"]]}
+    write_json(out / "manifest.json", manifest)
+    return manifest
+
+
+def load_needles(directory: str | Path) -> tuple[dict[str, Any], dict[str, list[int]]]:
+    from safetensors.torch import load_file
+
+    directory = Path(directory)
+    manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+    if manifest.get("schema") != NEEDLE_SCHEMA:
+        raise Refusal(f"{directory}: not a {NEEDLE_SCHEMA} needle set")
+    if file_sha256(directory / "needles.safetensors") != manifest["needles_sha256"]:
+        raise Refusal(f"{directory}/needles.safetensors does not match its manifest")
+    tensors = load_file(str(directory / "needles.safetensors"))
+    ids = {d["id"]: [int(x) for x in tensors[d["id"]].tolist()] for d in manifest["docs"]}
+    for d in manifest["docs"]:
+        if ids_sha256(ids[d["id"]]) != d["ids_sha256"] or len(ids[d["id"]]) != d["length"]:
+            raise Refusal(f"needle document {d['id']} does not match its recorded sha / length")
+    return manifest, ids
+
+
+# ======================================================================================
+# E2 kernels (exact chunked pieces of ChimeraBlock; tested against the stock layer)
+# ======================================================================================
+
+
+def short_conv_vectorized(conv: Any, x: Any, history: Any | None) -> tuple[Any, Any]:
+    """CausalDepthwiseShortConv.forward_with_state for an all-valid chunk, without the per-position loop.
+
+    Same arithmetic per output element: (window * weight).sum(-1) in x.dtype, + bias, SiLU; the next history is the
+    last kernel-1 inputs (all rows valid)."""
+
+    import torch
+    import torch.nn.functional as F
+
+    kernel = int(conv.kernel_size)
+    channels = int(conv.conv.in_channels)
+    batch, seq, width = x.shape
+    if width != channels:
+        raise ValueError("short-convolution input must be [batch, sequence, channels]")
+    hist_len = kernel - 1
+    if history is None:
+        hist = x.new_zeros((batch, channels, hist_len))
+    else:
+        if tuple(history.shape) != (batch, channels, hist_len):
+            raise ValueError(f"short-convolution state must have shape {(batch, channels, hist_len)}")
+        hist = history.to(device=x.device, dtype=x.dtype)
+    full = torch.cat((hist, x.transpose(1, 2)), dim=-1)
+    windows = full.unfold(-1, kernel, 1)
+    weight = conv.conv.weight[:, 0, :].to(dtype=x.dtype)
+    value = (windows * weight.view(1, channels, 1, kernel)).sum(dim=-1)
+    if conv.conv.bias is not None:
+        value = value + conv.conv.bias.to(dtype=x.dtype).view(1, channels, 1)
+    value = F.silu(value)
+    next_hist = full[:, :, full.shape[-1] - hist_len:] if hist_len else full[:, :, :0]
+    return value.transpose(1, 2), next_hist.contiguous()
+
+
+def kda_chunk(mixer: Any, normalized: Any, state: Any | None, *, recurrence: str) -> tuple[Any, Any]:
+    """KimiDeltaAttention.forward_with_state for one all-valid chunk, with the conv vectorised and the recurrence
+    either the tree's per-position delta rule (`loop`) or fla's chunk_gated_delta_rule (`fla`, gdn decay only)."""
+
+    import torch
+    import torch.nn.functional as F
+    from chimera_omni.modeling.layers import KDAState
+
+    x = normalized
+    batch, seq, _ = x.shape
+    q, next_q = short_conv_vectorized(mixer.q_conv, mixer.q_proj(x), None if state is None else state.q_conv)
+    k, next_k = short_conv_vectorized(mixer.k_conv, mixer.k_proj(x), None if state is None else state.k_conv)
+    v, next_v = short_conv_vectorized(mixer.v_conv, mixer.v_proj(x), None if state is None else state.v_conv)
+    q = q.reshape(batch, seq, mixer.num_key_heads, mixer.key_head_dim)
+    k = k.reshape(batch, seq, mixer.num_key_heads, mixer.key_head_dim)
+    v = v.reshape(batch, seq, mixer.num_heads, mixer.value_head_dim)
+    q = mixer._normalize_qk(q)
+    k = mixer._normalize_qk(k)
+    if mixer.query_scale is not None:
+        q = q * mixer.query_scale
+    q = q.to(dtype=x.dtype)
+    k = k.to(dtype=x.dtype)
+    if mixer.key_group > 1:
+        q = q.repeat_interleave(mixer.key_group, dim=2)
+        k = k.repeat_interleave(mixer.key_group, dim=2)
+    beta = torch.sigmoid(mixer.write_strength(x).float())
+    state_dtype = torch.float32 if x.dtype in {torch.float16, torch.bfloat16} else x.dtype
+    if state is None:
+        recurrent = torch.zeros(batch, mixer.num_heads, mixer.key_head_dim, mixer.value_head_dim, dtype=state_dtype, device=x.device)
+    else:
+        recurrent = state.recurrent.to(device=x.device, dtype=state_dtype)
+    if recurrence == "loop":
+        retention = mixer._retention(x)
+        outputs = []
+        for position in range(seq):
+            recurrent = mixer.delta_rule_update(
+                recurrent, k[:, position].to(dtype=state_dtype), v[:, position].to(dtype=state_dtype),
+                retention[:, position].to(dtype=state_dtype), beta[:, position].to(dtype=state_dtype),
+            )
+            outputs.append(torch.einsum("bhk,bhkv->bhv", q[:, position].to(dtype=state_dtype), recurrent))
+        recurrent_output = torch.stack(outputs, dim=1).to(dtype=x.dtype)
+    elif recurrence == "fla":
+        if mixer.decay_kind != "gdn":
+            raise Refusal(f"the fla recurrence is wired for the gdn decay only, this mixer has {mixer.decay_kind!r}")
+        from fla.ops.gated_delta_rule import chunk_gated_delta_rule
+
+        decay_logits = mixer.decay_down(x).view(batch, seq, mixer.num_heads).float() + mixer.decay_bias.view(1, 1, mixer.num_heads)
+        g = -mixer.decay_log_scale.exp().view(1, 1, mixer.num_heads) * F.softplus(decay_logits)  # = log(retention)
+        out, recurrent = chunk_gated_delta_rule(
+            q.contiguous(), k.contiguous(), v.contiguous(), g.contiguous(), beta.contiguous(), scale=1.0,
+            initial_state=recurrent.contiguous(), output_final_state=True, use_qk_l2norm_in_kernel=False,
+        )
+        recurrent_output = out.to(dtype=x.dtype)
+        recurrent = recurrent.to(dtype=state_dtype)
+    else:
+        raise Refusal(f"unknown KDA recurrence {recurrence!r}")
+    recurrent_output = mixer.output_norm(recurrent_output)
+    projected_gate = mixer.output_gate(x)
+    if mixer.output_gate_kind == "silu":
+        gate = F.silu(projected_gate.float()).to(dtype=x.dtype)
+    else:
+        gate = torch.sigmoid(projected_gate)
+    gate = gate.view(batch, seq, mixer.num_heads, mixer.value_head_dim)
+    y = (gate * recurrent_output).reshape(batch, seq, mixer.value_width)
+    return mixer.out(y), KDAState(recurrent=recurrent, q_conv=next_q, k_conv=next_k, v_conv=next_v)
+
+
+def query_subchunk(heads: int, keys: int, budget_bytes: int, *, cap: int, floor: int = 16) -> int:
+    rows = int(budget_bytes) // max(1, heads * keys * 4)
+    rows = max(int(floor), (rows // 16) * 16 if rows >= 16 else rows)
+    return max(1, min(int(cap), rows))
+
+
+class E2Kernels:
+    """The chunked forward of one ChimeraBlock over a [1, L, H] residual, updated in place."""
+
+    def __init__(self, *, chunk: int, kda_kernel: str, attn_budget_bytes: int, min_query_rows: int = 16):
+        if kda_kernel not in ("tree", "loop", "fla"):
+            raise Refusal(f"--kda-kernel must be tree, loop or fla, got {kda_kernel!r}")
+        self.chunk = int(chunk)
+        self.kda_kernel = kda_kernel
+        self.attn_budget_bytes = int(attn_budget_bytes)
+        self.min_query_rows = int(min_query_rows)
+        self.stats: dict[str, Any] = {"query_rows_min": None}
+
+    def block(self, block: Any, x: Any) -> Any:
+        from chimera_omni.modeling.layers import GatedGQAAttention, KimiDeltaAttention
+
+        if getattr(block, "charted", None) is not None:
+            return x  # a charted block owns no text row: ChartedSourceBlock writes exact zeros (parity-checked)
+        if x.ndim != 3 or x.shape[0] != 1:
+            raise Refusal("E2 runs one sequence at a time ([1, L, H])")
+        if isinstance(block.mixer, KimiDeltaAttention):
+            self._kda(block, x)
+        elif isinstance(block.mixer, GatedGQAAttention):
+            self._gqa(block, x)
+        else:
+            raise Refusal(f"E2 has no chunked path for mixer {type(block.mixer).__name__}")
+        return x
+
+    @staticmethod
+    def _ffn_rows(block: Any, xc: Any) -> Any:
+        return xc + block.ffn(block.norm2(xc))
+
+    def _kda(self, block: Any, x: Any) -> None:
+        import torch
+
+        state = None
+        for s, e in chunks(int(x.shape[1]), self.chunk):
+            xc = x[:, s:e]
+            normalized = block.norm1(xc)
+            if self.kda_kernel == "tree":
+                valid = torch.ones((1, e - s), dtype=torch.bool, device=x.device)
+                out, state = block.mixer.forward_with_state(normalized, initial_state=state, token_valid_mask=valid)
+            else:
+                out, state = kda_chunk(block.mixer, normalized, state, recurrence=self.kda_kernel)
+            xc = xc + out
+            x[:, s:e] = self._ffn_rows(block, xc)
+
+    def _gqa(self, block: Any, x: Any) -> None:
+        import torch
+
+        mixer = block.mixer
+        length = int(x.shape[1])
+        heads, kv_heads, dim = int(mixer.num_heads), int(mixer.num_kv_heads), int(mixer.head_dim)
+        groups = heads // kv_heads
+        keys = torch.empty((1, kv_heads, length, dim), dtype=torch.float32, device=x.device)
+        values = torch.empty((1, kv_heads, length, dim), dtype=torch.float32, device=x.device)
+        for s, e in chunks(length, self.chunk):
+            normalized = block.norm1(x[:, s:e])
+            positions = torch.arange(s, e, device=x.device, dtype=torch.long).view(1, -1)
+            k = mixer.k_proj(normalized).view(1, e - s, kv_heads, dim)
+            if mixer.k_norm is not None:
+                k = mixer.k_norm(k)
+            keys[:, :, s:e] = mixer.apply_rope(k.transpose(1, 2), positions).float()
+            values[:, :, s:e] = mixer.v_proj(normalized).view(1, e - s, kv_heads, dim).transpose(1, 2).float()
+        scale = math.sqrt(dim)
+        fill = torch.finfo(torch.float32).min
+        for s, e in chunks(length, self.chunk):
+            xc = x[:, s:e]
+            normalized = block.norm1(xc)
+            positions = torch.arange(s, e, device=x.device, dtype=torch.long).view(1, -1)
+            q = mixer.q_proj(normalized).view(1, e - s, heads, dim)
+            if mixer.q_norm is not None:
+                q = mixer.q_norm(q)
+            q = mixer.apply_rope(q.transpose(1, 2), positions)  # [1, H, T, D]
+            attended = torch.empty((1, heads, e - s, dim), dtype=torch.float32, device=x.device)
+            rows = query_subchunk(heads, e, self.attn_budget_bytes, cap=e - s, floor=self.min_query_rows)
+            self.stats["query_rows_min"] = rows if self.stats["query_rows_min"] is None else min(rows, self.stats["query_rows_min"])
+            for a, b in chunks(e - s, rows):
+                qa, qb = s + a, s + b  # absolute query rows
+                n = b - a
+                qq = q[:, :, a:b].float().reshape(1, kv_heads, groups * n, dim)  # head h = kv * groups + g
+                scores = torch.matmul(qq, keys[:, :, :qb].transpose(-1, -2)) / scale  # [1, KVH, G*n, qb]
+                allowed = torch.arange(qb, device=x.device).view(1, -1) <= torch.arange(qa, qb, device=x.device).view(-1, 1)
+                scores.view(1, kv_heads, groups, n, qb).masked_fill_(~allowed, fill)
+                probs = torch.softmax(scores, dim=-1)
+                del scores
+                attended[:, :, a:b] = torch.matmul(probs, values[:, :, :qb]).view(1, heads, n, dim)
+                del probs
+            y = attended.transpose(1, 2).reshape(1, e - s, heads * dim).to(dtype=x.dtype)
+            del attended
+            if mixer.gate_proj is not None:
+                y = y * torch.sigmoid(mixer.gate_proj(normalized))
+            xc = xc + mixer.out(y)
+            x[:, s:e] = self._ffn_rows(block, xc)
+        del keys, values
+
+
+# ======================================================================================
+# the engine: stock streamed loader + E2 kernels
+# ======================================================================================
+
+
+class NeedleEngine:
+    def __init__(self, rofr: Any, root: Path, *, device: str, dtype: Any, mask_band: bool, kernels: E2Kernels,
+                 verify_tensors: bool = False):
+        import torch
+
+        self.torch = torch
+        self.rofr = rofr
+        self.device = device
+        self.dtype = dtype
+        self.kernels = kernels
+        stock_refusal = rofr.refuse_charted
+        # The stock engine refuses charted checkpoints by name because it would push MEDIA rows through blocks it
+        # never routes via charted_output. E2 reads text rows only, where a charted block is the identity (the tree
+        # returns exact zeros off its owned rows; the parity arm proves it per block), so the refusal is lifted for
+        # the construction of THIS process's private copy of the stock engine only.
+        rofr.refuse_charted = lambda cfg, *, why="": None
+        try:
+            self.base = rofr.StreamedChimera(root, device="cpu", dtype=dtype, ledger_band_logit_mask=mask_band,
+                                             verify_tensors=verify_tensors)
+        finally:
+            rofr.refuse_charted = stock_refusal
+        self.base.device = device  # blocks stream to the compute device; embed / norm / lm_head stay on the CPU
+        self.cfg = self.base.cfg
+        self.model = self.base.model
+        self.charted = set(rofr.charted_indices(self.cfg))
+        self.num_layers = int(self.cfg.num_layers)
+        self.layer_seconds: list[float] = []
+
+    def build_block(self, index: int) -> Any:
+        if index not in self.charted:
+            return self.base._build_block(index)
+        torch = self.torch
+        from chimera_omni.modeling.layers import ChimeraBlock
+
+        with torch.device("meta"):
+            block = ChimeraBlock(self.cfg, index)
+        self.base._assign(block, self.base.block_names[index], prefix=f"blocks.{index}.")
+        spec = block.charted.spec
+        block.charted.routed_type_ids = torch.tensor(sorted(int(t) for t in spec.type_ids), dtype=torch.long, device=self.device)
+        leftover = [n for n, t in list(block.named_parameters()) + list(block.named_buffers()) if t.is_meta]
+        if leftover:
+            raise Refusal(f"charted block {index}: tensors never materialised: {leftover[:3]}")
+        block.eval()
+        self.base.block_loads += 1
+        return block
+
+    def embed(self, ids: Sequence[int]) -> Any:
+        torch = self.torch
+        t = torch.tensor([list(ids)], dtype=torch.long)
+        self.model._validate_token_ids(t)
+        return self.model.embed(t).to(self.device)
+
+    def head(self, x: Any, positions: Sequence[int]) -> Any:
+        """fp32 logits [len(positions), vocab] on the CPU (final RMSNorm + lm_head on the scored rows only)."""
+
+        torch = self.torch
+        rows = x[0, list(positions)].to("cpu")
+        hidden = self.model.norm(rows.unsqueeze(0))
+        logits = self.model.lm_head(hidden)
+        if self.base.mask_band:
+            logits = self.model._mask_ledger_band_logits(logits)
+        return logits[0].float()
+
+    def _sync(self) -> None:
+        if self.torch.cuda.is_available() and str(self.device).startswith("cuda"):
+            self.torch.cuda.synchronize()
+
+    def run(self, sequences: list[list[int]], positions: list[list[int]], *, label: str) -> dict[str, Any]:
+        """E2 forward over every sequence (one streamed pass: each block is loaded once and run on every sequence)."""
+
+        torch = self.torch
+        started = time.monotonic()
+        with torch.no_grad():
+            residuals = [self.embed(s).to("cpu") if len(sequences) > 1 else self.embed(s) for s in sequences]
+            for index in range(self.num_layers):
+                t0 = time.monotonic()
+                if index in self.charted:
+                    self.layer_seconds.append(0.0)
+                    continue
+                block = self.base._build_block(index)
+                for b, x in enumerate(residuals):
+                    on_device = x.to(self.device) if x.device.type != torch.device(self.device).type else x
+                    self.kernels.block(block, on_device)
+                    residuals[b] = on_device.to("cpu") if len(sequences) > 1 else on_device
+                del block
+                self._sync()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                self.layer_seconds.append(time.monotonic() - t0)
+                if index % 8 == 0 or index == self.num_layers - 1:
+                    log(f"{label}: layer {index}/{self.num_layers - 1} done, {self.layer_seconds[-1]:.1f} s, "
+                        f"{sum(len(s) for s in sequences) / max(1e-9, time.monotonic() - started):.1f} tok/s so far")
+            logits = [self.head(x, p) for x, p in zip(residuals, positions)]
+        wall = time.monotonic() - started
+        return {"logits": logits, "wall_seconds": wall, "tokens": sum(len(s) for s in sequences)}
+
+    def parity(self, sequence: list[int], positions: list[int], *, label: str) -> dict[str, Any]:
+        """Stock layer vs E2, layer-synchronously from the same embedded input."""
+
+        torch = self.torch
+        started = time.monotonic()
+        layers: list[dict[str, Any]] = []
+        with torch.no_grad():
+            x_ref = self.embed(sequence)
+            x_e2 = x_ref.clone()
+            valid = torch.ones((1, len(sequence)), dtype=torch.bool, device=self.device)
+            for index in range(self.num_layers):
+                block = self.build_block(index)
+                x_in = x_ref.clone()
+                x_ref = block(x_ref, token_valid_mask=valid)  # the stock streamed engine's call
+                x_ref = torch.where(valid.unsqueeze(-1), x_ref, torch.zeros_like(x_ref))
+                row: dict[str, Any] = {"layer": index, "kind": str(self.cfg.block_kind(index))}
+                if index in self.charted:
+                    row["charted_identity_bit_equal"] = bool(torch.equal(x_ref, x_in))
+                self.kernels.block(block, x_e2)
+                row["bit_equal"] = bool(torch.equal(x_e2, x_ref))
+                row["max_abs_diff"] = float((x_e2.float() - x_ref.float()).abs().max())
+                row["ref_max_abs"] = float(x_ref.float().abs().max())
+                row["finite"] = bool(torch.isfinite(x_e2).all()) and bool(torch.isfinite(x_ref).all())
+                if not row["bit_equal"] and index not in self.charted:
+                    local = self.kernels.block(block, x_in.clone())
+                    row["local_max_abs_diff"] = float((local.float() - x_ref.float()).abs().max())
+                    row["local_bit_equal"] = bool(torch.equal(local, x_ref))
+                layers.append(row)
+                del block
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                if index % 8 == 0 or index == self.num_layers - 1:
+                    log(f"{label} parity layer {index} ({row['kind']}): bit_equal {row['bit_equal']} max|d| {row['max_abs_diff']:.3e}"
+                        + (f" local {row.get('local_max_abs_diff'):.3e}" if "local_max_abs_diff" in row else ""))
+            ref_logits = self.head(x_ref, positions)
+            e2_logits = self.head(x_e2, positions)
+        top1_ref = ref_logits.argmax(dim=-1)
+        top1_e2 = e2_logits.argmax(dim=-1)
+        finite = logits_sane(ref_logits) and logits_sane(e2_logits) and all(r["finite"] for r in layers)
+        same_mask = bool(torch.equal(torch.isfinite(ref_logits), torch.isfinite(e2_logits)))
+        max_diff, ref_max = logits_diff(e2_logits, ref_logits)
+        charted_ok = all(r.get("charted_identity_bit_equal", True) for r in layers)
+        return {
+            "layers": layers, "positions": list(positions), "tokens": len(sequence),
+            "all_layers_bit_equal": all(r["bit_equal"] for r in layers),
+            "final_residual_max_abs_diff": float((x_e2.float() - x_ref.float()).abs().max()),
+            "final_residual_bit_equal": bool(torch.equal(x_e2, x_ref)),
+            "logits_bit_equal": bool(torch.equal(e2_logits, ref_logits)),
+            "logits_max_abs_diff": max_diff, "logits_ref_max_abs": ref_max, "logits_same_finite_mask": same_mask,
+            "top1_agreement": int((top1_ref == top1_e2).sum()), "top1_compared": int(top1_ref.numel()),
+            "charted_identity_bit_equal": charted_ok, "finite": finite,
+            "wall_seconds": time.monotonic() - started,
+        }
+
+
+# ======================================================================================
+# scoring
+# ======================================================================================
+
+
+def logits_sane(logits: Any) -> bool:
+    """No NaN, no +inf, and every row has a finite logit (the ledger band mask writes -inf by design)."""
+
+    import torch
+
+    return (not bool(torch.isnan(logits).any()) and not bool(torch.isposinf(logits).any())
+            and bool(torch.isfinite(logits).any(dim=-1).all()))
+
+
+def logits_diff(a: Any, b: Any) -> tuple[float, float]:
+    """max |a - b| over the columns finite in both (masked band columns are -inf in both), and max |b| there."""
+
+    import torch
+
+    both = torch.isfinite(a) & torch.isfinite(b)
+    if not bool(both.any()):
+        return float("nan"), float("nan")
+    return float((a[both] - b[both]).abs().max()), float(b[both].abs().max())
+
+
+def score_doc(doc: dict[str, Any], logits: Any, *, tokenizer: Any | None = None) -> dict[str, Any]:
+    import torch
+
+    answer = [int(a) for a in doc["answer_ids"]]
+    n = len(answer)
+    if tuple(logits.shape[:1]) != (n + 1,):
+        raise Refusal(f"{doc['id']}: {logits.shape[0]} scored rows, expected {n + 1}")
+    if not logits_sane(logits):
+        raise Refusal(f"{doc['id']}: non-finite logits (NaN / +inf, or a row with no finite logit) at the scored rows")
+    logprob = torch.log_softmax(logits, dim=-1)  # band columns are -inf under the ledger mask: probability 0
+    digits = logprob[:n]
+    target = torch.tensor(answer)
+    picked = digits[torch.arange(n), target]
+    argmax = digits.argmax(dim=-1)
+    first_rank = int((digits[0] > digits[0, answer[0]]).sum()) + 1
+    stop_argmax = int(logprob[n].argmax())
+    top5 = [int(t) for t in torch.topk(digits[0], 5).indices]
+    out = {
+        "id": doc["id"], "length": doc["length"], "depth": doc["depth"], "needle": doc["needle"],
+        "needle_depth_actual": doc.get("needle_depth_actual"), "key": doc["key"],
+        "first_digit_hit": bool(int(argmax[0]) == answer[0]), "first_digit_rank": first_rank,
+        "first_digit_logprob": float(picked[0]), "digits_argmax_agree": int((argmax == target).sum()), "digits": n,
+        "passkey_exact_teacher_forced": bool(torch.equal(argmax, target)),
+        "mean_nll_digits": float((-picked).mean()), "stop_after_digits": bool(stop_argmax == int(doc["stop_id"])),
+        "stop_logprob": float(logprob[n, int(doc["stop_id"])]), "first_digit_top5_ids": top5,
+    }
+    if tokenizer is not None:
+        out["argmax_text"] = tokenizer.decode([int(a) for a in argmax])
+        out["first_digit_top5"] = [tokenizer.decode([t]) for t in top5]
+    return out
+
+
+# ======================================================================================
+# CLI
+# ======================================================================================
+
+
+def bind(args: argparse.Namespace) -> tuple[Any, dict[str, Any]]:
+    rofr = load_review_tool(args.review_tool)
+    tree = rofr.bind_chimera_tree(args.chimera_src, None)
+    return rofr, tree
+
+
+def tokenizer_and_render(rofr: Any, args: argparse.Namespace) -> tuple[Any, Callable, dict[str, Any]]:
+    from transformers import AutoTokenizer
+
+    oc_calib, _ = rofr.bind_calibration(args.calibration_dir)
+    tok = AutoTokenizer.from_pretrained(str(args.tokenizer_dir), trust_remote_code=False)
+    render = lambda messages: oc_calib.render_prompt(tok, messages, thinking="off")  # noqa: E731
+    files = {p.name: file_sha256(p) for p in sorted(Path(args.tokenizer_dir).glob("tokenizer*.json"))}
+    return tok, render, {"tokenizer_dir": str(args.tokenizer_dir), "tokenizer_files_sha256": files,
+                         "render": "oc_calib.render_prompt(thinking='off'), add_generation_prompt=True",
+                         "oc_calib_sha256": file_sha256(Path(args.calibration_dir) / "oc_calib.py")}
+
+
+def cmd_build(args: argparse.Namespace) -> int:
+    rofr = load_review_tool(args.review_tool)
+    tok, render, tinfo = tokenizer_and_render(rofr, args)
+    lengths = [int(v) for v in args.lengths.split(",")]
+    depths = [float(v) for v in args.depths.split(",")]
+    controls = [int(v) for v in args.control_lengths.split(",") if v.strip()]
+    built = build_needles(tokenizer=tok, render=render, filler_path=args.filler, lengths=lengths, depths=depths,
+                          control_lengths=controls, seed=int(args.seed))
+    meta = {**tinfo, "filler": str(args.filler), "filler_sha256": file_sha256(args.filler), "seed": int(args.seed),
+            "lengths": lengths, "depths": depths, "control_lengths": controls, "key_digits": KEY_DIGITS,
+            "built_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    manifest = save_needles(Path(args.out), built, meta)
+    for d in manifest["docs"]:
+        log(f"{d['id']}: {d['length']} ids, needle {d['needle']} at {d.get('needle_depth_actual')}, key {d['key']}, "
+            f"prompt {d['prompt_tokens']}, sha {d['ids_sha256'][:16]}")
+    log(f"needle set {args.out}: {len(manifest['docs'])} docs, needles.safetensors {manifest['needles_sha256'][:16]}, "
+        f"filler {manifest['filler_tokens_available']} ids from {manifest['filler_rows']} rows, cycles {manifest['filler_cycles']}")
+    return 0
+
+
+def engine_from_args(rofr: Any, args: argparse.Namespace) -> tuple[NeedleEngine, dict[str, Any]]:
+    import torch
+
+    torch.set_grad_enabled(False)
+    dtype = {"float32": torch.float32, "bfloat16": torch.bfloat16, "float16": torch.float16}[args.dtype]
+    device = str(args.device)
+    if not device.startswith("cuda") and dtype != torch.float32:
+        raise Refusal("bf16 on the CPU is ~400x slower than fp32; the CPU arm runs --dtype float32")
+    if args.kda_kernel == "fla" and not device.startswith("cuda"):
+        raise Refusal("--kda-kernel fla needs a CUDA device (triton)")
+    placement: dict[str, Any] = {"device": device, "CUDA_VISIBLE_DEVICES": os.environ.get("CUDA_VISIBLE_DEVICES"),
+                                 "CUDA_DEVICE_ORDER": os.environ.get("CUDA_DEVICE_ORDER")}
+    if device.startswith("cuda"):
+        inventory = rofr.cuda_inventory([device])
+        rofr.check_gpu_free(inventory)
+        placement["inventory_at_start"] = inventory
+        torch.cuda.reset_peak_memory_stats()
+    kernels = E2Kernels(chunk=int(args.chunk), kda_kernel=args.kda_kernel, attn_budget_bytes=int(args.attn_budget_mib) << 20,
+                        min_query_rows=int(args.min_query_rows))
+    t0 = time.monotonic()
+    engine = NeedleEngine(rofr, Path(args.model), device=device, dtype=dtype, mask_band=not args.no_band_mask, kernels=kernels)
+    placement["head_load_seconds"] = round(time.monotonic() - t0, 2)
+    return engine, placement
+
+
+def identity_block(args: argparse.Namespace, tree: dict[str, Any], engine: NeedleEngine) -> dict[str, Any]:
+    model = Path(args.model)
+    index = json.loads((model / "model.safetensors.index.json").read_text()) if (model / "model.safetensors.index.json").is_file() else {}
+    manifest = model / "composite_manifest.json"
+    return {"model": str(model), "total_size": index.get("metadata", {}).get("total_size"),
+            "composite_manifest_sha256": file_sha256(manifest) if manifest.is_file() else None,
+            "config_sha256": file_sha256(model / "config.json") if (model / "config.json").is_file() else None,
+            "num_layers": engine.num_layers, "charted_blocks": sorted(engine.charted), "chimera_tree": tree,
+            "review_tool": str(args.review_tool), "review_tool_sha256": file_sha256(args.review_tool),
+            "tool": TOOL_NAME, "tool_version": TOOL_VERSION, "tool_sha256": file_sha256(__file__)}
+
+
+def memory_block(device: str) -> dict[str, Any]:
+    import torch
+
+    out: dict[str, Any] = dict(rss_gb())
+    if torch.cuda.is_available() and device.startswith("cuda"):
+        out["cuda_max_allocated_mib"] = int(torch.cuda.max_memory_allocated()) >> 20
+        out["cuda_max_reserved_mib"] = int(torch.cuda.max_memory_reserved()) >> 20
+    return out
+
+
+def parity_gate(result: dict[str, Any], *, device: str, min_top1: float, max_rel: float) -> dict[str, Any]:
+    rel = result["logits_max_abs_diff"] / max(1e-12, result["logits_ref_max_abs"])
+    agree = result["top1_agreement"] / max(1, result["top1_compared"])
+    structural = result["finite"] and result["charted_identity_bit_equal"] and result["logits_same_finite_mask"]
+    if result["logits_bit_equal"]:
+        verdict, why = "PASS", "bit-equal"
+    elif structural and agree >= min_top1 and (device.startswith("cuda") or rel <= max_rel):
+        verdict, why = "PASS", f"max abs diff {result['logits_max_abs_diff']:.3e} (rel {rel:.2e}), top-1 {agree:.4f}"
+    else:
+        verdict, why = "FAIL", (f"finite {result['finite']} charted identity {result['charted_identity_bit_equal']} "
+                                f"top-1 {agree:.4f} (min {min_top1}) rel {rel:.2e} (max {max_rel} on cpu)")
+    return {"verdict": verdict, "why": why, "logits_rel_max_abs_diff": rel, "top1_rate": agree,
+            "rules": {"min_top1": min_top1, "max_rel_cpu": max_rel, "structural": "finite + every charted block bit-identity"}}
+
+
+def run_parity_arm(engine: NeedleEngine, manifest: dict[str, Any], ids: dict[str, list[int]], *, length: int,
+                   args: argparse.Namespace, base: dict[str, Any], out: Path) -> dict[str, Any]:
+    docs = [d for d in manifest["docs"] if d["length"] == int(length) and d["needle"]]
+    if not docs:
+        raise Refusal(f"the needle set has no {length}-token document for the parity arm")
+    doc = docs[0]
+    seq = ids[doc["id"]]
+    stride = max(1, len(seq) // 64)
+    positions = sorted(set(range(0, len(seq), stride)) | set(doc["scored_positions"]))
+    log(f"parity arm: {doc['id']} ({len(seq)} tokens), chunk {args.chunk}, kda {args.kda_kernel}, {len(positions)} compared rows")
+    result = engine.parity(seq, positions, label=f"{args.label}-parity")
+    gate = parity_gate(result, device=str(args.device), min_top1=float(args.parity_min_top1), max_rel=float(args.parity_max_rel))
+    receipt = {"schema": PARITY_SCHEMA, **base, "doc": doc["id"], "chunk": int(args.chunk), "kda_kernel": args.kda_kernel,
+               "dtype": args.dtype, "attn_budget_mib": int(args.attn_budget_mib), "query_rows_min": engine.kernels.stats["query_rows_min"],
+               "result": result, "gate": gate, "memory": memory_block(str(args.device)),
+               "written_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    sha = write_json(out, receipt)
+    unequal = [r["layer"] for r in result["layers"] if not r["bit_equal"]]
+    print(f"E2 PARITY {gate['verdict']} ({args.device}, {args.dtype}, kda {args.kda_kernel}, chunk {args.chunk}, L={len(seq)}): "
+          f"layers bit-equal {len(result['layers']) - len(unequal)}/{len(result['layers'])}, final residual max|d| "
+          f"{result['final_residual_max_abs_diff']:.3e}, logits max|d| {result['logits_max_abs_diff']:.3e} "
+          f"(rel {gate['logits_rel_max_abs_diff']:.2e}), top-1 {result['top1_agreement']}/{result['top1_compared']}, "
+          f"charted identity {result['charted_identity_bit_equal']}; {gate['why']}; receipt {out} sha256 {sha[:16]}", flush=True)
+    return receipt
+
+
+def cmd_parity(args: argparse.Namespace) -> int:
+    rofr, tree = bind(args)
+    manifest, ids = load_needles(args.needles)
+    engine, placement = engine_from_args(rofr, args)
+    base = {"identity": identity_block(args, tree, engine), "placement": placement, "needles": str(args.needles),
+            "needles_sha256": manifest["needles_sha256"], "argv": sys.argv}
+    receipt = run_parity_arm(engine, manifest, ids, length=int(args.length), args=args, base=base, out=Path(args.out))
+    return 0 if receipt["gate"]["verdict"] == "PASS" else EXIT_REFUSED
+
+
+def cmd_read(args: argparse.Namespace) -> int:
+    rofr, tree = bind(args)
+    manifest, ids = load_needles(args.needles)
+    from transformers import AutoTokenizer
+
+    tok = AutoTokenizer.from_pretrained(str(manifest["tokenizer_dir"]), trust_remote_code=False)
+    engine, placement = engine_from_args(rofr, args)
+    base = {"identity": identity_block(args, tree, engine), "placement": placement, "needles": str(args.needles),
+            "needles_sha256": manifest["needles_sha256"], "argv": sys.argv}
+    out_dir = Path(args.out_dir)
+    status = 0
+    if int(args.parity_length) > 0:
+        parity = run_parity_arm(engine, manifest, ids, length=int(args.parity_length), args=args, base=base,
+                                out=out_dir / f"{args.label}_e2_parity_{args.dtype}_{args.kda_kernel}_L{args.parity_length}.json")
+        if parity["gate"]["verdict"] != "PASS":
+            raise Refusal(f"E2 parity arm FAILED ({parity['gate']['why']}); no needle read is made on an engine that "
+                          "does not reproduce the stock layer")
+    summary: list[dict[str, Any]] = []
+    for length in [int(v) for v in args.lengths.split(",")]:
+        docs = [d for d in manifest["docs"] if d["length"] == length]
+        if not docs:
+            raise Refusal(f"the needle set has no {length}-token documents")
+        if engine.torch.cuda.is_available():
+            engine.torch.cuda.reset_peak_memory_stats()
+        engine.layer_seconds = []
+        label = f"{args.label}-L{length}"
+        log(f"{label}: {len(docs)} docs {[d['id'] for d in docs]}")
+        try:
+            result = engine.run([ids[d["id"]] for d in docs], [d["scored_positions"] for d in docs], label=label)
+        except engine.torch.OutOfMemoryError as exc:
+            receipt = {"schema": RECEIPT_SCHEMA, **base, "length": length, "refused": "out-of-memory", "error": str(exc)[:2000],
+                       "chunk": int(args.chunk), "attn_budget_mib": int(args.attn_budget_mib), "memory": memory_block(str(args.device))}
+            write_json(out_dir / f"{args.label}_L{length}.refused.json", receipt)
+            log(f"{label}: OUT OF MEMORY, receipt written; stopping (longer lengths would not fit either)")
+            status = EXIT_REFUSED
+            break
+        scored = [score_doc(d, lg, tokenizer=tok) for d, lg in zip(docs, result["logits"])]
+        rate = result["tokens"] / max(1e-9, result["wall_seconds"])
+        receipt = {"schema": RECEIPT_SCHEMA, **base, "length": length, "docs": scored,
+                   "rate": {"tokens": result["tokens"], "wall_seconds": round(result["wall_seconds"], 2), "tokens_per_second": round(rate, 2),
+                            "layer_seconds": [round(s, 2) for s in engine.layer_seconds]},
+                   "chunk": int(args.chunk), "kda_kernel": args.kda_kernel, "dtype": args.dtype,
+                   "attn_budget_mib": int(args.attn_budget_mib), "query_rows_min": engine.kernels.stats["query_rows_min"],
+                   "memory": memory_block(str(args.device)), "band_logit_mask": not args.no_band_mask,
+                   "note": "teacher-forced read: diagnostics, not a grade; OMNI1 is the baseline D2/D4 must not fall below "
+                           "(same engine version, same needle file)",
+                   "written_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+        sha = write_json(out_dir / f"{args.label}_L{length}.json", receipt)
+        for s in scored:
+            log(f"{label} {s['id']}: first-digit hit {s['first_digit_hit']} rank {s['first_digit_rank']} "
+                f"logprob {s['first_digit_logprob']:.3f}; digits {s['digits_argmax_agree']}/{s['digits']} "
+                f"exact {s['passkey_exact_teacher_forced']} nll {s['mean_nll_digits']:.3f} stop {s['stop_after_digits']} "
+                f"argmax {s.get('argmax_text')!r} key {s['key']}")
+        log(f"{label}: {result['tokens']} tokens in {result['wall_seconds']:.1f} s = {rate:.2f} tok/s; memory {receipt['memory']}; "
+            f"receipt sha256 {sha[:16]}")
+        summary.extend({"length": length, **{k: s[k] for k in ("id", "needle", "first_digit_hit", "passkey_exact_teacher_forced",
+                                                              "mean_nll_digits", "first_digit_rank")}, "tok_s": round(rate, 2)}
+                       for s in scored)
+    sha = write_json(out_dir / f"{args.label}_summary.json", {"schema": RECEIPT_SCHEMA + "/summary", **base, "rows": summary,
+                                                              "exit": status, "written_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
+    print("P11 SUMMARY " + "; ".join(f"{r['id']} hit={int(r['first_digit_hit'])} exact={int(r['passkey_exact_teacher_forced'])} "
+                                       f"nll={r['mean_nll_digits']:.2f}" for r in summary) + f" (summary sha256 {sha[:16]})", flush=True)
+    return status
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0], formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--version", action="version", version=f"{TOOL_NAME} {TOOL_VERSION}")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    def common(p: argparse.ArgumentParser) -> None:
+        p.add_argument("--review-tool", default=str(DEFAULT_REVIEW_TOOL))
+        p.add_argument("--calibration-dir", default=os.environ.get("OC_CALIBRATION_DIR", str(DEFAULT_CALIBRATION)))
+
+    p = sub.add_parser("build-needles", help="write the needle document set (safetensors + manifest)")
+    common(p)
+    p.add_argument("--tokenizer-dir", required=True)
+    p.add_argument("--filler", default=str(OC / "distill/corpus/eval_split/eval_rows.jsonl"))
+    p.add_argument("--lengths", default="4096,32768,131072,262144")
+    p.add_argument("--depths", default="0.25,0.75")
+    p.add_argument("--control-lengths", default="32768")
+    p.add_argument("--seed", type=int, default=20261013)
+    p.add_argument("--out", required=True)
+
+    for name in ("parity", "read"):
+        p = sub.add_parser(name)
+        common(p)
+        p.add_argument("--model", required=True)
+        p.add_argument("--chimera-src", default=os.environ.get("CHIMERA_OMNI_TREE", str(DEFAULT_TREE)))
+        p.add_argument("--needles", required=True)
+        p.add_argument("--device", default="cuda:0")
+        p.add_argument("--dtype", default="bfloat16", choices=("float32", "bfloat16", "float16"))
+        p.add_argument("--kda-kernel", default="fla", choices=("tree", "loop", "fla"))
+        p.add_argument("--chunk", type=int, default=8192)
+        p.add_argument("--attn-budget-mib", type=int, default=2048, help="fp32 score tensor budget per query sub-chunk")
+        p.add_argument("--min-query-rows", type=int, default=16)
+        p.add_argument("--no-band-mask", action="store_true", help="drop the ledger band logit mask (on by default, as in S8)")
+        p.add_argument("--label", default="p11_omni1")
+        p.add_argument("--parity-min-top1", type=float, default=0.95)
+        p.add_argument("--parity-max-rel", type=float, default=1e-4, help="CPU fp32 arm: max |logit diff| / max |logit|")
+        if name == "parity":
+            p.add_argument("--length", type=int, default=4096)
+            p.add_argument("--out", required=True)
+        else:
+            p.add_argument("--lengths", default="32768,131072,262144")
+            p.add_argument("--parity-length", type=int, default=4096, help="run the parity arm at this length first (0 = skip)")
+            p.add_argument("--out-dir", default=str(OC / "distill/tps"))
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+    os.environ.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
+    log(f"{TOOL_NAME} {TOOL_VERSION} {args.cmd}")
+    try:
+        if args.cmd == "build-needles":
+            return cmd_build(args)
+        if args.cmd == "parity":
+            return cmd_parity(args)
+        return cmd_read(args)
+    except Refusal as exc:
+        print(f"REFUSED: {exc}", file=sys.stderr, flush=True)
+        return EXIT_REFUSED
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
