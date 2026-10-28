@@ -968,10 +968,19 @@ def fit_container_charts(container: dict[str, Any], tap_root: Path | None, *, se
     container["dropped_chart_keys"] = ["chart_out.bias"]
 
 
-def pair_containers(containers: list[dict[str, Any]], cfg: Any, *, pair_by: str) -> None:
-    """Assign `insert_after` (a trunk layer index) to every container."""
+def pair_containers(
+    containers: list[dict[str, Any]], cfg: Any, *, pair_by: str,
+    allow_existing_charted: bool = False,
+) -> None:
+    """Assign `insert_after` (an index in the CURRENT host's trunk) to every container.
 
-    if any(cfg.is_charted(index) for index in range(int(cfg.num_layers))):
+    Existing charted children require an insert-only opt-in and explicit pairing.
+    A new block after a trunk anchor precedes any old charted blocks at that anchor.
+    Donor indices/context identities are preserved, never inferred from host indices.
+    """
+
+    has_charted = any(cfg.is_charted(index) for index in range(int(cfg.num_layers)))
+    if has_charted and not (allow_existing_charted and pair_by == "explicit"):
         raise Refusal("the child already carries charted blocks; this tool installs onto a plain trunk")
     refinement = [index for index in range(int(cfg.num_layers)) if cfg.block_kind(index) == "gated_gqa"]
     depth = max(int(cfg.num_layers) - 1, 1)
@@ -983,6 +992,8 @@ def pair_containers(containers: list[dict[str, Any]], cfg: Any, *, pair_by: str)
             after = int(container["insert_after"])
             if not 0 <= after < int(cfg.num_layers):
                 raise Refusal(f"{container['name']}: insert_after {after} outside 0..{cfg.num_layers - 1}")
+            if cfg.is_charted(after):
+                raise Refusal(f"{container['name']}: insert_after {after} names an existing charted block, not a trunk layer")
             container["pairing"] = {"rule": "explicit", "insert_after": after}
             container["insert_after"] = after
             continue
@@ -1300,7 +1311,10 @@ class Installer:
         return {"dtype": self.storage_dtype_name, "max_abs_narrowing": float(diff)}
 
     def install_insert(self, containers: list[dict[str, Any]]) -> None:
-        pair_containers(containers, self.cfg, pair_by=self.args.pair_by)
+        pair_containers(
+            containers, self.cfg, pair_by=self.args.pair_by,
+            allow_existing_charted=bool(getattr(self.args, "allow_existing_charted_insert", False)),
+        )
         cfg = self.cfg
         trunk_layers = int(cfg.num_layers)
         kinds: list[str] = []
@@ -1314,6 +1328,8 @@ class Installer:
             new_index_of[old] = len(kinds)
             kinds.append(cfg.block_kind(old))
             widths.append(int(cfg.resolved_intermediate_size(old)))
+            if cfg.is_charted(old):
+                specs.append(dataclasses.replace(cfg.charted_spec(old), layer_index=new_index_of[old]))
             for container in [c for c in containers if int(c["insert_after"]) == old]:
                 position = len(kinds)
                 spec = dataclasses.replace(container["spec"], layer_index=position)
@@ -2185,6 +2201,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--blocks", nargs="*", default=[], help="charted block container directories")
     parser.add_argument("--tap-rows", help="paired rows root for fit_charts when a container has no charts")
     parser.add_argument("--pair-by", default="depth-fraction", choices=("depth-fraction", "explicit"))
+    parser.add_argument("--allow-existing-charted-insert", action="store_true",
+                        help="insert into an already charted child using explicit CURRENT host trunk indices; retain prior typed blocks")
     parser.add_argument("--arm", default="insert", choices=("insert", "blend"))
     parser.add_argument("--blend-uniform", default="refuse", choices=("refuse", "pad"))
     parser.add_argument("--allow-per-layer-widths", action="store_true")
