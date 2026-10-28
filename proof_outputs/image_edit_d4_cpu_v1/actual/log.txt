@@ -1,0 +1,14 @@
+..............                                                           [100%]
+=============================== warnings summary ===============================
+../opt/teacher-runtime/lib/python3.12/site-packages/_pytest/config/__init__.py:1345
+  /opt/teacher-runtime/lib/python3.12/site-packages/_pytest/config/__init__.py:1345: PytestAssertRewriteWarning: Module already imported so cannot be rewritten; anyio
+    self._mark_plugins_for_rewrite(hook, disable_autoload)
+
+../opt/teacher-runtime/lib/python3.12/site-packages/_pytest/cacheprovider.py:469
+  /opt/teacher-runtime/lib/python3.12/site-packages/_pytest/cacheprovider.py:469: PytestCacheWarning: could not create cache path /candidate/source/tests/.pytest_cache/v/cache/nodeids: [Errno 30] Read-only file system: '/candidate/source/tests/pytest-cache-files-1q_wyvhs'
+    config.cache.set("cache/nodeids", sorted(self.cached_nodeids))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+14 passed, 2 warnings in 4.91s
+{"schema": "chimera_recovery.image_edit_d4_actual_cpu.v1", "passed": true, "source_native_manifest_sha256": "0c8df757390680939571e0a58ee5a243213bfc7e98c44c634a8cb4de3e5d83ad", "source_authenticated_batches": 32, "fixture_environment": {"CHIMERA_STREAMED_BASELINE": "/baseline/streamed_kd_trainer.py", "CHIMERA_D3_HYBRID": "/baseline/d3_hybrid_module.py", "CHIMERA_OMNI_SRC": "/foundation/src"}, "image_edit_objective": "supervised_image_edit_rectified_flow", "guided_qimg_objective": "guided_velocity", "dispatcher_sha256": "fd2c7e91b9d4e1ef76ede553b7c67e43e7b8617e0cc87f58e7da8a991ccc225d", "production_training_started": false, "gpu_exposed": false, "native_parent_full_parity": false}
+sys:1: DeprecationWarning: builtin type swigvarlink has no __module__ attribute
