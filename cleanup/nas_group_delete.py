@@ -1,9 +1,17 @@
 #!/usr/bin/env python3
-"""nas_group_delete.py 1.0.0 - delete verified-safe NAS groups one unit at a time, recording each first.
+"""nas_group_delete.py 1.1.0 - delete verified-safe NAS groups one unit at a time, recording each first.
 
 Owner order (Cyril, 2026-10-27, relayed by the NAS-cleanup workflow): "[Cyril quote withheld]".
 Groups and their evidence: neural-forge/reports/omni-campaign-2026-09/NAS_CLEANUP_2026-10-27.md. This tool never
 chooses what to delete; it reads an explicit plan (groups -> units) and only refuses.
+
+1.1.0 (2026-10-28, round 2) adds three optional plan fields, all off by default so 1.0.0 plans behave the same:
+  - plan "owner_order" / "reason_prefix": the owner wording and row-reason prefix recorded for that plan
+  - unit "unreadable_in_place" {relpath: written reason}: files the cereal user cannot open (e.g. 0600 nobody-owned
+    files on the share). They must exist, must not be planned, and must really refuse open(); they are recorded by
+    size and mtime only (digest kind "unreadable"), never hashed, never archived, and stay in place
+  - unit "volume" ("nas" default, or "home" / "lexar"): which filesystem df_before/df_after measure; the unit must
+    sit on that filesystem
 
 Differences from cleanup_exec.py 1.3.0 (whose gate primitives it reuses):
   - a unit is either mode "tree" (the whole directory goes, rm -rf --one-file-system) or mode "files" (only the
@@ -50,7 +58,7 @@ sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
 import cleanup_exec as CE  # noqa: E402
 
-TOOL = "nas_group_delete 1.0.0"
+TOOL = "nas_group_delete 1.1.0"
 OWNER_ORDER = "[Cyril quote withheld]"
 SMALL = 50 * 1024 ** 2
 SKIP_TABLES = {"model", "model_deletion"}
@@ -89,6 +97,60 @@ def omni_lab_refs(conn, unit: str) -> list[tuple[str, int]]:
     return hits
 
 
+def unreadable_check(u: dict, by_rel: dict) -> list[str]:
+    """unreadable_in_place entries must exist, stay unplanned, carry a reason and really refuse open()."""
+    reasons = []
+    for rel, why in u.get("unreadable_in_place", {}).items():
+        if not isinstance(why, str) or len(why.strip()) < 20:
+            reasons.append(f"unreadable_in_place {rel} has no written reason")
+        if rel in u["planned"]:
+            reasons.append(f"unreadable_in_place {rel} is also planned for deletion")
+        if rel not in by_rel:
+            reasons.append(f"unreadable_in_place {rel} is not in the unit")
+            continue
+        try:
+            with open(os.path.join(u["path"], rel), "rb") as fh:
+                fh.read(1)
+            reasons.append(f"unreadable_in_place {rel} is readable now; hash it instead of skipping it")
+        except PermissionError:
+            pass
+    return reasons
+
+
+def volume_check(u: dict) -> list[str]:
+    """The unit must sit on the filesystem its df figures are taken from."""
+    vol = u.get("volume", "nas")
+    mount = CE.VOLUME_MOUNT.get(vol)
+    if mount is None:
+        return [f"unknown volume {vol!r}"]
+    if os.stat(u["path"]).st_dev != os.stat(mount).st_dev:
+        return [f"unit is not on the {vol} filesystem ({mount})"]
+    return []
+
+
+def measure_unit(u: dict, files: list[dict], fh_log) -> dict:
+    """CE.measure over the readable files; unreadable_in_place files are recorded by size and mtime only and their
+    listing line carries the digest token 'unreadable' (same line format as CE.measure)."""
+    skip = u.get("unreadable_in_place", {})
+    m = CE.measure({"path": u["path"]}, [f for f in files if f["rel"] not in skip], "index+headers+listing", fh_log)
+    if not skip:
+        return m
+    for f in files:
+        if f["rel"] in skip:
+            m["digests"][f["rel"]] = {"size": f["size"], "unreadable": skip[f["rel"]],
+                                      "mtime": dt.datetime.fromtimestamp(f["mtime"], dt.timezone.utc).isoformat()}
+    lines = []
+    for rel in sorted(m["digests"]):
+        d = m["digests"][rel]
+        dig = (d.get("sha256") or d.get("header_sha256") or d.get("head64m_sha256")
+               or ("->" + d["symlink"] if "symlink" in d else "") or ("unreadable" if "unreadable" in d else ""))
+        lines.append(f"{rel}\t{d['size']}\t{dig}")
+    m["listing_lines"] = lines
+    m["listing_sha256"] = hashlib.sha256(("\n".join(lines) + "\n").encode()).hexdigest()
+    m["total_bytes"] = sum(f["size"] for f in files)
+    return m
+
+
 def gate(u: dict, protected: list[dict], generic: set[str], refs, links: list[tuple[str, str]], dead_prefixes: dict,
          conn, cutoff: float, prior_digests: dict | None = None) -> dict:
     unit = u["path"]
@@ -98,6 +160,8 @@ def gate(u: dict, protected: list[dict], generic: set[str], refs, links: list[tu
         return {"reasons": ["path absent"], "checked": checked, "absent": True}
     if os.path.islink(unit) or not os.path.isdir(unit) or os.path.realpath(unit) != unit:
         reasons.append(f"not a plain directory or symlinked component (realpath {os.path.realpath(unit)})")
+    reasons += volume_check(u)
+    checked["volume"] = u.get("volume", "nas")
     waivers = u.get("protected_waivers", {})
     waived = []
     for p in protected:
@@ -148,6 +212,8 @@ def gate(u: dict, protected: list[dict], generic: set[str], refs, links: list[tu
     links_inside = [f["rel"] for f in files if "symlink" in f]
     if links_inside:
         reasons.append(f"symlinks inside unit: {links_inside[:5]}")
+    reasons += unreadable_check(u, by_rel)
+    checked["unreadable_in_place"] = sorted(u.get("unreadable_in_place", {}))
     planned = u["planned"]
     gone = []
     for rel, want in planned.items():
@@ -201,7 +267,7 @@ def archive(u: dict, m: dict, rec_dir: str, deleted: list[str], kept: list[str])
         fh.write("relpath\tsize\tmtime_utc\tdigest_kind\tdigest\tarchived\tkept_in_place\tdeleted\n")
         for rel in sorted(m["digests"]):
             d = m["digests"][rel]
-            kind = next((k for k in ("sha256", "header_sha256", "head64m_sha256", "symlink") if k in d), "none")
+            kind = next((k for k in ("sha256", "header_sha256", "head64m_sha256", "symlink", "unreadable") if k in d), "none")
             fh.write(f"{rel}\t{d['size']}\t{d['mtime']}\t{kind}\t{d.get(kind, '')}\t{'yes' if rel in copied else 'no'}\t"
                      f"{'yes' if rel in kset else 'no'}\t{'yes' if rel in dset else 'no'}\n")
     with open(os.path.join(rec_dir, "REBUILD.md"), "w", encoding="utf-8", newline="\n") as fh:
@@ -211,9 +277,10 @@ def archive(u: dict, m: dict, rec_dir: str, deleted: list[str], kept: list[str])
             "tar_sha256": CE.sha256_file(tar_path)}
 
 
-def record(conn, db, C, u: dict, m: dict, pre: dict, arch: dict, rec_dir: str, df_before: dict, deleted_bytes: int) -> tuple[int, list[int]]:
+def record(conn, db, C, u: dict, m: dict, pre: dict, arch: dict, rec_dir: str, df_before: dict, deleted_bytes: int,
+           owner_order: str = OWNER_ORDER, reason_prefix: str = "NAS cleanup 2026-10-28") -> tuple[int, list[int]]:
     unit = u["path"]
-    reason = f"NAS cleanup 2026-10-28 ({u['group']}): {u['reason']}"
+    reason = f"{reason_prefix} ({u['group']}): {u['reason']}"
     with conn.cursor() as cur:
         cur.execute("SELECT id FROM host WHERE name = 'ai'")
         host_id = cur.fetchone()[0]
@@ -242,7 +309,7 @@ def record(conn, db, C, u: dict, m: dict, pre: dict, arch: dict, rec_dir: str, d
             "size_bytes_du = EXCLUDED.size_bytes_du, error = NULL WHERE model_deletion.status <> 'deleted' RETURNING id",
             (unit_id, host_id, unit, u["wave"], u["plan_index"], deleted_bytes, m["weight_bytes"], len(m["digests"]),
              m["layout"], m["parameter_count"], m["listing_sha256"], db.canonical_json(m["digests"]), rec_dir,
-             arch["manifest_sha256"], db.canonical_json(arch["recipe_files"]), affected, reason, OWNER_ORDER,
+             arch["manifest_sha256"], db.canonical_json(arch["recipe_files"]), affected, reason, owner_order,
              db.canonical_json(pre), db.canonical_json(df_before)))
         row = cur.fetchone()
         if row is None:
@@ -255,11 +322,11 @@ def record(conn, db, C, u: dict, m: dict, pre: dict, arch: dict, rec_dir: str, d
 RECLAIM_WAIT = 180
 
 
-def reclaim_check(size: int, free_before: int, fh_log, p: str) -> None:
+def reclaim_check(size: int, free_before: int, fh_log, p: str, volume: str = "nas") -> None:
     """The share is NFS-backed ZFS behind Samba: a truncate must actually return space (no snapshot pinning)."""
     t0 = time.time()
     while time.time() - t0 < RECLAIM_WAIT:
-        gained = CE.df("nas")["free_bytes"] - free_before
+        gained = CE.df(volume)["free_bytes"] - free_before
         if gained >= size // 2:
             CE.log(fh_log, step="reclaim-verified", rel=p, size=size, gained=gained, seconds=round(time.time() - t0, 1))
             return
@@ -267,7 +334,7 @@ def reclaim_check(size: int, free_before: int, fh_log, p: str) -> None:
     raise RuntimeError(f"space not reclaimed {RECLAIM_WAIT}s after truncating {p} ({size} B): snapshot pinning? stopping")
 
 
-def unlink_or_truncate(p: str, fh_log, state: dict) -> None:
+def unlink_or_truncate(p: str, fh_log, state: dict, volume: str = "nas") -> None:
     """unlink; on ENOSPC (a 100%-full ZFS dataset cannot record the remove) truncate to 0 first, then unlink.
     The first truncation of a run is followed by reclaim_check."""
     try:
@@ -277,7 +344,7 @@ def unlink_or_truncate(p: str, fh_log, state: dict) -> None:
         if exc.errno != errno.ENOSPC:
             raise
     size = os.stat(p).st_size
-    free_before = CE.df("nas")["free_bytes"]
+    free_before = CE.df(volume)["free_bytes"]
     try:
         os.truncate(p, 0)
     except OSError as exc:
@@ -286,7 +353,7 @@ def unlink_or_truncate(p: str, fh_log, state: dict) -> None:
             raise
     CE.log(fh_log, step="truncated-enospc", rel=p, size=size)
     if not state.get("reclaim_verified"):
-        reclaim_check(size, free_before, fh_log, p)
+        reclaim_check(size, free_before, fh_log, p, volume)
         state["reclaim_verified"] = True
     os.unlink(p)
 
@@ -305,7 +372,7 @@ def delete(u: dict, deleted: list[str], fh_log, state: dict, resume: bool = Fals
             continue
         if os.path.islink(p) or not os.path.isfile(p):
             raise RuntimeError(f"not a regular file at delete time: {p}")
-        unlink_or_truncate(p, fh_log, state)
+        unlink_or_truncate(p, fh_log, state, u.get("volume", "nas"))
         CE.log(fh_log, unit=unit, step="unlinked", rel=rel)
 
 
@@ -332,6 +399,8 @@ def main() -> int:
     if not units:
         print(f"no units for group {args.group}")
         return 1
+    owner_order = plan.get("owner_order", OWNER_ORDER)
+    reason_prefix = plan.get("reason_prefix", "NAS cleanup 2026-10-28")
     dead_prefixes = plan.get("dead_link_prefixes", {})
     protected = json.load(open(args.protected, encoding="utf-8"))
     generic = set(json.load(open(args.generic, encoding="utf-8"))) | set(plan.get("extra_generic", []))
@@ -384,7 +453,7 @@ def main() -> int:
                     raise RuntimeError(f"resume: MANIFEST.tsv of {rec_dir} does not match row {del_id}")
                 if json.load(open(os.path.join(rec_dir, "DELETION_RECEIPT.json"), encoding="utf-8"))["listing_sha256"] != listing:
                     raise RuntimeError(f"resume: receipt listing of {rec_dir} does not match row {del_id}")
-                df_before = CE.df("nas")
+                df_before = CE.df(u.get("volume", "nas"))
                 with conn.cursor() as cur:
                     cur.execute("UPDATE model_deletion SET status = 'deleting', error = NULL, preflight = preflight || "
                                 "jsonb_build_object('resumed', %s::jsonb) WHERE id = %s AND status <> 'deleted' RETURNING id",
@@ -395,11 +464,11 @@ def main() -> int:
                 CE.log(fh, unit=unit, step="resumed", model_deletion_id=del_id, recipe=rec_dir,
                        already_gone=g["checked"]["resume_already_gone_or_truncated"])
             else:
-                m = CE.measure({"path": unit}, g["files"], "index+headers+listing", fh)
+                m = measure_unit(u, g["files"], fh)
                 rec_dir = os.path.join(args.recipe_root, f"{C.sha16_path_key(unit).replace(':', '-')}__nas20261028-{u['slug']}")
                 arch = archive(u, m, rec_dir, deleted, kept)
-                df_before = CE.df("nas")
-                receipt = {"schema": "omni-lab.deletion-receipt.v1", "tool": TOOL, "owner_order": OWNER_ORDER,
+                df_before = CE.df(u.get("volume", "nas"))
+                receipt = {"schema": "omni-lab.deletion-receipt.v1", "tool": TOOL, "owner_order": owner_order,
                            "unit": {k: u[k] for k in ("path", "group", "mode", "what", "reason", "plan_index")},
                            "wave": u["wave"], "digest_mode": "index+headers+listing", "listing_sha256": m["listing_sha256"],
                            "layout": m["layout"], "parameter_count": m["parameter_count"], "weight_bytes": m["weight_bytes"],
@@ -410,7 +479,8 @@ def main() -> int:
                            "preflight": pre, "df_before": df_before, "rebuild": u["rebuild"]}
                 with open(os.path.join(rec_dir, "DELETION_RECEIPT.json"), "w", encoding="utf-8") as rf:
                     json.dump(receipt, rf, indent=1, sort_keys=True)
-                del_id, affected = record(conn, db, C, u, m, pre, arch, rec_dir, df_before, deleted_bytes)
+                del_id, affected = record(conn, db, C, u, m, pre, arch, rec_dir, df_before, deleted_bytes, owner_order,
+                                          reason_prefix)
                 CE.log(fh, unit=unit, step="recorded", model_deletion_id=del_id, affected_models=affected, recipe=rec_dir)
             t0 = time.time()
             try:
@@ -428,7 +498,7 @@ def main() -> int:
                                 (f"still present after delete: {left[:5]}", del_id))
                 conn.commit()
                 raise RuntimeError(f"still present after delete: {left[:5]}")
-            df_after = CE.df("nas")
+            df_after = CE.df(u.get("volume", "nas"))
             with conn.cursor() as cur:
                 cur.execute("UPDATE model_deletion SET status = 'deleted', executed_at = to_timestamp(%s), "
                             "verified_absent_at = now(), df_after = %s::jsonb WHERE id = %s",
