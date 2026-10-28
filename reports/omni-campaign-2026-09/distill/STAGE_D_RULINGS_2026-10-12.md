@@ -176,3 +176,56 @@ Prior rulings that still hold:
   - **Strata RAM levers authorised "if necessary".** Order: trainer-side cuts first, then Strata's prompt cache to a disk tier (Cyril 2026-10-27: a disk-backed prompt cache is fine), then some cold experts read from disk. Each Strata change is measured before and after, and reverted if Sprite decode or prompt read falls more than 20%.
   - **GPU1, GPU2, GPU3 and GPU5 for about 10 days.** GPU0, GPU4 and GPU6 stay Sprite's and Strata's.
   - **Completion is the gate on spending the 10 days.** Before launch: the 4-GPU smoke, the resume test (kill -9, replica sha), and 10-day projections of RAM, disk and data. Then a 24 h soak inside the run, so any failure stops the run on day 2, not day 9 (plan §2.8, §2.10).
+- **2026-10-28 (~13:50Z), Claude-lead decision `k3-cache-ratify-run0-L1-2026-10-28`** (Claude as lead under `cyril-claude-leads-all-lanes-2026-10-14` and the standing GO; NOT Cyril's words; Cyril may revise it). This is lead decision L1 of `run0-20261022/RUN0_BUILD_PLAN.md` §0.
+  - **RATIFIED, for run 0 only.** The decision covers the provisional bf16 K3 cache `/mnt/lexar/omni-campaign/teacher_cache/k3/eb35851b2496a628-provisional-bf16/`: passes 0-3 plus `xtok/pass-0..3`, 1,889,438 K3 positions over 4,135 documents.
+    - It was made with k3_teacher_cache 1.3.0 (`434ced6d…`) on GPU6, behind the k3-v130-gate bit-identity PASS.
+    - Its records are in `$Q/k3_pass_tools.provisional.json`, and its basis is `$Q/k3_b2_numerics_ruling.txt`.
+  - **Decided on behaviour, not numbers.**
+    - K3 is logit-only here, so it never free-ran and there are no K3 generations on disk. What the cache "produced" is K3's teacher-forced next-token distribution at every real position.
+    - `k3_behaviour_read` 1.0.0 decoded that distribution as text: 47 documents over 23 routes, stratified, seed 20261028. The lead read 37 of them in full and skimmed the other 10.
+    - **Read:** K3's top-1 under the real prefix is coherent and on topic in every route. Its disagreements with the text are reasonable alternatives (synonyms, format choices, unknowable ids and values). They are not noise.
+    - **Content checks that hold:**
+      - 22.60 g / 12.60 mL → `1.793650` (true value 1.79365).
+      - 20.00 / 10.20 → `1.961`.
+      - (34·8+3)/8 → `34.375`.
+      - 113.75 × 195 → `22181.25`, exact, where the source text rounds to 22181.2.
+      - 2615 × 150 → `392250`.
+      - 1758 × 0.966 × 0.992 → `1684.` (cents wrong).
+      - The suffix-automaton code is predicted at top-1 0.893 (0.158 bpb). A raw-PostgreSQL helper and `find . -maxdepth 1 -type f -empty -print` are reproduced. HTML values are copied correctly in extraction.
+      - Long context: a repeated 600-character system prompt is copied verbatim the second time it appears in a row.
+  - **Reference comparison.** This uses the B2 review rows: GPU6 bf16 against the fp32 reference pass of the same tool, 5,780 positions.
+    - There are 211 top-1 disagreements (3.65%). In 169 of them the fp32 top-1/top-2 gap is under 0.5 nats, and in 197 it is under 1.0. The largest gap is 2.35.
+    - All 14 disagreements of 1 nat or more sit on chat-template markup that K3 tokenizes as plain text: `<|im` → `_start`/`_end`, `role="` → assistant/service/response, `<think`. None is on a content word, number or code token.
+    - Where they disagree, bf16's pick is fp32's #2 or #3.
+  - **Diagnostics only.** These are recorded and none of them decided the ruling:
+    - xtok matched mass 0.908 / 0.911 / 0.910 / 0.909 (passes 0-3);
+    - top-1 mapped 0.961-0.962;
+    - route-probe 0.518 bpb;
+    - B2 pooled top-1 0.9635 and p99 1.70 (unchanged).
+  - **Condition: authorship.** The K3 rows are registry-derived. The run-0 authorship guard (plan §2.5, B-0/B-1) names only `text_clean_v1`, the `text` part and `staging/rows.jsonl`, so it does not reach `corpus/k3`.
+    - 500 K3-row documents are agent-authored by registry source name, 38,330 K3 positions (2.03%):
+      - Claude memory rewrites, `memory_batch_000231..242_claude_*`: 400 documents, 26,389 positions;
+      - harvested agent-memory batches, `memory_batch_*`: 100 documents, 11,941 positions.
+    - These are **EXCLUDED** from the run-0 K3 bucket: every loss term (CE, KD, xtok) is masked on their spans.
+    - 21 more documents (5,997 positions) have other memory-named sources. They are listed for the B-0 audit.
+    - The list is `/home/cereal/omni-campaign/run0/k3-ratify-20261028/out/k3_authorship_exclude_v1.json` (sha `f10d4750…`), written by `k3_authorship_exclude.py` 1.0.0 (`023849dc…`). Area B applies it, and extends the field guard to the numeric registry sources of `corpus/k3` by rid.
+  - **Mechanics.**
+    - Nothing was moved or renamed. The `-provisional-bf16` directory and its records stay where the run-0 manifest reads them.
+    - The D2 ratification steps in `k3_b2_numerics_ruling.txt` (move into the official out dir, amend d2_plan) do not apply, because D2 is superseded by `cyril-full-distill-no-lora-2026-10-17`.
+    - The bucket weight is unchanged (share 8; k3 1.0 where present). The fold pass decides K3 afresh.
+    - **Revoke** (for example if Cyril revises): set the K3 bucket to 0 and text KD takes its share. No file needs deleting.
+  - **Evidence**, all in `/home/cereal/omni-campaign/run0/k3-ratify-20261028/`:
+    - `k3_behaviour_read.py` `6035ae98…`;
+    - `out/k3_behaviour_read.txt` `a36943a4…`;
+    - `out/k3_behaviour_summary.json` `52a8525d…`.
+  - The parity receipt is `/mnt/lexar/omni-campaign/distill/parity/k3cache-2026-10-14-b2-gpu6/parity_b2_receipt.json`.
+  - The backup of this file before the entry is `run0-20261022/backups/STAGE_D_RULINGS_2026-10-12.before-k3-L1-20261028T134400Z.md` (`b0c65882…`).
+- **2026-10-28 (~13:50Z), Claude-lead decision `strata-teacher-ids-2026-10-28`** (Claude as lead; NOT Cyril's words; Cyril may revise it). The two Strata checkpoints are separate teacher identities in omni_lab, and they are never filed under each other.
+  - **`strata-q4kxl-abl-v2`** (model 2571) is huihui-ai Huihui-Qwen3.8-Flash-Next-abliterated-v2, unsloth UD-Q4_K_XL-V2.
+    - Its 4 shard sha256 values come from `SHA256SUMS` (file sha `5e80bc35…`), and `sha256.check` shows all four OK.
+    - It has served as Strata since **2026-10-27T17:04:33Z** (11:04:33 MDT; the 1.2.0 start was 16:58:10Z). The xcache build of the same weights runs from 21:51:32Z.
+  - **`flash-next-strata-iq3s`** (model 2572, lineage `source` → scanned artifact 1648) is the RVN IQ3_S, gguf sha `cb5958e5…`.
+    - It served as Strata from **2026-10-21T18:21:56Z to 2026-10-27T16:58:09Z**, and before that was an offline scorer from 10-18.
+  - Run links: Q4 is linked to 7 runs (writer = teacher; judge runs = judge). IQ3_S is linked to 52 runs (39 flash-score caches and 13 v2-trainer smokes/probes).
+  - This record does not decide whether run 0's `strata` KD weight is shared across the two ids. That stays an area-B teacher-weight call.
+  - Records: omni_lab ingest batch 271, written by `register_strata_teacher_ids.py` 1.0.0 (`a18bc3f2…`). The pre-write dump is `/mnt/lexar/omni-campaign/backups/omni_lab/dumps/omni_lab_20261028T134528Z.dump` (sha `a4126fc2…`; restore test exact, NAS copy verified).

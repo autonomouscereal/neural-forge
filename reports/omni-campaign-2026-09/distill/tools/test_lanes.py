@@ -1,4 +1,5 @@
-"""Tests for lanes.py 1.0.2 (card X-T2, lane infra, Claude, 2026-10-14; 1.0.1-1.0.2 cases 2026-10-15).  AI server (Linux: /proc/locks, flock), CPU:
+"""Tests for lanes.py 1.1.0 (card X-T2, lane infra, Claude, 2026-10-14; 1.0.1-1.0.2 cases 2026-10-15; 1.1.0 cases
+2026-10-21, P40 lane policy).  AI server (Linux: /proc/locks, flock), CPU:
 
     cd /home/cereal/omni-campaign/distill/tools
     nice -n 15 /home/cereal/model-surgery-lab/venv/bin/python -m pytest -p no:cacheprovider -q test_lanes.py
@@ -21,6 +22,14 @@ What is pinned (every registry here is a temp file; the live $Q/LANES.json is ne
     a probe's status_ok / status_down drive the lane's status; set-probe is owner-only and validated; hold-lock
     --also-match keeps the lock while a job outlives its queue; --join-helper joins only an ORPHANED helper (its
     queue gone) and takes the lock when that helper releases it; a helper whose queue lives is never joined.
+  * 1.1.0: register adds a lane or re-scopes an owned one (history keeps the replaced values; protected fields and
+    malformed cards are refused; another owner's lane only with --cyril); set-rule keeps rules_history; the card map
+    and card_verdicts (own / flex free, another lane's P40 only with --borrow, a serving card only with --cyril,
+    an unlisted card only with --cyril); release-stale releases only a dead-pid claim; claim-run starts the job with
+    the cards' UUIDs, holds every gpu<N>.lock without the job inheriting it, writes CLAIM then RELEASE lines that
+    claims_open AND local-hermes remote_runtime.active_p40_claims both read correctly, passes the exit code
+    through, registers start/end with omni_lab, forwards TERM (status stopped), and refuses (nothing written) on a
+    held lock, an open claim, a busy card, the MemAvailable floor, a serving card, a bad job name or a non-owner.
 """
 
 from __future__ import annotations
@@ -512,3 +521,232 @@ def test_hold_lock_join_gives_up_when_its_queue_dies(tmp_path):
     finally:
         for p in (old_q, job, new_q, h1):
             p.kill()
+
+
+# ------------------------------------------------------------------------------------------------ 1.1.0
+SMI = [{"index": i, "uuid": f"GPU-test-{i}", "name": "P40" if i in (1, 2, 3, 5) else "RTX", "used_mib": 10}
+       for i in range(7)]
+LANES_PY = str(HERE / "lanes.py")
+REMOTE_RUNTIME = Path("/home/cereal/local-hermes/remote_runtime.py")
+
+
+def policy_seed(tmp_path: Path) -> Path:
+    base = {"scope": "s", "status": "idle", "transferable": True, "transferable_reason": "test"}
+    lanes_ = [
+        {"lane": "L-TRAIN", "owner": "claude", "lock_paths": [], "cards": [1, 2], "flex_cards": [3], **base},
+        {"lane": "L-EXP", "owner": "claude", "lock_paths": [], "cards": [5], "flex_cards": [3], **base},
+        {"lane": "L-SERVE", "owner": "claude", "lock_paths": [], "cards": [0, 6], "ask_first": True, **base},
+        {"lane": "L-CODEX", "owner": "codex", "lock_paths": [], **base},
+    ]
+    p = tmp_path / "seed.json"
+    p.write_text(json.dumps({"created_by": "test", "lanes": lanes_}))
+    return p
+
+
+@pytest.fixture
+def preg(tmp_path, capsys):
+    r = tmp_path / "LANES.json"
+    rc, _ = run(r, "init", "--seed", str(policy_seed(tmp_path)), capsys=capsys)
+    assert rc == 0
+    return r
+
+
+def fake_omni_lab(tmp_path: Path) -> tuple[Path, str]:
+    calls = tmp_path / "omni_calls.jsonl"
+    script = tmp_path / "fake_omni_lab.py"
+    script.write_text("import json, sys\n"
+                      f"open({str(calls)!r}, 'a').write(json.dumps(sys.argv[1:]) + '\\n')\n"
+                      "print('4242' if sys.argv[2] == 'start' else 'run 4242: 0 metric rows')\n")
+    return calls, json.dumps([sys.executable, str(script)])
+
+
+def claim_env(tmp_path: Path, **over) -> dict:
+    _calls, cmd = fake_omni_lab(tmp_path)
+    env = dict(os.environ, OC_LANES_SMI_JSON=json.dumps(over.pop("smi", SMI)), OC_LANES_MEMAVAIL_GIB="200",
+               OC_LANES_OMNI_LAB=cmd, OC_LANES_OMNI_LAB_ENV=str(tmp_path / "no-env"))
+    env.update(over)
+    return env
+
+
+def claim_run(reg: Path, tmp_path: Path, *argv, env=None, timeout=60):
+    return subprocess.run([sys.executable, LANES_PY, "--file", str(reg), "claim-run", *argv],
+                          capture_output=True, text=True, env=env or claim_env(tmp_path), timeout=timeout)
+
+
+def test_register_adds_and_rescopes_with_history(preg, tmp_path, capsys):
+    rc, out = run(preg, "register", "--agent", "claude", "--reason", "new lane", "--lane-json", json.dumps(
+        {"lane": "L-NEW", "owner": "claude", "scope": "n", "lock_paths": [], "status": "idle", "transferable": True,
+         "transferable_reason": "t", "cards": [4]}), capsys=capsys)
+    assert rc == 0 and "ADDED" in out.out
+    d = read(preg)
+    assert d["lanes"]["L-NEW"]["registered_utc"] and d["lanes"]["L-NEW"]["history"][0]["reason"] == "new lane"
+    rc, out = run(preg, "register", "--agent", "claude", "--reason", "rescope", "--lane-json",
+                  json.dumps({"lane": "L-TRAIN", "cards": [1], "scope": "s2"}), capsys=capsys)
+    assert rc == 0 and "RESCOPED" in out.out
+    t = read(preg)["lanes"]["L-TRAIN"]
+    assert t["cards"] == [1] and t["scope"] == "s2" and t["history"][-1]["previous"] == {"cards": [1, 2], "scope": "s"}
+    rc, out = run(preg, "register", "--agent", "claude", "--reason", "x", "--lane-json",
+                  json.dumps({"lane": "L-TRAIN", "cards": [1], "scope": "s2"}), capsys=capsys)
+    assert rc == 0 and "no change" in out.out
+    for obj, code, why in (({"lane": "L-TRAIN", "heartbeat_utc": "x"}, 2, "cannot set"),
+                           ({"lane": "L-TRAIN", "cards": [1, 1]}, 2, "distinct"),
+                           ({"lane": "L-TRAIN", "cards": [3]}, 2, "both"),
+                           ({"lane": "L-TRAIN", "ask_first": "yes"}, 2, "ask_first"),
+                           ({"lane": "L-CODEX", "scope": "mine"}, 3, "owned by codex")):
+        rc, out = run(preg, "register", "--agent", "claude", "--reason", "x", "--lane-json", json.dumps(obj),
+                      capsys=capsys)
+        assert rc == code and why in out.err, (obj, out.err)
+    rc, out = run(preg, "register", "--agent", "claude", "--reason", "x", "--cyril", "take it",
+                  "--lane-json", json.dumps({"lane": "L-CODEX", "scope": "mine"}), capsys=capsys)
+    assert rc == 0 and read(preg)["lanes"]["L-CODEX"]["history"][-1]["cyril"] == "take it"
+
+
+def test_set_rule_keeps_history(preg, capsys):
+    rc, _ = run(preg, "set-rule", "--agent", "claude", "--key", "gpu", "--text", "rule 1", "--reason", "r", capsys=capsys)
+    assert rc == 0
+    rc, _ = run(preg, "set-rule", "--agent", "claude", "--key", "gpu", "--text", "rule 2", "--reason", "r2", capsys=capsys)
+    d = read(preg)
+    assert rc == 0 and d["rules"]["gpu"] == "rule 2" and d["rules_history"][-1]["previous"] == "rule 1"
+
+
+def test_card_map_and_verdicts(preg, capsys):
+    reg_ = read(preg)
+    m = lanes.card_map(reg_)
+    assert [h["lane"] for h in m[3]] == ["L-TRAIN", "L-EXP"] and m[0][0]["ask_first"] and m[1][0]["role"] == "primary"
+    assert lanes.card_verdicts(reg_, "L-TRAIN", [1, 2, 3], None, None) == ["GPU1 own", "GPU2 own", "GPU3 flex"]
+    assert lanes.card_verdicts(reg_, "L-SERVE", [0], None, None) == ["GPU0 own"]
+    for lane_, cards, borrow, cyril, code in (("L-TRAIN", [5], None, None, 2), ("L-EXP", [0], "hard job", None, 4),
+                                              ("L-EXP", [9], "x", None, 2)):
+        with pytest.raises(lanes.Refused) as e:
+            lanes.card_verdicts(reg_, lane_, cards, borrow, cyril)
+        assert e.value.code == code
+    assert "borrowed from L-EXP" in lanes.card_verdicts(reg_, "L-TRAIN", [5], "hard job", None)[0]
+    assert "Cyril" in lanes.card_verdicts(reg_, "L-EXP", [0], None, "yes pull GPU0")[0]
+    rc, out = run(preg, "cards", capsys=capsys)
+    assert rc == 0 and "GPU3: L-TRAIN (flex); L-EXP (flex)" in out.out and "GPU0: L-SERVE (primary, ask-first)" in out.out
+
+
+def test_release_stale_only_for_a_dead_pid(preg, tmp_path, capsys):
+    dead = subprocess.Popen([sys.executable, "-c", "pass"])
+    dead.wait()
+    claims = tmp_path / "p40.claims"
+    claims.write_text(f"2026-10-15T02:41:34Z CLAIM GPU1,GPU2 owner=claude lane=toolcall job=ext pid={dead.pid} log=/x\n"
+                      f"2026-10-15T02:41:35Z CLAIM GPU3 owner=claude lane=live job=j pid={os.getpid()}\n"
+                      "2026-10-15T02:41:36Z CLAIM GPU5 owner=claude lane=nopid job=k (docker)\n")
+    for cards, lane_, job, code in (("GPU3", "live", "j", 5), ("GPU5", "nopid", "k", 5), ("GPU1", "toolcall", "ext", 2)):
+        rc, out = run(preg, "release-stale", "--agent", "claude", "--cards", cards, "--claim-lane", lane_, "--job", job,
+                      "--reason", "test", capsys=capsys)
+        assert rc == code, out.err
+    rc, out = run(preg, "release-stale", "--agent", "claude", "--cards", "GPU1,GPU2", "--claim-lane", "toolcall",
+                  "--job", "ext", "--reason", "driver gone, it never wrote its own RELEASE line", capsys=capsys)
+    assert rc == 0 and "released (stale" in out.out
+    assert {c["lane"] for c in lanes.claims_open(str(claims))} == {"live", "nopid"}
+
+
+def test_claim_run_runs_and_releases(preg, tmp_path):
+    probe = tmp_path / "probe.py"
+    probe.write_text(
+        "import fcntl, json, os, sys\n"
+        "fds = [os.readlink(f'/proc/self/fd/{f}') for f in os.listdir('/proc/self/fd')\n"
+        "       if os.path.exists(f'/proc/self/fd/{f}')]\n"
+        f"lock = open({str(tmp_path / 'gpu5.lock')!r}, 'a')\n"
+        "try:\n    fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB); held = False\n"
+        "except BlockingIOError:\n    held = True\n"
+        "print(json.dumps({'cvd': os.environ.get('CUDA_VISIBLE_DEVICES'), 'order': os.environ.get('CUDA_DEVICE_ORDER'),"
+        " 'held': held, 'inherited': [f for f in fds if f.endswith('.lock')]}))\n"
+        "sys.exit(3)\n")
+    log = tmp_path / "job.log"
+    ready, exit_ = tmp_path / "ready.json", tmp_path / "exit.json"
+    r = claim_run(preg, tmp_path, "--lane", "L-EXP", "--agent", "claude", "--gpus", "5,3", "--job", "exp-1",
+                  "--log", str(log), "--ready-file", str(ready), "--exit-file", str(exit_), "--omni-lab-kind", "probe",
+                  "--", sys.executable, str(probe))
+    assert r.returncode == 3, r.stderr
+    job = json.loads(log.read_text().strip().splitlines()[-1])
+    assert job == {"cvd": "GPU-test-3,GPU-test-5", "order": "PCI_BUS_ID", "held": True, "inherited": []}
+    lines = (tmp_path / "p40.claims").read_text().splitlines()
+    assert len(lines) == 2 and " CLAIM GPU3,GPU5 owner=claude lane=L-EXP job=exp-1 pid=" in lines[0]
+    assert " RELEASE GPU3,GPU5 owner=claude lane=L-EXP job=exp-1 released (rc 3)" in lines[1]
+    assert lanes.claims_open(str(tmp_path / "p40.claims")) == []
+    rd, ex = json.loads(ready.read_text()), json.loads(exit_.read_text())
+    assert rd["cards"] == [3, 5] and rd["omni_lab_run_id"] == 4242 and ex["rc"] == 3 and ex["status"] == "fail"
+    calls = [json.loads(x) for x in (tmp_path / "omni_calls.jsonl").read_text().splitlines()]
+    assert calls[0][:4] == ["log-run", "start", "--kind", "probe"] and "--lane" in calls[0] and "3,5" in calls[0]
+    assert calls[1][:3] == ["log-run", "end", "4242"] and calls[1][calls[1].index("--status") + 1] == "fail"
+    lane_ = read(preg)["lanes"]["L-EXP"]
+    assert lane_["heartbeat_source"].startswith("claim-run") and "ended fail rc 3" in lane_["detail"]
+    if REMOTE_RUNTIME.is_file():  # the controller's own parser must read the same lines the same way
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("rr_claims_probe", REMOTE_RUNTIME)
+        rr = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(rr)
+        assert rr.active_p40_claims(lines[0] + "\n") == {"3": [lines[0]], "5": [lines[0]]}
+        assert rr.active_p40_claims("\n".join(lines) + "\n") == {}
+
+
+def test_claim_run_forwards_term(preg, tmp_path):
+    ready, exit_ = tmp_path / "ready.json", tmp_path / "exit.json"
+    proc = subprocess.Popen([sys.executable, LANES_PY, "--file", str(preg), "claim-run", "--lane", "L-TRAIN",
+                             "--agent", "claude", "--gpus", "1,2", "--job", "train-1", "--log", str(tmp_path / "t.log"),
+                             "--ready-file", str(ready), "--exit-file", str(exit_), "--no-omni-lab", "--",
+                             sys.executable, "-c", "import time; time.sleep(60)"], env=claim_env(tmp_path),
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    for _ in range(100):
+        if ready.exists():
+            break
+        time.sleep(0.1)
+    assert ready.exists()
+    job_pid = json.loads(ready.read_text())["pid"]
+    assert lanes.pid_alive(job_pid)
+    proc.send_signal(15)
+    out, err = proc.communicate(timeout=30)
+    assert proc.returncode == 143, err
+    assert json.loads(exit_.read_text())["status"] == "stopped"
+    last = (tmp_path / "p40.claims").read_text().splitlines()[-1]
+    assert "RELEASE GPU1,GPU2" in last and "signal 15 forwarded" in last
+    for _ in range(50):
+        if not lanes.pid_alive(job_pid):
+            break
+        time.sleep(0.1)
+    assert not lanes.pid_alive(job_pid)
+    assert not (tmp_path / "omni_calls.jsonl").exists()
+
+
+def test_claim_run_refusals_write_nothing(preg, tmp_path):
+    base = ["--agent", "claude", "--log", str(tmp_path / "x.log"), "--no-omni-lab"]
+    job = ["--", sys.executable, "-c", "pass"]
+    busy = [dict(c, used_mib=5000) if c["index"] == 5 else c for c in SMI]
+    cases = [
+        (["--lane", "L-EXP", "--gpus", "5", "--job", "j"], claim_env(tmp_path, smi=busy), 5, "not idle"),
+        (["--lane", "L-EXP", "--gpus", "5", "--job", "j"], claim_env(tmp_path, OC_LANES_MEMAVAIL_GIB="12"), 5,
+         "MemAvailable"),
+        (["--lane", "L-EXP", "--gpus", "0", "--job", "j", "--borrow", "need it"], None, 4, "serving card"),
+        (["--lane", "L-EXP", "--gpus", "1", "--job", "j"], None, 2, "--borrow"),
+        (["--lane", "L-EXP", "--gpus", "5", "--job", "done"], None, 2, "--job"),
+        (["--lane", "L-EXP", "--gpus", "1", "--job", "j", "--borrow", "old job finished"], None, 2, "release word"),
+        (["--lane", "L-CODEX", "--gpus", "5", "--job", "j"], None, 3, "owned by codex"),
+    ]
+    for argv, env, code, why in cases:
+        r = claim_run(preg, tmp_path, *argv, *base, *job, env=env)
+        assert r.returncode == code and why in r.stderr, (argv, r.returncode, r.stderr)
+    assert not (tmp_path / "p40.claims").exists()
+    with open(tmp_path / "gpu5.lock", "a") as held:  # a card lock held by someone else
+        fcntl.flock(held.fileno(), fcntl.LOCK_EX)
+        r = claim_run(preg, tmp_path, "--lane", "L-EXP", "--gpus", "3,5", "--job", "j", *base, *job)
+        assert r.returncode == 5 and "gpu5.lock is held" in r.stderr
+    (tmp_path / "p40.claims").write_text(
+        f"2026-10-21T00:00:00Z CLAIM GPU3 owner=claude lane=other job=o pid={os.getpid()}\n")
+    r = claim_run(preg, tmp_path, "--lane", "L-EXP", "--gpus", "3", "--job", "j", *base, *job)
+    assert r.returncode == 5 and "open claim on GPU3" in r.stderr
+    assert len((tmp_path / "p40.claims").read_text().splitlines()) == 1
+    r = claim_run(preg, tmp_path, "--lane", "L-EXP", "--gpus", "5", "--job", "j", "--dry-run", *base)
+    assert r.returncode == 0 and "CLAIM-RUN DRY OK GPU5" in r.stdout
+    assert len((tmp_path / "p40.claims").read_text().splitlines()) == 1
+
+
+def test_claim_run_pulls_a_serving_card_only_with_cyril(preg, tmp_path):
+    r = claim_run(preg, tmp_path, "--lane", "L-EXP", "--gpus", "6", "--job", "big", "--agent", "claude",
+                  "--log", str(tmp_path / "b.log"), "--no-omni-lab", "--cyril", "yes take GPU6 for this",
+                  "--", sys.executable, "-c", "pass")
+    assert r.returncode == 0, r.stderr
+    first = (tmp_path / "p40.claims").read_text().splitlines()[0]
+    assert "CLAIM GPU6 owner=claude lane=L-EXP job=big" in first and "Cyril approved" in first

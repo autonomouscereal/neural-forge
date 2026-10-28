@@ -194,7 +194,7 @@ Each requirement cites `directive` rows that hold Cyril's verbatim, dated words.
 | Modality | Unit | Function / arguments | Time grid |
 |---|---|---|---|
 | Image, OCR | 32x32 RGB patch | `image_to_native_patches(patch=32)` | one tick |
-| Video | one 32x32 RGB frame patch | `video_to_native_patches(patch=32, tubelet=1, fps=12.5)` | **80 ms per frame** |
+| Video | 2 frames x 3 x 32 x 16 tubelet (`V2_VIDEO_TUBELET=2`, `V2_VIDEO_PATCH=(32,16)`) | `v2_video_packet(fps=12.5)` = `video_to_native_patches(patch=32, patch_width=16, tubelet=2, fps=12.5)` | **80 ms per frame, 160 ms per row** (corrected 2026-10-22: the code wins; tubelets were the round-3 fix that took video pan from 0.500 to 1.000, RUN0_BUILD_PLAN 2.1) |
 | Audio (speech, music, sfx) | 3,072 samples of one channel at **38.4 kHz** = 80 ms | `waveform_to_native_segments(segment=3072, sample_rate_hz=38400)` | **80 ms** |
 | 3D (feasibility-gated) | 8x8x8 voxels x 6 channels (SDF, R, G, B, roughness, metallic) | `volume_to_native_patches(patch=8)` | z index |
 
