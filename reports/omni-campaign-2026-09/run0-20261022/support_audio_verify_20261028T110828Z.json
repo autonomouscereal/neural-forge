@@ -1,0 +1,706 @@
+{
+ "started_utc": "2026-10-28T11:08:28Z",
+ "products": {
+  "sfx_caption_v1": {
+   "files": {
+    "records.jsonl": {
+     "bytes_ok": true,
+     "sha_ok": true
+    },
+    "holdout/ids.jsonl": {
+     "bytes_ok": true,
+     "sha_ok": true
+    },
+    "holdout/texts.jsonl": {
+     "bytes_ok": true,
+     "sha_ok": true
+    }
+   },
+   "problems": [],
+   "archives_referenced": 458,
+   "recount": {
+    "records": 52435,
+    "trainable": 50494,
+    "holdout": 1941,
+    "dup_of": 0,
+    "by_split": {
+     "clotho/train": 3839,
+     "clotho/val": 1045,
+     "clotho/test": 1045,
+     "audiocaps/test": 883,
+     "audiocaps/train": 45178,
+     "audiocaps/val": 445
+    },
+    "by_task": {
+     "sound_caption": 52435,
+     "sound_gen": 52435
+    },
+    "holdout_reasons": {
+     "clotho test split": 1045,
+     "audiocaps test split": 883,
+     "cross-dataset: youtube id is in <other test>": 13
+    },
+    "caption_kinds": {
+     "audio": 81279
+    },
+    "authors": {
+     "public": 124151
+    }
+   },
+   "decode_samples": [
+    {
+     "source": "audiocaps",
+     "clip_id": "audiocaps:rDwqkIat3Fk:40",
+     "container": "parquet",
+     "ok": true,
+     "duration": 10.0,
+     "audio": "pcm_s16le/24000/2ch",
+     "video": null,
+     "audio_decodes": true,
+     "video_decodes": null
+    },
+    {
+     "source": "audiocaps",
+     "clip_id": "audiocaps:gzWjsH3KkmE:27",
+     "container": "parquet",
+     "ok": true,
+     "duration": 9.141875,
+     "audio": "pcm_s16le/24000/1ch",
+     "video": null,
+     "audio_decodes": true,
+     "video_decodes": null
+    },
+    {
+     "source": "audiocaps",
+     "clip_id": "audiocaps:zzRuoMKmuus:40",
+     "container": "parquet",
+     "ok": true,
+     "duration": 10.0,
+     "audio": "pcm_s16le/24000/2ch",
+     "video": null,
+     "audio_decodes": true,
+     "video_decodes": null
+    },
+    {
+     "source": "audiocaps",
+     "clip_id": "audiocaps:lKcxjhXMDus:60",
+     "container": "parquet",
+     "ok": true,
+     "duration": 10.0,
+     "audio": "pcm_s16le/24000/2ch",
+     "video": null,
+     "audio_decodes": true,
+     "video_decodes": null
+    },
+    {
+     "source": "audiocaps",
+     "clip_id": "audiocaps:0NbCAtcJTUY:30",
+     "container": "parquet",
+     "ok": true,
+     "duration": 10.0,
+     "audio": "pcm_s16le/24000/2ch",
+     "video": null,
+     "audio_decodes": true,
+     "video_decodes": null
+    },
+    {
+     "source": "audiocaps",
+     "clip_id": "audiocaps:kQNUo-nhtDs:210",
+     "container": "parquet",
+     "ok": true,
+     "duration": 10.0,
+     "audio": "pcm_s16le/24000/2ch",
+     "video": null,
+     "audio_decodes": true,
+     "video_decodes": null
+    },
+    {
+     "source": "clotho",
+     "clip_id": "clotho:development:life line.wav",
+     "container": "7z",
+     "ok": true,
+     "duration": 28.991224,
+     "audio": "pcm_s16le/44100/1ch",
+     "video": null,
+     "audio_decodes": true,
+     "video_decodes": null
+    },
+    {
+     "source": "clotho",
+     "clip_id": "clotho:development:High pitched drilling.wav",
+     "container": "7z",
+     "ok": true,
+     "duration": 19.360499,
+     "audio": "pcm_s16le/44100/1ch",
+     "video": null,
+     "audio_decodes": true,
+     "video_decodes": null
+    },
+    {
+     "source": "clotho",
+     "clip_id": "clotho:development:sand slide on metal FF678.wav",
+     "container": "7z",
+     "ok": true,
+     "duration": 15.812789,
+     "audio": "pcm_s16le/44100/1ch",
+     "video": null,
+     "audio_decodes": true,
+     "video_decodes": null
+    }
+   ],
+   "decode_ok": "9/9"
+  },
+  "video_caption_v1": {
+   "files": {
+    "records.jsonl": {
+     "bytes_ok": true,
+     "sha_ok": true
+    },
+    "holdout/ids.jsonl": {
+     "bytes_ok": true,
+     "sha_ok": true
+    },
+    "holdout/texts.jsonl": {
+     "bytes_ok": true,
+     "sha_ok": true
+    }
+   },
+   "problems": [],
+   "archives_referenced": 4,
+   "recount": {
+    "records": 12061,
+    "trainable": 8862,
+    "holdout": 3199,
+    "dup_of": 0,
+    "by_split": {
+     "msrvtt/train": 6513,
+     "msrvtt/val": 497,
+     "msrvtt/test": 2990,
+     "avcaps/train": 1661,
+     "avcaps/val": 200,
+     "avcaps/test": 200
+    },
+    "by_task": {
+     "video_caption": 12061
+    },
+    "holdout_reasons": {
+     "cross-dataset: youtube id is in <other test>": 9,
+     "msrvtt test split": 2990,
+     "avcaps test split": 200
+    },
+    "caption_kinds": {
+     "visual": 192967
+    },
+    "authors": {
+     "public": 192967
+    }
+   },
+   "decode_samples": [
+    {
+     "source": "avcaps",
+     "clip_id": "avcaps:10583687444",
+     "container": "zip",
+     "ok": true,
+     "duration": 76.835011,
+     "audio": "aac/44100/2ch",
+     "video": "h264/640x360",
+     "audio_decodes": true,
+     "video_decodes": true
+    },
+    {
+     "source": "avcaps",
+     "clip_id": "avcaps:9217939684",
+     "container": "zip",
+     "ok": true,
+     "duration": 69.171995,
+     "audio": "aac/44100/2ch",
+     "video": "h264/512x288",
+     "audio_decodes": true,
+     "video_decodes": true
+    },
+    {
+     "source": "avcaps",
+     "clip_id": "avcaps:6903773975",
+     "container": "zip",
+     "ok": true,
+     "duration": 28.895534,
+     "audio": "aac/44100/2ch",
+     "video": "h264/640x1138",
+     "audio_decodes": true,
+     "video_decodes": true
+    },
+    {
+     "source": "avcaps",
+     "clip_id": "avcaps:3159914409",
+     "container": "zip",
+     "ok": true,
+     "duration": 42.585374,
+     "audio": "aac/44100/2ch",
+     "video": "h264/640x480",
+     "audio_decodes": true,
+     "video_decodes": true
+    },
+    {
+     "source": "avcaps",
+     "clip_id": "avcaps:5112579753",
+     "container": "zip",
+     "ok": true,
+     "duration": 90.023741,
+     "audio": "aac/44100/2ch",
+     "video": "h264/480x640",
+     "audio_decodes": true,
+     "video_decodes": true
+    },
+    {
+     "source": "avcaps",
+     "clip_id": "avcaps:6816698543",
+     "container": "zip",
+     "ok": true,
+     "duration": 24.636349,
+     "audio": "aac/44100/2ch",
+     "video": "h264/640x360",
+     "audio_decodes": true,
+     "video_decodes": true
+    },
+    {
+     "source": "msrvtt",
+     "clip_id": "msrvtt:video4796",
+     "container": "zip",
+     "ok": true,
+     "duration": 17.666667,
+     "audio": null,
+     "video": "h264/298x224",
+     "audio_decodes": null,
+     "video_decodes": true
+    },
+    {
+     "source": "msrvtt",
+     "clip_id": "msrvtt:video5384",
+     "container": "zip",
+     "ok": true,
+     "duration": 12.666667,
+     "audio": null,
+     "video": "h264/298x224",
+     "audio_decodes": null,
+     "video_decodes": true
+    },
+    {
+     "source": "msrvtt",
+     "clip_id": "msrvtt:video6370",
+     "container": "zip",
+     "ok": true,
+     "duration": 13.666667,
+     "audio": null,
+     "video": "h264/298x224",
+     "audio_decodes": null,
+     "video_decodes": true
+    },
+    {
+     "source": "msrvtt",
+     "clip_id": "msrvtt:video6034",
+     "container": "zip",
+     "ok": true,
+     "duration": 10.666667,
+     "audio": null,
+     "video": "h264/298x224",
+     "audio_decodes": null,
+     "video_decodes": true
+    },
+    {
+     "source": "msrvtt",
+     "clip_id": "msrvtt:video6358",
+     "container": "zip",
+     "ok": true,
+     "duration": 13.666667,
+     "audio": null,
+     "video": "h264/298x224",
+     "audio_decodes": null,
+     "video_decodes": true
+    },
+    {
+     "source": "msrvtt",
+     "clip_id": "msrvtt:video272",
+     "container": "zip",
+     "ok": true,
+     "duration": 13.666667,
+     "audio": null,
+     "video": "h264/298x224",
+     "audio_decodes": null,
+     "video_decodes": true
+    }
+   ],
+   "decode_ok": "12/12"
+  },
+  "av_caption_v1": {
+   "files": {
+    "records.jsonl": {
+     "bytes_ok": true,
+     "sha_ok": true
+    },
+    "holdout/ids.jsonl": {
+     "bytes_ok": true,
+     "sha_ok": true
+    },
+    "holdout/texts.jsonl": {
+     "bytes_ok": true,
+     "sha_ok": true
+    }
+   },
+   "problems": [],
+   "archives_referenced": 6673,
+   "recount": {
+    "records": 41048,
+    "trainable": 31950,
+    "holdout": 9098,
+    "dup_of": 0,
+    "by_split": {
+     "avcaps/train": 1661,
+     "avcaps/val": 200,
+     "avcaps/test": 200,
+     "audioset_av/train": 6605,
+     "audioset_av/test": 64,
+     "valor32k/train": 25327,
+     "valor32k/val": 3500,
+     "valor32k/test": 3491
+    },
+    "by_task": {
+     "av_caption": 41048,
+     "sound_caption": 8730,
+     "av_gen": 41048
+    },
+    "holdout_reasons": {
+     "avcaps test split": 200,
+     "audioset_av test split": 64,
+     "cross-dataset: youtube id is in <other test>": 5343,
+     "valor32k test split": 3491
+    },
+    "caption_kinds": {
+     "audio": 13029,
+     "visual": 7599,
+     "audio_visual": 40064
+    },
+    "authors": {
+     "public": 60692
+    }
+   },
+   "decode_samples": [
+    {
+     "source": "audioset_av",
+     "clip_id": "audioset_av:1FXr5AhqxFs",
+     "container": "file",
+     "ok": true,
+     "duration": 10.01,
+     "audio": "aac/44100/2ch",
+     "video": "h264/854x480",
+     "audio_decodes": true,
+     "video_decodes": true
+    },
+    {
+     "source": "audioset_av",
+     "clip_id": "audioset_av:--EG-JqO4S0",
+     "container": "file",
+     "ok": true,
+     "duration": 10.01,
+     "audio": "aac/44100/2ch",
+     "video": "h264/640x480",
+     "audio_decodes": true,
+     "video_decodes": true
+    },
+    {
+     "source": "audioset_av",
+     "clip_id": "audioset_av:-nD95sw0fRs",
+     "container": "file",
+     "ok": true,
+     "duration": 10.01,
+     "audio": "aac/48000/2ch",
+     "video": "h264/640x480",
+     "audio_decodes": true,
+     "video_decodes": true
+    },
+    {
+     "source": "audioset_av",
+     "clip_id": "audioset_av:0kY8ORlpsik",
+     "container": "file",
+     "ok": true,
+     "duration": 10.0,
+     "audio": "aac/44100/2ch",
+     "video": "h264/320x240",
+     "audio_decodes": true,
+     "video_decodes": true
+    },
+    {
+     "source": "audioset_av",
+     "clip_id": "audioset_av:0ZIy0COr3NM",
+     "container": "file",
+     "ok": true,
+     "duration": 9.455,
+     "audio": "aac/48000/2ch",
+     "video": "h264/640x480",
+     "audio_decodes": true,
+     "video_decodes": true
+    },
+    {
+     "source": "audioset_av",
+     "clip_id": "audioset_av:0L_iuO3qnAQ",
+     "container": "file",
+     "ok": true,
+     "duration": 10.01,
+     "audio": "aac/44100/2ch",
+     "video": "h264/1440x1080",
+     "audio_decodes": true,
+     "video_decodes": true
+    },
+    {
+     "source": "avcaps",
+     "clip_id": "avcaps:3601841005",
+     "container": "zip",
+     "ok": true,
+     "duration": 90.023741,
+     "audio": "aac/44100/2ch",
+     "video": "h264/640x480",
+     "audio_decodes": true,
+     "video_decodes": true
+    },
+    {
+     "source": "avcaps",
+     "clip_id": "avcaps:3471734344",
+     "container": "zip",
+     "ok": true,
+     "duration": 41.076077,
+     "audio": "aac/44100/2ch",
+     "video": "h264/640x480",
+     "audio_decodes": true,
+     "video_decodes": true
+    },
+    {
+     "source": "avcaps",
+     "clip_id": "avcaps:6699976647",
+     "container": "zip",
+     "ok": true,
+     "duration": 21.060476,
+     "audio": "aac/44100/2ch",
+     "video": "h264/640x480",
+     "audio_decodes": true,
+     "video_decodes": true
+    },
+    {
+     "source": "avcaps",
+     "clip_id": "avcaps:6810821214",
+     "container": "zip",
+     "ok": true,
+     "duration": 27.060367,
+     "audio": "aac/44100/2ch",
+     "video": "h264/640x362",
+     "audio_decodes": true,
+     "video_decodes": true
+    },
+    {
+     "source": "avcaps",
+     "clip_id": "avcaps:9337790459",
+     "container": "zip",
+     "ok": true,
+     "duration": 33.825492,
+     "audio": "aac/44100/2ch",
+     "video": "h264/640x360",
+     "audio_decodes": true,
+     "video_decodes": true
+    },
+    {
+     "source": "avcaps",
+     "clip_id": "avcaps:5773250639",
+     "container": "zip",
+     "ok": true,
+     "duration": 74.866667,
+     "audio": "aac/44100/2ch",
+     "video": "h264/480x640",
+     "audio_decodes": true,
+     "video_decodes": true
+    },
+    {
+     "source": "valor32k",
+     "clip_id": "valor32k:oTzTZqDOIt0_80.000_90.000",
+     "container": "tar",
+     "ok": true,
+     "duration": 10.0,
+     "audio": "aac/44100/2ch",
+     "video": "h264/1280x720",
+     "audio_decodes": true,
+     "video_decodes": true
+    },
+    {
+     "source": "valor32k",
+     "clip_id": "valor32k:Oueb1r9X8YU_70.000_80.000",
+     "container": "tar",
+     "ok": true,
+     "duration": 10.0,
+     "audio": "aac/44100/2ch",
+     "video": "h264/1280x720",
+     "audio_decodes": true,
+     "video_decodes": true
+    },
+    {
+     "source": "valor32k",
+     "clip_id": "valor32k:agK1OkzW5Yg_30.000_40.000",
+     "container": "tar",
+     "ok": true,
+     "duration": 10.0,
+     "audio": "aac/44100/2ch",
+     "video": "h264/480x360",
+     "audio_decodes": true,
+     "video_decodes": true
+    },
+    {
+     "source": "valor32k",
+     "clip_id": "valor32k:nLEv1Ww9dEo_30.000_40.000",
+     "container": "tar",
+     "ok": true,
+     "duration": 10.01,
+     "audio": "aac/44100/2ch",
+     "video": "h264/1280x720",
+     "audio_decodes": true,
+     "video_decodes": true
+    },
+    {
+     "source": "valor32k",
+     "clip_id": "valor32k:EviorW0wbVo_500.000_510.000",
+     "container": "tar",
+     "ok": true,
+     "duration": 10.01,
+     "audio": "aac/44100/2ch",
+     "video": "h264/1280x720",
+     "audio_decodes": true,
+     "video_decodes": true
+    },
+    {
+     "source": "valor32k",
+     "clip_id": "valor32k:VfARCp38XtA_70.000_80.000",
+     "container": "tar",
+     "ok": true,
+     "duration": 10.01,
+     "audio": "aac/44100/2ch",
+     "video": "h264/480x360",
+     "audio_decodes": true,
+     "video_decodes": true
+    }
+   ],
+   "decode_ok": "18/18"
+  },
+  "av_label_v1": {
+   "files": {
+    "records.jsonl": {
+     "bytes_ok": true,
+     "sha_ok": true
+    },
+    "holdout/ids.jsonl": {
+     "bytes_ok": true,
+     "sha_ok": true
+    },
+    "holdout/texts.jsonl": {
+     "bytes_ok": true,
+     "sha_ok": true
+    }
+   },
+   "problems": [],
+   "archives_referenced": 2,
+   "recount": {
+    "records": 20000,
+    "trainable": 16801,
+    "holdout": 1536,
+    "dup_of": 2360,
+    "by_split": {
+     "vggsound/test": 1505,
+     "vggsound/train": 18495
+    },
+    "by_task": {
+     "av_label": 20000,
+     "sound_label": 20000,
+     "av_gen": 20000
+    },
+    "holdout_reasons": {
+     "vggsound test split": 1505,
+     "cross-dataset: youtube id is in <other test>": 31
+    },
+    "caption_kinds": {},
+    "authors": {
+     "label": 20000
+    }
+   },
+   "decode_samples": [
+    {
+     "source": "vggsound",
+     "clip_id": "vggsound:--56QUhyDQM:185",
+     "container": "tar.gz",
+     "ok": true,
+     "duration": 10.029,
+     "audio": "aac/44100/2ch",
+     "video": "h264/640x360",
+     "audio_decodes": true,
+     "video_decodes": true
+    },
+    {
+     "source": "vggsound",
+     "clip_id": "vggsound:--5OkAjCI7g:40",
+     "container": "tar.gz",
+     "ok": true,
+     "duration": 10.0,
+     "audio": "aac/44100/2ch",
+     "video": "h264/1280x720",
+     "audio_decodes": true,
+     "video_decodes": true
+    },
+    {
+     "source": "vggsound",
+     "clip_id": "vggsound:--96EN9NUQM:242",
+     "container": "tar.gz",
+     "ok": true,
+     "duration": 10.033984,
+     "audio": "aac/44100/2ch",
+     "video": "h264/1280x720",
+     "audio_decodes": true,
+     "video_decodes": true
+    },
+    {
+     "source": "vggsound",
+     "clip_id": "vggsound:1Wh1uT-xdYE:16",
+     "container": "tar.gz",
+     "ok": true,
+     "duration": 10.006009,
+     "audio": "aac/44100/2ch",
+     "video": "h264/638x360",
+     "audio_decodes": true,
+     "video_decodes": true
+    },
+    {
+     "source": "vggsound",
+     "clip_id": "vggsound:1Wi9AlhuIoI:0",
+     "container": "tar.gz",
+     "ok": true,
+     "duration": 10.0078,
+     "audio": "aac/44100/1ch",
+     "video": "h264/320x178",
+     "audio_decodes": true,
+     "video_decodes": true
+    },
+    {
+     "source": "vggsound",
+     "clip_id": "vggsound:1WlQov-jsTU:120",
+     "container": "tar.gz",
+     "ok": true,
+     "duration": 10.0,
+     "audio": "aac/44100/2ch",
+     "video": "h264/480x360",
+     "audio_decodes": true,
+     "video_decodes": true
+    }
+   ],
+   "decode_ok": "6/6"
+  }
+ },
+ "rehash": {
+  "checked": 34,
+  "ok": 34,
+  "mismatch": []
+ },
+ "ended_utc": "2026-10-28T11:15:05Z",
+ "problems": 0
+}

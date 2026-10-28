@@ -110,3 +110,69 @@ Prior rulings that still hold:
   - Its card-class verdict goes to `$Q/k3_cardclass_provisional/`, its passes to `teacher_cache/k3/eb35851b2496a628-provisional-bf16/`, and its records to `$Q/k3_pass_tools.provisional.json`.
 - **`k3-b2-bf16-numerics-provisional-2026-10-17`.** Approved by Cyril 15:27Z ("[Cyril quote withheld]"). The text is in `$Q/k3_b2_numerics_ruling.txt`.
 - **Plan of record:** `reports/omni-campaign-2026-09/REALIGNMENT_2026-10-17.md`.
+- **2026-10-21 (~22:00Z), ruling `cyril-v2-arch-and-fold-init-2026-10-21`.** These are Cyril's words to Claude, direct and verbatim:
+  - "[Cyril quote withheld]"
+  - "[Cyril quote withheld]"
+  - "[Cyril quote withheld]"
+  - "[Cyril quote withheld]"
+  - "no text only tables"
+  - "[Cyril quote withheld]"
+
+  Effect:
+  - The v2 base (2B, then 4B) gets every weight from folding our sources (the K3 fold, Qwen3.8, and the media parents). Refolding is allowed. Directly importing any existing model's weights (for example Qwen3.5-2B) is forbidden.
+  - The proxy proof must show every modality working both in and out before folding starts. The August AV proof's recipe is the reference.
+  - On the phone, 50k context is the minimum; 256k depends on the device.
+  - No text-only lookup tables.
+  - Any raw-video method is acceptable as long as there is no encoder or decoder. Recursive refinement loops are welcome for any output.
+  - Fold artifacts (OMNI1, S5, the K3 dense fold L1-92, k3-run-oct09-claude, S3, the s7 units, the run-1 student) are protected from cleanup.
+- **2026-10-22, ruling `cyril-run0-plant-qwen-2026-10-22`.** These are Cyril's words to Claude, direct and verbatim:
+  - "[Cyril quote withheld]"
+
+  Also from him the same day. The workflow that relayed these recorded them as a summary; only the quoted fragments are his exact words:
+  - Video and images are expected to be slow.
+  - He likes "[Cyril quote withheld]".
+  - One token per modality marks each input piece and each output piece, for example `<|text|> <|image|> <|audio|> <|video|> <|3d|>`.
+  - An output-decision token starts every reply and declares what will be produced. The output mode comes from understanding the request, never from keyword routing.
+  - Train concepts jointly in one context.
+  - Train images at real sizes, not 2x2-patch toys.
+  - The Qwen token table is fine: it does not break the no-text-only-tables rule.
+  - The end model is free of tokenizer-specific encoders, towers and codecs.
+  - 50+ tok/s on the phone; 50k text-equivalent context minimum, 256k capable.
+  - Pass or fail is intelligence retention judged on behaviour, never a number. Top-n token matching (top 10+) is a valid optimizer target and metric; top-1 is not.
+
+  Effect:
+  - **Plant allowed for run 0 only.** For the first-pass 2B ("run 0") only, this supersedes two parts of `cyril-v2-arch-and-fold-init-2026-10-21`: the clause "[Cyril quote withheld]" and the effect "Directly importing any existing model's weights (for example Qwen3.5-2B) is forbidden".
+    - The run-0 base is Qwen/Qwen3.5-2B's text trunk, planted into the co2-2b-run0 profile, mildly ablated, then fully distilled on all modalities (no LoRA, per `cyril-full-distill-no-lora-2026-10-17`).
+    - Code marker: `V2_INIT_RULE_RUN0`, `PLANT_RULING = "cyril-run0-plant-qwen-2026-10-22"`.
+    - The fold-built rule (`V2_INIT_RULE`) stays in force for the next pass ("[Cyril quote withheld]"), and run 0 is its comparison baseline.
+  - **No proxy test campaign.** The proxy proof gate of 2026-10-21 is waived for run 0. Launch-safety smokes (plant speaks, ablation read, 4-GPU smoke, resume) remain; they are not a test campaign.
+  - **All four P40s.** GPU1, GPU2, GPU3 and GPU5 are held for the run through `lanes.py claim-run` (waiting for locks, never stealing). This overrides the 2026-10-21 serving layout's "2-3 train, 1-2 experiments" for the run's duration, expected 10+ days.
+    - GPU0, GPU4 and GPU6 and their services stay untouched.
+    - The hourly media judge's use of GPU5 is a decision for Cyril (pause the judge, or run on 3 cards).
+  - **Teachers.** `cyril-full-distill-no-lora-2026-10-17` (K3 primary) and `cyril-no-small-model-data-2026-10-17` still bind. How much weight K3 gets in run 0 is an open question to Cyril, because K3 coverage is 1.89M positions and cannot grow without GPU6.
+  - **Plan of record:** `reports/omni-campaign-2026-09/run0-20261022/RUN0_BUILD_PLAN.md`. The server-side ruling file is `/home/cereal/omni-campaign/rulings/arch_v2_init_source.json`.
+- **2026-10-22, ruling `cyril-run0-decisions-2026-10-22`.** Cyril's answers to RUN0_BUILD_PLAN §0, verbatim to Claude: "[Cyril quote withheld]".
+
+  Effect:
+  - **D1, K3.** Use the cached K3 that exists, 1.89M positions, with a repetition cap. Strata is the volume teacher. No GPU6 borrowing.
+  - **D2, judge.** The hourly media judge moves off GPU5 onto Strata at background priority, through strata-gate. If Strata cannot see images or video yet, enabling its vision path comes first, coordinated with the Sprite lead's Strata lane in a quiet window, with backup and rollback. Once the judge is on Strata, GPU5 joins run 0, so all four P40s train.
+  - **D3, data.** Strata generates run-0 data at background priority through strata-gate: intent and output-decision examples, edit instructions, and its own top-n (n_probs=64) probabilities as KD targets. The data goes through the screened, versioned intake. The raw capture spool stays excluded until Cyril cleans it.
+  - **D4, speech.** Yes to Qwen3-TTS renders of captions through the media-gate idle queue, for concept-interleaved samples.
+  - **Audio gap.** Downloads of real sound-effect and paired audio-video data are APPROVED: VGGSound, AudioCaps, Clotho or equivalents, from licensed sources and HF mirrors where possible.
+  - **Our corpus.** Run 0 also trains on our own corpus: the canonical text/structured corpus, the curated high-value set, tool-call corpora, Cyril's speech, and the NAS ai-training PDF corpus. Each goes in as a versioned derived view. Claude/Codex outputs and small-model data stay excluded.
+- **2026-10-28, ruling `cyril-run0-plant-qwen-2026-10-22`, re-recorded with plan revision 2 amendments.** The entry above (2026-10-22) is the first record and stays in force. Cyril's words to Claude, direct and verbatim, repeated here unchanged:
+  - "[Cyril quote withheld]"
+
+  Amendments to the Effect (Claude as lead, not Cyril's words; plan of record `run0-20261022/RUN0_BUILD_PLAN.md` revision 2):
+  - **K3 deviation stated.** In run 0, K3 is 1.89M cached positions against about 330-460M trained positions (projected), so it is below 1% of the KD signal. Strata is the main teacher by volume. This is a run-0-only deviation from the "K3 primary" part of `cyril-full-distill-no-lora-2026-10-17`, allowed by D1 of `cyril-run0-decisions-2026-10-22` ("[Cyril quote withheld]"). It is not described as K3-primary anywhere, and the omni_lab run notes say so.
+  - **The plant cannot leak into the fold pass.** Every run-0 checkpoint carries `init_rule = V2_INIT_RULE_RUN0`, and the fold-pass loader (`load_fold_base(kind="fold")`) refuses that tag. `cyril-v2-arch-and-fold-init-2026-10-21` governs the fold pass unchanged.
+- **2026-10-28, ruling `cyril-run0-ops-2026-10-28`.** Cyril's request, relayed verbatim by the workflow harness that ran the run-0 planning pass:
+  - "[Cyril quote withheld]"
+  - "[Cyril quote withheld]"
+  - "[Cyril quote withheld]"
+
+  Effect:
+  - **NAS cleanup authorised.** It is done by category: Neural Forge checkpoints and omnicoder weights already ruled deletable on 2026-08-19 (evidence kept), exact sha-verified duplicates, and scratch. Fold artifacts (protected 2026-10-21), Cyril's speech, sealed corpora, the PDF corpus and MAESTRO's source are never deleted. Anything else is listed for Cyril first. Run 0 never writes to the NAS.
+  - **Strata RAM levers authorised "if necessary".** Order: trainer-side cuts first, then Strata's prompt cache to a disk tier (Cyril 2026-10-27: a disk-backed prompt cache is fine), then some cold experts read from disk. Each Strata change is measured before and after, and reverted if Sprite decode or prompt read falls more than 20%.
+  - **GPU1, GPU2, GPU3 and GPU5 for about 10 days.** GPU0, GPU4 and GPU6 stay Sprite's and Strata's.
+  - **Completion is the gate on spending the 10 days.** Before launch: the 4-GPU smoke, the resume test (kill -9, replica sha), and 10-day projections of RAM, disk and data. Then a 24 h soak inside the run, so any failure stops the run on day 2, not day 9 (plan §2.8, §2.10).
