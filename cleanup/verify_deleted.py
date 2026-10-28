@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""verify_deleted.py 1.0.0 - independent check of every server model_deletion row (read-only role).
+"""verify_deleted.py 1.1.0 - independent check of every server model_deletion row (read-only role).
 
-For each row on host 'ai': the unit path is absent (or, when git-tracked files were kept, only those remain),
+For each row on host 'ai': the unit path is absent (or, when git-tracked files or evidence files were kept in place
+(preflight git_tracked_kept / kept_in_place, the latter from nas_group_delete.py), only those remain),
 <recipe>/MANIFEST.tsv hashes to recipe_archive_sha256, DELETION_RECEIPT.json carries the same listing_sha256,
 every recipe file listed is present in tree.tar.gz (or the 1.0.0 tree/), and every affected model row has status 'deleted' with
 deleted_at, delete_reason and rebuild_recipe_path set. Prints one line per problem and a summary.
@@ -27,15 +28,16 @@ def sha(p):
 conn = db.connect("ro", app="cleanup-verify")
 cur = conn.cursor()
 cur.execute("SELECT d.id, d.unit_path, d.status, d.recipe_archive_path, d.recipe_archive_sha256, d.listing_sha256, "
-            "d.recipe_files, d.affected_model_ids, d.preflight->'git_tracked_kept', d.plan_wave FROM model_deletion d "
+            "d.recipe_files, d.affected_model_ids, d.preflight->'git_tracked_kept', d.plan_wave, d.preflight->'kept_in_place' "
+            "FROM model_deletion d "
             "JOIN host h ON h.id = d.host_id WHERE h.name = 'ai' ORDER BY d.id")
 rows = cur.fetchall()
 problems, ok = [], 0
-for did, path, status, rec, rec_sha, listing, files, affected, tracked, wave in rows:
+for did, path, status, rec, rec_sha, listing, files, affected, tracked, wave, kept in rows:
     p = []
     if status != "deleted":
         p.append(f"status {status}")
-    tracked = tracked or []
+    tracked = (tracked or []) + (kept or [])
     if os.path.lexists(path):
         if not tracked:
             p.append("path still exists")
@@ -43,7 +45,7 @@ for did, path, status, rec, rec_sha, listing, files, affected, tracked, wave in 
             left = [str(q) for q in Path(path).rglob("*") if q.is_file()]
             extra = [q for q in left if os.path.relpath(q, path) not in tracked]
             if extra:
-                p.append(f"{len(extra)} untracked files remain")
+                p.append(f"{len(extra)} unkept files remain")
     man = os.path.join(rec, "MANIFEST.tsv")
     if not os.path.isfile(man) or sha(man) != rec_sha:
         p.append("MANIFEST.tsv missing or sha mismatch")
