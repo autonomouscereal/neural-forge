@@ -145,11 +145,29 @@ class PureTests(unittest.TestCase):
         smi = {0: {"index": 0, "name": "3090", "uuid": "GPU-a", "used_mib": 24},
                5: {"index": 5, "name": "P40", "uuid": "GPU-b", "used_mib": 10},
                1: {"index": 1, "name": "P40", "uuid": "GPU-c", "used_mib": 15889}}
-        self.assertEqual([c["uuid"] for c in R.check_cards(smi, [0], allow_gpu5=False, busy_limit=2000)], ["GPU-a"])
-        for idx, kw in (([5], {}), ([1], {}), ([3], {}), ([0, 0], {})):
+        serving = {0: ["L-SERVE"], 6: ["L-SERVE"], 4: ["L-MEDIA"]}
+        # 2026-10-21: GPU5 is no longer reserved; the serving cards need --allow-serving-gpus (Cyril's approval)
+        self.assertEqual([c["uuid"] for c in R.check_cards(smi, [5], busy_limit=2000, serving=serving)], ["GPU-b"])
+        for idx in ([0], [1], [3], [5, 5]):
             with self.assertRaises(db.LabError):
-                R.check_cards(smi, idx, allow_gpu5=False, busy_limit=2000)
-        self.assertEqual(len(R.check_cards(smi, [5], allow_gpu5=True, busy_limit=2000)), 1)
+                R.check_cards(smi, idx, busy_limit=2000, serving=serving)
+        with self.assertRaises(db.LabError) as e:
+            R.check_cards(smi, [0], busy_limit=2000, serving=serving)
+        self.assertIn("serving card (L-SERVE", str(e.exception))
+        self.assertEqual([c["uuid"] for c in R.check_cards(smi, [0], busy_limit=2000, allow_serving=True,
+                                                           serving=serving)], ["GPU-a"])
+
+    def test_serving_cards_from_registry(self):
+        import omni_lab_run as R
+        with tempfile.TemporaryDirectory() as d:
+            reg = Path(d) / "LANES.json"
+            reg.write_text(json.dumps({"lanes": {"L-SERVE": {"cards": [0, 6], "ask_first": True},
+                                                 "L-MEDIA": {"cards": [4], "ask_first": True},
+                                                 "L-EXP": {"cards": [5], "flex_cards": [3]}}}))
+            self.assertEqual(R.serving_cards(str(reg)), {0: ["L-SERVE"], 6: ["L-SERVE"], 4: ["L-MEDIA"]})
+            reg.write_text("{broken")
+            self.assertEqual(sorted(R.serving_cards(str(reg))), [0, 4, 6])
+            self.assertEqual(sorted(R.serving_cards(str(Path(d) / "missing.json"))), [0, 4, 6])
 
     def test_metric_args(self):
         import omni_lab_run as R

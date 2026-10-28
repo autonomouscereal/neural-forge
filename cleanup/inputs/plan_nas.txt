@@ -1,0 +1,107 @@
+{'/': '1.8T size, 1.7T used, 64G free (97%)', '/mnt/lexar': '3.8T size, 3.5T used, 317G free (92%)', '/mnt/ai_data (SMB //192.168.50.250/ai)': '4.5T size, 4.5T used, 2.5G free (100%); mount responsive (ls + stat OK at 17:14Z and 17:26Z)'}
+2026-10-21
+delete   110.11 2026-10-08 omni-campaign/k3-nas-window49-60-oct07-03603908-570d-4c90-96cb-ee3a63a9a139 | fold-scratch | NAS K3 fold window/run archive
+delete   100.29 2026-08-07 neural-forge-sealed-caches/a0023-exact4x-h816-mgv3-r12-round-0-refold.sealed-w13m-firstcomposed-cache | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete   100.29 2026-08-08 neural-forge-sealed-caches/a0023-exact4x-h816-mgv3-r12-round-0-refold.sealed-armA-complete-cache | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete   100.29 2026-08-10 neural-forge-archives/a0010-lfm2-exact4x-h816-ahb-policy-resume | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete    98.85 2026-08-05 neural-forge-archives/neural_forge_on_policy_rounds_v1 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete    97.78 2026-10-07 omni-campaign/k3-nas-window37-48-oct07-764524b1-96a9-4636-be74-942f9c54754c | fold-scratch | NAS K3 fold window/run archive
+delete    91.51 2026-08-04 neural-forge-archives/a0023-exact4x-h816-mgv3-r12 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete    57.49 2026-10-10 omni-campaign/k3-run-oct09-claude-archive | fold-scratch | NAS K3 fold window/run archive
+delete    55.40 2026-09-04 omni-campaign/s0-probe-sep04 | model | S0 probe (27B parent re-imported into composite layout, Sep 4); parent kept
+delete    41.23 2026-10-18 backups/lexar-relief-20261018/omni-campaign | cache | D1 boundary cache (OMNI1D1 L62 C.bin/B.bin) moved off lexar 2026-10-18; D1 superseded by full-KD run 1
+delete    34.90 2026-07-11 neural-forge/qwen3_4b_codebook_20260710 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete    24.65 2026-07-16 neural-forge/qwen3_4b_compensated_20260710 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     8.49 2026-07-10 neural-forge/progressive_stage1_20260709 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     8.05 2026-07-16 neural-forge/qwen3_4b_compensated_dynamic_v10_20260716_diagnostic_pid947219 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     7.75 2026-08-12 neural-forge-matrix/wave11 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     5.80 2026-07-16 neural-forge/native_parent_cache_20260710 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     4.58 2026-07-10 neural-forge/same_token_tokenrows_outputgate_20260710 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     4.58 2026-07-10 neural-forge/real_medoid_dual_20260710 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     4.57 2026-08-12 neural-forge-matrix/wave13 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     4.56 2026-07-10 neural-forge/progressive_closed_form_20260710 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     4.22 2026-08-13 neural-forge-matrix/wave25 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     3.49 2026-08-11 neural-forge-matrix/wave8 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     3.22 2026-08-13 neural-forge-matrix/wave24 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     3.16 2026-08-13 neural-forge-matrix/wave28 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     3.12 2026-08-09 neural-forge-ahb-cache-v1 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     3.04 2026-08-13 neural-forge-matrix/wave27 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     2.89 2026-08-28 neural-forge-matrix/wave31 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     2.83 2026-07-12 neural-forge/canonical_blank_targets | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     2.82 2026-07-12 neural-forge/compiled_child_cache | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     2.80 2026-08-13 neural-forge-matrix/wave15 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     2.63 2026-08-12 neural-forge-matrix/wave14 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     2.61 2026-08-13 neural-forge-matrix/wave17 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     2.52 2026-08-11 neural-forge-matrix/wave7 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     2.44 2026-08-13 neural-forge-matrix/wave26 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     2.24 2026-07-10 neural-forge/cross_family_blank_20260710 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     2.21 2026-08-28 neural-forge-matrix/wave29 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     2.15 2026-08-13 neural-forge-matrix/wave20 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     2.14 2026-08-13 neural-forge-matrix/wave18 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     2.12 2026-08-13 neural-forge-matrix/wave16 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     2.01 2026-07-10 neural-forge/archive | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     1.96 2026-07-16 neural-forge/dynamic_snapshots | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     1.77 2026-08-13 neural-forge-matrix/wave21 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     1.76 2026-08-13 neural-forge-matrix/wave19 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     1.76 2026-08-28 neural-forge-matrix/wave30 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     1.60 2026-08-11 neural-forge-matrix/wave9 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     1.51 2026-08-13 neural-forge-matrix/wave23 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     1.45 2026-08-12 neural-forge-matrix/wave10 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     1.40 2026-07-16 neural-forge/runs | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     1.32 2026-08-28 neural-forge-matrix/wave34 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     1.16 2026-07-10 neural-forge/trajectory_subset_targetrows_20260710 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     1.12 2026-08-13 neural-forge-matrix/wave22 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     1.09 2026-08-28 neural-forge-matrix/backup | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     1.08 2026-08-28 neural-forge-matrix/wave32 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     0.95 2026-08-28 neural-forge-matrix/wave36 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     0.91 2026-08-28 neural-forge-matrix/wave35 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     0.90 2026-08-29 neural-forge-matrix/wave40 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     0.82 2026-08-12 neural-forge-matrix/wave12 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     0.64 2026-08-29 neural-forge-matrix/wave43 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     0.60 2026-07-10 neural-forge/cross_token_real_medoid_20260710 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     0.58 2026-08-28 neural-forge-matrix/wave33 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     0.50 2026-08-28 neural-forge-matrix/wave37 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     0.49 2026-08-29 neural-forge-matrix/wave38 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     0.37 2026-08-29 neural-forge-matrix/wave41 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     0.37 2026-08-29 neural-forge-matrix/wave42 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     0.29 2026-07-10 neural-forge/qwen_basis_checkpoint_20260710 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     0.20 2026-08-11 neural-forge-matrix/cells | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     0.20 2026-08-29 neural-forge-matrix/wave45 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     0.18 2026-08-29 neural-forge-matrix/wave44 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     0.17 2026-08-11 neural-forge-matrix/wave6 | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     0.03 2026-07-15 neural-forge/audits | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+delete     0.03 2026-08-09 neural-forge-stage2/smoke | nf-experiment | Neural Forge experiment checkpoints / evidence caches
+unsure  1561.00 2026-07-28 models/moonshotai/Kimi-K3 | model | KEEP as the only second copy of a 1.56 TB parent (Lexar is one USB SSD). Revisit only if NAS space is still short after 
+unsure   198.16 2026-06-04 omnicoder_2026/weights_archive | legacy | Dead omnicoder project (pre-campaign). Not in any keep/delete category; recommend owner approves DELETE after recipes+re
+unsure   190.04 2026-02-04 models/film2/hunyuan | model | film2 Hunyuan (190 GB, Feb 2026) - possibly the Gauntlet film pipeline; owner decides.
+unsure   141.86 2026-06-06 omnicoder_2026/local_root_legacy_payloads | legacy | Dead omnicoder project (pre-campaign). Not in any keep/delete category; recommend owner approves DELETE after recipes+re
+unsure    88.88 2026-10-18 models/flash-next-strata/RVN-Qwen3.8-Flash-Next-Abliterated-Uncensored-IQ3_S-Strata | model | Backup copy of a KEEP parent on a second device; recommend KEEP (cheap insurance).
+unsure    55.59 2026-09-01 models/Qwen/Qwen3.8-27B | model | Base of the 27B-Uncensored parent; re-downloadable; recommend DELETE after recording unless a base-vs-U teacher comparis
+unsure    55.58 2026-09-01 models/JonathanColetti/Qwen3.8-27B-Uncensored | model | Backup copy of a KEEP parent on a second device; recommend KEEP (cheap insurance).
+unsure    55.29 2026-06-04 omnicoder_2026/checkpoint_archives | legacy | Dead omnicoder project (pre-campaign). Not in any keep/delete category; recommend owner approves DELETE after recipes+re
+unsure    52.45 2026-05-30 omnicoder_2026/training_runs | legacy | Dead omnicoder project (pre-campaign). Not in any keep/delete category; recommend owner approves DELETE after recipes+re
+unsure    44.04 2026-06-08 omnicoder_2026/checkpoints | legacy | Dead omnicoder project (pre-campaign). Not in any keep/delete category; recommend owner approves DELETE after recipes+re
+unsure    39.07 2026-06-04 omnicoder_2026/root_pressure_archive_20260604T0438Z | legacy | Dead omnicoder project (pre-campaign). Not in any keep/delete category; recommend owner approves DELETE after recipes+re
+unsure    19.33 2026-09-01 models/Qwen/Qwen3.5-9B | model | Not on the keep list and no v2 role named; recommend DELETE after recording (re-downloadable).
+unsure    13.01 2026-01-12 models/comfyui/checkpoints | model | Legacy ComfyUI SD-era models on the NAS (not the production ComfyUI tree); owner decides.
+unsure     9.34 2026-09-01 models/Qwen/Qwen3.5-4B | model | Backup copy of a KEEP parent on a second device; recommend KEEP (cheap insurance).
+unsure     5.80 2026-07-10 hf_cache/models--Paranioar--NEO1_5-2B-SFT | hf-cache | Small public base models (possible v2 proxies); recommend KEEP (small).
+unsure     5.17 2026-05-30 omnicoder_2026/weights | legacy | Dead omnicoder project (pre-campaign). Not in any keep/delete category; recommend owner approves DELETE after recipes+re
+unsure     4.60 2026-05-23 backups/omnicoder_0.1.0-evidence/weights | legacy | Dead omnicoder project (pre-campaign). Not in any keep/delete category; recommend owner approves DELETE after recipes+re
+unsure     3.34 2026-01-12 models/comfyui/animatediff_models | model | Legacy ComfyUI SD-era models on the NAS (not the production ComfyUI tree); owner decides.
+unsure     2.89 2026-01-12 models/comfyui/controlnet | model | Legacy ComfyUI SD-era models on the NAS (not the production ComfyUI tree); owner decides.
+unsure     2.53 2026-01-12 models/comfyui/ipadapter | model | Legacy ComfyUI SD-era models on the NAS (not the production ComfyUI tree); owner decides.
+unsure     1.77 2026-09-01 models/Qwen/Qwen3.5-0.8B | model | Backup copy of a KEEP parent on a second device; recommend KEEP (cheap insurance).
+unsure     0.80 2026-08-10 neural-forge-stage2/corpus | nf-experiment | Neural Forge stage-2 corpus (0.8 GB). Corpora are KEEP by rule even when the experiment is dead; owner decides.
+unsure     0.43 2026-01-12 models/comfyui/insightface | model | Legacy ComfyUI SD-era models on the NAS (not the production ComfyUI tree); owner decides.
+unsure     0.43 2026-06-04 omnicoder_2026/benchmarks | legacy | Dead omnicoder project (pre-campaign). Not in any keep/delete category; recommend owner approves DELETE after recipes+re
+unsure     0.12 2026-05-29 omnicoder_2026/benchmarks_2026 | legacy | Dead omnicoder project (pre-campaign). Not in any keep/delete category; recommend owner approves DELETE after recipes+re
+unsure     0.03 2026-08-09 neural-forge-stage2/calib | nf-experiment | Neural Forge stage-2 calibration data (tiny). Data, not weights; keep with the stage-2 corpus decision.
+unsure     0.02 2026-10-02 backups/ice-cleanup-20261001-selftest/tar | backup | ICE game backup: out of scope, leave.
+unsure     0.02 2026-10-01 backups/ice-cleanup-20261001-selftest/d | backup | ICE game backup: out of scope, leave.
+unsure     0.00 2026-01-12 models/comfyui/upscale_models | model | Legacy ComfyUI SD-era models on the NAS (not the production ComfyUI tree); owner decides.
+unsure     0.00 2026-10-01 backups/ice-agent-simulator-git-20261001/dotgit-cursor | backup | ICE game backup: out of scope, leave.
+keep      19.75 2026-05-19 models/lmstudio/unsloth | model | LM Studio archive (NAS)
+keep      17.48 2026-04-24 models/lmstudio/lmstudio-community | model | LM Studio archive (NAS)
+keep       2.05 2026-04-07 models/lmstudio/DevQuasar | model | LM Studio archive (NAS)
+keep       1.10 2026-08-28 models/lmstudio/JonathanColetti | model | LM Studio archive (NAS)
