@@ -1,6 +1,130 @@
 # Strata host-RAM bound: final design and plan (2026-10-28)
 
-Status: PLAN. Nothing in this document has been applied. The vision lane (Relay 204067 CLAIM / 204072 STATUS) owns strata-llama and strata-gate until it posts DONE or RELEASE; this plan builds on its drop-ins and backups and never reverts them.
+## Outcome (2026-10-29 ~00:45Z): PARTIAL
+
+**In one line:** Strata's host RAM is now bounded and the pinned-slot restore bug is fixed (live since 2026-10-28 21:44:09Z). The disk tier is not on, though, so when a Sprite or Cyril state has been evicted from the 24 GiB RAM cache, the follow-up still re-reads its whole prompt. The disk tier and a preemption fix are built, CPU-tested and staged. They wait for the phase-2 lane (Relay 204110 CLAIM) to release strata-llama and strata-gate.
+
+### What changed (live)
+- **strata-llama** runs `/home/cereal/omni-campaign/export/llamacpp-pcache/bin` (xcache + cacheslots + pcache-disk patches) via the drop-in `/etc/systemd/system/strata-llama.service.d/z-ramcap.conf` (sha256 19e26408...):
+  - `--cache-ram 24576` (was 49152).
+  - Background requests are never stored in the prompt cache and never evict a cached entry (the gate sets `cache_store none` on them).
+  - An empty pinned slot now loads from the RAM cache. The old build gave `cache_n` 0; the new build restores the full prompt.
+  - `UMask=0077` and `MemorySwapMax=0`. The swap cap stops new swap-outs; it does not pull back pages that are already in swap.
+  - Unchanged: 256k context (`n_ctx` 262,144 on all 6 slots), `-np 6`, no output cap (`n_predict -1`).
+- **strata-gate 1.4.1** with `kv_tier.py` and the drop-in `strata-gate.service.d/kvtier.conf` (sha 99b7280d...). It sets `cache_store`/`cache_tag` on each request, strips any cache fields a client sends, and skips prefetch while llama reports `disk.on false`.
+- `capture_admin.py` 1.3.0 (`delete-member` also calls `/prompt-cache/delete`), `strata_llama.sh` 1.5.0, `strata_ram.sh` 1.0.1.
+- The vision lane's `vision.conf` drop-ins are kept, not reverted.
+- **Installed but not used yet:** `strata-kv-store.service` (`/usr/local/sbin/strata_kv_store.sh`). It builds this chain:
+  - a 24 GiB image on the Lexar, `/mnt/lexar/omni-campaign/strata-kv-store/store.img`;
+  - a loop device with direct I/O;
+  - dm-crypt aes-xts with a fresh random key at every start, held only in the kernel;
+  - a fresh ext4 at `/mnt/strata-kv` (nosuid/nodev/noexec), with `pcache/` as cereal 0700.
+
+  Stopping the unit or rebooting erases every state on it. The chain exists because the Lexar is exFAT and cannot hold 0700/0600 files.
+- **Code:** `autonomouscereal/chimera-omni`, branch `claude/strata-ram-20261028`, pushed to GitHub. Phase 1 is commits 934afef and fa5848b; the fix pass is 20afbd9 and 1677f0e.
+
+### Before / after (through the gate, cyril tier, medians of 3)
+The host was busier during BEFORE (loadavg ~18-24 vs ~11), so most of the speed difference comes from host load, not the change. Speed regressions are report-only, per Cyril (relayed in 204097).
+
+| Speed | Before (old build, 48 GiB cache) | After (new build, 24 GiB cache) |
+|---|---|---|
+| short write | 18.5 tok/s | 26.2 tok/s |
+| write at 83.5k ctx | 11.7 tok/s | 11.5 tok/s |
+| prompt read 10.7k / 83.5k / 193k | 188 / 203 / 142 tok/s | 271 / 203 / 151 tok/s |
+| warm follow-up TTFT 10.7k / 83.5k / 193k (restored) | 1.29 / 1.31 / 1.92 s | 1.05 / 1.75 / 1.98 s |
+| pinned follow-up after another slot launched | 40.2 s TTFT, `cache_n` 0 (2 of 3 re-read) | 1.54 s, `cache_n` 10,694 (3 of 3); at 83.5k: 2.6 s, 83,578 restored |
+| cold read 8.8k (verifier) | not measured | 28.6 s (thinking off) / 34.9 s (thinking on) |
+
+| RAM | Before | After |
+|---|---|---|
+| MemAvailable | 21.5 GiB, swap full | 127 GiB right after restart; 85-94 GiB with media's h3sol running (verifier minimum 85.0) |
+| llama-server RssAnon / VmSwap | 77.4 / 6.0 GiB | 30.3 / 0 after restart; 41.9-53.3 / 3.8-5.5 after the bench and the verifier's cache fill |
+| RssAnon + VmSwap minus cache bytes | not measured | flat at 29.8 GiB across a full cache fill (29.77 -> 29.80) |
+| prompt cache max | 48 GiB, refilled ~70 min after each restart | peak 23.92 GiB vs the 24.00 cap; never went over |
+| VRAM GPU0 / GPU6 | 23.8 / 45.0 GiB | 23.4-23.8 / 44.6-45.0 GiB |
+
+Snapshot now (2026-10-29 00:44Z): MemAvailable 23.1 GiB, swap free 2.0 of 8 GiB, llama RssAnon 50.9 GiB, VmSwap 3.6 GiB. MemAvailable is low because media-gate's qwen21 ComfyUI on GPU4 holds ~87 GiB, not because of Strata. strata-gate was "deactivating" at that moment, which is the phase-2 lane's work.
+
+### How a Sprite follow-up behaves now
+- **State still in the 24 GiB RAM cache, including a pinned slot that another request took over:** it is restored. TTFT is ~1.0-2.6 s up to 83.5k and ~2 s at 193k. Greedy output matched a fresh run in 4 of 4 runs.
+- **State evicted from RAM:** it is dropped, because the disk tier is off (`evict_total` equals `evict_dropped_total`). The follow-up re-reads its whole prompt: ~29-35 s at 8.8k, minutes at 66k and above.
+  - The cache is half its old size, but background no longer churns it, so only foreground entries compete for the space.
+  - For evicted conversations this does NOT yet meet the Sprite rule that a follow-up restores instead of re-reading.
+- **Preemption** works but takes seconds, not ms: 1.8-7.4 s from preempt until the slot is free, and one case over 10 s. That is about the same as before the change (1.4-6.0 s).
+  - Cause: `server_response::recv_with_timeout` restarted its 1 s timeout on every token notify, so llama did not notice a closed stream until that request's own first token.
+  - Fixed in `strata-preempt.patch`, which is not deployed.
+  - Even with the fix, the batch already running finishes first, so expect ~2.5-4 s at `-ub 1024`.
+
+### What is bounded, and by what
+- **Prompt cache:** bounded by `--cache-ram 24576`. llama evicts before it allocates and skips any entry larger than the cap. Verified at 23.92 of 24.00 GiB.
+- **Background:** cannot enter or evict the cache, because the gate sets `cache_store none`. Verified: `store_none` rose from 189 to 203 with 0 background evictions.
+  - This depends on `kvtier.conf`. If that file is removed while the pcache build runs, llama's default store applies and background churns the cache again.
+- **Swap:** `MemorySwapMax=0` blocks new swap-outs. The 3.6-5.5 GiB already in swap stays there until a restart or until those pages are touched.
+- **Not bounded:** strata-llama has no cgroup `memory.max` or `memory.high`. The bound comes only from `--cache-ram` plus checkpoint counts. With swap capped, llama-server is the OOM killer's natural target under host pressure.
+- **Expected total:** ~131 GiB typical, ~151 GiB worst case:
+  - experts 71.7
+  - n-gram ~27
+  - cache <= 24
+  - checkpoints
+  - mmproj ~1
+
+  Measured anon outside the cache: ~30 GiB.
+
+### Rolled back / not done
+- **Rolled back:** at 00:31:58Z, after phase 2's claim, the fix-pass drop-ins were staged and daemon-reload ran. No service restarted. At 00:57Z the exact phase-1 files were put back (sha-checked), again with no restart. Backup: `/home/cereal/ai-serve/backups/strata-ram-20261029T0031Z/`.
+- **Not done:**
+  - enabling the disk tier;
+  - the eviction -> disk-restore test;
+  - the RAM-vs-disk greedy-equality test on the production model;
+  - deploying the preempt patch;
+  - testing the `strata_ram.sh` 1.1.0 rollback;
+  - `vm.swappiness=10`, which needs Cyril;
+  - the 24 h soak;
+  - experts-to-mmap, which is a contingency only.
+
+### Open items
+1. Wait for phase 2 (204110) to post DONE or RELEASE, plus 15 quiet minutes. Then rebuild `strata-preempt.patch` on top of phase 2's `llamacpp-tier` tree (`git apply --check` already passes).
+2. Apply the staged drop-ins from `/home/cereal/ai-serve/work/strata-ram-fix-20261029/stage/` with one strata-llama restart and one strata-gate restart in a quiet window.
+   - `z-ramcap.conf`: Wants/After strata-kv-store, `STRATA_PCACHE_DIR=/mnt/strata-kv/pcache`, max 22 GiB, min free 0.5 GiB.
+   - `kvtier.conf`: MIN_TOKENS 1024.
+3. Run three checks, in order:
+   - `vfy_fix.py disk`: evict -> disk restore with greedy equality, size and file bounds, 0700/0600 permissions, per-tag delete;
+   - `vfy_fix.py preempt`: 6 probes under real background load;
+   - the swap check: VmSwap 0 after the restart.
+4. Re-run the CPU preempt smoke with the corrected bound (commit 1677f0e). The last run took 2.904 s against the old flat 2.0 s bound.
+5. Test the `strata_ram.sh` 1.1.0 rollback. It has only passed a syntax check.
+6. For Cyril: `vm.swappiness=10`, and whether to add a cgroup `memory.high` on strata-llama.
+7. Other lanes:
+   - Capture export is probably broken: `gen_worker_text.py` no longer defines `MODEL_ID`, which `capture_export.py:539` reads (Relay 204101).
+   - Xid 31 on GPU0 at 21:37:19Z on the rolled-back old build. The current build shares its code base. It is the only Xid since 11:00Z.
+8. Run the 24 h soak with hourly `service_event` `kv_soak` rows, then decide between a 24 and a 32 GiB cache.
+
+### Rollback
+- **Full rollback to the pre-change stack:** post on Relay first, then in a quiet window run `/home/cereal/ai-serve/strata/strata_ram.sh rollback`. It works from `/home/cereal/ai-serve/backups/strata-ram-20261028T2120Z/` (MANIFEST):
+  - sha-checks every file;
+  - removes `z-ramcap.conf` and `kvtier.conf`;
+  - restores gate 1.3.0 (`q4kxl.conf` still sets 49152 and `llamacpp-xcache/bin`);
+  - runs daemon-reload and restarts both services;
+  - deletes the cache files again once the old build is running.
+
+  Tested 21:31-21:37Z: it printed "every file matches MANIFEST" and the stack was healthy. Re-applied 21:39-21:44Z.
+- **Swap cap only:** remove the `MemorySwapMax=0` line from `z-ramcap.conf`, then run `systemctl daemon-reload` and `systemctl set-property --runtime strata-llama MemorySwapMax=infinity`. No restart is needed; this was tested live.
+- **Do not** remove `kvtier.conf` on its own while the pcache build runs, or background will enter the cache.
+- **kv store:** `systemctl stop strata-kv-store` erases every disk state. `strata_ram.sh` 1.1.0 covers the store once it is tested.
+
+**Evidence:**
+- `/home/cereal/ai-serve/evidence/strata-ram-20261028/` (phase 0 and the bench)
+- `/home/cereal/ai-serve/work/strata-ram-20261028/vfy/run1.jsonl` and `run2.jsonl`
+- `/home/cereal/ai-serve/work/strata-ram-fix-20261029/smoke_preempt.log`
+- CPU smoke 14/14 for `llamacpp-pcache`
+- Runbook sections 12 and 12.1
+
+**Relay:** 204084 (claim); f917bafc, 006d14fa, f0f1e668, 95f58a58 (phase-1 posts, ending in the RELEASE); 204101; 204111 (fix CLAIM); 204114 (YIELD).
+
+---
+
+
+Status at the time the plan was written: PLAN, nothing applied. The Outcome section above says what was applied later. The vision lane (Relay 204067 CLAIM / 204072 STATUS) owns strata-llama and strata-gate until it posts DONE or RELEASE; this plan builds on its drop-ins and backups and never reverts them.
 
 Supersedes `STRATA_RAM_2026-10-28.md.draft.md` (same directory). Changes from the draft are driven by the critic review; section 11 lists every critic finding with applied / rejected and the reason.
 
