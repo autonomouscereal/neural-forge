@@ -134,7 +134,7 @@ The comparison of the S0 parent import, OMNI1 and the full-KD run-1 student on b
 - **No media suites can run through the runner yet.** Media evals exist only as ingested S8 results (`s8_media_smoke`, `s8_qvl_describe`).
 - **No cron is installed.** Ingest is run by hand. No existing training job calls `log-run` yet, so new runs appear only after an `ingest`.
 - **Not ingested:** Codex sessions (`.codex/sessions`).
-- **Folding record not loaded yet.** Migration 0007 is applied (2026-10-22) but the foldrec shards are still being extracted; `fold_arm` and its tables are empty until `ingest foldrec` runs. Until then the Neural Forge history in the database is only `foldhist` (43 summary rows) and `fold_receipts`.
+- **Folding record is a snapshot.** `inventory/2026-10-22-foldrec` (86 shards) was loaded on 2026-10-28 (batches 272 + 273: 7,895 arms; see that folder's README). The shard files are not in git; a new extraction pass needs a re-run of `ingest foldrec`.
 - **GPU mapping is approximate for status-line runs.** GPU indices from status lines are mapped through today's `nvidia-smi` order (`run_device.detail.mapping = 'index-from-status'`).
 
 ## Ingesters: models and runs
@@ -238,9 +238,12 @@ Rules the ingester applies:
   `OC01-F-Q35-4B-*` foldhist rows) attaches to that row, and the other ingester's columns are left as they were.
   Technique names match case- and space-insensitively; unknown names become new `technique` rows.
 - **Directives.** A Cyril quote is written to `directive` only after it is found in its source (a user-prompt
-  event, or the cited file; `...` quotes are checked fragment by fragment, in order). It is skipped when a
-  directive from another ingester already contains it, or when it is part of a longer foldrec quote. Keys
-  follow `ingest/directives.py`, so the same words are never stored twice.
+  event, or the cited file). The whole quote is matched first, because Cyril writes `....` himself; only a
+  quote that is not in the source whole is checked fragment by fragment on `...`, in order. It is skipped
+  when a directive from another ingester already contains it, when another ingester already holds its key
+  (`key-taken`), or when it is part of a longer foldrec quote. Keys follow `ingest/directives.py`, so the same
+  words are never stored twice. foldrec's own directive rows that no shard wants any more are deleted on the
+  next run, unless a ruling, a superseding directive or an arch_requirement names them.
 - **Refusals.** A shard that is not valid `foldrec-v1` JSON, or that reuses another shard's name, makes the ingest
   refuse. An enum value outside the format becomes NULL (`other` for a component kind), and the raw value stays
   in `record` and on the batch notes.
