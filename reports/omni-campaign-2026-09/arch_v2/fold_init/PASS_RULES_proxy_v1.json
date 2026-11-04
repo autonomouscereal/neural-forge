@@ -1,0 +1,44 @@
+{
+ "schema": "v2-fold-proxy-pass-rules-v1",
+ "registered": "2026-10-22, before the first GPU fold run it judges (pre-registration; a changed rule is a new file, a new review run and a new suite version)",
+ "plan": "V2_FOLD_INIT_PLAN_2026-10-21.md section 8 (proxy subset) and section 10",
+ "ruling": "cyril-v2-arch-and-fold-init-2026-10-21",
+ "subject": "c21_v2_fold 1.0.0: the run-1 full-KD student T (/mnt/lexar/omni-campaign/distill/fullkd/run1/out/student) folded into the co2-fold-proxy profile (16 layers, width 512, 191,337,601 params), arm F-T, tie=head, global c20 chart. K3 form-E term, media units and the raw boundary / x0 head are NOT in this build (zero placeholders) and are not judged.",
+ "what_a_pass_means": "the fold-init MECHANICS carry the source's knowledge into a v2-geometry checkpoint; it is not a candidate base and not a folding-progress claim beyond the per-component compression the receipt verifies",
+ "R0": {
+  "kind": "functional gate",
+  "rule": "the child loads sha-verified through load_chimera_checkpoint, its config validates, every tensor is finite, its parameter count equals the profile's meta build (191,337,601), the c21 receipt names a fold method for every parameter (methods within c21.FOLD_METHODS), copy_methods == 0, four_x_rule == 'enforced', and every selection component (mixer head selection, FFN union coreset) has compression >= 4.0 computed from tensor shapes"
+ },
+ "R1": {
+  "kind": "behaviour gate for this mechanics validation (likelihood of real held text; NOT a token match against any teacher, NOT a pruning gate for any mechanism)",
+  "data": "omni-evidence-27b-v1 qwen_input_ids.safetensors held rows (split 1: rows 3, 7, 11, 15, 19, 23; never fitted, never used for lambda selection)",
+  "metric": "teacher-forced next-token NLL per token over each held row, ledger band masked",
+  "rule": "child token-weighted mean NLL < random-init control mean AND < embed-only control mean, AND the child is below BOTH controls on at least min_rows_below_both of the 6 held rows",
+  "min_rows_below_both": 5
+ },
+ "R2": {
+  "kind": "behaviour gate, reader-graded (collapse-only bar, Cyril's artifact-tolerant read: loops, missing EOS and cap-rides never count against content)",
+  "prompts": "the 3 sealed smoke prompts (matrix_campaign_smoke_prompts_v1.json, prompt_set_sha256 2d7c7f7d5f3d759ace9572db17d5c945b8a727e9c2db18c936b027e3bdaa89d4) through the tokenizer's chat template with thinking off, plus a raw continuation of the first held_prefix_tokens tokens of each of the 6 held rows",
+  "new_tokens": 48,
+  "held_prefix_tokens": 32,
+  "decoding": "greedy, ledger band masked",
+  "rule": "PASS if at least 2 of the 9 child continuations are graded on-topic language (grade correct or partial) outside loop/termination artifacts; both controls are decoded and graded with the same grader and recorded",
+  "grader": "reader.collapse_only (first read by Claude, recorded as human:claude; Cyril's grade, when given, wins in v_effective_grade)",
+  "machine_prescreen": "distinct-token ratio, 4-gram loop flag, letter fraction: recorded, never a grade"
+ },
+ "controls": {
+  "random_init_seed": 0,
+  "random_init": "ChimeraOmniModel(co2-fold-proxy) with the module's own initialisation under torch.manual_seed(0)",
+  "embed_only": "the child with every block's mixer.out and ffn.down zeroed (the folded vocabulary and norms only)",
+  "placement_control": "not built: the ruling forbids placing an existing model, and building one for comparison would put it on disk"
+ },
+ "diagnostics_only": [
+  "every fit / held relL2 of every ridge, the update scales and lambda ladder",
+  "period-end stream divergence (relL2, cos) of the v2 stream against alpha . h . C",
+  "the chart's retained energy, per source layer",
+  "the stream scale alpha and the input-side cosine of the tied rows",
+  "the source trunk's own held NLL (reference column)",
+  "the machine pre-screen of decoded text"
+ ],
+ "verdict": "R0 and R1 and R2 all pass = the proxy fold validates the mechanics; any fail is reported with its numbers and the rules stay as written"
+}
