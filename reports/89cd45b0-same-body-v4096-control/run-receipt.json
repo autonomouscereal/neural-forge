@@ -1,0 +1,130 @@
+{
+  "blank_target": {
+    "all_parameters_zero": true,
+    "blank_state_fingerprint": "d397d471fcc8346085abed81192aeda99b18ac243bbf876202177eab6f1b51ee",
+    "compiler_created_blank": true,
+    "dense_materialized_parameters": true,
+    "frontier_fingerprint": "8b34c15a7e15bf789f7f204a43daa8e1f5f8517aaa0f9b608e00ea5d8f544fc5",
+    "parent_graph_fingerprint": "c192270bcf269eb300beb8f670cabf2b25b90ce62de0aa42eff1965d9b3123e4",
+    "parent_state_fingerprint": "7a4bc29edb9a4dfca9bdfaa507a36b2bc4c0cd81e2145d483221656686166665",
+    "parent_state_preserved": true,
+    "parent_unique_parameters": 229693184,
+    "pruning_used": false,
+    "quantization_used": false,
+    "realized_compression_ratio": 1.3772339553538948,
+    "report_sha256": "07adf5a4bfcbcfc404078399bfd6eb474ea09f28149571a0288d5a740c4248f4",
+    "requested_budget": {
+      "compression_ratio": null,
+      "kind": "budget_request",
+      "match_policy": "exact",
+      "maximum_candidates": 64,
+      "schema": "neural-forge-dense-parameter-frontier-v1",
+      "target_family": "lfm2",
+      "target_modalities": [
+        "text"
+      ],
+      "target_unique_parameters": 166778624,
+      "target_vocabulary_size": 4096
+    },
+    "schema": "neural-forge-lfm2-cpcf-blank-target-v1",
+    "selected_candidate_fingerprint": "0362125baebe550dfed4b76cb16570a9dd9ba271fe1fcc155bf9e631ab3a3e79",
+    "selected_candidate_rank": 0,
+    "target_certificate_sha256": "280327a7c7518b10bc1c96e5ce66f7a155ff62daf065c7e258cac29e1ef977d4",
+    "target_plan_fingerprint": "9eff370d82f69dec67914864a252463bf3fdbaeddfe20b478065059a1d4d1b5d",
+    "target_topology_fingerprint": "e28352adf27f25ea440e2223f336f71ac8e7f911cbb68def682c02ba2a167bc4",
+    "target_unique_parameters": 166778624,
+    "topology_provenance_verified": true,
+    "training_used": false,
+    "weights_installed": false
+  },
+  "bridge_artifact_sha256": "5c1a452cbe6bb78cb0c346bc9ca5d784200aad0b8848847e559cd62fe4852384",
+  "bridge_directory": "/home/cereal/model-surgery-lab/artifacts/lfm2_tokenizer_bridges_20260717/v4096_modelcap_v2",
+  "bridge_profile_sha256": "e3fc98c666b70b367962e400435afe7588a9f1a2b13619dffc6f40c6458c5ca1",
+  "checkpoint": "/home/cereal/model-surgery-lab/artifacts/lfm2_bridge_only_control_20260723/89cd45b0/same-body-v4096-p40-gpu1-a0001/checkpoint",
+  "checkpoint_artifact_inventory": [
+    {
+      "relative_path": "chat_template.jinja",
+      "sha256": "6d65c8804847ad74eea912dd7eca3dc1cf7a457b53a77f47d841a14121910963",
+      "size_bytes": 4621
+    },
+    {
+      "relative_path": "config.json",
+      "sha256": "964c33e1e16e32c59275c7ed33696d941946646c60fd4b298e050ae2b0476f99",
+      "size_bytes": 2405
+    },
+    {
+      "relative_path": "generation_config.json",
+      "sha256": "e5d463cc8c503e86ef4d742ebda48fbdd785243891ca63ae9cc2b3134b511abd",
+      "size_bytes": 183
+    },
+    {
+      "relative_path": "model.safetensors",
+      "sha256": "014be65e3e1b979b4c9b0da580fa92f025bdcbc79107ccf62621aa3fffd29840",
+      "size_bytes": 333571920
+    },
+    {
+      "relative_path": "neural_forge_tokenizer_bridge_reference.json",
+      "sha256": "36882dc696103928deb9d7ae2c6167da7f8d7b3af8ec35c0c0199797c95c1c36",
+      "size_bytes": 596
+    },
+    {
+      "relative_path": "tokenizer.json",
+      "sha256": "911cacda29c423284b1d798b7bedbd8a3308d6d4cdc29e983b85aeae9ed94fc2",
+      "size_bytes": 342410
+    },
+    {
+      "relative_path": "tokenizer_config.json",
+      "sha256": "269702af459064d14e48cb2359c4e0045c57cb55ed3b469df766eb2176e843c1",
+      "size_bytes": 314
+    }
+  ],
+  "checkpoint_artifact_inventory_sha256": "41007288f9a1a7b9dcdf96b4d1d39a1eeec416c46fb928b5bb2cc35ea9cbf8b2",
+  "decoded_whole_responses_are_primary_evidence": true,
+  "diagnostic_role": "isolates-v4096-token-bridge-and-native-tied-readout-from-body-folding",
+  "fold_receipt": "/home/cereal/model-surgery-lab/artifacts/lfm2_bridge_only_control_20260723/89cd45b0/same-body-v4096-p40-gpu1-a0001/fold-receipt.json",
+  "fold_receipt_sha256": "00a573609cb7666e60e665b26eba6d5cf636fc5daa9166742a37b913e8140d28",
+  "fresh_reload_model_state_sha256": "3b9f2f7dc2451b2df910e76b8efdb40159beb9690a02059e39bcd48b7899266e",
+  "frontier_run_receipt": "/home/cereal/model-surgery-lab/artifacts/lfm2_bridge_only_control_20260723/89cd45b0/same-body-v4096-p40-gpu1-a0001/frontier-run.json",
+  "frontier_run_sha256": "f505fb9afcf6b4c70311f746596a315de1bf13b71dbefe9f3082ff25aaf3e3b2",
+  "installed_model_state_sha256": "3b9f2f7dc2451b2df910e76b8efdb40159beb9690a02059e39bcd48b7899266e",
+  "maximum_new_tokens": 256,
+  "maximum_prompt_tokens": 1024,
+  "numeric_or_binary_behavior_gate_used": false,
+  "operation_audit": {
+    "autograd_grad_calls": 0,
+    "backward_calls": 0,
+    "child_generate_calls": 16,
+    "external_adapter_parameters": 0,
+    "network_access": false,
+    "optimizer_constructions": 0,
+    "optimizer_steps": 0,
+    "parameters_pruned": 0,
+    "parameters_quantized": 0,
+    "parameters_sparsified": 0,
+    "parent_forward_calls": 0,
+    "parent_generate_calls": 0,
+    "parent_sidecar_parameters": 0,
+    "parent_trace_recaptures": 0,
+    "runtime_shared_parent_parameters": 0,
+    "training_steps": 0
+  },
+  "parent_identity_sha256": "96a6779d927a8aca826b26147eca9f7bab2c1c207d762cd7e98a52c55e6be3eb",
+  "parent_model_directory": "/home/cereal/model-surgery-lab/models/LFM2.5-230M",
+  "parent_sidecar_required": false,
+  "parent_unique_parameters": 229693184,
+  "prompt_count": 16,
+  "prompt_set_sha256": "5615b9e4cee0727a9c35c0da08ac770541941d42077e9c50ac1d2a03fea9d741",
+  "realized_parameter_compaction_ratio": 1.3772339553538948,
+  "result_sha256": "97bd351fc4820c3ef23530238262e493c8eee02587b0c7d31393db9a5a7cd250",
+  "run_directory": "/home/cereal/model-surgery-lab/artifacts/lfm2_bridge_only_control_20260723/89cd45b0/same-body-v4096-p40-gpu1-a0001",
+  "schema": "neural-forge-lfm2-bridge-only-control-run-v1",
+  "sealed_parent_cache_reused_without_recapture": true,
+  "standalone_fresh_reload_verified": true,
+  "status": "standalone-bridge-only-child-reviewed",
+  "target_tokenizer_semantics_sha256": "cffb809c40ddd3382131a8ed8b1b8536457da4e46dfced85dff5669fb6d73342",
+  "target_unique_parameters": 166778624,
+  "trace_cache_directory": "/home/cereal/model-surgery-lab/artifacts/lfm2_complete_causal_evidence_20260720_a0003/parent/dd9efbe218b4e6e20c3fd60e56d1d5b72165ca61bcd46794e15b0aded3b9361b",
+  "trace_cache_key": "dd9efbe218b4e6e20c3fd60e56d1d5b72165ca61bcd46794e15b0aded3b9361b",
+  "whole_response_dossier": "/home/cereal/model-surgery-lab/artifacts/lfm2_bridge_only_control_20260723/89cd45b0/same-body-v4096-p40-gpu1-a0001/whole-response-dossier.json",
+  "whole_response_dossier_sha256": "fdc27135ac7a581dc6ba4d91d1f476cd7420840ebc79267a9c6e8e729055cb4b"
+}

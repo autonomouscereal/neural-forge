@@ -121,6 +121,13 @@ class Lfm2DynamicStackResources:
     snapshot_config: DynamicFoldSnapshotConfig | None = None
     dense_fold_config: Any | None = None
     sparse_feature_fold_bundle: Lfm2SparseFeatureFoldBundle | None = None
+    sparse_feature_fold_bundle_builder: (
+        Callable[
+            [Lfm2DenseBudgetedSelectedTarget, DynamicTargetSynthesisResult],
+            Lfm2SparseFeatureFoldBundle,
+        ]
+        | None
+    ) = None
     residual_basis_phase_cache_context: (
         Lfm2BalancedBasisPhaseCacheContext | None
     ) = None
@@ -279,6 +286,40 @@ class Lfm2DynamicStackResources:
             ):
                 raise DynamicLfm2AdapterError(
                     "dense_fold_config has the wrong type."
+                )
+        if (
+            self.sparse_feature_fold_bundle is not None
+            and self.sparse_feature_fold_bundle_builder is not None
+        ):
+            raise DynamicLfm2AdapterError(
+                "sparse_feature_fold_bundle and its target-aware builder are "
+                "mutually exclusive."
+            )
+        if self.sparse_feature_fold_bundle_builder is not None:
+            try:
+                from .hf_lfm2_t5_sparse_feature_fold_builder import (
+                    Lfm2AuthenticatedT5SparseFeatureFoldBuilder,
+                )
+            except ImportError as exc:  # pragma: no cover - optional dependency
+                raise DynamicLfm2AdapterError(
+                    "The authenticated T5 sparse-feature builder is unavailable."
+                ) from exc
+            if type(self.sparse_feature_fold_bundle_builder) is not (
+                Lfm2AuthenticatedT5SparseFeatureFoldBuilder
+            ):
+                raise DynamicLfm2AdapterError(
+                    "sparse_feature_fold_bundle_builder must be the exact "
+                    "authenticated T5 builder or None."
+                )
+            try:
+                authenticated_builder = self.sparse_feature_fold_bundle_builder.verify()
+            except Exception as exc:
+                raise DynamicLfm2AdapterError(
+                    "sparse_feature_fold_bundle_builder failed authentication."
+                ) from exc
+            if authenticated_builder is not self.sparse_feature_fold_bundle_builder:
+                raise DynamicLfm2AdapterError(
+                    "sparse_feature_fold_bundle_builder changed during verification."
                 )
         if self.sparse_feature_fold_bundle is not None:
             try:
@@ -681,6 +722,10 @@ class Lfm2DynamicFoldStackAdapter:
         self._dense_cache_verification_lease: Lfm2DenseCacheVerificationLease | None = (
             None
         )
+        self._dense_sparse_feature_fold_bundle_memo_key: str | None = None
+        self._dense_sparse_feature_fold_bundle_memo: (
+            Lfm2SparseFeatureFoldBundle | None
+        ) = None
 
     def _dense_parent_cache_lease(
         self,
@@ -823,21 +868,116 @@ class Lfm2DynamicFoldStackAdapter:
                 verification_lease.verify(trace_cache)
         return trace_cache
 
+    def _authenticate_dense_sparse_feature_resource_without_solving(
+        self,
+        selected: Lfm2DenseBudgetedSelectedTarget,
+    ) -> tuple[Any, Any, str | None]:
+        """Authenticate resource shape and live builder bindings without solving."""
+
+        bundle = self.resources.sparse_feature_fold_bundle
+        builder = self.resources.sparse_feature_fold_bundle_builder
+        if bundle is not None and builder is not None:
+            raise DynamicLfm2AdapterError(
+                "Dense sparse-feature static bundle and builder are mutually exclusive."
+            )
+        if builder is None:
+            return bundle, None, None
+        try:
+            from .hf_lfm2_t5_sparse_feature_fold_builder import (
+                Lfm2AuthenticatedT5SparseFeatureFoldBuilder,
+            )
+        except ImportError as exc:  # pragma: no cover - optional dependency
+            raise DynamicLfm2AdapterError(
+                "The authenticated T5 sparse-feature builder is unavailable."
+            ) from exc
+        if type(builder) is not Lfm2AuthenticatedT5SparseFeatureFoldBuilder:
+            raise DynamicLfm2AdapterError(
+                "Target-aware sparse-feature builder lost its exact type."
+            )
+        try:
+            if builder.verify() is not builder:
+                raise DynamicLfm2AdapterError(
+                    "Target-aware sparse-feature builder changed during verification."
+                )
+            builder_binding_sha256 = builder.builder_binding_sha256
+        except DynamicLfm2AdapterError:
+            raise
+        except Exception as exc:
+            raise DynamicLfm2AdapterError(
+                "Target-aware sparse-feature builder failed reauthentication."
+            ) from exc
+        if (
+            fingerprint_model_state(builder.parent_model)
+            != selected.source_state_fingerprint
+            or builder.source_graph.fingerprint != selected.source_graph_fingerprint
+            or builder.evidence_authority.cache.cache_key
+            != self.resources.parent_cache_fingerprint
+        ):
+            raise DynamicLfm2AdapterError(
+                "Target-aware sparse-feature builder differs from the selected "
+                "live parent or stack cache."
+            )
+        if self._dense_evidence_set() is not None:
+            raise DynamicLfm2AdapterError(
+                "Target-aware sparse-feature construction does not admit "
+                "merged/on-policy evidence."
+            )
+        return None, builder, builder_binding_sha256
+
     def _dense_sparse_feature_fold_bundle(
         self,
         selected: Lfm2DenseBudgetedSelectedTarget,
         target: DynamicTargetSynthesisResult,
     ) -> Lfm2SparseFeatureFoldBundle | None:
-        """Reauthenticate one optional compile-time bundle for this exact target."""
+        """Resolve once, then reauthenticate a bundle for this exact target."""
 
-        bundle = self.resources.sparse_feature_fold_bundle
-        if bundle is None:
+        (
+            bundle,
+            builder,
+            builder_binding_sha256,
+        ) = self._authenticate_dense_sparse_feature_resource_without_solving(selected)
+        if bundle is None and builder is None:
             return None
+        memo_key = canonical_sha256(
+            {
+                "schema": "neural-forge-lfm2-sparse-feature-builder-memo-v1",
+                "source_graph_sha256": selected.source_graph_fingerprint,
+                "source_state_sha256": selected.source_state_fingerprint,
+                "parent_cache_sha256": self.resources.parent_cache_fingerprint,
+                "target_graph_sha256": target.graph.fingerprint,
+                "target_topology_sha256": target.topology_fingerprint,
+                "target_blank_state_sha256": target.blank_state_fingerprint,
+                "component_allocation_receipt_sha256": (
+                    selected.component_allocation_receipt_sha256
+                ),
+                "component_allocation_topology_sha256": (
+                    selected.component_allocation_topology_sha256
+                ),
+                "builder_binding_sha256": builder_binding_sha256,
+            }
+        )
+        if builder is not None:
+            if self._dense_sparse_feature_fold_bundle_memo_key == memo_key:
+                bundle = self._dense_sparse_feature_fold_bundle_memo
+            else:
+                try:
+                    bundle = builder(selected, target)
+                except DynamicLfm2AdapterError:
+                    raise
+                except Exception as exc:
+                    raise DynamicLfm2AdapterError(
+                        "Target-aware sparse-feature bundle construction failed."
+                    ) from exc
         try:
             from .hf_lfm2_sparse_feature_fold_bundle import (
+                Lfm2SparseFeatureFoldBundle,
                 Lfm2SparseFeatureFoldBundleError,
             )
 
+            if not isinstance(bundle, Lfm2SparseFeatureFoldBundle):
+                raise DynamicLfm2AdapterError(
+                    "Dense sparse-feature builder returned the wrong type."
+                )
             authenticated = bundle.verify()
         except Lfm2SparseFeatureFoldBundleError as exc:
             raise DynamicLfm2AdapterError(
@@ -869,6 +1009,69 @@ class Lfm2DynamicFoldStackAdapter:
                 "Dense sparse-feature bundle evidence cache differs from the "
                 "stack parent cache."
             )
+        source_artifacts = authenticated.provenance.get("source_artifact_sha256s")
+        try:
+            from .hf_lfm2_t5_sparse_feature_fold_builder import (
+                _authenticate_live_lfm2_topology,
+                _canonical_runtime_receipt_sha256,
+                _internal_runtime_semantics_sha256,
+            )
+
+            canonical_runtime_receipt_sha256 = _canonical_runtime_receipt_sha256()
+            target_live_layer_topology = _authenticate_live_lfm2_topology(
+                model=target.model,
+                graph=target.graph,
+                label="dense sparse-feature target",
+            )
+            target_runtime_semantics_sha256 = _internal_runtime_semantics_sha256(
+                target.model,
+                "dense sparse-feature target",
+            )
+        except Exception as exc:
+            raise DynamicLfm2AdapterError(
+                "Dense sparse-feature target failed live runtime authentication."
+            ) from exc
+        if (
+            not isinstance(source_artifacts, Mapping)
+            or source_artifacts.get("target_blank_state")
+            != target.blank_state_fingerprint
+            or source_artifacts.get("target_topology") != target.topology_fingerprint
+            or source_artifacts.get("target_live_layer_topology")
+            != target_live_layer_topology[0]
+            or source_artifacts.get("target_live_layer_topology_document")
+            != target_live_layer_topology[1]
+            or source_artifacts.get("target_runtime_semantics")
+            != target_runtime_semantics_sha256
+            or source_artifacts.get("canonical_runtime_receipt")
+            != canonical_runtime_receipt_sha256
+        ):
+            raise DynamicLfm2AdapterError(
+                "Dense sparse-feature bundle differs from the compiler blank or "
+                "target topology."
+            )
+        if builder is not None:
+            try:
+                if builder.verify() is not builder:
+                    raise DynamicLfm2AdapterError(
+                        "Target-aware sparse-feature builder changed after construction."
+                    )
+                if (
+                    builder.builder_binding_sha256 != builder_binding_sha256
+                    or fingerprint_model_state(builder.parent_model)
+                    != selected.source_state_fingerprint
+                ):
+                    raise DynamicLfm2AdapterError(
+                        "Target-aware sparse-feature builder binding changed after "
+                        "construction."
+                    )
+            except DynamicLfm2AdapterError:
+                raise
+            except Exception as exc:
+                raise DynamicLfm2AdapterError(
+                    "Target-aware sparse-feature builder changed after construction."
+                ) from exc
+            self._dense_sparse_feature_fold_bundle_memo_key = memo_key
+            self._dense_sparse_feature_fold_bundle_memo = authenticated
         return authenticated
 
     def _dense_tokenizer_bridge(
@@ -1035,12 +1238,14 @@ class Lfm2DynamicFoldStackAdapter:
             self._dense_parent_trace_cache(verify=True)
             self._dense_tokenizer_bridge(selected, verify=True)
             self._dense_tokenizer_bridge_trace(selected, verify=True)
-            self._dense_sparse_feature_fold_bundle(selected, target)
         else:
-            if self.resources.sparse_feature_fold_bundle is not None:
+            if (
+                self.resources.sparse_feature_fold_bundle is not None
+                or self.resources.sparse_feature_fold_bundle_builder is not None
+            ):
                 raise DynamicLfm2AdapterError(
-                    "Sparse-feature fold bundles are only consumed by dense "
-                    "budget LFM2 targets."
+                    "Sparse-feature fold bundle resources are only consumed "
+                    "by dense budget LFM2 targets."
                 )
             if (
                 selected.signature.evidence_fingerprint
@@ -1262,6 +1467,11 @@ class Lfm2DynamicFoldStackAdapter:
             raise DynamicLfm2AdapterError(
                 "Synthesized LFM2 topology fingerprint is inconsistent."
             ) from exc
+        if isinstance(selected, Lfm2DenseBudgetedSelectedTarget):
+            # A target-aware T5 solve may read the exact synthesized graph and
+            # compiler blank.  It therefore runs only after every target,
+            # report, provenance, and cache check above has succeeded.
+            self._dense_sparse_feature_fold_bundle(selected, target)
         return selected
 
     def supports(self, target: DynamicTargetSynthesisResult) -> bool:
@@ -1274,7 +1484,20 @@ class Lfm2DynamicFoldStackAdapter:
                 self._dense_parent_trace_cache(verify=False)
                 self._dense_tokenizer_bridge(selected, verify=False)
                 self._dense_tokenizer_bridge_trace(selected, verify=False)
-                self._dense_sparse_feature_fold_bundle(selected, target)
+                (
+                    _bundle,
+                    builder,
+                    _builder_binding_sha256,
+                ) = self._authenticate_dense_sparse_feature_resource_without_solving(
+                    selected
+                )
+                if builder is not None:
+                    # supports() is a registry predicate.  Invoking a live-cache
+                    # solver here would perform the expensive build before the
+                    # target has passed full adapter authentication.
+                    pass
+                else:
+                    self._dense_sparse_feature_fold_bundle(selected, target)
             except DynamicLfm2AdapterError:
                 return False
             return bool(
@@ -1287,7 +1510,10 @@ class Lfm2DynamicFoldStackAdapter:
                     )
                 }
             )
-        if self.resources.sparse_feature_fold_bundle is not None:
+        if (
+            self.resources.sparse_feature_fold_bundle is not None
+            or self.resources.sparse_feature_fold_bundle_builder is not None
+        ):
             return False
         return bool(
             target.resource_profile.family == "lfm2"

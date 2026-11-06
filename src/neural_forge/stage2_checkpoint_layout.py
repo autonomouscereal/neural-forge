@@ -96,6 +96,18 @@ _PACKAGED_AUDIT_KEYS = (
 STAGE2_ROUTED_DECODE_ADMISSION_HANDOFF = {
     "owner": "lane-2 routed_decode_admission.py (design section 5.4 item 3)",
     "needs_cyril_approval": True,
+    # Landed as ``neural_forge.stage2_routed_decode_admission``: an explicit,
+    # separately-invoked lane keyed on the sealed
+    # ``ADMITTED_LFM2_STAGE2_CHECKPOINT_LABELS``.  The record below still
+    # describes the stage-1 guard exactly as it was, because the stage-1 guard
+    # is exactly as it was -- an unlabelled caller still meets
+    # ``stage1_refusal_message`` byte for byte.
+    "stage2_admission_module": "neural_forge.stage2_routed_decode_admission",
+    "stage2_admission_entrypoint": "admit_stage2_rung_checkpoint",
+    "stage2_admission_label_list": (
+        "neural_forge.lfm2_carrier_child_package."
+        "ADMITTED_LFM2_STAGE2_CHECKPOINT_LABELS"
+    ),
     "reason": (
         "A stage-2 checkpoint whose k32 route coefficients were trained "
         "carries a truthful non-zero packaged-route operation audit, which "
@@ -475,10 +487,19 @@ def write_stage2_rung_checkpoint(
     backward_calls: int,
     init_source_sha256: str,
     routes_were_trained: bool,
+    initialization_mode: str | None = None,
+    init_artifact_sha256: str | None = None,
     optimizer: Any = None,
     save_optimizer: Callable[[Any, Path], None] | None = None,
 ) -> dict[str, Any]:
-    """Write one ladder rung as a complete, sealed, labelled carrier child."""
+    """Write one ladder rung as a complete, sealed, labelled carrier child.
+
+    ``initialization_mode`` and ``init_artifact_sha256`` are what the stage-2
+    admission list keys on (``stage2_routed_decode_admission``).  They default
+    to ``None`` so the writer keeps working for a checkpoint nobody intends to
+    admit, and admission is fail-closed on the absence: a checkpoint that never
+    stated its arm's initialization mode cannot match any sealed label.
+    """
 
     rung_root = Path(rung_directory).expanduser().absolute()
     if rung_root.exists() or rung_root.is_symlink():
@@ -516,6 +537,14 @@ def write_stage2_rung_checkpoint(
         "optimizer_steps": _nonnegative_int(optimizer_steps, "optimizer_steps"),
         "backward_calls": _nonnegative_int(backward_calls, "backward_calls"),
         "init_source_sha256": _digest(init_source_sha256, "init_source_sha256"),
+        "initialization_mode": (
+            None if initialization_mode is None else str(initialization_mode)
+        ),
+        "init_artifact_sha256": (
+            None
+            if init_artifact_sha256 is None
+            else _digest(init_artifact_sha256, "init_artifact_sha256")
+        ),
         "route_coefficients_trained": bool(routes_were_trained),
         "route_provenance_mode": (
             STAGE2_TRAINED_ROUTE_PROVENANCE

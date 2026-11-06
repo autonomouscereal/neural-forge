@@ -1,0 +1,4 @@
+error: The v5 selective blank fold failed closed.
+cause: __main__.Lfm2CpcfV5SelectiveBlankFoldRunnerError: The v5 selective blank fold failed closed.
+cause: neural_forge.hf_lfm2_cpcf_v5_model_compiler.Lfm2CpcfV5ModelCompilerError: V5 selective compilation failed after exact whole-model rollback: physical RSS increase 27308036096 exceeded 27168309247 at checkpoint 'layer_000_compiled_before_release'.
+cause: neural_forge.hf_lfm2_cpcf_v5_model_compiler.Lfm2CpcfV5ModelCompilerError: physical RSS increase 27308036096 exceeded 27168309247 at checkpoint 'layer_000_compiled_before_release'.

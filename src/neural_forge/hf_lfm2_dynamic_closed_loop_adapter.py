@@ -104,6 +104,15 @@ from .hf_lfm2_circuit_trace_cache import (
 from .hf_lfm2_child_replay_batch_checkpoint import (
     load_or_capture_lfm2_child_replay_phase_resumable,
 )
+from .hf_lfm2_body_reclosure_phase_cache import (
+    AuthenticatedLfm2BodyReclosurePhase,
+    Lfm2BodyReclosureArtifact,
+    Lfm2BodyReclosurePhaseCacheContext,
+    Lfm2BodyReclosurePhaseRequest,
+    build_lfm2_body_reclosure_phase_request,
+    lookup_lfm2_body_reclosure_phase,
+    publish_lfm2_body_reclosure_phase,
+)
 from .hf_lfm2_closed_loop_restart_capsule import (
     portable_child_state_sha256,
     portable_child_topology_sha256,
@@ -240,9 +249,7 @@ LFM2_MOVING_GAUGE_FACTOR_WRITER_SCHEMA = (
 LFM2_REPLAY_SHARDING_RESOLVED_STAGE = "child_replay_sharding_resolved"
 LFM2_REPLAY_SHARDING_COMPLETED_STAGE = "child_replay_sharding_completed"
 LFM2_REPLAY_SHARDING_ALL_DEVICES = "all"
-LFM2_CHILD_REPLAY_PHASE_CACHE_RESOLVED_STAGE = (
-    "child_replay_phase_cache_resolved"
-)
+LFM2_CHILD_REPLAY_PHASE_CACHE_RESOLVED_STAGE = "child_replay_phase_cache_resolved"
 LFM2_ACCEPTED_LAYER_COMPLETION_RECEIPT_SCHEMA = (
     "neural-forge-lfm2-accepted-layer-completion-receipt-v1"
 )
@@ -455,21 +462,13 @@ def _heterogeneous_single_pass_equivalence_policy(
             "logit_error_model": CHILD_REPLAY_LOGIT_ERROR_MODEL,
             "non_logit_error_model": CHILD_REPLAY_NON_LOGIT_ERROR_MODEL,
             "non_logit_tolerance_unchanged": False,
-            "numeric_policy_sha256": numeric_policy[
-                "numeric_policy_sha256"
-            ],
+            "numeric_policy_sha256": numeric_policy["numeric_policy_sha256"],
             "replay_numeric_policy_sha256": numeric_policy[
                 "replay_numeric_policy_sha256"
             ],
-            "non_logit_envelope_sha256": numeric_policy[
-                "non_logit_envelope_sha256"
-            ],
-            "reference_execution_role": numeric_policy[
-                "reference_execution_role"
-            ],
-            "runtime_execution_role": numeric_policy[
-                "runtime_execution_role"
-            ],
+            "non_logit_envelope_sha256": numeric_policy["non_logit_envelope_sha256"],
+            "reference_execution_role": numeric_policy["reference_execution_role"],
+            "runtime_execution_role": numeric_policy["runtime_execution_role"],
         }
     )
 
@@ -513,36 +512,26 @@ def _nonnegative_float(value: Any, name: str) -> float:
 
 def _finite_float(value: Any, name: str) -> float:
     if isinstance(value, bool):
-        raise Lfm2DynamicClosedLoopAdapterError(
-            f"{name} must be finite."
-        )
+        raise Lfm2DynamicClosedLoopAdapterError(f"{name} must be finite.")
     try:
         result = float(value)
     except (TypeError, ValueError, OverflowError) as exc:
-        raise Lfm2DynamicClosedLoopAdapterError(
-            f"{name} must be finite."
-        ) from exc
+        raise Lfm2DynamicClosedLoopAdapterError(f"{name} must be finite.") from exc
     if not math.isfinite(result):
-        raise Lfm2DynamicClosedLoopAdapterError(
-            f"{name} must be finite."
-        )
+        raise Lfm2DynamicClosedLoopAdapterError(f"{name} must be finite.")
     return result
 
 
 def _unit_fraction(value: Any, name: str) -> float:
     result = _finite_float(value, name)
     if result < 0.0 or result > 1.0:
-        raise Lfm2DynamicClosedLoopAdapterError(
-            f"{name} must be within [0, 1]."
-        )
+        raise Lfm2DynamicClosedLoopAdapterError(f"{name} must be within [0, 1].")
     return result
 
 
 def _positive_int(value: Any, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        raise Lfm2DynamicClosedLoopAdapterError(
-            f"{name} must be a positive integer."
-        )
+        raise Lfm2DynamicClosedLoopAdapterError(f"{name} must be a positive integer.")
     return value
 
 
@@ -772,9 +761,7 @@ def _model_state_sha256(model: Any) -> str:
             "Could not read the child state dictionary."
         ) from exc
     if not isinstance(state, Mapping) or not state:
-        raise Lfm2DynamicClosedLoopAdapterError(
-            "The child state dictionary is empty."
-        )
+        raise Lfm2DynamicClosedLoopAdapterError("The child state dictionary is empty.")
     digest = hashlib.sha256()
     digest.update(b"neural-forge-lfm2-live-child-state-v1\0")
     for name, value in sorted(state.items()):
@@ -786,9 +773,7 @@ def _model_state_sha256(model: Any) -> str:
         digest.update(b"\0")
         digest.update(bytes.fromhex(_tensor_sha256(value)))
         digest.update(b"\0")
-    for name, parameter in sorted(
-        model.named_parameters(remove_duplicate=False)
-    ):
+    for name, parameter in sorted(model.named_parameters(remove_duplicate=False)):
         digest.update(b"parameter\0")
         digest.update(name.encode("utf-8"))
         digest.update(b"\0")
@@ -813,9 +798,7 @@ def _model_topology_sha256(model: Any) -> str:
     buffers = tuple(model.named_buffers(remove_duplicate=False))
     body = {
         "schema": "neural-forge-lfm2-live-child-topology-v1",
-        "model_class": (
-            f"{type(model).__module__}.{type(model).__qualname__}"
-        ),
+        "model_class": (f"{type(model).__module__}.{type(model).__qualname__}"),
         "state": [
             {
                 "name": name,
@@ -862,9 +845,7 @@ def _layers(model: Any) -> tuple[Any, ...]:
             continue
         if result:
             return result
-    raise Lfm2DynamicClosedLoopAdapterError(
-        "Could not locate LFM2 decoder layers."
-    )
+    raise Lfm2DynamicClosedLoopAdapterError("Could not locate LFM2 decoder layers.")
 
 
 def _final_norm(model: Any) -> Any:
@@ -1009,13 +990,10 @@ def _analytical_rms_norm(value: Any, module: Any, role: str) -> Any:
             f"{role} RMSNorm input/weight topology is invalid."
         )
     source = value.detach().to(device="cpu").contiguous()
-    runtime_weight = weight.detach().to(
-        device="cpu", dtype=source.dtype
-    )
+    runtime_weight = weight.detach().to(device="cpu", dtype=source.dtype)
     normalized = source.float()
     normalized = normalized * torch.rsqrt(
-        normalized.square().mean(dim=-1, keepdim=True)
-        + _rms_epsilon(module, role)
+        normalized.square().mean(dim=-1, keepdim=True) + _rms_epsilon(module, role)
     )
     result = runtime_weight * normalized.to(dtype=source.dtype)
     if not bool(torch.isfinite(result).all().item()):
@@ -1038,9 +1016,7 @@ def _metric_dict(metrics: FitMetrics) -> dict[str, JsonScalar]:
         "rmse": float(metrics.rmse),
         "target_rms": float(metrics.target_rms),
         "relative_rmse": float(metrics.relative_rmse),
-        "mean_cosine_similarity": float(
-            metrics.mean_cosine_similarity
-        ),
+        "mean_cosine_similarity": float(metrics.mean_cosine_similarity),
         "finite": bool(metrics.finite),
     }
 
@@ -1088,18 +1064,13 @@ def _durable_diagnostic_json(
             return normalized
         if isinstance(current, (tuple, list)):
             return [
-                normalize(item, (*path, index))
-                for index, item in enumerate(current)
+                normalize(item, (*path, index)) for index, item in enumerate(current)
             ]
         if type(current) is float and not math.isfinite(current):
             kind = (
                 "nan"
                 if math.isnan(current)
-                else (
-                    "positive_infinity"
-                    if current > 0.0
-                    else "negative_infinity"
-                )
+                else ("positive_infinity" if current > 0.0 else "negative_infinity")
             )
             nonfinite.append({"path": list(path), "kind": kind})
             return None
@@ -1159,9 +1130,7 @@ def _operator_prior_correction_metadata(
         "operator_prior_correction_reports_json": encoded,
     }
     if nonfinite_json is not None:
-        metadata["operator_prior_correction_reports_nonfinite_json"] = (
-            nonfinite_json
-        )
+        metadata["operator_prior_correction_reports_nonfinite_json"] = nonfinite_json
     return metadata
 
 
@@ -1196,8 +1165,7 @@ def _lifted_boundary_acceptance_ledger(
     if (
         not isinstance(ledger, Mapping)
         or not isinstance(report.get("boundary_acceptance_summary"), Mapping)
-        or report.get("boundary_acceptance_sha256")
-        != ledger.get("report_sha256")
+        or report.get("boundary_acceptance_sha256") != ledger.get("report_sha256")
     ):
         raise Lfm2DynamicClosedLoopAdapterError(
             "The moving-gauge acceptance ledger is not the one its reclosure "
@@ -1206,25 +1174,19 @@ def _lifted_boundary_acceptance_ledger(
     lifted = {
         "boundary_acceptance_lift_schema": _BOUNDARY_ACCEPTANCE_LIFT_SCHEMA,
         "boundary_acceptance_schema": report["acceptance_schema"],
-        "writer_reclosure_acceptance": (
-            report["writer_reclosure_acceptance"]
-        ),
-        "boundary_regression_tolerance": (
-            report["boundary_regression_tolerance"]
-        ),
+        "writer_reclosure_acceptance": (report["writer_reclosure_acceptance"]),
+        "boundary_regression_tolerance": (report["boundary_regression_tolerance"]),
         "boundary_acceptance_sha256": report["boundary_acceptance_sha256"],
-        "boundary_acceptance_summary": dict(
-            report["boundary_acceptance_summary"]
-        ),
+        "boundary_acceptance_summary": dict(report["boundary_acceptance_summary"]),
         # The full ledger, not a rewrite of it: the decisions and per-boundary
         # rows exactly as the reclosure sealed them, so the digest above is
         # verifiable against the body it names.
         "boundary_acceptance": dict(ledger),
     }
     if "writer_reclosure_norm_ratio_ceiling" in report:
-        lifted["writer_reclosure_norm_ratio_ceiling"] = (
-            report["writer_reclosure_norm_ratio_ceiling"]
-        )
+        lifted["writer_reclosure_norm_ratio_ceiling"] = report[
+            "writer_reclosure_norm_ratio_ceiling"
+        ]
     return lifted
 
 
@@ -1252,9 +1214,7 @@ def _boundary_acceptance_metadata(
     )
     metadata: dict[str, JsonScalar] = {
         "writer_reclosure_acceptance": report["writer_reclosure_acceptance"],
-        "boundary_regression_tolerance": (
-            report["boundary_regression_tolerance"]
-        ),
+        "boundary_regression_tolerance": (report["boundary_regression_tolerance"]),
         "boundary_acceptance_sha256": report["boundary_acceptance_sha256"],
         "boundary_acceptance_evaluated_writer_overwrites": (
             summary["evaluated_writer_overwrites"]
@@ -1276,15 +1236,15 @@ def _boundary_acceptance_metadata(
             decisions_nonfinite_json
         )
     if "writer_reclosure_norm_ratio_ceiling" in report:
-        metadata["writer_reclosure_norm_ratio_ceiling"] = (
-            report["writer_reclosure_norm_ratio_ceiling"]
-        )
-        metadata["boundary_acceptance_norm_ceiling_refusals"] = (
-            summary["norm_ratio_ceiling_refused_writer_overwrites"]
-        )
-        metadata["boundary_acceptance_maximum_accepted_write_norm_ratio"] = (
-            summary["maximum_accepted_write_norm_ratio"]
-        )
+        metadata["writer_reclosure_norm_ratio_ceiling"] = report[
+            "writer_reclosure_norm_ratio_ceiling"
+        ]
+        metadata["boundary_acceptance_norm_ceiling_refusals"] = summary[
+            "norm_ratio_ceiling_refused_writer_overwrites"
+        ]
+        metadata["boundary_acceptance_maximum_accepted_write_norm_ratio"] = summary[
+            "maximum_accepted_write_norm_ratio"
+        ]
     return metadata
 
 
@@ -1417,9 +1377,7 @@ class Lfm2DynamicClosedLoopAdapterConfig:
     attention_score_minimum_top1_key_agreement_fraction: float = 0.9
     attention_score_minimum_top_k_pair_order_agreement_fraction: float = 0.9
     attention_score_minimum_winner_margin_sign_agreement_fraction: float = 0.9
-    attention_score_minimum_relative_margin_floor_retention_fraction: (
-        float
-    ) = 0.9
+    attention_score_minimum_relative_margin_floor_retention_fraction: float = 0.9
     attention_score_maximum_softmax_fisher_error: float | None = None
     attention_score_maximum_js_divergence: float | None = None
     output_interface_mode: str = "fit-transform"
@@ -1449,9 +1407,7 @@ class Lfm2DynamicClosedLoopAdapterConfig:
     replay_devices: tuple[str, ...] | None = None
 
     def __post_init__(self) -> None:
-        object.__setattr__(
-            self, "ridge", _nonnegative_float(self.ridge, "ridge")
-        )
+        object.__setattr__(self, "ridge", _nonnegative_float(self.ridge, "ridge"))
         object.__setattr__(
             self,
             "norm_ridge",
@@ -1616,9 +1572,7 @@ class Lfm2DynamicClosedLoopAdapterConfig:
         object.__setattr__(
             self,
             "validation_tolerance",
-            _nonnegative_float(
-                self.validation_tolerance, "validation_tolerance"
-            ),
+            _nonnegative_float(self.validation_tolerance, "validation_tolerance"),
         )
         if not isinstance(self.performance_metrics_diagnostic_only, bool):
             raise Lfm2DynamicClosedLoopAdapterError(
@@ -1639,9 +1593,7 @@ class Lfm2DynamicClosedLoopAdapterConfig:
             "mlp_gate_operating_point_diagnostics",
         ):
             if not isinstance(getattr(self, name), bool):
-                raise Lfm2DynamicClosedLoopAdapterError(
-                    f"{name} must be boolean."
-                )
+                raise Lfm2DynamicClosedLoopAdapterError(f"{name} must be boolean.")
         object.__setattr__(
             self,
             "terminal_composition_absolute_floor_minimum_layer_index",
@@ -1666,9 +1618,7 @@ class Lfm2DynamicClosedLoopAdapterConfig:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "terminal_free_run_chance_match_fraction must be within [0, 1]."
             )
-        object.__setattr__(
-            self, "terminal_free_run_chance_match_fraction", chance
-        )
+        object.__setattr__(self, "terminal_free_run_chance_match_fraction", chance)
         floor = _nonnegative_float(
             self.moving_gauge_margin_row_weight_floor,
             "moving_gauge_margin_row_weight_floor",
@@ -1683,9 +1633,7 @@ class Lfm2DynamicClosedLoopAdapterConfig:
                 "so a constant profile reproduces the uniform default."
             )
         object.__setattr__(self, "moving_gauge_margin_row_weight_floor", floor)
-        object.__setattr__(
-            self, "moving_gauge_margin_row_weight_ceiling", ceiling
-        )
+        object.__setattr__(self, "moving_gauge_margin_row_weight_ceiling", ceiling)
         margin_fraction = _nonnegative_float(
             self.moving_gauge_margin_floor_fraction,
             "moving_gauge_margin_floor_fraction",
@@ -1694,9 +1642,7 @@ class Lfm2DynamicClosedLoopAdapterConfig:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "moving_gauge_margin_floor_fraction must be within [0, 1]."
             )
-        object.__setattr__(
-            self, "moving_gauge_margin_floor_fraction", margin_fraction
-        )
+        object.__setattr__(self, "moving_gauge_margin_floor_fraction", margin_fraction)
         if (
             self.mlp_input_error_covariance_enabled
             and self.mlp_input_error_robustness_multiplier == 0.0
@@ -1704,26 +1650,22 @@ class Lfm2DynamicClosedLoopAdapterConfig:
             # The zero-multiplier control arm is legal and deliberately
             # bit-identical to the unwired lane; it is recorded, not refused.
             pass
-        if (
-            not isinstance(self.replay_capture_mode, str)
-            or self.replay_capture_mode
-            not in {
-                CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
-                CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
-            }
-        ):
+        if not isinstance(
+            self.replay_capture_mode, str
+        ) or self.replay_capture_mode not in {
+            CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
+            CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
+        }:
             raise ValueError(
                 "replay_capture_mode must be 'prefix_by_prefix_canonical' "
                 "or 'single_pass_causal'."
             )
-        if (
-            not isinstance(self.attention_consumer_mode, str)
-            or self.attention_consumer_mode
-            not in {
-                "output-only",
-                "coupled-value-output",
-            }
-        ):
+        if not isinstance(
+            self.attention_consumer_mode, str
+        ) or self.attention_consumer_mode not in {
+            "output-only",
+            "coupled-value-output",
+        }:
             raise ValueError(
                 "attention_consumer_mode must be 'output-only' or "
                 "'coupled-value-output'."
@@ -1783,18 +1725,9 @@ class Lfm2DynamicClosedLoopAdapterConfig:
         for name in (
             "attention_score_margin_floor_fraction",
             "attention_score_minimum_top1_key_agreement_fraction",
-            (
-                "attention_score_minimum_top_k_pair_order_"
-                "agreement_fraction"
-            ),
-            (
-                "attention_score_minimum_winner_margin_sign_"
-                "agreement_fraction"
-            ),
-            (
-                "attention_score_minimum_relative_margin_floor_"
-                "retention_fraction"
-            ),
+            ("attention_score_minimum_top_k_pair_order_agreement_fraction"),
+            ("attention_score_minimum_winner_margin_sign_agreement_fraction"),
+            ("attention_score_minimum_relative_margin_floor_retention_fraction"),
         ):
             object.__setattr__(
                 self,
@@ -1819,31 +1752,27 @@ class Lfm2DynamicClosedLoopAdapterConfig:
                     "attention_score_maximum_js_divergence",
                 ),
             )
-        if (
-            not isinstance(self.output_interface_mode, str)
-            or self.output_interface_mode
-            not in {
-                "fit-transform",
-                "identity-skip",
-            }
+        if not isinstance(
+            self.output_interface_mode, str
+        ) or self.output_interface_mode not in {
+            "fit-transform",
+            "identity-skip",
+        }:
+            raise ValueError(
+                "output_interface_mode must be 'fit-transform' or 'identity-skip'."
+            )
+        if not isinstance(
+            self.install_verification_mode, str
+        ) or self.install_verification_mode not in frozenset(
+            LFM2_INSTALL_VERIFICATION_MODES
         ):
             raise ValueError(
-                "output_interface_mode must be 'fit-transform' or "
-                "'identity-skip'."
+                "install_verification_mode must be 'full-recapture' or 'fingerprint'."
             )
-        if (
-            not isinstance(self.install_verification_mode, str)
-            or self.install_verification_mode
-            not in frozenset(LFM2_INSTALL_VERIFICATION_MODES)
-        ):
-            raise ValueError(
-                "install_verification_mode must be 'full-recapture' or "
-                "'fingerprint'."
-            )
-        if (
-            not isinstance(self.moving_gauge_writer_reclosure_acceptance, str)
-            or self.moving_gauge_writer_reclosure_acceptance
-            not in frozenset(LFM2_MOVING_GAUGE_WRITER_RECLOSURE_ACCEPTANCE_MODES)
+        if not isinstance(
+            self.moving_gauge_writer_reclosure_acceptance, str
+        ) or self.moving_gauge_writer_reclosure_acceptance not in frozenset(
+            LFM2_MOVING_GAUGE_WRITER_RECLOSURE_ACCEPTANCE_MODES
         ):
             raise ValueError(
                 "moving_gauge_writer_reclosure_acceptance must be one of "
@@ -1877,8 +1806,7 @@ class Lfm2DynamicClosedLoopAdapterConfig:
             )
             if self.moving_gauge_writer_reclosure_norm_ratio_ceiling <= 0.0:
                 raise ValueError(
-                    "moving_gauge_writer_reclosure_norm_ratio_ceiling must be "
-                    "positive."
+                    "moving_gauge_writer_reclosure_norm_ratio_ceiling must be positive."
                 )
             if (
                 self.moving_gauge_writer_reclosure_acceptance
@@ -1960,17 +1888,13 @@ def _capture_envelope_sha256(
             "replay_sha256": payload.replay_sha256,
             "selected_layer_indices": list(payload.selected_layer_indices),
             "selection_sha256": payload.selection_sha256,
-            "child_evidence_profile_role": (
-                payload.child_evidence_profile_role
-            ),
+            "child_evidence_profile_role": (payload.child_evidence_profile_role),
             "child_evidence_profile": (
                 None
                 if payload.child_evidence_profile is None
                 else payload.child_evidence_profile.as_dict()
             ),
-            "child_evidence_profile_sha256": (
-                payload.child_evidence_profile_sha256
-            ),
+            "child_evidence_profile_sha256": (payload.child_evidence_profile_sha256),
             "all_batches_replayed": True,
             "canonical_causal_phase_schema": True,
             "replay_capture_mode": payload.replay_capture_mode,
@@ -1984,19 +1908,13 @@ def _capture_envelope_sha256(
             ),
             "saved_child_forwards": payload.saved_child_forwards,
             "causal_contract_sha256": payload.causal_contract_sha256,
-            "causal_certification_sha256": (
-                payload.causal_certification_sha256
-            ),
+            "causal_certification_sha256": (payload.causal_certification_sha256),
             "causal_certification_registry_key": (
                 payload.causal_certification_registry_key
             ),
             "numeric_policy_sha256": payload.numeric_policy_sha256,
-            "replay_numeric_policy_sha256": (
-                payload.replay_numeric_policy_sha256
-            ),
-            "non_logit_envelope_sha256": (
-                payload.non_logit_envelope_sha256
-            ),
+            "replay_numeric_policy_sha256": (payload.replay_numeric_policy_sha256),
+            "non_logit_envelope_sha256": (payload.non_logit_envelope_sha256),
         }
     )
 
@@ -2102,9 +2020,9 @@ class _SelectedParentEvidenceProfile:
     payload_selection_sha256: tuple[str, ...]
     payloads: tuple[_SelectedParentBatchPayloadView, ...] = field(repr=False)
     batches: tuple[Lfm2CircuitTraceBatch, ...] = field(repr=False)
-    components_by_batch: tuple[
-        tuple[_SelectedParentTensorComponent, ...], ...
-    ] = field(repr=False)
+    components_by_batch: tuple[tuple[_SelectedParentTensorComponent, ...], ...] = field(
+        repr=False
+    )
     borrow_count: int = 0
 
 
@@ -2365,8 +2283,7 @@ class _MovingGaugeFactorWriterArtifact:
             "moving-gauge requested action SHA-256",
         )
         effective = (
-            decoder.to(dtype=torch.float64)
-            @ encoder.to(dtype=torch.float64)
+            decoder.to(dtype=torch.float64) @ encoder.to(dtype=torch.float64)
         ).contiguous()
         effective_action_sha256 = _digest(
             self.effective_action_sha256,
@@ -2528,9 +2445,7 @@ class _FactorShortConvConsumerArtifact:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Closed-loop ShortConv factor artifact is malformed."
             )
-        effective = (
-            decoder.to(torch.float64) @ encoder.to(torch.float64)
-        ).contiguous()
+        effective = (decoder.to(torch.float64) @ encoder.to(torch.float64)).contiguous()
         encoder_sha256 = _digest(self.encoder_sha256, "encoder_sha256")
         decoder_sha256 = _digest(self.decoder_sha256, "decoder_sha256")
         effective_sha256 = _digest(
@@ -2656,17 +2571,13 @@ def _factorize_short_conv_logical_action(
         or tuple(decoder_template.shape[1:]) != (fixed_rank,)
         or tuple(dense_action.shape)
         != (int(decoder_template.shape[0]), int(encoder_template.shape[1]))
-        or fixed_rank
-        > min(int(dense_action.shape[0]), int(dense_action.shape[1]))
+        or fixed_rank > min(int(dense_action.shape[0]), int(dense_action.shape[1]))
     ):
         raise Lfm2DynamicClosedLoopAdapterError(
             "Dense ShortConv logical action cannot fit the physical factor geometry."
         )
     dense = (
-        dense_action.detach()
-        .to(device="cpu", dtype=torch.float64)
-        .contiguous()
-        .clone()
+        dense_action.detach().to(device="cpu", dtype=torch.float64).contiguous().clone()
     )
     if not bool(torch.isfinite(dense).all().item()):
         raise Lfm2DynamicClosedLoopAdapterError(
@@ -2753,36 +2664,31 @@ def _factorize_short_conv_logical_action(
             if action_rows is None
             else "deterministic-structural-cpu-fp64-zero-action-svd-fallback"
         )
-    elif action_rows is not None and float(
-        (
-            action_rows.square()
-            * action_weights.unsqueeze(1)
-        ).sum().item()
-    ) > 0.0:
+    elif (
+        action_rows is not None
+        and float((action_rows.square() * action_weights.unsqueeze(1)).sum().item())
+        > 0.0
+    ):
         # Preserve the residual-write directions that are actually exercised
         # by the cached full-prefix rows.  The decoder spans the leading
         # weighted output-action eigenspace and the encoder is the exact
         # projection of the requested dense action into that physical rank.
         covariance = (
-            action_rows.T
-            @ (action_weights.unsqueeze(1) * action_rows)
+            action_rows.T @ (action_weights.unsqueeze(1) * action_rows)
         ).contiguous()
         eigenvalues, eigenvectors = torch.linalg.eigh(covariance)
         order = torch.argsort(eigenvalues, descending=True)
         decoder_fp64 = eigenvectors[:, order[:fixed_rank]].contiguous()
         encoder_fp64 = (decoder_fp64.T @ dense).contiguous()
         _canonicalize_short_conv_factor_signs(decoder_fp64, encoder_fp64)
-        method = (
-            "deterministic-structural-cpu-fp64-weighted-output-action-subspace"
-        )
+        method = "deterministic-structural-cpu-fp64-weighted-output-action-subspace"
     else:
         left, singular_values, right = torch.linalg.svd(
             dense,
             full_matrices=False,
         )
         decoder_fp64 = (
-            left[:, :fixed_rank]
-            * singular_values[:fixed_rank].unsqueeze(0)
+            left[:, :fixed_rank] * singular_values[:fixed_rank].unsqueeze(0)
         ).contiguous()
         encoder_fp64 = right[:fixed_rank, :].contiguous()
         _canonicalize_short_conv_factor_signs(decoder_fp64, encoder_fp64)
@@ -2798,8 +2704,7 @@ def _factorize_short_conv_logical_action(
         dtype=decoder_template.dtype,
     ).contiguous()
     effective = (
-        decoder.to(dtype=torch.float64)
-        @ encoder.to(dtype=torch.float64)
+        decoder.to(dtype=torch.float64) @ encoder.to(dtype=torch.float64)
     ).contiguous()
     residual_norm = float(torch.linalg.vector_norm(dense - effective).item())
     relative_error = 0.0 if dense_norm == 0.0 else residual_norm / dense_norm
@@ -2815,9 +2720,7 @@ def _compile_factor_short_conv_consumer_artifact(
 
     torch = _torch()
     if not isinstance(compiled, Lfm2CompiledStructuralShortConvConsumerFold):
-        raise TypeError(
-            "compiled must be Lfm2CompiledStructuralShortConvConsumerFold."
-        )
+        raise TypeError("compiled must be Lfm2CompiledStructuralShortConvConsumerFold.")
     if (
         writer_view.topology != "factorized"
         or writer_view.writer_rank is None
@@ -2839,7 +2742,9 @@ def _compile_factor_short_conv_consumer_artifact(
         )
     )
     if method != "deterministic-structural-cpu-fp64-exact-svd-truncation":
-        raise AssertionError("Local ShortConv factorization unexpectedly changed method.")
+        raise AssertionError(
+            "Local ShortConv factorization unexpectedly changed method."
+        )
     body = {
         "schema": LFM2_SHORT_CONV_FACTOR_CLOSED_LOOP_SCHEMA,
         "method": "deterministic-structural-cpu-fp64-exact-svd-truncation",
@@ -3023,9 +2928,7 @@ class _ProducerPayload:
     operator_norm_report_sha256: str
     baseline_validation: FitMetrics
     attention_score_fit: Lfm2AttentionScorePreservationReport | None
-    attention_score_validation: (
-        Lfm2AttentionScorePreservationReport | None
-    )
+    attention_score_validation: Lfm2AttentionScorePreservationReport | None
     attractor_baseline: Lfm2MacroCellAttractorSnapshot | None
     split_sha256: str
     short_conv_source_writer_contract_sha256: str | None = None
@@ -3086,11 +2989,11 @@ class _CompactInputProducerReclosureState:
         )
         ids = tuple(value.parameter_id for value in replacements)
         expected_groups = tuple(
-                {
-                    "producer_group_id": group_id,
-                    "producer_family": family,
-                }
-                for group_id, family in groups
+            {
+                "producer_group_id": group_id,
+                "producer_family": family,
+            }
+            for group_id, family in groups
         )
         checks = {
             "nonempty": bool(replacements and groups and sources),
@@ -3103,14 +3006,12 @@ class _CompactInputProducerReclosureState:
             "parameter_ids_bound": self.report.get("parameter_ids") == ids,
             "evidence_bound": self.report.get("evidence_sha256") == evidence,
             "groups_bound": self.report.get("producer_groups") == expected_groups,
-            "sources_bound": self.report.get("source_state_sha256")
-            == sources,
+            "sources_bound": self.report.get("source_state_sha256") == sources,
             "receipts_bound": self.report.get("replacement_receipt_sha256")
             == tuple(value.report["report_sha256"] for value in replacements),
             "weights_bound": self.report.get("replacement_weight_sha256")
             == tuple(
-                value.report["replacement_weight_sha256"]
-                for value in replacements
+                value.report["replacement_weight_sha256"] for value in replacements
             ),
         }
         if not all(checks.values()):
@@ -3180,9 +3081,9 @@ def _merge_compact_input_producer_state(
         )
         for value in addition.report["producer_groups"]
     )
-    sources = (
-        () if current is None else current.source_state_sha256
-    ) + (str(addition.report["report_sha256"]),)
+    sources = (() if current is None else current.source_state_sha256) + (
+        str(addition.report["report_sha256"]),
+    )
     body = {
         "schema": "neural-forge-lfm2-compact-input-producer-state-v1",
         "parameter_ids": [value.parameter_id for value in replacements],
@@ -3199,8 +3100,7 @@ def _merge_compact_input_producer_state(
             value.report["report_sha256"] for value in replacements
         ],
         "replacement_weight_sha256": [
-            value.report["replacement_weight_sha256"]
-            for value in replacements
+            value.report["replacement_weight_sha256"] for value in replacements
         ],
         "raw_fit_rows_retained": False,
         "all_source_group_reports_authenticated_before_compaction": True,
@@ -3256,6 +3156,39 @@ class _BodyReclosurePayload:
     # composition floor is enabled and the reclosure will actually rewrite
     # the body.  ``None`` is the unwired lane and the identity lane.
     terminal_baseline: FitMetrics | None = None
+    # An authenticated portable hit has no reason to reconstruct the many
+    # row-heavy moving-gauge solver objects above.  It carries the exact
+    # cache bundle instead and the install path restores its tensors directly
+    # into the already-instantiated blank child without rebinding Parameters.
+    phase_cache_request: Lfm2BodyReclosurePhaseRequest | None = None
+    phase_cache_hit: AuthenticatedLfm2BodyReclosurePhase | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _PendingBodyReclosureCachePublication:
+    """Cold install snapshot held only until fresh held-out validation."""
+
+    request: Lfm2BodyReclosurePhaseRequest
+    tensors: Mapping[str, Any] = field(repr=False, compare=False)
+    aliases: Mapping[str, str]
+    restore_manifest: Mapping[str, Any]
+    portable_post_child_state_sha256: str
+    portable_post_child_topology_sha256: str
+    cold_math_report_sha256: str
+    math_artifact_sha256: str
+    fit_preview_capture_sha256: str
+    boundary_count: int
+    transition_count: int
+    physical_writer_count: int
+    factor_writer_count: int
+    action_aware_factor_writer_count: int
+    input_producer_count: int
+    fresh_primal_w2_reclosure_count: int
+    fresh_primal_operator_consumer_reclosure_count: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -3316,16 +3249,11 @@ class _ChildModelTransaction:
                 parameter=parameter,
                 parameter_id=id(parameter),
                 gradient=parameter.grad,
-                gradient_id=(
-                    None if parameter.grad is None else id(parameter.grad)
-                ),
+                gradient_id=(None if parameter.grad is None else id(parameter.grad)),
                 gradient_value=(
                     None
                     if parameter.grad is None
-                    else parameter.grad.detach()
-                    .to(device="cpu")
-                    .contiguous()
-                    .clone()
+                    else parameter.grad.detach().to(device="cpu").contiguous().clone()
                 ),
             )
             for name, parameter in adapter.child_model.named_parameters(
@@ -3367,13 +3295,14 @@ class _ChildModelTransaction:
             )
         self._adapter._rollback_open_split_transactions()
         current_parameters = dict(
-            self._adapter.child_model.named_parameters(
-                remove_duplicate=False
-            )
+            self._adapter.child_model.named_parameters(remove_duplicate=False)
         )
         for snapshot in self._gradients:
             current = current_parameters.get(snapshot.parameter_name)
-            if current is not snapshot.parameter or id(current) != snapshot.parameter_id:
+            if (
+                current is not snapshot.parameter
+                or id(current) != snapshot.parameter_id
+            ):
                 raise Lfm2DynamicClosedLoopAdapterError(
                     "A child Parameter identity changed before rollback."
                 )
@@ -3393,9 +3322,7 @@ class _ChildModelTransaction:
                     raise Lfm2DynamicClosedLoopAdapterError(
                         "Child state shape/dtype changed before rollback."
                     )
-                value.copy_(
-                    saved.to(device=value.device, dtype=value.dtype)
-                )
+                value.copy_(saved.to(device=value.device, dtype=value.dtype))
             for snapshot in self._gradients:
                 parameter = snapshot.parameter
                 parameter.grad = snapshot.gradient
@@ -3412,10 +3339,7 @@ class _ChildModelTransaction:
                     )
         after = self._adapter.child_state_fingerprint()
         topology = self._adapter.child_topology_fingerprint()
-        if (
-            after != self.state_sha256_before
-            or topology != self.topology_sha256_before
-        ):
+        if after != self.state_sha256_before or topology != self.topology_sha256_before:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Whole-child rollback was not exact."
             )
@@ -3451,9 +3375,7 @@ class Lfm2DynamicClosedLoopAdapter:
         coordinate_map: DenseResidualCoordinateMap,
         initial_child_basis_sha256: str,
         body_reclosure_mode: str = LFM2_BODY_RECLOSURE_DISABLED,
-        body_coordinate_completion_recipe: str = (
-            "bridge-procrustes-isometric"
-        ),
+        body_coordinate_completion_recipe: str = ("bridge-procrustes-isometric"),
         parent_residual_operators: Sequence[Any] | None = None,
         selected_layer_indices: Sequence[int] | None = None,
         replay_config: Lfm2CircuitTraceCaptureConfig | None = None,
@@ -3471,11 +3393,12 @@ class Lfm2DynamicClosedLoopAdapter:
         identity_tokenizer_evidence_sha256: str | None = None,
         selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession | None = None,
         evidence_set: Lfm2SealedEvidenceSet | None = None,
-        progress_sink: (
-            Callable[[str, Mapping[str, JsonScalar]], None] | None
-        ) = None,
+        progress_sink: (Callable[[str, Mapping[str, JsonScalar]], None] | None) = None,
         child_replay_phase_cache_context: (
             DynamicChildReplayPhaseCacheContext | None
+        ) = None,
+        body_reclosure_phase_cache_context: (
+            Lfm2BodyReclosurePhaseCacheContext | None
         ) = None,
     ) -> None:
         # ``evidence_set`` is the additive base+extension entry point.  With no
@@ -3483,9 +3406,7 @@ class Lfm2DynamicClosedLoopAdapter:
         # single sealed handle this adapter has always taken.
         if evidence_set is not None:
             if not isinstance(evidence_set, Lfm2SealedEvidenceSet):
-                raise TypeError(
-                    "evidence_set must be Lfm2SealedEvidenceSet or None."
-                )
+                raise TypeError("evidence_set must be Lfm2SealedEvidenceSet or None.")
             if evidence_set.has_extension_evidence:
                 if selective_session is None:
                     raise Lfm2DynamicClosedLoopAdapterError(
@@ -3540,16 +3461,13 @@ class Lfm2DynamicClosedLoopAdapter:
         self._selected_parent_bound_session = selective_session
         self._selected_parent_bound_cache = self.parent_cache
         self._selected_parent_bound_session_evidence_sha256 = (
-            None
-            if selective_session is None
-            else selective_session.evidence_sha256
+            None if selective_session is None else selective_session.evidence_sha256
         )
         self._selected_parent_bound_reference_ids = (
             ()
             if selective_session is None
             else tuple(
-                id(reference)
-                for reference in selective_session.batch_references
+                id(reference) for reference in selective_session.batch_references
             )
         )
         self.evidence_set = evidence_set
@@ -3558,8 +3476,7 @@ class Lfm2DynamicClosedLoopAdapter:
         # not from sealed split labels, so the rule has to be enforced here or
         # a child-visited state would silently become a held-out row.
         self._always_fit_batch_indices: frozenset[int] = frozenset(
-            int(value)
-            for value in getattr(parent_cache, "extension_batch_indices", ())
+            int(value) for value in getattr(parent_cache, "extension_batch_indices", ())
         )
         if any(
             value < 0 or value >= parent_cache.batch_count
@@ -3572,23 +3489,27 @@ class Lfm2DynamicClosedLoopAdapter:
         if progress_sink is not None and not callable(progress_sink):
             raise TypeError("progress_sink must be callable or None.")
         self.progress_sink = progress_sink
-        if (
-            child_replay_phase_cache_context is not None
-            and not isinstance(
-                child_replay_phase_cache_context,
-                DynamicChildReplayPhaseCacheContext,
-            )
+        if child_replay_phase_cache_context is not None and not isinstance(
+            child_replay_phase_cache_context,
+            DynamicChildReplayPhaseCacheContext,
         ):
             raise TypeError(
                 "child_replay_phase_cache_context must be "
                 "DynamicChildReplayPhaseCacheContext or None."
             )
-        self.child_replay_phase_cache_context = (
-            child_replay_phase_cache_context
+        self.child_replay_phase_cache_context = child_replay_phase_cache_context
+        if body_reclosure_phase_cache_context is not None and not isinstance(
+            body_reclosure_phase_cache_context,
+            Lfm2BodyReclosurePhaseCacheContext,
+        ):
+            raise TypeError(
+                "body_reclosure_phase_cache_context must be "
+                "Lfm2BodyReclosurePhaseCacheContext or None."
+            )
+        self.body_reclosure_phase_cache_context = body_reclosure_phase_cache_context
+        self._active_selected_parent_profile: _SelectedParentEvidenceProfile | None = (
+            None
         )
-        self._active_selected_parent_profile: (
-            _SelectedParentEvidenceProfile | None
-        ) = None
         # Profile views are exact, but their overlapping immutable tensor
         # components survive a view switch.  A successful admission trims the
         # cache to the newly authorized inventory, so layer replay retains at
@@ -3618,21 +3539,11 @@ class Lfm2DynamicClosedLoopAdapter:
         ] = {}
         # A merged capture defers one consumer to the next layer, so exactly
         # those borrows are allowed to outlive the layer that created them.
-        self._deferred_merged_parent_borrows: list[
-            _SelectedParentProfileBorrow
-        ] = []
+        self._deferred_merged_parent_borrows: list[_SelectedParentProfileBorrow] = []
         self.coordinate_map = coordinate_map
-        self.config = (
-            Lfm2DynamicClosedLoopAdapterConfig()
-            if config is None
-            else config
-        )
-        if not isinstance(
-            self.config, Lfm2DynamicClosedLoopAdapterConfig
-        ):
-            raise TypeError(
-                "config must be Lfm2DynamicClosedLoopAdapterConfig."
-            )
+        self.config = Lfm2DynamicClosedLoopAdapterConfig() if config is None else config
+        if not isinstance(self.config, Lfm2DynamicClosedLoopAdapterConfig):
+            raise TypeError("config must be Lfm2DynamicClosedLoopAdapterConfig.")
         mode = str(body_reclosure_mode).strip().lower()
         if mode not in LFM2_BODY_RECLOSURE_MODES:
             raise Lfm2DynamicClosedLoopAdapterError(
@@ -3670,16 +3581,12 @@ class Lfm2DynamicClosedLoopAdapter:
             self.config.moving_gauge_writer_reclosure_norm_ratio_ceiling
         )
         self.parent_residual_operators = operators
-        if (
-            macro_cell_attractor_gate is not None
-            and not isinstance(
-                macro_cell_attractor_gate,
-                Lfm2MacroCellAttractorGate,
-            )
+        if macro_cell_attractor_gate is not None and not isinstance(
+            macro_cell_attractor_gate,
+            Lfm2MacroCellAttractorGate,
         ):
             raise TypeError(
-                "macro_cell_attractor_gate must be "
-                "Lfm2MacroCellAttractorGate or None."
+                "macro_cell_attractor_gate must be Lfm2MacroCellAttractorGate or None."
             )
         self.macro_cell_attractor_gate = macro_cell_attractor_gate
         # Optional advisory probe for the terminal free-run tripwire.  The
@@ -3692,9 +3599,7 @@ class Lfm2DynamicClosedLoopAdapter:
         # Per-layer margin tables for the moving-gauge margin row weights,
         # keyed by ``(batch_index, phase)``.  Populated by the runner from the
         # streaming vocabulary-margin adapter; empty means the uniform profile.
-        self.moving_gauge_margin_tables: (
-            Mapping[tuple[int, str], Any] | None
-        ) = None
+        self.moving_gauge_margin_tables: Mapping[tuple[int, str], Any] | None = None
         self.input_device = input_device
         self.source_layers = _layers(source_model)
         self.child_layers = _layers(child_model)
@@ -3754,9 +3659,7 @@ class Lfm2DynamicClosedLoopAdapter:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Source and child must retain the same layer count."
             )
-        constructor_selected_layers_were_explicit = (
-            selected_layer_indices is not None
-        )
+        constructor_selected_layers_were_explicit = selected_layer_indices is not None
         if selected_layer_indices is None:
             selected = tuple(range(len(self.child_layers)))
         else:
@@ -3780,13 +3683,11 @@ class Lfm2DynamicClosedLoopAdapter:
             selected if constructor_selected_layers_were_explicit else None
         )
         if (
-            self.body_reclosure_mode
-            == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
+            self.body_reclosure_mode == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
             and selected != tuple(range(len(self.child_layers)))
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
-                "moving_gauge_v3 is a whole-body stage and requires every "
-                "child layer."
+                "moving_gauge_v3 is a whole-body stage and requires every child layer."
             )
         source_contracts = tuple(
             _inspect_runtime_layer(layer, self._source_heterogeneous_layout)
@@ -3798,9 +3699,7 @@ class Lfm2DynamicClosedLoopAdapter:
         )
         self._source_contracts = source_contracts
         self._child_contracts = child_contracts
-        for index, (source, child) in enumerate(
-            zip(source_contracts, child_contracts)
-        ):
+        for index, (source, child) in enumerate(zip(source_contracts, child_contracts)):
             if (
                 source.layer_index != index
                 or child.layer_index != index
@@ -3822,13 +3721,9 @@ class Lfm2DynamicClosedLoopAdapter:
             or not isinstance(target_width, int)
             or source_width <= target_width
             or any(
-                contract.hidden_size != source_width
-                for contract in source_contracts
+                contract.hidden_size != source_width for contract in source_contracts
             )
-            or any(
-                contract.hidden_size != target_width
-                for contract in child_contracts
-            )
+            or any(contract.hidden_size != target_width for contract in child_contracts)
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Dense coordinate-map widths do not match source/child LFM2."
@@ -3852,19 +3747,15 @@ class Lfm2DynamicClosedLoopAdapter:
             )
         else:
             self.parent_residual_operator_manifest_sha256 = None
-        source_input_vocabulary, source_output_vocabulary = (
-            _vocabulary_parameter_pair(
-                source_model,
-                "source model",
-                require_tied=self._source_heterogeneous_layout is None,
-            )
+        source_input_vocabulary, source_output_vocabulary = _vocabulary_parameter_pair(
+            source_model,
+            "source model",
+            require_tied=self._source_heterogeneous_layout is None,
         )
-        child_input_vocabulary, child_output_vocabulary = (
-            _vocabulary_parameter_pair(
-                child_model,
-                "child model",
-                require_tied=self._child_heterogeneous_layout is None,
-            )
+        child_input_vocabulary, child_output_vocabulary = _vocabulary_parameter_pair(
+            child_model,
+            "child model",
+            require_tied=self._child_heterogeneous_layout is None,
         )
         if (
             self._child_heterogeneous_layout is not None
@@ -3892,8 +3783,7 @@ class Lfm2DynamicClosedLoopAdapter:
             value is None for value in bridge_values
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
-                "Tokenizer bridge artifact and trace adapter must be supplied "
-                "together."
+                "Tokenizer bridge artifact and trace adapter must be supplied together."
             )
         if tokenizer_bridge_artifact is None:
             if int(source_input_vocabulary.shape[0]) != int(
@@ -3948,9 +3838,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 raise Lfm2DynamicClosedLoopAdapterError(
                     "Tokenizer bridge artifact/trace adapter failed verification."
                 ) from exc
-            if tokenizer_bridge_trace_adapter.record_count != len(
-                self.parent_cache
-            ):
+            if tokenizer_bridge_trace_adapter.record_count != len(self.parent_cache):
                 # Named on its own because the base+extension case has one
                 # cause: a target-token replay that covers only the sealed base
                 # corpus, which leaves every on-policy extension batch with no
@@ -3973,8 +3861,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 != int(child_input_vocabulary.shape[0])
                 or (
                     self._child_heterogeneous_layout is not None
-                    and self._child_heterogeneous_layout
-                    .token_bridge_evidence_sha256
+                    and self._child_heterogeneous_layout.token_bridge_evidence_sha256
                     != tokenizer_bridge_artifact.artifact_sha256
                 )
                 or (
@@ -3984,8 +3871,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 )
             ):
                 raise Lfm2DynamicClosedLoopAdapterError(
-                    "Tokenizer bridge capacities, seals, or child layout "
-                    "differ."
+                    "Tokenizer bridge capacities, seals, or child layout differ."
                 )
             parent_input_references = (
                 self.parent_cache.iter_batches()
@@ -4018,9 +3904,7 @@ class Lfm2DynamicClosedLoopAdapter:
             Lfm2PreverifiedTokenizerBridgeInputPairLedger | None
         ) = None
         self.identity_tokenizer_evidence_sha256 = identity_tokenizer_evidence_sha256
-        self._child_input_vocabulary_sha256 = _tensor_sha256(
-            child_input_vocabulary
-        )
+        self._child_input_vocabulary_sha256 = _tensor_sha256(child_input_vocabulary)
         self.map_sha256 = map_sha256
         if (
             _digest(
@@ -4040,43 +3924,28 @@ class Lfm2DynamicClosedLoopAdapter:
         manifest_capture = parent_cache.manifest.get("capture", {})
         if replay_config is None:
             replay_config = Lfm2CircuitTraceCaptureConfig(
-                sample_last_tokens=int(
-                    manifest_capture.get("sample_last_tokens", 8)
-                ),
-                max_decode_steps=int(
-                    manifest_capture.get("max_decode_steps", 32)
-                ),
+                sample_last_tokens=int(manifest_capture.get("sample_last_tokens", 8)),
+                max_decode_steps=int(manifest_capture.get("max_decode_steps", 32)),
                 max_capture_bytes=int(
-                    manifest_capture.get(
-                        "max_capture_bytes", 512 * 1024 * 1024
-                    )
+                    manifest_capture.get("max_capture_bytes", 512 * 1024 * 1024)
                 ),
-                logit_rtol=float(
-                    manifest_capture.get("logit_rtol", 1e-5)
-                ),
-                logit_atol=float(
-                    manifest_capture.get("logit_atol", 1e-6)
-                ),
+                logit_rtol=float(manifest_capture.get("logit_rtol", 1e-5)),
+                logit_atol=float(manifest_capture.get("logit_atol", 1e-6)),
                 require_top1_agreement=bool(
-                    manifest_capture.get(
-                        "require_top1_agreement", True
-                    )
+                    manifest_capture.get("require_top1_agreement", True)
                 ),
                 decode_trace_mode=FULL_PREFIX_CANONICAL_TRACE_MODE,
             )
         if (
             not isinstance(replay_config, Lfm2CircuitTraceCaptureConfig)
-            or replay_config.decode_trace_mode
-            != FULL_PREFIX_CANONICAL_TRACE_MODE
+            or replay_config.decode_trace_mode != FULL_PREFIX_CANONICAL_TRACE_MODE
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "replay_config must require canonical full-prefix replay."
             )
         self.replay_config = replay_config
         self._records = self._build_records()
-        self._records_by_key = {
-            record.key: record for record in self._records
-        }
+        self._records_by_key = {record.key: record for record in self._records}
         # The teacher-forced subset is what the compiler's own fit/validation
         # split is allowed to rank; the merged records stay addressable by
         # merged batch index for every solve that reads ``self._records``.
@@ -4100,9 +3969,7 @@ class Lfm2DynamicClosedLoopAdapter:
             }
         )
         self._active_outer_transaction: _ChildModelTransaction | None = None
-        self._split_transactions: dict[
-            int, Lfm2StructuralSplitInstallTransaction
-        ] = {}
+        self._split_transactions: dict[int, Lfm2StructuralSplitInstallTransaction] = {}
         self._producer_payloads: dict[int, _ProducerPayload] = {}
         self._consumer_payloads: dict[int, _ConsumerPayload] = {}
         self._downstream_payloads: dict[int, _DownstreamPayload] = {}
@@ -4112,38 +3979,33 @@ class Lfm2DynamicClosedLoopAdapter:
         # dictionaries solely to infer this fact from their keys; those
         # payload values are layer-local and can be released once this ledger
         # entry is sealed.
-        self._accepted_layer_completion_ledger: dict[
-            int, Mapping[str, Any]
-        ] = {}
-        self._accepted_layer_completion_binding: Mapping[str, Any] | None = (
-            None
-        )
-        self._accepted_layer_completion_compiler_policy: (
-            Mapping[str, Any] | None
-        ) = None
-        self._accepted_layer_completion_resume_proof: (
-            Mapping[str, Any] | None
-        ) = None
-        self._accepted_layer_completion_portable_state_sha256: str | None = (
-            None
-        )
-        self._accepted_layer_completion_portable_topology_sha256: (
-            str | None
-        ) = None
+        self._accepted_layer_completion_ledger: dict[int, Mapping[str, Any]] = {}
+        self._accepted_layer_completion_binding: Mapping[str, Any] | None = None
+        self._accepted_layer_completion_compiler_policy: Mapping[str, Any] | None = None
+        self._accepted_layer_completion_resume_proof: Mapping[str, Any] | None = None
+        self._accepted_layer_completion_portable_state_sha256: str | None = None
+        self._accepted_layer_completion_portable_topology_sha256: str | None = None
         # ``(layer_index, covariance, report)`` of the most recently accepted
         # layer's observed upstream drift.  ``None`` until the first accepted
         # layer, and never populated at all when the noise-aware lane is off.
-        self._accepted_layer_input_error: (
-            tuple[int, Any, Mapping[str, Any]] | None
-        ) = None
+        self._accepted_layer_input_error: tuple[int, Any, Mapping[str, Any]] | None = (
+            None
+        )
         # Uniform / margin-derived moving-gauge FIT row profiles of the most
         # recent row manifest, plus the margin profile receipt.  Empty until a
         # manifest is built; the margin entry stays ``None`` on the uniform lane.
-        self._moving_gauge_row_weight_profiles: Mapping[str, Any] = (
-            MappingProxyType({})
-        )
+        self._moving_gauge_row_weight_profiles: Mapping[str, Any] = MappingProxyType({})
         self._body_reclosure_payload: _BodyReclosurePayload | None = None
         self._body_reclosure_installed_artifact_sha256: str | None = None
+        self._body_reclosure_phase_cache_request: (
+            Lfm2BodyReclosurePhaseRequest | None
+        ) = None
+        self._body_reclosure_phase_cache_hit: (
+            AuthenticatedLfm2BodyReclosurePhase | None
+        ) = None
+        self._body_reclosure_phase_cache_pending: (
+            _PendingBodyReclosureCachePublication | None
+        ) = None
         self._final_payload: _FinalNormPayload | None = None
         self._output_payload: _OutputInterfacePayload | None = None
         self._counters = {name: 0 for name in _FORBIDDEN_COUNTERS}
@@ -4154,9 +4016,7 @@ class Lfm2DynamicClosedLoopAdapter:
         self._heterogeneous_single_pass_certification_registry: dict[
             str, Mapping[str, Any]
         ] = {}
-        self._latest_heterogeneous_single_pass_certification_key: str | None = (
-            None
-        )
+        self._latest_heterogeneous_single_pass_certification_key: str | None = None
 
     def _emit_body_progress(
         self,
@@ -4205,9 +4065,7 @@ class Lfm2DynamicClosedLoopAdapter:
             "replay_sharding_resolved_devices": (
                 None if devices is None else ",".join(devices)
             ),
-            "replay_sharding_worker_count": (
-                1 if devices is None else len(devices)
-            ),
+            "replay_sharding_worker_count": (1 if devices is None else len(devices)),
             "replay_sharding_dropped_device_count": int(dropped),
             "replay_sharding_fallback_reason": fallback_reason,
             "replay_sharding_batch_count": int(record_count),
@@ -4222,9 +4080,7 @@ class Lfm2DynamicClosedLoopAdapter:
 
         timing = getattr(replay, "capture_timing", None)
         sharding = (
-            timing.get("replay_sharding")
-            if isinstance(timing, Mapping)
-            else None
+            timing.get("replay_sharding") if isinstance(timing, Mapping) else None
         )
         if not isinstance(sharding, Mapping):
             return {}
@@ -4243,9 +4099,7 @@ class Lfm2DynamicClosedLoopAdapter:
         wall_seconds = float(sharding.get("replay_wall_seconds", 0.0) or 0.0)
         devices = sharding.get("devices")
         planned_batch_indices = sharding.get("planned_batch_indices")
-        original_batch_assignment = sharding.get(
-            "original_batch_assignment"
-        )
+        original_batch_assignment = sharding.get("original_batch_assignment")
         return {
             "replay_sharding_devices": (
                 ",".join(str(value) for value in devices)
@@ -4323,17 +4177,14 @@ class Lfm2DynamicClosedLoopAdapter:
                     "capture points."
                 )
             pairs.append((int(scope.layer_index), point.value))
-            terminal_extra.update(
-                self._terminal_composition_extra_layers(scope)
-            )
+            terminal_extra.update(self._terminal_composition_extra_layers(scope))
         layers = tuple(layer_index for layer_index, _point in pairs)
         points = tuple(point for _layer_index, point in pairs)
         if (
             len(pairs) != 2
             or len(set(layers)) != len(layers)
             or len(set(points)) != len(points)
-            or tuple(sorted(set(layers) | terminal_extra))
-            != selected_layer_indices
+            or tuple(sorted(set(layers) | terminal_extra)) != selected_layer_indices
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "A merged parent-evidence profile must union two distinct "
@@ -4344,9 +4195,7 @@ class Lfm2DynamicClosedLoopAdapter:
         )
         # The terminal-floor extension is part of the inventory contract, so
         # it names its own compatibility class here too.
-        role += "".join(
-            f"+terminal.{index:03d}" for index in sorted(terminal_extra)
-        )
+        role += "".join(f"+terminal.{index:03d}" for index in sorted(terminal_extra))
         return role, points
 
     def _selected_parent_profile_role(
@@ -4356,9 +4205,7 @@ class Lfm2DynamicClosedLoopAdapter:
         selected_layer_indices: tuple[int, ...],
         *,
         body_internal: bool,
-        merged_requests: (
-            tuple[tuple[FoldScope, CapturePoint], ...] | None
-        ) = None,
+        merged_requests: (tuple[tuple[FoldScope, CapturePoint], ...] | None) = None,
     ) -> tuple[str, tuple[str, ...]]:
         """Resolve one exact parent-evidence inventory compatibility class."""
 
@@ -4377,9 +4224,7 @@ class Lfm2DynamicClosedLoopAdapter:
             expected_selection = (
                 None
                 if scope.layer_index is None
-                else tuple(
-                    sorted({int(scope.layer_index), *terminal_extra})
-                )
+                else tuple(sorted({int(scope.layer_index), *terminal_extra}))
             )
             if (
                 body_internal
@@ -4400,9 +4245,7 @@ class Lfm2DynamicClosedLoopAdapter:
             # distinct compatibility class rather than reusing the plain role.
             return (
                 f"layer.{scope.layer_index:03d}"
-                + "".join(
-                    f"+terminal.{index:03d}" for index in terminal_extra
-                ),
+                + "".join(f"+terminal.{index:03d}" for index in terminal_extra),
                 tuple(
                     value.value
                     for value in (
@@ -4429,16 +4272,14 @@ class Lfm2DynamicClosedLoopAdapter:
                 )
             if (
                 point is CapturePoint.PRE_BODY_RECLOSURE
-                and selected_layer_indices
-                == tuple(range(len(self.child_layers)))
+                and selected_layer_indices == tuple(range(len(self.child_layers)))
             ):
                 return (
                     "body_pre",
                     (CapturePoint.PRE_BODY_RECLOSURE.value,),
                 )
-            if (
-                point is CapturePoint.POST_BODY_RECLOSURE
-                and selected_layer_indices == (last_layer,)
+            if point is CapturePoint.POST_BODY_RECLOSURE and selected_layer_indices == (
+                last_layer,
             ):
                 return (
                     "body_post",
@@ -4493,9 +4334,7 @@ class Lfm2DynamicClosedLoopAdapter:
         """Return the exact, consumer-derived parent inventory for one batch."""
 
         inventory = frozenset(reference.ordered_tensor_names)
-        required_inputs = _SELECTIVE_INPUT_TENSORS.difference(
-            {"input.position_ids"}
-        )
+        required_inputs = _SELECTIVE_INPUT_TENSORS.difference({"input.position_ids"})
         missing = set(required_inputs.difference(inventory))
         selected = set(_SELECTIVE_INPUT_TENSORS.intersection(inventory))
         phases_by_layer: dict[int, tuple[str, ...]] = {}
@@ -4505,14 +4344,11 @@ class Lfm2DynamicClosedLoopAdapter:
                 sorted(
                     name[: -len(marker)]
                     for name in inventory
-                    if name.endswith(marker)
-                    and not name.startswith("cached_prefill.")
+                    if name.endswith(marker) and not name.startswith("cached_prefill.")
                 )
             )
             if not phases:
-                missing.add(
-                    f"canonical layer {layer_index} phase lattice"
-                )
+                missing.add(f"canonical layer {layer_index} phase lattice")
             phases_by_layer[layer_index] = phases
         phase_lattices = set(phases_by_layer.values())
         if len(phase_lattices) != 1:
@@ -4549,9 +4385,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 for layer_index in selected_layer_indices
             }
         elif profile_role.startswith("body_internal.layer."):
-            suffixes_by_layer = {
-                selected_layer_indices[0]: {"residual.pre"}
-            }
+            suffixes_by_layer = {selected_layer_indices[0]: {"residual.pre"}}
         elif profile_role in {"body_post", "final_normalization"}:
             suffixes_by_layer = {
                 selected_layer_indices[0]: {
@@ -4560,9 +4394,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 }
             }
         elif profile_role == "output_interface":
-            suffixes_by_layer = {
-                selected_layer_indices[0]: {"residual.pre"}
-            }
+            suffixes_by_layer = {selected_layer_indices[0]: {"residual.pre"}}
         else:  # pragma: no cover - role resolver is exhaustive
             raise AssertionError("unknown selected-parent profile role")
 
@@ -4581,9 +4413,7 @@ class Lfm2DynamicClosedLoopAdapter:
                         value_cache = base + "attention.value_cache"
                         if (key_cache in inventory) != (value_cache in inventory):
                             missing.add(
-                                value_cache
-                                if key_cache in inventory
-                                else key_cache
+                                value_cache if key_cache in inventory else key_cache
                             )
                         elif key_cache in inventory:
                             selected.update((key_cache, value_cache))
@@ -4635,8 +4465,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 session.verify()
             except Exception as exc:
                 raise Lfm2DynamicClosedLoopAdapterError(
-                    "Selected parent evidence session failed live "
-                    "verification."
+                    "Selected parent evidence session failed live verification."
                 ) from exc
         references = session.batch_references
         if (
@@ -4651,8 +4480,7 @@ class Lfm2DynamicClosedLoopAdapter:
             != self._selected_parent_bound_reference_ids
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
-                "Selected parent evidence session changed its exact live "
-                "binding."
+                "Selected parent evidence session changed its exact live binding."
             )
         return session
 
@@ -4663,9 +4491,7 @@ class Lfm2DynamicClosedLoopAdapter:
         selected_layer_indices: tuple[int, ...],
         *,
         body_internal: bool,
-        merged_requests: (
-            tuple[tuple[FoldScope, CapturePoint], ...] | None
-        ) = None,
+        merged_requests: (tuple[tuple[FoldScope, CapturePoint], ...] | None) = None,
     ) -> tuple[str, str, tuple[str, ...], tuple[tuple[str, ...], ...]]:
         if self.selective_session is None:
             raise Lfm2DynamicClosedLoopAdapterError(
@@ -4685,9 +4511,7 @@ class Lfm2DynamicClosedLoopAdapter:
             selected_layer_indices,
             allowed_points,
         )
-        cached_contract = self._selected_parent_profile_contract_cache.get(
-            contract_key
-        )
+        cached_contract = self._selected_parent_profile_contract_cache.get(contract_key)
         if cached_contract is not None:
             return (
                 cached_contract[0],
@@ -4714,9 +4538,7 @@ class Lfm2DynamicClosedLoopAdapter:
             inventories,
         )
         while len(self._selected_parent_profile_contract_cache) > 3:
-            oldest = next(
-                iter(self._selected_parent_profile_contract_cache)
-            )
+            oldest = next(iter(self._selected_parent_profile_contract_cache))
             self._selected_parent_profile_contract_cache.pop(oldest)
         return profile_sha256, profile_role, allowed_points, inventories
 
@@ -4770,10 +4592,7 @@ class Lfm2DynamicClosedLoopAdapter:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Selected parent components require a selective session."
             )
-        if (
-            not tensor_names
-            or tensor_names != tuple(sorted(set(tensor_names)))
-        ):
+        if not tensor_names or tensor_names != tuple(sorted(set(tensor_names))):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Selected parent component names are not canonical."
             )
@@ -4813,9 +4632,7 @@ class Lfm2DynamicClosedLoopAdapter:
         # deserialize the complete descriptor inventory on every component
         # check, recreating the very repeated work this cache removes.
         record = getattr(reference, "_record", None)
-        inventory = (
-            None if not isinstance(record, Mapping) else record.get("tensors")
-        )
+        inventory = None if not isinstance(record, Mapping) else record.get("tensors")
         if not isinstance(inventory, Mapping):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Selected parent reference lost its descriptor inventory."
@@ -4847,9 +4664,7 @@ class Lfm2DynamicClosedLoopAdapter:
             batch_index=int(reference.index),
             input_sha256=str(reference.input_sha256),
             tensor_name=tensor_name,
-            tensor_descriptor_sha256=canonical_sha256(
-                dict(resolved_descriptor)
-            ),
+            tensor_descriptor_sha256=canonical_sha256(dict(resolved_descriptor)),
         )
 
     @staticmethod
@@ -4868,10 +4683,8 @@ class Lfm2DynamicClosedLoopAdapter:
     ) -> bool:
         try:
             return (
-                str(tensor.dtype).replace("torch.", "")
-                == descriptor["dtype"]
-                and [int(size) for size in tensor.shape]
-                == descriptor["shape"]
+                str(tensor.dtype).replace("torch.", "") == descriptor["dtype"]
+                and [int(size) for size in tensor.shape] == descriptor["shape"]
                 and int(tensor.numel()) == int(descriptor["numel"])
                 and int(tensor.numel() * tensor.element_size())
                 == int(descriptor["size_bytes"])
@@ -4906,8 +4719,7 @@ class Lfm2DynamicClosedLoopAdapter:
             != component._authenticated_source_ordered_tensor_names
             or component.source_selection_sha256
             != component._authenticated_source_selection_sha256
-            or cache_key.tensor_name
-            not in component.source_ordered_tensor_names
+            or cache_key.tensor_name not in component.source_ordered_tensor_names
             or id(component.tensor) != component.tensor_object_id
             or self._selected_parent_tensor_version(component.tensor)
             != component.tensor_version
@@ -4921,8 +4733,7 @@ class Lfm2DynamicClosedLoopAdapter:
             )
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
-                "Selected parent tensor component changed after authenticated "
-                "load."
+                "Selected parent tensor component changed after authenticated load."
             )
 
     def _verify_selected_parent_component_cache(
@@ -4941,8 +4752,7 @@ class Lfm2DynamicClosedLoopAdapter:
             verify_session=not session_verified,
         )
         references = {
-            int(reference.index): reference
-            for reference in session.batch_references
+            int(reference.index): reference for reference in session.batch_references
         }
         inventories = {
             batch_index: self._selected_parent_reference_inventory(reference)
@@ -4950,15 +4760,11 @@ class Lfm2DynamicClosedLoopAdapter:
         }
         torch = _torch() if exact_tensor_bytes else None
         tensor_sha256_by_object: dict[int, str] = {}
-        exact_hash_started = (
-            time.perf_counter() if exact_tensor_bytes else None
-        )
+        exact_hash_started = time.perf_counter() if exact_tensor_bytes else None
         exact_hash_tensor_count = 0
         exact_hash_logical_bytes = 0
         logical_bytes = 0
-        for cache_key, component in (
-            self._selected_parent_component_cache.items()
-        ):
+        for cache_key, component in self._selected_parent_component_cache.items():
             reference = references.get(cache_key.batch_index)
             if reference is None:
                 raise Lfm2DynamicClosedLoopAdapterError(
@@ -4984,9 +4790,9 @@ class Lfm2DynamicClosedLoopAdapter:
                     exact_hash_logical_bytes += component.logical_bytes
                 if (
                     tensor_sha256
-                    != inventories[cache_key.batch_index][
-                        cache_key.tensor_name
-                    ]["sha256"]
+                    != inventories[cache_key.batch_index][cache_key.tensor_name][
+                        "sha256"
+                    ]
                 ):
                     raise Lfm2DynamicClosedLoopAdapterError(
                         "Selected parent tensor component changed after "
@@ -4998,14 +4804,12 @@ class Lfm2DynamicClosedLoopAdapter:
                 self._selected_parent_component_cache_logical_bytes,
                 bool,
             )
-            or self._selected_parent_component_cache_logical_bytes
-            != logical_bytes
+            or self._selected_parent_component_cache_logical_bytes != logical_bytes
             or isinstance(
                 self._selected_parent_component_cache_peak_logical_bytes,
                 bool,
             )
-            or self._selected_parent_component_cache_peak_logical_bytes
-            < logical_bytes
+            or self._selected_parent_component_cache_peak_logical_bytes < logical_bytes
             or isinstance(self._selected_parent_component_load_count, bool)
             or self._selected_parent_component_load_count < 0
         ):
@@ -5071,8 +4875,7 @@ class Lfm2DynamicClosedLoopAdapter:
         if self._active_selected_parent_profile is not None:
             errors.append(
                 Lfm2DynamicClosedLoopAdapterError(
-                    "Cannot clear selected parent components with an active "
-                    "profile."
+                    "Cannot clear selected parent components with an active profile."
                 )
             )
         for component in self._selected_parent_component_cache.values():
@@ -5144,8 +4947,7 @@ class Lfm2DynamicClosedLoopAdapter:
                         component_keys,
                         strict=True,
                     )
-                    if component_key
-                    not in self._selected_parent_component_cache
+                    if component_key not in self._selected_parent_component_cache
                 )
                 if not missing_names:
                     continue
@@ -5166,9 +4968,7 @@ class Lfm2DynamicClosedLoopAdapter:
                         reference.index,
                         missing_names,
                     )
-                    source_load_wall_seconds = (
-                        time.perf_counter() - source_load_started
-                    )
+                    source_load_wall_seconds = time.perf_counter() - source_load_started
                     if (
                         payload.released
                         or payload.batch_index != reference.index
@@ -5176,8 +4976,7 @@ class Lfm2DynamicClosedLoopAdapter:
                         or payload.session_sha256
                         != self.selective_session.evidence_sha256
                         or payload.ordered_tensor_names != missing_names
-                        or payload.selection_sha256
-                        != expected_selection_sha256
+                        or payload.selection_sha256 != expected_selection_sha256
                         or payload.logical_bytes != expected_bytes
                         or tuple(sorted(payload.tensors)) != missing_names
                     ):
@@ -5202,9 +5001,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 release_error: BaseException | None = None
                 if payload is not None:
                     try:
-                        self.selective_session.release_selected_tensors(
-                            payload
-                        )
+                        self.selective_session.release_selected_tensors(payload)
                     except BaseException as exc:
                         release_error = exc
                         emergency_release = getattr(payload, "_release", None)
@@ -5220,8 +5017,7 @@ class Lfm2DynamicClosedLoopAdapter:
                                 )
                     if not payload.released and release_error is None:
                         release_error = Lfm2DynamicClosedLoopAdapterError(
-                            "Selected parent component source payload did not "
-                            "release."
+                            "Selected parent component source payload did not release."
                         )
                 if primary_error is not None:
                     tensors.clear()
@@ -5253,16 +5049,10 @@ class Lfm2DynamicClosedLoopAdapter:
                         _SelectedParentTensorComponent(
                             key=component_key,
                             tensor=tensor,
-                            logical_bytes=int(
-                                descriptor_inventory[name]["size_bytes"]
-                            ),
+                            logical_bytes=int(descriptor_inventory[name]["size_bytes"]),
                             source_ordered_tensor_names=missing_names,
-                            source_selection_sha256=(
-                                expected_selection_sha256
-                            ),
-                            _authenticated_source_ordered_tensor_names=(
-                                missing_names
-                            ),
+                            source_selection_sha256=(expected_selection_sha256),
+                            _authenticated_source_ordered_tensor_names=(missing_names),
                             _authenticated_source_selection_sha256=(
                                 expected_selection_sha256
                             ),
@@ -5277,9 +5067,7 @@ class Lfm2DynamicClosedLoopAdapter:
                         raise Lfm2DynamicClosedLoopAdapterError(
                             "Selected parent component was admitted twice."
                         )
-                    self._selected_parent_component_cache[
-                        component.key
-                    ] = component
+                    self._selected_parent_component_cache[component.key] = component
                     newly_admitted.append(component.key)
                     self._selected_parent_component_cache_logical_bytes += (
                         component.logical_bytes
@@ -5302,9 +5090,7 @@ class Lfm2DynamicClosedLoopAdapter:
 
     def _trim_selected_parent_component_cache(
         self,
-        required_by_batch: tuple[
-            tuple[_SelectedParentComponentKey, ...], ...
-        ],
+        required_by_batch: tuple[tuple[_SelectedParentComponentKey, ...], ...],
     ) -> None:
         required = {
             component_key
@@ -5409,8 +5195,7 @@ class Lfm2DynamicClosedLoopAdapter:
             strict=True,
         ):
             expected_bytes = sum(
-                int(descriptor_inventory[name]["size_bytes"])
-                for name in names
+                int(descriptor_inventory[name]["size_bytes"]) for name in names
             )
             expected_keys = tuple(
                 self._selected_parent_component_key(
@@ -5424,12 +5209,10 @@ class Lfm2DynamicClosedLoopAdapter:
                 payload.released
                 or payload.batch_index != reference.index
                 or payload.input_sha256 != reference.input_sha256
-                or payload.session_sha256
-                != self.selective_session.evidence_sha256
+                or payload.session_sha256 != self.selective_session.evidence_sha256
                 or payload.ordered_tensor_names != names
                 or payload.selection_sha256 != selection_sha256
-                or payload._authenticated_selection_sha256
-                != selection_sha256
+                or payload._authenticated_selection_sha256 != selection_sha256
                 or payload.logical_bytes != expected_bytes
                 or payload._authenticated_logical_bytes != expected_bytes
                 or payload._component_keys != expected_keys
@@ -5510,9 +5293,7 @@ class Lfm2DynamicClosedLoopAdapter:
         selected_layer_indices: tuple[int, ...],
         *,
         body_internal: bool,
-        merged_requests: (
-            tuple[tuple[FoldScope, CapturePoint], ...] | None
-        ) = None,
+        merged_requests: (tuple[tuple[FoldScope, CapturePoint], ...] | None) = None,
     ) -> _SelectedParentProfileBorrow:
         if self.selective_session is None:
             raise Lfm2DynamicClosedLoopAdapterError(
@@ -5543,13 +5324,9 @@ class Lfm2DynamicClosedLoopAdapter:
         if active is None:
             payloads: list[_SelectedParentBatchPayloadView] = []
             batches: list[Lfm2CircuitTraceBatch] = []
-            components_by_batch: list[
-                tuple[_SelectedParentTensorComponent, ...]
-            ] = []
+            components_by_batch: list[tuple[_SelectedParentTensorComponent, ...]] = []
             try:
-                required_by_batch = self._admit_selected_parent_components(
-                    inventories
-                )
+                required_by_batch = self._admit_selected_parent_components(inventories)
                 for reference, names, component_keys in zip(
                     self.selective_session.batch_references,
                     inventories,
@@ -5571,9 +5348,7 @@ class Lfm2DynamicClosedLoopAdapter:
                         input_sha256=reference.input_sha256,
                         ordered_tensor_names=names,
                         logical_bytes=logical_bytes,
-                        session_sha256=(
-                            self.selective_session.evidence_sha256
-                        ),
+                        session_sha256=(self.selective_session.evidence_sha256),
                         selection_sha256=selection_sha256,
                         component_keys=component_keys,
                         tensors={
@@ -5597,9 +5372,7 @@ class Lfm2DynamicClosedLoopAdapter:
                             _record=MappingProxyType(reference.record),
                         )
                     )
-                self._verify_live_selected_parent_session(
-                    verify_session=True
-                )
+                self._verify_live_selected_parent_session(verify_session=True)
                 active = _SelectedParentEvidenceProfile(
                     profile_sha256=profile_sha256,
                     profile_role=profile_role,
@@ -5614,9 +5387,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     components_by_batch=tuple(components_by_batch),
                 )
                 self._active_selected_parent_profile = active
-                self._trim_selected_parent_component_cache(
-                    required_by_batch
-                )
+                self._trim_selected_parent_component_cache(required_by_batch)
                 self._verify_selected_parent_profile(
                     active,
                     profile_sha256=profile_sha256,
@@ -5707,14 +5478,10 @@ class Lfm2DynamicClosedLoopAdapter:
         )
         expected_borrow_sha256 = canonical_sha256(
             {
-                "schema": (
-                    "neural-forge-lfm2-selected-parent-profile-borrow-v1"
-                ),
+                "schema": ("neural-forge-lfm2-selected-parent-profile-borrow-v1"),
                 "profile_sha256": profile.profile_sha256,
                 "capture_point": borrow.capture_point,
-                "selected_layer_indices": list(
-                    borrow.selected_layer_indices
-                ),
+                "selected_layer_indices": list(borrow.selected_layer_indices),
             }
         )
         if (
@@ -5723,13 +5490,11 @@ class Lfm2DynamicClosedLoopAdapter:
             or self._active_selected_parent_profile is not profile
             or borrow.borrow_sha256 != expected_borrow_sha256
             or borrow.capture_point not in profile.allowed_capture_points
-            or borrow.selected_layer_indices
-            != profile.selected_layer_indices
+            or borrow.selected_layer_indices != profile.selected_layer_indices
             or profile.borrow_count <= 0
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
-                "Selected parent profile borrow lost ownership or "
-                "authentication."
+                "Selected parent profile borrow lost ownership or authentication."
             )
         self._verify_selected_parent_profile(
             profile,
@@ -5751,9 +5516,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 "schema": "neural-forge-lfm2-selected-parent-profile-borrow-v1",
                 "profile_sha256": profile.profile_sha256,
                 "capture_point": borrow.capture_point,
-                "selected_layer_indices": list(
-                    borrow.selected_layer_indices
-                ),
+                "selected_layer_indices": list(borrow.selected_layer_indices),
             }
         )
         if (
@@ -5762,8 +5525,7 @@ class Lfm2DynamicClosedLoopAdapter:
             or self._active_selected_parent_profile is not profile
             or borrow.borrow_sha256 != expected_sha256
             or borrow.capture_point not in profile.allowed_capture_points
-            or borrow.selected_layer_indices
-            != profile.selected_layer_indices
+            or borrow.selected_layer_indices != profile.selected_layer_indices
             or profile.borrow_count <= 0
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
@@ -5976,9 +5738,7 @@ class Lfm2DynamicClosedLoopAdapter:
             coefficients=(1.0,) * source_channels,
         )
 
-    def _batch_indices(
-        self, records: Sequence[TrajectoryRecord]
-    ) -> tuple[int, ...]:
+    def _batch_indices(self, records: Sequence[TrajectoryRecord]) -> tuple[int, ...]:
         indices = []
         for record in records:
             canonical = self._records_by_key.get(record.key)
@@ -6035,9 +5795,7 @@ class Lfm2DynamicClosedLoopAdapter:
     def _physical_parameter_contract(self) -> tuple[str, int, int]:
         """Seal identities, storage, gradients, modes, and exact unique count."""
 
-        parameters = tuple(
-            self.child_model.named_parameters(remove_duplicate=False)
-        )
+        parameters = tuple(self.child_model.named_parameters(remove_duplicate=False))
         unique: dict[int, Any] = {}
         entries = []
         for name, parameter in parameters:
@@ -6088,9 +5846,7 @@ class Lfm2DynamicClosedLoopAdapter:
         """Resolve every logical residual writer and its physical parameters."""
 
         torch = _torch()
-        named = dict(
-            self.child_model.named_parameters(remove_duplicate=False)
-        )
+        named = dict(self.child_model.named_parameters(remove_duplicate=False))
         result: dict[str, _MovingGaugeWriterSite] = {}
 
         def dense_site(
@@ -6141,9 +5897,7 @@ class Lfm2DynamicClosedLoopAdapter:
 
         for layer_index, layer in enumerate(self.child_layers):
             if self._operator_kind(layer_index) == "full_attention":
-                operator_id = (
-                    f"model.layers.{layer_index}.self_attn.out_proj.weight"
-                )
+                operator_id = f"model.layers.{layer_index}.self_attn.out_proj.weight"
                 result[operator_id] = dense_site(
                     operator_id,
                     layer.self_attn.out_proj.weight,
@@ -6163,12 +5917,8 @@ class Lfm2DynamicClosedLoopAdapter:
                         physical_state_sha256=view.physical_state_sha256,
                     )
                 else:
-                    encoder_id = (
-                        f"model.layers.{layer_index}.conv.out_proj.0.weight"
-                    )
-                    decoder_id = (
-                        f"model.layers.{layer_index}.conv.out_proj.1.weight"
-                    )
+                    encoder_id = f"model.layers.{layer_index}.conv.out_proj.0.weight"
+                    decoder_id = f"model.layers.{layer_index}.conv.out_proj.1.weight"
                     encoder = writer[0].weight
                     decoder = writer[1].weight
                     if (
@@ -6199,11 +5949,9 @@ class Lfm2DynamicClosedLoopAdapter:
             for site in result.values()
             for parameter in site.physical_parameters
         )
-        if (
-            len(result) != 2 * len(self.child_layers)
-            or len({id(value) for value in physical_parameters})
-            != len(physical_parameters)
-        ):
+        if len(result) != 2 * len(self.child_layers) or len(
+            {id(value) for value in physical_parameters}
+        ) != len(physical_parameters):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "moving_gauge_v3 could not resolve the exact two-logical-writer-"
                 "per-layer physical topology."
@@ -6226,9 +5974,13 @@ class Lfm2DynamicClosedLoopAdapter:
             and len(parameters) == 2
         ):
             weight = (
-                parameters[1].detach().to(device="cpu", dtype=torch.float64)
-                @ parameters[0].detach().to(device="cpu", dtype=torch.float64)
-            ).to(dtype=parameters[1].dtype).contiguous()
+                (
+                    parameters[1].detach().to(device="cpu", dtype=torch.float64)
+                    @ parameters[0].detach().to(device="cpu", dtype=torch.float64)
+                )
+                .to(dtype=parameters[1].dtype)
+                .contiguous()
+            )
         else:
             raise Lfm2DynamicClosedLoopAdapterError(
                 f"Moving-gauge writer site {site.parameter_id} is malformed."
@@ -6257,9 +6009,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 strict=True,
             )
         }
-        if len(result) != sum(
-            len(site.physical_parameters) for site in sites.values()
-        ):
+        if len(result) != sum(len(site.physical_parameters) for site in sites.values()):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Moving-gauge physical writer names are aliased."
             )
@@ -6282,9 +6032,7 @@ class Lfm2DynamicClosedLoopAdapter:
         sites: Mapping[str, _MovingGaugeWriterSite],
         replacements: Mapping[str, Any],
         parameter_ids: Sequence[str],
-        factor_artifacts: Mapping[
-            str, _MovingGaugeFactorWriterArtifact
-        ] | None = None,
+        factor_artifacts: Mapping[str, _MovingGaugeFactorWriterArtifact] | None = None,
     ) -> tuple[str, ...]:
         """Atomically publish dense actions into dense or fixed-rank writers."""
 
@@ -6323,12 +6071,10 @@ class Lfm2DynamicClosedLoopAdapter:
             if (
                 artifact is None
                 or artifact.writer_rank != site.writer_rank
-                or artifact.writer_contract_sha256
-                != site.writer_contract_sha256
+                or artifact.writer_contract_sha256 != site.writer_contract_sha256
                 or artifact.seed_physical_state_sha256
                 != site.seed_physical_state_sha256
-                or artifact.physical_parameter_ids
-                != site.physical_parameter_ids
+                or artifact.physical_parameter_ids != site.physical_parameter_ids
                 or artifact.requested_action_sha256
                 != _tensor_sha256(
                     replacement.detach()
@@ -6343,8 +6089,16 @@ class Lfm2DynamicClosedLoopAdapter:
             artifact.verify()
             copies.extend(
                 (
-                    (site.physical_parameter_ids[0], site.physical_parameters[0], artifact.encoder_weight),
-                    (site.physical_parameter_ids[1], site.physical_parameters[1], artifact.decoder_weight),
+                    (
+                        site.physical_parameter_ids[0],
+                        site.physical_parameters[0],
+                        artifact.encoder_weight,
+                    ),
+                    (
+                        site.physical_parameter_ids[1],
+                        site.physical_parameters[1],
+                        artifact.decoder_weight,
+                    ),
                 )
             )
         if len({name for name, _parameter, _replacement in copies}) != len(copies):
@@ -6358,8 +6112,7 @@ class Lfm2DynamicClosedLoopAdapter:
             for _name, parameter, replacement in copies
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
-                "Moving-gauge physical publication changed shape, dtype, or "
-                "finiteness."
+                "Moving-gauge physical publication changed shape, dtype, or finiteness."
             )
         snapshots = {
             name: parameter.detach().to(device="cpu").contiguous().clone()
@@ -6421,10 +6174,8 @@ class Lfm2DynamicClosedLoopAdapter:
                 return False
             if (
                 artifact.writer_rank != site.writer_rank
-                or artifact.writer_contract_sha256
-                != site.writer_contract_sha256
-                or artifact.physical_parameter_ids
-                != site.physical_parameter_ids
+                or artifact.writer_contract_sha256 != site.writer_contract_sha256
+                or artifact.physical_parameter_ids != site.physical_parameter_ids
                 or artifact.requested_action_sha256
                 != _tensor_sha256(
                     replacement.detach()
@@ -6552,9 +6303,7 @@ class Lfm2DynamicClosedLoopAdapter:
             batch_rows = []
             pending = []
             for phase in batch.phase_order:
-                key = (
-                    f"{phase}.layer.{anchor_layer_index:03d}.residual.pre"
-                )
+                key = f"{phase}.layer.{anchor_layer_index:03d}.residual.pre"
                 parent = batch.parent.tensors.get(key)
                 child = batch.child.tensors.get(key)
                 if (
@@ -6582,9 +6331,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     {
                         "batch_index": batch_index,
                         "phase": phase,
-                        "leading_shape": [
-                            int(value) for value in child.shape[:-1]
-                        ],
+                        "leading_shape": [int(value) for value in child.shape[:-1]],
                         "row_count": row_count,
                         "parent_input_sha256": batch.parent_input_sha256,
                         "child_input_sha256": batch.input_sha256,
@@ -6613,8 +6360,8 @@ class Lfm2DynamicClosedLoopAdapter:
                 "moving_gauge_v3 has no authenticated FIT rows."
             )
         uniform = torch.cat(tuple(weights), dim=0).contiguous()
-        margin_weights, margin_receipt = (
-            self._moving_gauge_margin_row_weights(entries, uniform)
+        margin_weights, margin_receipt = self._moving_gauge_margin_row_weights(
+            entries, uniform
         )
         body = {
             "schema": "neural-forge-lfm2-moving-gauge-row-alignment-v1",
@@ -6690,9 +6437,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     f"[rows, competitors] margin table per FIT phase; {key} "
                     "is missing or misaligned."
                 )
-            blocks.append(
-                table.detach().to(device="cpu", dtype=torch.float64)
-            )
+            blocks.append(table.detach().to(device="cpu", dtype=torch.float64))
         margins = torch.cat(tuple(blocks), dim=0).contiguous()
         if int(margins.shape[0]) != int(uniform.shape[0]):
             raise Lfm2DynamicClosedLoopAdapterError(
@@ -6700,13 +6445,9 @@ class Lfm2DynamicClosedLoopAdapter:
             )
         profile, report = lfm2_vocabulary_margin_row_weights(
             margins,
-            margin_floor_fraction=(
-                self.config.moving_gauge_margin_floor_fraction
-            ),
+            margin_floor_fraction=(self.config.moving_gauge_margin_floor_fraction),
             weight_floor=self.config.moving_gauge_margin_row_weight_floor,
-            weight_ceiling=(
-                self.config.moving_gauge_margin_row_weight_ceiling
-            ),
+            weight_ceiling=(self.config.moving_gauge_margin_row_weight_ceiling),
         )
         weighted = (uniform * profile).contiguous()
         receipt = MappingProxyType(
@@ -6743,10 +6484,8 @@ class Lfm2DynamicClosedLoopAdapter:
                 != tuple(int(value) for value in entry["leading_shape"])
                 or tuple(child.shape[:-1])
                 != tuple(int(value) for value in entry["leading_shape"])
-                or int(parent.shape[-1])
-                != int(self.coordinate_map.source_width)
-                or int(child.shape[-1])
-                != int(self.coordinate_map.target_width)
+                or int(parent.shape[-1]) != int(self.coordinate_map.source_width)
+                or int(child.shape[-1]) != int(self.coordinate_map.target_width)
             ):
                 raise Lfm2DynamicClosedLoopAdapterError(
                     f"moving_gauge_v3 row geometry changed at {key}."
@@ -6816,10 +6555,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     int(item) for item in value.shape[len(leading_shape) :]
                 )
                 geometry_is_valid = bool(
-                    tuple(
-                        int(item)
-                        for item in value.shape[: len(leading_shape)]
-                    )
+                    tuple(int(item) for item in value.shape[: len(leading_shape)])
                     == leading_shape
                     and math.prod(trailing_shape) == input_width
                 )
@@ -6857,9 +6593,7 @@ class Lfm2DynamicClosedLoopAdapter:
             prefix = f"model.layers.{layer_index}.feed_forward"
             result[f"{prefix}.w1.weight"] = layer.feed_forward.w1.weight
             result[f"{prefix}.w3.weight"] = layer.feed_forward.w3.weight
-        named = dict(
-            self.child_model.named_parameters(remove_duplicate=False)
-        )
+        named = dict(self.child_model.named_parameters(remove_duplicate=False))
         if (
             not result
             or len({id(value) for value in result.values()}) != len(result)
@@ -6940,9 +6674,7 @@ class Lfm2DynamicClosedLoopAdapter:
         row_alignment_sha256: str,
         boundary_evidence: Sequence[Lfm2MovingGaugeBoundaryEvidence],
         replacement_state: Lfm2MovingGaugeDenseReplacementState,
-        factor_writer_artifacts: Sequence[
-            _MovingGaugeFactorWriterArtifact
-        ],
+        factor_writer_artifacts: Sequence[_MovingGaugeFactorWriterArtifact],
         audit: ClosedLoopAudit,
     ) -> tuple[
         _CompactInputProducerReclosureState,
@@ -6966,9 +6698,8 @@ class Lfm2DynamicClosedLoopAdapter:
         torch = _torch()
         old_operator_rows = tuple(initial_operator_rows)
         old_mlp_rows = tuple(initial_mlp_rows)
-        if (
-            len(old_operator_rows) != len(self.child_layers)
-            or len(old_mlp_rows) != len(self.child_layers)
+        if len(old_operator_rows) != len(self.child_layers) or len(old_mlp_rows) != len(
+            self.child_layers
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Moving-gauge initial row inventory is incomplete."
@@ -6992,9 +6723,7 @@ class Lfm2DynamicClosedLoopAdapter:
         input_state = None
         causal_operator_ids: list[str] = []
         causal_operator_weights: list[Any] = []
-        causal_operator_factor_artifacts: list[
-            _MovingGaugeFactorWriterArtifact
-        ] = []
+        causal_operator_factor_artifacts: list[_MovingGaugeFactorWriterArtifact] = []
         causal_w2_ids: list[str] = []
         causal_w2_weights: list[Any] = []
         causal_steps: list[Mapping[str, Any]] = []
@@ -7037,9 +6766,7 @@ class Lfm2DynamicClosedLoopAdapter:
             for layer_index, layer in enumerate(self.child_layers):
                 pre_operator_capture = current_capture
                 del current_capture
-                pre_operator_capture_sha256 = (
-                    pre_operator_capture.capture_sha256
-                )
+                pre_operator_capture_sha256 = pre_operator_capture.capture_sha256
                 pre_operator_state_sha256 = self.child_state_fingerprint()
                 old_operator = old_operator_rows[layer_index]
                 old_mlp = old_mlp_rows[layer_index]
@@ -7067,9 +6794,7 @@ class Lfm2DynamicClosedLoopAdapter:
                             "short_conv_in_proj",
                         ),
                     )
-                    operator_id = (
-                        f"model.layers.{layer_index}.conv.out_proj.weight"
-                    )
+                    operator_id = f"model.layers.{layer_index}.conv.out_proj.weight"
                     operator_context_suffix = "short_conv.context"
                 if self._operator_kind(layer_index) == "full_attention":
                     operator_id = (
@@ -7112,15 +6837,11 @@ class Lfm2DynamicClosedLoopAdapter:
                             new_actual_normalized_input_rows=new_operator,
                             row_alignment_sha256=row_alignment_sha256,
                             old_child_state_sha256=state_before,
-                            new_child_state_sha256=(
-                                pre_operator_state_sha256
-                            ),
+                            new_child_state_sha256=(pre_operator_state_sha256),
                             row_weights=fit_weights,
                         )
                     )
-                operator_site_evidence_tuple = tuple(
-                    operator_site_evidence
-                )
+                operator_site_evidence_tuple = tuple(operator_site_evidence)
                 operator_input_state = (
                     compile_lfm2_moving_gauge_input_producer_reclosure(
                         operator_site_evidence_tuple
@@ -7130,12 +6851,9 @@ class Lfm2DynamicClosedLoopAdapter:
                     operator_input_state.replacements_by_parameter_id
                 )
                 operator_ids = tuple(
-                    site.parameter_id
-                    for site in operator_site_evidence_tuple
+                    site.parameter_id for site in operator_site_evidence_tuple
                 )
-                preview_producer_replacements.update(
-                    operator_input_replacements
-                )
+                preview_producer_replacements.update(operator_input_replacements)
                 input_state = _merge_compact_input_producer_state(
                     input_state,
                     operator_input_state,
@@ -7154,22 +6872,18 @@ class Lfm2DynamicClosedLoopAdapter:
                     layer_index=layer_index,
                     capture_boundary="post_operator_producer",
                 )
-                post_operator_producer_capture = (
-                    self._body_internal_recapture(
-                        fit_records,
-                        audit,
-                        selected_layer_indices=(layer_index,),
-                        body_internal_role="post_operator_producer",
-                    )
+                post_operator_producer_capture = self._body_internal_recapture(
+                    fit_records,
+                    audit,
+                    selected_layer_indices=(layer_index,),
+                    body_internal_role="post_operator_producer",
                 )
                 internal_captures.append(post_operator_producer_capture)
                 self._emit_body_progress(
                     "moving_gauge_preview_recapture_completed",
                     layer_index=layer_index,
                     capture_boundary="post_operator_producer",
-                    capture_sha256=(
-                        post_operator_producer_capture.capture_sha256
-                    ),
+                    capture_sha256=(post_operator_producer_capture.capture_sha256),
                 )
                 post_operator_producer_capture_sha256 = (
                     post_operator_producer_capture.capture_sha256
@@ -7178,18 +6892,16 @@ class Lfm2DynamicClosedLoopAdapter:
                 # Refresh O from the actual post-producer context.  The target
                 # is the operator write observed immediately before that
                 # producer group changed, so the repair is local and causal.
-                (operator_context_rows,) = (
-                    self._moving_gauge_capture_rows_and_release(
-                        post_operator_producer_capture,
-                        manifest,
+                (operator_context_rows,) = self._moving_gauge_capture_rows_and_release(
+                    post_operator_producer_capture,
+                    manifest,
+                    (
                         (
-                            (
-                                layer_index,
-                                operator_context_suffix,
-                                int(operator_prior.shape[1]),
-                            ),
+                            layer_index,
+                            operator_context_suffix,
+                            int(operator_prior.shape[1]),
                         ),
-                    )
+                    ),
                 )
                 del post_operator_producer_capture
                 release_closed_loop_capture_memory()
@@ -7207,15 +6919,11 @@ class Lfm2DynamicClosedLoopAdapter:
                         _compile_moving_gauge_factor_writer_artifact(
                             writers[operator_id],
                             operator_replacement,
-                            output_action_rows=(
-                                desired_operator_output_rows
-                            ),
+                            output_action_rows=(desired_operator_output_rows),
                             row_weights=fit_weights,
                         )
                     )
-                    causal_operator_factor_artifacts.append(
-                        operator_factor_artifact
-                    )
+                    causal_operator_factor_artifacts.append(operator_factor_artifact)
                 self._publish_moving_gauge_writer_replacements(
                     writers,
                     {operator_id: operator_replacement},
@@ -7231,22 +6939,18 @@ class Lfm2DynamicClosedLoopAdapter:
                     layer_index=layer_index,
                     capture_boundary="post_operator_consumer",
                 )
-                post_operator_consumer_capture = (
-                    self._body_internal_recapture(
-                        fit_records,
-                        audit,
-                        selected_layer_indices=(layer_index,),
-                        body_internal_role="post_operator_consumer",
-                    )
+                post_operator_consumer_capture = self._body_internal_recapture(
+                    fit_records,
+                    audit,
+                    selected_layer_indices=(layer_index,),
+                    body_internal_role="post_operator_consumer",
                 )
                 internal_captures.append(post_operator_consumer_capture)
                 self._emit_body_progress(
                     "moving_gauge_preview_recapture_completed",
                     layer_index=layer_index,
                     capture_boundary="post_operator_consumer",
-                    capture_sha256=(
-                        post_operator_consumer_capture.capture_sha256
-                    ),
+                    capture_sha256=(post_operator_consumer_capture.capture_sha256),
                 )
                 post_operator_consumer_capture_sha256 = (
                     post_operator_consumer_capture.capture_sha256
@@ -7264,9 +6968,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 )
                 del post_operator_consumer_capture
                 release_closed_loop_capture_memory()
-                post_operator_consumer_state_sha256 = (
-                    self.child_state_fingerprint()
-                )
+                post_operator_consumer_state_sha256 = self.child_state_fingerprint()
                 mlp_prefix = f"model.layers.{layer_index}.feed_forward"
                 mlp_site_evidence = []
                 for suffix, role in (("w1", "mlp_w1"), ("w3", "mlp_w3")):
@@ -7288,20 +6990,12 @@ class Lfm2DynamicClosedLoopAdapter:
                         )
                     )
                 mlp_site_evidence_tuple = tuple(mlp_site_evidence)
-                mlp_input_state = (
-                    compile_lfm2_moving_gauge_input_producer_reclosure(
-                        mlp_site_evidence_tuple
-                    )
+                mlp_input_state = compile_lfm2_moving_gauge_input_producer_reclosure(
+                    mlp_site_evidence_tuple
                 )
-                mlp_input_replacements = (
-                    mlp_input_state.replacements_by_parameter_id
-                )
-                mlp_ids = tuple(
-                    site.parameter_id for site in mlp_site_evidence_tuple
-                )
-                preview_producer_replacements.update(
-                    mlp_input_replacements
-                )
+                mlp_input_replacements = mlp_input_state.replacements_by_parameter_id
+                mlp_ids = tuple(site.parameter_id for site in mlp_site_evidence_tuple)
+                preview_producer_replacements.update(mlp_input_replacements)
                 input_state = _merge_compact_input_producer_state(
                     input_state,
                     mlp_input_state,
@@ -7359,16 +7053,10 @@ class Lfm2DynamicClosedLoopAdapter:
                 release_closed_loop_capture_memory()
                 desired_boundary = replacement_state.boundaries[
                     layer_index + 1
-                ].chart.encode(
-                    boundary_evidence[layer_index + 1].fit_parent_rows
-                )
+                ].chart.encode(boundary_evidence[layer_index + 1].fit_parent_rows)
                 desired_writer_output = desired_boundary - post_operator_rows
-                w2_id = (
-                    f"model.layers.{layer_index}.feed_forward.w2.weight"
-                )
-                w2_parameter = self._moving_gauge_site_logical_weight(
-                    writers[w2_id]
-                )
+                w2_id = f"model.layers.{layer_index}.feed_forward.w2.weight"
+                w2_parameter = self._moving_gauge_site_logical_weight(writers[w2_id])
                 replacement, solve_report = (
                     solve_lfm2_moving_gauge_anchored_writer_replacement(
                         writer_rows,
@@ -7414,9 +7102,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     "operator_consumer_parameter_id": operator_id,
                     "operator_parameter_ids": list(operator_ids),
                     "mlp_parameter_ids": list(mlp_ids),
-                    "pre_operator_capture_sha256": (
-                        pre_operator_capture_sha256
-                    ),
+                    "pre_operator_capture_sha256": (pre_operator_capture_sha256),
                     "post_operator_producer_capture_sha256": (
                         post_operator_producer_capture_sha256
                     ),
@@ -7426,9 +7112,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     "post_mlp_producer_capture_sha256": (
                         post_mlp_producer_capture_sha256
                     ),
-                    "post_w2_capture_sha256": (
-                        post_w2_capture_sha256
-                    ),
+                    "post_w2_capture_sha256": (post_w2_capture_sha256),
                     "operator_producer_replacement_weight_sha256": [
                         fingerprint_lfm2_moving_gauge_tensor(
                             operator_input_replacements[value]
@@ -7436,9 +7120,7 @@ class Lfm2DynamicClosedLoopAdapter:
                         for value in operator_ids
                     ],
                     "operator_consumer_replacement_weight_sha256": (
-                        fingerprint_lfm2_moving_gauge_tensor(
-                            operator_replacement
-                        )
+                        fingerprint_lfm2_moving_gauge_tensor(operator_replacement)
                     ),
                     "operator_consumer_factor_artifact_sha256": (
                         None
@@ -7479,9 +7161,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 preview_receipts.append(
                     {
                         "layer_index": layer_index,
-                        "pre_operator_capture_sha256": (
-                            pre_operator_capture_sha256
-                        ),
+                        "pre_operator_capture_sha256": (pre_operator_capture_sha256),
                         "post_operator_producer_capture_sha256": (
                             post_operator_producer_capture_sha256
                         ),
@@ -7491,9 +7171,7 @@ class Lfm2DynamicClosedLoopAdapter:
                         "post_mlp_producer_capture_sha256": (
                             post_mlp_producer_capture_sha256
                         ),
-                        "post_w2_capture_sha256": (
-                            post_w2_capture_sha256
-                        ),
+                        "post_w2_capture_sha256": (post_w2_capture_sha256),
                     }
                 )
                 current_capture = post_w2_capture
@@ -7503,9 +7181,7 @@ class Lfm2DynamicClosedLoopAdapter:
             # receipts and target-dtype replacements without retaining their
             # full FP64 row evidence for the rest of the fold.
             final_preview_capture_sha256 = (
-                self._authenticated_capture_sha256_and_release(
-                    current_capture
-                )
+                self._authenticated_capture_sha256_and_release(current_capture)
             )
             del current_capture
             release_closed_loop_capture_memory()
@@ -7520,9 +7196,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     aggregate_replacements[parameter_id]
                 )
                 != fingerprint_lfm2_moving_gauge_tensor(replacement)
-                for parameter_id, replacement in (
-                    preview_producer_replacements.items()
-                )
+                for parameter_id, replacement in (preview_producer_replacements.items())
             ):
                 raise Lfm2DynamicClosedLoopAdapterError(
                     "Moving-gauge aggregate producer state changed a causal "
@@ -7554,17 +7228,14 @@ class Lfm2DynamicClosedLoopAdapter:
                     for value in causal_w2_weights
                 ],
                 "initial_factor_writer_artifact_sha256": [
-                    artifact.artifact_sha256
-                    for artifact in factor_writer_artifacts
+                    artifact.artifact_sha256 for artifact in factor_writer_artifacts
                 ],
                 "step_sha256": [value["result_sha256"] for value in causal_steps],
                 "preview_receipts": preview_receipts,
                 "final_preview_capture_sha256": final_preview_capture_sha256,
                 "final_preview_state_sha256": final_preview_state,
                 "sweep_order": "shallow_to_deep",
-                "fresh_operator_consumer_solve_count": len(
-                    causal_operator_ids
-                ),
+                "fresh_operator_consumer_solve_count": len(causal_operator_ids),
                 "fresh_primal_w2_solve_count": len(causal_w2_ids),
                 "recapture_after_every_operator_producer_group": True,
                 "recapture_after_every_operator_consumer": True,
@@ -7662,10 +7333,7 @@ class Lfm2DynamicClosedLoopAdapter:
         torch = _torch()
         epsilon = _rms_epsilon(target_norm, "target RMSNorm")
         parameter = getattr(target_norm, "weight", None)
-        if (
-            not isinstance(parameter, torch.nn.Parameter)
-            or parameter.ndim != 1
-        ):
+        if not isinstance(parameter, torch.nn.Parameter) or parameter.ndim != 1:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Target RMSNorm has no vector Parameter."
             )
@@ -7744,8 +7412,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 source = value.detach().to(device="cpu").contiguous()
                 normalized = source.float()
                 normalized = normalized * torch.rsqrt(
-                    normalized.square().mean(dim=-1, keepdim=True)
-                    + epsilon
+                    normalized.square().mean(dim=-1, keepdim=True) + epsilon
                 )
                 return (
                     fitted_weight.to(dtype=source.dtype)
@@ -7759,9 +7426,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 "ridge": self.config.norm_ridge,
                 "fitted_weight": fitted_weight,
                 "fitted_weight_sha256": _tensor_sha256(fitted_weight),
-                "fit_relative_rmse": float(
-                    fit.train_metrics.relative_rmse
-                ),
+                "fit_relative_rmse": float(fit.train_metrics.relative_rmse),
                 "validation_relative_rmse": (
                     None
                     if fit.validation_metrics is None
@@ -7779,9 +7444,7 @@ class Lfm2DynamicClosedLoopAdapter:
 
         return callback
 
-    def _materializer_weight(
-        self, materializer: Lfm2NormMaterializer
-    ) -> Any:
+    def _materializer_weight(self, materializer: Lfm2NormMaterializer) -> Any:
         torch = _torch()
         weight = materializer.report.get("fitted_weight")
         if not isinstance(weight, torch.Tensor) or weight.ndim != 1:
@@ -7790,21 +7453,15 @@ class Lfm2DynamicClosedLoopAdapter:
             )
         return weight.detach().to(device="cpu").contiguous().clone()
 
-    def _norm_report_sha256(
-        self, materializer: Lfm2NormMaterializer
-    ) -> str:
+    def _norm_report_sha256(self, materializer: Lfm2NormMaterializer) -> str:
         return canonical_sha256(
             {
                 "schema": materializer.report.get("schema"),
                 "role": materializer.role,
                 "epsilon": materializer.report.get("epsilon"),
                 "ridge": materializer.report.get("ridge"),
-                "fitted_weight_sha256": materializer.report.get(
-                    "fitted_weight_sha256"
-                ),
-                "fit_relative_rmse": materializer.report.get(
-                    "fit_relative_rmse"
-                ),
+                "fitted_weight_sha256": materializer.report.get("fitted_weight_sha256"),
+                "fit_relative_rmse": materializer.report.get("fit_relative_rmse"),
                 "validation_relative_rmse": materializer.report.get(
                     "validation_relative_rmse"
                 ),
@@ -7814,10 +7471,9 @@ class Lfm2DynamicClosedLoopAdapter:
     def _copy_norm_weight(self, module: Any, weight: Any) -> None:
         torch = _torch()
         parameter = getattr(module, "weight", None)
-        if (
-            not isinstance(parameter, torch.nn.Parameter)
-            or tuple(parameter.shape) != tuple(weight.shape)
-        ):
+        if not isinstance(parameter, torch.nn.Parameter) or tuple(
+            parameter.shape
+        ) != tuple(weight.shape):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Compiled RMSNorm weight does not match the target."
             )
@@ -7825,13 +7481,10 @@ class Lfm2DynamicClosedLoopAdapter:
         gradient = parameter.grad
         gradient_id = None if gradient is None else id(gradient)
         with torch.no_grad():
-            parameter.copy_(
-                weight.to(device=parameter.device, dtype=parameter.dtype)
-            )
+            parameter.copy_(weight.to(device=parameter.device, dtype=parameter.dtype))
         if (
             id(parameter) != parameter_id
-            or (None if parameter.grad is None else id(parameter.grad))
-            != gradient_id
+            or (None if parameter.grad is None else id(parameter.grad)) != gradient_id
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "RMSNorm installation changed Parameter/gradient identity."
@@ -7911,9 +7564,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 "topology": "dense",
                 "contract_sha256": contract_sha256,
                 "weight_sha256": _tensor_sha256(weight),
-                "bias_sha256": (
-                    None if bias is None else _tensor_sha256(bias)
-                ),
+                "bias_sha256": (None if bias is None else _tensor_sha256(bias)),
             }
             return _ShortConvWriterView(
                 topology="dense",
@@ -7994,9 +7645,8 @@ class Lfm2DynamicClosedLoopAdapter:
             for phase in batch.phase_order:
                 base = f"{phase}.layer.{layer_index:03d}."
                 predictions.append(
-                    batch.child.tensors[
-                        base + "residual.post_layer"
-                    ].detach()
+                    batch.child.tensors[base + "residual.post_layer"]
+                    .detach()
                     .to(device="cpu", dtype=torch.float64)
                     .reshape(
                         -1,
@@ -8005,9 +7655,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 )
                 targets.append(
                     self._project_parent(
-                        batch.parent.tensors[
-                            base + "residual.post_layer"
-                        ]
+                        batch.parent.tensors[base + "residual.post_layer"]
                     )
                     .to(dtype=torch.float64)
                     .reshape(
@@ -8105,10 +7753,7 @@ class Lfm2DynamicClosedLoopAdapter:
         """
 
         multiplier = self.config.mlp_input_error_robustness_multiplier
-        if (
-            not self.config.mlp_input_error_covariance_enabled
-            or multiplier == 0.0
-        ):
+        if not self.config.mlp_input_error_covariance_enabled or multiplier == 0.0:
             return None, 1.0, None
         stashed = self._accepted_layer_input_error
         if stashed is None:
@@ -8117,7 +7762,9 @@ class Lfm2DynamicClosedLoopAdapter:
         if previous_index >= int(layer_index):
             return None, 1.0, None
         rows = sum(
-            int(case.target_input.reshape(-1, int(case.target_input.shape[-1])).shape[0])
+            int(
+                case.target_input.reshape(-1, int(case.target_input.shape[-1])).shape[0]
+            )
             for case in fit_cases
         )
         if rows <= 0:
@@ -8210,14 +7857,8 @@ class Lfm2DynamicClosedLoopAdapter:
         # kernel lane's ``_relative_rmse(torch.zeros_like(target), target)``.
         no_branch_baseline = 1.0
         terminal_rrmse = float(candidate.relative_rmse)
-        baseline_rrmse = None if baseline is None else float(
-            baseline.relative_rmse
-        )
-        regression = (
-            None
-            if baseline_rrmse is None
-            else terminal_rrmse - baseline_rrmse
-        )
+        baseline_rrmse = None if baseline is None else float(baseline.relative_rmse)
+        regression = None if baseline_rrmse is None else terminal_rrmse - baseline_rrmse
         minimum_layer = (
             self.config.terminal_composition_absolute_floor_minimum_layer_index
         )
@@ -8240,10 +7881,7 @@ class Lfm2DynamicClosedLoopAdapter:
         tolerance = self.config.terminal_composition_regression_tolerance
         non_regression_failed = bool(
             non_regression_engaged
-            and (
-                not math.isfinite(regression)
-                or regression > tolerance
-            )
+            and (not math.isfinite(regression) or regression > tolerance)
         )
         reasons: list[str] = []
         if absolute_failed:
@@ -8260,21 +7898,15 @@ class Lfm2DynamicClosedLoopAdapter:
         metrics.update(
             {
                 "terminal_composition_floor_engaged": True,
-                "terminal_relative_rmse": _json_safe_diagnostic_scalar(
-                    terminal_rrmse
-                ),
+                "terminal_relative_rmse": _json_safe_diagnostic_scalar(terminal_rrmse),
                 "terminal_rows": int(candidate.rows),
                 "terminal_mean_cosine_similarity": (
                     _json_safe_diagnostic_scalar(
                         float(candidate.mean_cosine_similarity)
                     )
                 ),
-                "terminal_no_branch_relative_rmse_baseline": (
-                    no_branch_baseline
-                ),
-                "terminal_layer_index": (
-                    self._terminal_composition_layer_index()
-                ),
+                "terminal_no_branch_relative_rmse_baseline": (no_branch_baseline),
+                "terminal_layer_index": (self._terminal_composition_layer_index()),
                 "terminal_baseline_relative_rmse": (
                     None
                     if baseline_rrmse is None
@@ -8291,12 +7923,8 @@ class Lfm2DynamicClosedLoopAdapter:
                 "terminal_non_regression_engaged": non_regression_engaged,
                 "terminal_non_regression_passed": not non_regression_failed,
                 "terminal_non_regression_tolerance": tolerance,
-                "terminal_floor_is_safety_bound_not_intelligence_verdict": (
-                    True
-                ),
-                "terminal_floor_retains_authority_under_diagnostic_only": (
-                    True
-                ),
+                "terminal_floor_is_safety_bound_not_intelligence_verdict": (True),
+                "terminal_floor_retains_authority_under_diagnostic_only": (True),
             }
         )
         return True, tuple(reasons), metrics
@@ -8378,8 +8006,10 @@ class Lfm2DynamicClosedLoopAdapter:
         else:
             source = "none"
         metrics["terminal_free_run_tripwire_observation_source"] = source
-        if observed is None or not isinstance(observed, (int, float)) or (
-            isinstance(observed, bool)
+        if (
+            observed is None
+            or not isinstance(observed, (int, float))
+            or (isinstance(observed, bool))
         ):
             metrics["terminal_free_run_tripwire_observed"] = None
             metrics["terminal_free_run_tripwire_evaluated"] = False
@@ -8504,9 +8134,9 @@ class Lfm2DynamicClosedLoopAdapter:
             "refused_layer_prior_correction_reports_json": reports_json,
         }
         if nonfinite_json is not None:
-            diagnostics[
-                "refused_layer_prior_correction_reports_nonfinite_json"
-            ] = nonfinite_json
+            diagnostics["refused_layer_prior_correction_reports_nonfinite_json"] = (
+                nonfinite_json
+            )
         return diagnostics
 
     def _validation_decision(
@@ -8522,10 +8152,7 @@ class Lfm2DynamicClosedLoopAdapter:
         terminal_candidate: FitMetrics | None = None,
         free_run_match_observation: float | None = None,
     ) -> ValidationDecision:
-        improvement = (
-            float(baseline.relative_rmse)
-            - float(candidate.relative_rmse)
-        )
+        improvement = float(baseline.relative_rmse) - float(candidate.relative_rmse)
         performance_metrics_finite = bool(
             baseline.finite
             and candidate.finite
@@ -8544,8 +8171,7 @@ class Lfm2DynamicClosedLoopAdapter:
             )
         counterfactual_threshold_passed = bool(
             performance_metrics_finite
-            and improvement + self.config.validation_tolerance
-            >= minimum_improvement
+            and improvement + self.config.validation_tolerance >= minimum_improvement
         )
         layer_validation_is_incomplete = bool(
             (
@@ -8558,9 +8184,7 @@ class Lfm2DynamicClosedLoopAdapter:
             self.config.intermediate_layer_numeric_checks_diagnostic_only
             and layer_validation_is_incomplete
         )
-        all_layer_policy = (
-            self.config.all_layer_finite_numeric_checks_diagnostic_only
-        )
+        all_layer_policy = self.config.all_layer_finite_numeric_checks_diagnostic_only
         diagnostic_only = bool(
             self.config.performance_metrics_diagnostic_only
             or incomplete_layer_policy
@@ -8604,24 +8228,18 @@ class Lfm2DynamicClosedLoopAdapter:
             "candidate_relative_rmse": _json_safe_diagnostic_scalar(
                 float(candidate.relative_rmse)
             ),
-            "relative_rmse_improvement": _json_safe_diagnostic_scalar(
-                improvement
-            ),
+            "relative_rmse_improvement": _json_safe_diagnostic_scalar(improvement),
             "minimum_required_improvement": minimum_improvement,
             "validation_tolerance": self.config.validation_tolerance,
             "counterfactual_performance_threshold_passed": (
                 counterfactual_threshold_passed
             ),
             "performance_metrics_diagnostic_only": diagnostic_only,
-            "performance_metrics_are_decision_authority": (
-                not diagnostic_only
-            ),
+            "performance_metrics_are_decision_authority": (not diagnostic_only),
             "performance_metrics_finite": performance_metrics_finite,
             "baseline_finite": bool(baseline.finite),
             "candidate_mean_cosine_similarity": (
-                _json_safe_diagnostic_scalar(
-                    float(candidate.mean_cosine_similarity)
-                )
+                _json_safe_diagnostic_scalar(float(candidate.mean_cosine_similarity))
             ),
             "candidate_finite": bool(candidate.finite),
             "heldout_endpoint_compared_to_projected_parent": True,
@@ -8636,12 +8254,9 @@ class Lfm2DynamicClosedLoopAdapter:
                         all_layer_policy
                     ),
                     "intermediate_layer_numeric_checks_diagnostic_only": (
-                        self.config
-                        .intermediate_layer_numeric_checks_diagnostic_only
+                        self.config.intermediate_layer_numeric_checks_diagnostic_only
                     ),
-                    "layer_validation_is_incomplete": (
-                        layer_validation_is_incomplete
-                    ),
+                    "layer_validation_is_incomplete": (layer_validation_is_incomplete),
                     "local_performance_metrics_diagnostic_only_for_this_scope": (
                         diagnostic_only
                     ),
@@ -8653,12 +8268,10 @@ class Lfm2DynamicClosedLoopAdapter:
                     ),
                 }
             )
-        floor_engaged, floor_reasons, floor_metrics = (
-            self._terminal_composition_floor(
-                layer_index=scope.layer_index,
-                baseline=terminal_baseline,
-                candidate=terminal_candidate,
-            )
+        floor_engaged, floor_reasons, floor_metrics = self._terminal_composition_floor(
+            layer_index=scope.layer_index,
+            baseline=terminal_baseline,
+            candidate=terminal_candidate,
         )
         metrics.update(floor_metrics)
         terminal_floor_metrics_finite = bool(
@@ -8683,9 +8296,7 @@ class Lfm2DynamicClosedLoopAdapter:
         ):
             metrics.update(
                 {
-                    "terminal_floor_metrics_finite": (
-                        terminal_floor_metrics_finite
-                    ),
+                    "terminal_floor_metrics_finite": (terminal_floor_metrics_finite),
                     "terminal_floor_failure_is_diagnostic_only": (
                         finite_floor_failure_is_diagnostic
                     ),
@@ -8715,8 +8326,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 (
                     reason,
                     "terminal numeric floor/non-regression failures recorded "
-                    f"diagnostically {diagnostic_context}: "
-                    + "; ".join(floor_reasons),
+                    f"diagnostically {diagnostic_context}: " + "; ".join(floor_reasons),
                 )
             )
         tripwire_reasons, tripwire_metrics = self._terminal_free_run_tripwire(
@@ -8738,9 +8348,7 @@ class Lfm2DynamicClosedLoopAdapter:
             # exists.  A refused layer publishes no restart capsule and no
             # completion receipt, so without this the numbers are discarded
             # (NOTES-W13S §6.4).
-            metrics.update(
-                self._refused_layer_prior_correction_diagnostics(scope)
-            )
+            metrics.update(self._refused_layer_prior_correction_diagnostics(scope))
         return ValidationDecision(
             scope=scope,
             accepted=accepted,
@@ -8768,20 +8376,14 @@ class Lfm2DynamicClosedLoopAdapter:
             accepted=True,
             state_sha256_before=state_before,
             state_sha256_after=state_after,
-            topology_preserved=(
-                topology_before == topology_after
-            ),
+            topology_preserved=(topology_before == topology_after),
             metadata=_scalar_metadata(metadata),
         )
 
     def _rollback_open_split_transactions(self) -> None:
-        for index, transaction in tuple(
-            sorted(self._split_transactions.items())
-        ):
+        for index, transaction in tuple(sorted(self._split_transactions.items())):
             if transaction.active:
-                report = rollback_lfm2_structural_split_install(
-                    transaction
-                )
+                report = rollback_lfm2_structural_split_install(transaction)
                 if not report.accepted:
                     raise Lfm2DynamicClosedLoopAdapterError(
                         f"Layer {index} split rollback was not accepted."
@@ -8832,13 +8434,11 @@ class Lfm2DynamicClosedLoopAdapter:
                 "adapter's explicit constructor selection."
             )
         if (
-            self.body_reclosure_mode
-            == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
+            self.body_reclosure_mode == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
             and selected != tuple(range(len(self.child_layers)))
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
-                "moving_gauge_v3 is a whole-body stage and requires every "
-                "child layer."
+                "moving_gauge_v3 is a whole-body stage and requires every child layer."
             )
         active_transaction = (
             self._active_outer_transaction is not None
@@ -8959,8 +8559,7 @@ class Lfm2DynamicClosedLoopAdapter:
         }
         if (
             set(plain) != expected_fields
-            or plain.get("schema")
-            != CLOSED_LOOP_COMPILER_RESTART_POLICY_SCHEMA
+            or plain.get("schema") != CLOSED_LOOP_COMPILER_RESTART_POLICY_SCHEMA
             or tuple(plain.get("resolved_selected_layer_indices", ()))
             != self._selected_layers
             or any(
@@ -8976,9 +8575,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 "Closed-loop compiler restart policy is malformed, foreign, "
                 "or not canonically sealed."
             )
-        return _deep_freeze_json(
-            {**plain, "compiler_restart_policy_sha256": claimed}
-        )
+        return _deep_freeze_json({**plain, "compiler_restart_policy_sha256": claimed})
 
     def _accepted_layer_completion_policy_binding(
         self,
@@ -9062,9 +8659,7 @@ class Lfm2DynamicClosedLoopAdapter:
         body = {
             "schema": LFM2_ACCEPTED_LAYER_COMPLETION_BINDING_SCHEMA,
             "adapter_identity": source_identity,
-            "adapter_identity_sha256": source_identity[
-                "adapter_identity_sha256"
-            ],
+            "adapter_identity_sha256": source_identity["adapter_identity_sha256"],
             "adapter_config": config,
             "excluded_nonsemantic_adapter_config_fields": sorted(
                 _ACCEPTED_LAYER_NONSEMANTIC_CONFIG_FIELDS
@@ -9077,9 +8672,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 "compiler_restart_policy_sha256"
             ],
             "replay_capture_selection": replay_capture_selection,
-            "replay_capture_selection_sha256": (
-                replay_capture_selection_sha256
-            ),
+            "replay_capture_selection_sha256": (replay_capture_selection_sha256),
             "macro_cell_attractor_gate": gate_binding,
             "terminal_free_run_match_probe_present": (
                 self.terminal_free_run_match_probe is not None
@@ -9121,19 +8714,15 @@ class Lfm2DynamicClosedLoopAdapter:
         if self._accepted_layer_completion_ledger:
             ledger = self.accepted_layer_completion_ledger()
             if (
-                ledger["portable_final_child_state_sha256"]
-                != current_state
-                or ledger["portable_child_topology_sha256"]
-                != current_topology
+                ledger["portable_final_child_state_sha256"] != current_state
+                or ledger["portable_child_topology_sha256"] != current_topology
             ):
                 raise Lfm2DynamicClosedLoopAdapterError(
                     "A new transaction does not begin at its completion "
                     "ledger's authenticated child state."
                 )
         self._accepted_layer_completion_portable_state_sha256 = current_state
-        self._accepted_layer_completion_portable_topology_sha256 = (
-            current_topology
-        )
+        self._accepted_layer_completion_portable_topology_sha256 = current_topology
         return snapshot
 
     def _restore_accepted_layer_completion_transaction(
@@ -9239,15 +8828,11 @@ class Lfm2DynamicClosedLoopAdapter:
                 "Accepted-layer completion ledger is missing, duplicated, or "
                 "out of order before the new layer."
             )
-        normalized_compiler_policy = (
-            self._authenticate_compiler_restart_policy(
-                compiler_restart_policy
-            )
+        normalized_compiler_policy = self._authenticate_compiler_restart_policy(
+            compiler_restart_policy
         )
         if self._accepted_layer_completion_compiler_policy is None:
-            self._accepted_layer_completion_compiler_policy = (
-                normalized_compiler_policy
-            )
+            self._accepted_layer_completion_compiler_policy = normalized_compiler_policy
         elif (
             self._accepted_layer_completion_compiler_policy[
                 "compiler_restart_policy_sha256"
@@ -9262,8 +8847,7 @@ class Lfm2DynamicClosedLoopAdapter:
         if (
             validation.scope != scope
             or not validation.accepted
-            or validation.decision_sha256
-            != validation.as_dict()["decision_sha256"]
+            or validation.decision_sha256 != validation.as_dict()["decision_sha256"]
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Accepted-layer completion requires the final accepted "
@@ -9326,12 +8910,10 @@ class Lfm2DynamicClosedLoopAdapter:
             ),
         }
         if (
-            consumer_install.state_sha256_before
-            != producer_install.state_sha256_after
+            consumer_install.state_sha256_before != producer_install.state_sha256_after
             or downstream_install.state_sha256_before
             != consumer_install.state_sha256_after
-            or self.child_state_fingerprint()
-            != downstream_install.state_sha256_after
+            or self.child_state_fingerprint() != downstream_install.state_sha256_after
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Accepted-layer install receipts do not form one exact child "
@@ -9347,9 +8929,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 "Accepted-layer completion policy/source binding changed "
                 "inside one transaction."
             )
-        prior_portable_state = (
-            self._accepted_layer_completion_portable_state_sha256
-        )
+        prior_portable_state = self._accepted_layer_completion_portable_state_sha256
         prior_portable_topology = (
             self._accepted_layer_completion_portable_topology_sha256
         )
@@ -9359,9 +8939,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 "state binding."
             )
         portable_state_after = portable_child_state_sha256(self.child_model)
-        portable_topology_after = portable_child_topology_sha256(
-            self.child_model
-        )
+        portable_topology_after = portable_child_topology_sha256(self.child_model)
         if portable_topology_after != prior_portable_topology:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Accepted-layer completion changed portable child topology."
@@ -9370,9 +8948,9 @@ class Lfm2DynamicClosedLoopAdapter:
             LFM2_ACCEPTED_LAYER_COMPLETION_CHAIN_GENESIS_SHA256
             if not self._accepted_layer_completion_ledger
             else str(
-                self._accepted_layer_completion_ledger[
-                    expected_prefix[-1]
-                ]["completion_receipt_sha256"]
+                self._accepted_layer_completion_ledger[expected_prefix[-1]][
+                    "completion_receipt_sha256"
+                ]
             )
         )
         process_boundary_before = False
@@ -9390,12 +8968,8 @@ class Lfm2DynamicClosedLoopAdapter:
             "layer_index": layer_index,
             "layer_ordinal": layer_ordinal,
             "selected_layer_indices": list(selected),
-            "previous_completion_receipt_sha256": (
-                previous_receipt_sha256
-            ),
-            "completion_binding_sha256": binding[
-                "completion_binding_sha256"
-            ],
+            "previous_completion_receipt_sha256": (previous_receipt_sha256),
+            "completion_binding_sha256": binding["completion_binding_sha256"],
             "trajectory_split_sha256": _digest(
                 trajectory_split_sha256,
                 "accepted-layer trajectory split SHA-256",
@@ -9405,15 +8979,9 @@ class Lfm2DynamicClosedLoopAdapter:
             "validation_decision": validation.as_dict(),
             "validation_decision_sha256": validation.decision_sha256,
             "process_local_state_chain": {
-                "layer_state_sha256_before": (
-                    producer_install.state_sha256_before
-                ),
-                "producer_state_sha256_after": (
-                    producer_install.state_sha256_after
-                ),
-                "consumer_state_sha256_after": (
-                    consumer_install.state_sha256_after
-                ),
+                "layer_state_sha256_before": (producer_install.state_sha256_before),
+                "producer_state_sha256_after": (producer_install.state_sha256_after),
+                "consumer_state_sha256_after": (consumer_install.state_sha256_after),
                 "downstream_state_sha256_after": (
                     downstream_install.state_sha256_after
                 ),
@@ -9458,9 +9026,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 "Downstream payload identity changed during completion release."
             )
         self._accepted_layer_completion_ledger[layer_index] = receipt
-        self._accepted_layer_completion_portable_state_sha256 = (
-            portable_state_after
-        )
+        self._accepted_layer_completion_portable_state_sha256 = portable_state_after
         self._accepted_layer_completion_portable_topology_sha256 = (
             portable_topology_after
         )
@@ -9486,20 +9052,24 @@ class Lfm2DynamicClosedLoopAdapter:
             "completion_ledger_sha256",
             "accepted-layer completion ledger",
         )
-        if set(body) != {
-            "schema",
-            "selected_layer_indices",
-            "completed_layer_indices",
-            "completion_binding",
-            "receipts",
-            "receipt_chain_head_sha256",
-            "portable_initial_child_state_sha256",
-            "portable_final_child_state_sha256",
-            "portable_child_topology_sha256",
-            "resume_proof",
-            "payload_retention",
-            "execution",
-        } or body.get("schema") != LFM2_ACCEPTED_LAYER_COMPLETION_LEDGER_SCHEMA:
+        if (
+            set(body)
+            != {
+                "schema",
+                "selected_layer_indices",
+                "completed_layer_indices",
+                "completion_binding",
+                "receipts",
+                "receipt_chain_head_sha256",
+                "portable_initial_child_state_sha256",
+                "portable_final_child_state_sha256",
+                "portable_child_topology_sha256",
+                "resume_proof",
+                "payload_retention",
+                "execution",
+            }
+            or body.get("schema") != LFM2_ACCEPTED_LAYER_COMPLETION_LEDGER_SCHEMA
+        ):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Accepted-layer completion ledger fields are malformed."
             )
@@ -9507,9 +9077,7 @@ class Lfm2DynamicClosedLoopAdapter:
         completed = tuple(body["completed_layer_indices"])
         if (
             any(
-                isinstance(index, bool)
-                or not isinstance(index, int)
-                or index < 0
+                isinstance(index, bool) or not isinstance(index, int) or index < 0
                 for index in (*selected, *completed)
             )
             or completed != selected[: len(completed)]
@@ -9537,34 +9105,24 @@ class Lfm2DynamicClosedLoopAdapter:
             "completion_binding_sha256",
             "accepted-layer completion binding",
         )
-        embedded_compiler_policy = binding_body.get(
-            "compiler_restart_policy"
-        )
+        embedded_compiler_policy = binding_body.get("compiler_restart_policy")
         if not isinstance(embedded_compiler_policy, Mapping):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Accepted-layer completion binding has no compiler policy."
             )
-        authenticated_embedded_policy = (
-            self._authenticate_compiler_restart_policy(
-                embedded_compiler_policy
-            )
+        authenticated_embedded_policy = self._authenticate_compiler_restart_policy(
+            embedded_compiler_policy
         )
         if expected_compiler_restart_policy is not None:
-            expected_compiler_policy = (
-                self._authenticate_compiler_restart_policy(
-                    expected_compiler_restart_policy
-                )
+            expected_compiler_policy = self._authenticate_compiler_restart_policy(
+                expected_compiler_restart_policy
             )
         elif self._accepted_layer_completion_compiler_policy is not None:
-            expected_compiler_policy = (
-                self._accepted_layer_completion_compiler_policy
-            )
+            expected_compiler_policy = self._accepted_layer_completion_compiler_policy
         else:
             expected_compiler_policy = authenticated_embedded_policy
         if (
-            authenticated_embedded_policy[
-                "compiler_restart_policy_sha256"
-            ]
+            authenticated_embedded_policy["compiler_restart_policy_sha256"]
             != expected_compiler_policy["compiler_restart_policy_sha256"]
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
@@ -9575,10 +9133,8 @@ class Lfm2DynamicClosedLoopAdapter:
             expected_compiler_policy
         )
         if (
-            binding_body.get("schema")
-            != LFM2_ACCEPTED_LAYER_COMPLETION_BINDING_SCHEMA
-            or binding_sha256
-            != current_binding["completion_binding_sha256"]
+            binding_body.get("schema") != LFM2_ACCEPTED_LAYER_COMPLETION_BINDING_SCHEMA
+            or binding_sha256 != current_binding["completion_binding_sha256"]
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Accepted-layer completion ledger belongs to a foreign "
@@ -9617,9 +9173,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     "Accepted-layer completion resume proof schema changed."
                 )
             seeded_prefix_count = int(proof_body["seeded_prefix_count"])
-            raw_boundary_ordinals = proof_body.get(
-                "process_boundary_ordinals"
-            )
+            raw_boundary_ordinals = proof_body.get("process_boundary_ordinals")
             if (
                 seeded_prefix_count <= 0
                 or seeded_prefix_count > len(completed)
@@ -9634,13 +9188,10 @@ class Lfm2DynamicClosedLoopAdapter:
                     or ordinal > len(selected)
                     for ordinal in raw_boundary_ordinals
                 )
-                or raw_boundary_ordinals
-                != sorted(set(raw_boundary_ordinals))
+                or raw_boundary_ordinals != sorted(set(raw_boundary_ordinals))
                 or raw_boundary_ordinals[-1] != seeded_prefix_count
                 or proof_body.get("compiler_restart_policy_sha256")
-                != authenticated_embedded_policy[
-                    "compiler_restart_policy_sha256"
-                ]
+                != authenticated_embedded_policy["compiler_restart_policy_sha256"]
             ):
                 raise Lfm2DynamicClosedLoopAdapterError(
                     "Accepted-layer completion resume proof prefix is invalid."
@@ -9687,16 +9238,12 @@ class Lfm2DynamicClosedLoopAdapter:
             state_chain = receipt["process_local_state_chain"]
             portable_chain = receipt["portable_state_chain"]
             if (
-                receipt.get("schema")
-                != LFM2_ACCEPTED_LAYER_COMPLETION_RECEIPT_SCHEMA
+                receipt.get("schema") != LFM2_ACCEPTED_LAYER_COMPLETION_RECEIPT_SCHEMA
                 or receipt.get("layer_index") != layer_index
                 or receipt.get("layer_ordinal") != ordinal
-                or tuple(receipt.get("selected_layer_indices", ()))
-                != selected
-                or receipt.get("previous_completion_receipt_sha256")
-                != previous_sha256
-                or receipt.get("completion_binding_sha256")
-                != binding_sha256
+                or tuple(receipt.get("selected_layer_indices", ())) != selected
+                or receipt.get("previous_completion_receipt_sha256") != previous_sha256
+                or receipt.get("completion_binding_sha256") != binding_sha256
                 or not isinstance(decision, Mapping)
                 or decision.get("accepted") is not True
                 or decision.get("decision_sha256")
@@ -9713,11 +9260,8 @@ class Lfm2DynamicClosedLoopAdapter:
                 or set(stages) != {"producer", "consumer", "downstream"}
                 or not isinstance(state_chain, Mapping)
                 or not isinstance(portable_chain, Mapping)
-                or receipt.get("operator_case_rows_released_before_seal")
-                is not True
-                or receipt.get(
-                    "producer_consumer_downstream_payloads_are_layer_local"
-                )
+                or receipt.get("operator_case_rows_released_before_seal") is not True
+                or receipt.get("producer_consumer_downstream_payloads_are_layer_local")
                 is not True
                 or receipt.get("execution")
                 != {
@@ -9741,8 +9285,7 @@ class Lfm2DynamicClosedLoopAdapter:
             adapter_stage_splits = receipt["adapter_stage_split_sha256"]
             if (
                 not isinstance(adapter_stage_splits, Mapping)
-                or set(adapter_stage_splits)
-                != {"producer", "consumer", "downstream"}
+                or set(adapter_stage_splits) != {"producer", "consumer", "downstream"}
                 or any(
                     not isinstance(value, str)
                     or len(value) != 64
@@ -9750,8 +9293,8 @@ class Lfm2DynamicClosedLoopAdapter:
                     for value in adapter_stage_splits.values()
                 )
                 or (
-                expected_trajectory_split_sha256 is not None
-                and split_sha256 != expected_trajectory_split_sha256
+                    expected_trajectory_split_sha256 is not None
+                    and split_sha256 != expected_trajectory_split_sha256
                 )
             ):
                 raise Lfm2DynamicClosedLoopAdapterError(
@@ -9783,8 +9326,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     or install.get("scope") != compiled.get("scope")
                     or compiled.get("stage") != stage.value
                     or install.get("stage") != stage.value
-                    or compiled.get("artifact_sha256")
-                    != install.get("artifact_sha256")
+                    or compiled.get("artifact_sha256") != install.get("artifact_sha256")
                     or install.get("accepted") is not True
                     or install.get("topology_preserved") is not True
                 ):
@@ -9825,8 +9367,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 "completion receipt portable state after",
             )
             if (
-                portable_chain.get("child_topology_sha256_before")
-                != portable_topology
+                portable_chain.get("child_topology_sha256_before") != portable_topology
                 or portable_chain.get("child_topology_sha256_after")
                 != portable_topology
                 or (
@@ -9864,11 +9405,8 @@ class Lfm2DynamicClosedLoopAdapter:
         if (
             body["receipt_chain_head_sha256"] != previous_sha256
             or body["portable_initial_child_state_sha256"]
-            != authenticated[0]["portable_state_chain"][
-                "child_state_sha256_before"
-            ]
-            or body["portable_final_child_state_sha256"]
-            != previous_portable_after
+            != authenticated[0]["portable_state_chain"]["child_state_sha256_before"]
+            or body["portable_final_child_state_sha256"] != previous_portable_after
             or body["payload_retention"]
             != {
                 "producer_payload_count": 0,
@@ -9896,12 +9434,13 @@ class Lfm2DynamicClosedLoopAdapter:
                 "Accepted-layer completion ledger terminal proof is invalid."
             )
         return body, tuple(
-            _deep_freeze_json({**receipt, "completion_receipt_sha256": raw[
-                "completion_receipt_sha256"
-            ]})
-            for receipt, raw in zip(
-                authenticated, receipts_value, strict=True
+            _deep_freeze_json(
+                {
+                    **receipt,
+                    "completion_receipt_sha256": raw["completion_receipt_sha256"],
+                }
             )
+            for receipt, raw in zip(authenticated, receipts_value, strict=True)
         )
 
     def accepted_layer_completion_ledger(self) -> Mapping[str, Any]:
@@ -9913,8 +9452,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 "No accepted-layer completion ledger is available."
             )
         receipts = [
-            dict(self._accepted_layer_completion_ledger[index])
-            for index in completed
+            dict(self._accepted_layer_completion_ledger[index]) for index in completed
         ]
         first_portable = receipts[0]["portable_state_chain"]
         last_portable = receipts[-1]["portable_state_chain"]
@@ -9922,13 +9460,9 @@ class Lfm2DynamicClosedLoopAdapter:
             "schema": LFM2_ACCEPTED_LAYER_COMPLETION_LEDGER_SCHEMA,
             "selected_layer_indices": list(self._selected_layers),
             "completed_layer_indices": list(completed),
-            "completion_binding": dict(
-                self._accepted_layer_completion_binding
-            ),
+            "completion_binding": dict(self._accepted_layer_completion_binding),
             "receipts": receipts,
-            "receipt_chain_head_sha256": receipts[-1][
-                "completion_receipt_sha256"
-            ],
+            "receipt_chain_head_sha256": receipts[-1]["completion_receipt_sha256"],
             "portable_initial_child_state_sha256": first_portable[
                 "child_state_sha256_before"
             ],
@@ -10032,14 +9566,10 @@ class Lfm2DynamicClosedLoopAdapter:
         )
         if (
             not receipts
-            or receipts[-1]["validation_decision_sha256"]
-            != validation_sha256
-            or body["portable_final_child_state_sha256"]
-            != portable_state_sha256
-            or body["portable_child_topology_sha256"]
-            != portable_topology_sha256
-            or portable_child_state_sha256(self.child_model)
-            != portable_state_sha256
+            or receipts[-1]["validation_decision_sha256"] != validation_sha256
+            or body["portable_final_child_state_sha256"] != portable_state_sha256
+            or body["portable_child_topology_sha256"] != portable_topology_sha256
+            or portable_child_state_sha256(self.child_model) != portable_state_sha256
             or portable_child_topology_sha256(self.child_model)
             != portable_topology_sha256
         ):
@@ -10048,12 +9578,8 @@ class Lfm2DynamicClosedLoopAdapter:
                 "the exact live child, topology, and validation decision."
             )
         receipt_body = {
-            "schema": (
-                "neural-forge-lfm2-accepted-layer-ledger-publication-auth-v1"
-            ),
-            "completion_ledger_sha256": supplied[
-                "completion_ledger_sha256"
-            ],
+            "schema": ("neural-forge-lfm2-accepted-layer-ledger-publication-auth-v1"),
+            "completion_ledger_sha256": supplied["completion_ledger_sha256"],
             "completed_layer_indices": list(completed),
             "selected_layer_indices": list(selected),
             "trajectory_split_sha256": split_sha256,
@@ -10086,13 +9612,10 @@ class Lfm2DynamicClosedLoopAdapter:
         """
 
         try:
-            child_runtime_config = _normalized_lfm2_model_config(
-                self.child_model
-            )
+            child_runtime_config = _normalized_lfm2_model_config(self.child_model)
         except Exception as exc:
             raise Lfm2DynamicClosedLoopAdapterError(
-                "The child runtime config cannot be normalized for restart "
-                "identity."
+                "The child runtime config cannot be normalized for restart identity."
             ) from exc
         replay_capture_selection = self.replay_config.as_dict()
         body = {
@@ -10100,15 +9623,11 @@ class Lfm2DynamicClosedLoopAdapter:
             "adapter_schema": LFM2_ADAPTER_SCHEMA,
             "coordinate_map_sha256": self.map_sha256,
             "child_basis_sha256": self.map_sha256,
-            "child_input_vocabulary_sha256": (
-                self._child_input_vocabulary_sha256
-            ),
+            "child_input_vocabulary_sha256": (self._child_input_vocabulary_sha256),
             "parent_cache_key": self.parent_cache.cache_key,
             "parent_identity_sha256": self.parent_cache.parent_fingerprint,
             "source_graph_fingerprint": self.source_graph_fingerprint,
-            "child_runtime_config_sha256": canonical_sha256(
-                child_runtime_config
-            ),
+            "child_runtime_config_sha256": canonical_sha256(child_runtime_config),
             "replay_capture_selection_sha256": _digest(
                 replay_capture_selection.get("selection_sha256"),
                 "replay capture selection SHA-256",
@@ -10151,9 +9670,7 @@ class Lfm2DynamicClosedLoopAdapter:
         remaining_layer_indices: Sequence[int],
         body_reclosure_enabled: bool,
         compiler_restart_policy: Mapping[str, Any] | None = None,
-        restart_continuation_mode: str = (
-            RESTART_CONTINUATION_EXACT_CONFIGURED
-        ),
+        restart_continuation_mode: str = (RESTART_CONTINUATION_EXACT_CONFIGURED),
         accepted_layer_completion_ledger: Mapping[str, Any] | None = None,
         resume_capsule_key: str | None = None,
         resume_capsule_manifest_sha256: str | None = None,
@@ -10185,13 +9702,11 @@ class Lfm2DynamicClosedLoopAdapter:
                 "The restart continuation mode is unsupported."
             )
         if (
-            restart_continuation_mode
-            == RESTART_CONTINUATION_TERMINAL_ONLY_NO_RECLOSURE
+            restart_continuation_mode == RESTART_CONTINUATION_TERMINAL_ONLY_NO_RECLOSURE
             and (
                 remaining
                 or completed != self._selected_layers
-                or self._selected_layers
-                != tuple(range(len(self.child_layers)))
+                or self._selected_layers != tuple(range(len(self.child_layers)))
             )
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
@@ -10210,8 +9725,7 @@ class Lfm2DynamicClosedLoopAdapter:
             )
         if not completed:
             raise Lfm2DynamicClosedLoopAdapterError(
-                "A mid-body resume admission requires at least one completed "
-                "layer."
+                "A mid-body resume admission requires at least one completed layer."
             )
         reclosure_requires_full_stack = (
             self.body_reclosure_mode == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
@@ -10220,8 +9734,7 @@ class Lfm2DynamicClosedLoopAdapter:
         resume_proof = None
         if (
             remaining
-            and
-            self.config.mlp_input_error_covariance_enabled
+            and self.config.mlp_input_error_covariance_enabled
             and self.config.mlp_input_error_robustness_multiplier != 0.0
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
@@ -10250,30 +9763,22 @@ class Lfm2DynamicClosedLoopAdapter:
                     "An accepted-layer ledger resume requires the exact "
                     "closed-loop compiler continuation policy."
                 )
-            normalized_compiler_policy = (
-                self._authenticate_compiler_restart_policy(
-                    compiler_restart_policy
-                )
+            normalized_compiler_policy = self._authenticate_compiler_restart_policy(
+                compiler_restart_policy
             )
             split_sha256 = _digest(
                 trajectory_split_sha256,
                 "resume trajectory split SHA-256",
             )
-            ledger_body, receipts = (
-                self._authenticate_accepted_layer_completion_ledger(
-                    accepted_layer_completion_ledger,
-                    expected_completed_layer_indices=completed,
-                    expected_selected_layer_indices=self._selected_layers,
-                    expected_trajectory_split_sha256=split_sha256,
-                    expected_compiler_restart_policy=(
-                        normalized_compiler_policy
-                    ),
-                )
+            ledger_body, receipts = self._authenticate_accepted_layer_completion_ledger(
+                accepted_layer_completion_ledger,
+                expected_completed_layer_indices=completed,
+                expected_selected_layer_indices=self._selected_layers,
+                expected_trajectory_split_sha256=split_sha256,
+                expected_compiler_restart_policy=(normalized_compiler_policy),
             )
             authenticated_ledger_sha256 = _digest(
-                accepted_layer_completion_ledger.get(
-                    "completion_ledger_sha256"
-                ),
+                accepted_layer_completion_ledger.get("completion_ledger_sha256"),
                 "resumed completion ledger SHA-256",
             )
             capsule_state = _digest(
@@ -10289,12 +9794,9 @@ class Lfm2DynamicClosedLoopAdapter:
                 "resume validation decision SHA-256",
             )
             if (
-                ledger_body["portable_final_child_state_sha256"]
-                != capsule_state
-                or ledger_body["portable_child_topology_sha256"]
-                != capsule_topology
-                or receipts[-1]["validation_decision_sha256"]
-                != capsule_validation
+                ledger_body["portable_final_child_state_sha256"] != capsule_state
+                or ledger_body["portable_child_topology_sha256"] != capsule_topology
+                or receipts[-1]["validation_decision_sha256"] != capsule_validation
                 or self._accepted_layer_completion_portable_state_sha256
                 != capsule_state
                 or self._accepted_layer_completion_portable_topology_sha256
@@ -10307,20 +9809,16 @@ class Lfm2DynamicClosedLoopAdapter:
             prior_proof = ledger_body.get("resume_proof")
             prior_boundary_ordinals = []
             if isinstance(prior_proof, Mapping):
-                prior_body, _prior_sha256 = (
-                    _authenticate_immutable_json_mapping(
-                        prior_proof,
-                        "resume_proof_sha256",
-                        "prior accepted-layer completion resume proof",
-                    )
+                prior_body, _prior_sha256 = _authenticate_immutable_json_mapping(
+                    prior_proof,
+                    "resume_proof_sha256",
+                    "prior accepted-layer completion resume proof",
                 )
                 prior_boundary_ordinals = list(
                     prior_body.get("process_boundary_ordinals", [])
                 )
             proof_body = {
-                "schema": (
-                    LFM2_ACCEPTED_LAYER_COMPLETION_RESUME_PROOF_SCHEMA
-                ),
+                "schema": (LFM2_ACCEPTED_LAYER_COMPLETION_RESUME_PROOF_SCHEMA),
                 "resume_capsule_key": _digest(
                     resume_capsule_key,
                     "resume capsule key",
@@ -10350,9 +9848,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 "restored_portable_child_topology_sha256": capsule_topology,
                 "trajectory_split_sha256": split_sha256,
                 "compiler_restart_policy_sha256": (
-                    normalized_compiler_policy[
-                        "compiler_restart_policy_sha256"
-                    ]
+                    normalized_compiler_policy["compiler_restart_policy_sha256"]
                 ),
                 "restart_continuation_mode": restart_continuation_mode,
                 "seeded_prefix_count": len(completed),
@@ -10378,26 +9874,17 @@ class Lfm2DynamicClosedLoopAdapter:
                 "accepted-layer completion resume proof",
             )
             self._accepted_layer_completion_ledger = {
-                int(receipt["layer_index"]): receipt
-                for receipt in receipts
+                int(receipt["layer_index"]): receipt for receipt in receipts
             }
             self._accepted_layer_completion_binding = _deep_freeze_json(
                 dict(ledger_body["completion_binding"])
             )
-            self._accepted_layer_completion_compiler_policy = (
-                normalized_compiler_policy
-            )
+            self._accepted_layer_completion_compiler_policy = normalized_compiler_policy
             self._accepted_layer_completion_resume_proof = resume_proof
-            self._accepted_layer_completion_portable_state_sha256 = (
-                capsule_state
-            )
-            self._accepted_layer_completion_portable_topology_sha256 = (
-                capsule_topology
-            )
+            self._accepted_layer_completion_portable_state_sha256 = capsule_state
+            self._accepted_layer_completion_portable_topology_sha256 = capsule_topology
         body = {
-            "schema": (
-                "neural-forge-lfm2-closed-loop-mid-body-resume-admission-v1"
-            ),
+            "schema": ("neural-forge-lfm2-closed-loop-mid-body-resume-admission-v1"),
             "completed_layer_indices": list(completed),
             "remaining_layer_indices": list(remaining),
             "body_reclosure_enabled": bool(body_reclosure_enabled),
@@ -10409,37 +9896,25 @@ class Lfm2DynamicClosedLoopAdapter:
             "accepted_layer_completion_ledger_seeded": (
                 accepted_layer_completion_ledger is not None
             ),
-            "accepted_layer_completion_ledger_sha256": (
-                authenticated_ledger_sha256
-            ),
+            "accepted_layer_completion_ledger_sha256": (authenticated_ledger_sha256),
             "accepted_layer_completion_resume_proof_sha256": (
-                None
-                if resume_proof is None
-                else resume_proof["resume_proof_sha256"]
+                None if resume_proof is None else resume_proof["resume_proof_sha256"]
             ),
             "compiler_restart_policy_sha256": (
                 None
                 if compiler_restart_policy is None
-                else compiler_restart_policy.get(
-                    "compiler_restart_policy_sha256"
-                )
+                else compiler_restart_policy.get("compiler_restart_policy_sha256")
             ),
-            "cross_layer_producer_consumer_downstream_payloads_are_layer_local": (
-                True
-            ),
+            "cross_layer_producer_consumer_downstream_payloads_are_layer_local": (True),
             "coordinate_map_is_run_immutable": True,
             "moving_gauge_chart_state_is_body_stage_local": True,
             "heterogeneous_certification_registry_is_a_rebuildable_cache": True,
             "eiv_covariance_resume_requires_persisted_tensor_state": True,
             "skipped_layers_are_not_replayed": True,
         }
-        return MappingProxyType(
-            {**body, "admission_sha256": canonical_sha256(body)}
-        )
+        return MappingProxyType({**body, "admission_sha256": canonical_sha256(body)})
 
-    def begin_child_transaction(
-        self, audit: ClosedLoopAudit
-    ) -> _ChildModelTransaction:
+    def begin_child_transaction(self, audit: ClosedLoopAudit) -> _ChildModelTransaction:
         del audit
         if (
             self._active_outer_transaction is not None
@@ -10465,15 +9940,11 @@ class Lfm2DynamicClosedLoopAdapter:
             record_keys=_record_keys(records),
             batch_sha256=canonical_sha256(
                 {
-                    "schema": (
-                        "neural-forge-lfm2-sealed-endpoint-selection-v1"
-                    ),
+                    "schema": ("neural-forge-lfm2-sealed-endpoint-selection-v1"),
                     "cache_key": self.parent_cache.cache_key,
                     "scope": scope.as_dict(),
                     "batch_indices": list(indices),
-                    "record_keys": [
-                        list(value) for value in _record_keys(records)
-                    ],
+                    "record_keys": [list(value) for value in _record_keys(records)],
                 }
             ),
             payload=_EndpointPayload(
@@ -10495,34 +9966,20 @@ class Lfm2DynamicClosedLoopAdapter:
                     "single-pass-certification-registry-key-v1"
                 ),
                 "descriptor_sha256": body.get("descriptor_sha256"),
-                "runtime_binding_sha256": body.get(
-                    "runtime_binding_sha256"
-                ),
-                "causal_contract_sha256": body.get(
-                    "causal_contract_sha256"
-                ),
-                "proof_child_identity_sha256": body.get(
-                    "proof_child_identity_sha256"
-                ),
+                "runtime_binding_sha256": body.get("runtime_binding_sha256"),
+                "causal_contract_sha256": body.get("causal_contract_sha256"),
+                "proof_child_identity_sha256": body.get("proof_child_identity_sha256"),
                 "proof_corpus_sha256": body.get("proof_corpus_sha256"),
-                "proof_selection_sha256": body.get(
-                    "proof_selection_sha256"
-                ),
-                "proof_execution_sha256": body.get(
-                    "proof_execution_sha256"
-                ),
+                "proof_selection_sha256": body.get("proof_selection_sha256"),
+                "proof_execution_sha256": body.get("proof_execution_sha256"),
                 "proof_selected_layer_indices": list(
                     body.get("proof_selected_layer_indices", ())
                 ),
-                "numeric_policy_sha256": body.get(
-                    "numeric_policy_sha256"
-                ),
+                "numeric_policy_sha256": body.get("numeric_policy_sha256"),
                 "replay_numeric_policy_sha256": body.get(
                     "replay_numeric_policy_sha256"
                 ),
-                "non_logit_envelope_sha256": body.get(
-                    "non_logit_envelope_sha256"
-                ),
+                "non_logit_envelope_sha256": body.get("non_logit_envelope_sha256"),
             }
         )
 
@@ -10560,12 +10017,16 @@ class Lfm2DynamicClosedLoopAdapter:
                 "Heterogeneous single-pass causal certification contains "
                 "an invalid proof binding."
             ) from exc
-        compared_logits = equivalence.get("compared_logits") if isinstance(
-            equivalence, Mapping
-        ) else None
-        maximum_error = equivalence.get("max_abs_error") if isinstance(
-            equivalence, Mapping
-        ) else None
+        compared_logits = (
+            equivalence.get("compared_logits")
+            if isinstance(equivalence, Mapping)
+            else None
+        )
+        maximum_error = (
+            equivalence.get("max_abs_error")
+            if isinstance(equivalence, Mapping)
+            else None
+        )
         strict_policy = body.get("strict_equivalence_policy")
         expected_policy = dict(
             _heterogeneous_single_pass_equivalence_policy(
@@ -10588,10 +10049,7 @@ class Lfm2DynamicClosedLoopAdapter:
             )
         if (
             body.get("schema")
-            != (
-                "neural-forge-lfm2-heterogeneous-causal-"
-                "single-pass-certification-v3"
-            )
+            != ("neural-forge-lfm2-heterogeneous-causal-single-pass-certification-v3")
             or not isinstance(equivalence, Mapping)
             or equivalence.get("reference_supplied") is not True
             or equivalence.get("tolerance_equivalent") is not True
@@ -10619,9 +10077,7 @@ class Lfm2DynamicClosedLoopAdapter:
             != expected_policy["replay_numeric_policy_sha256"]
             or equivalence.get("non_logit_envelope_sha256")
             != expected_policy["non_logit_envelope_sha256"]
-            or equivalence.get(
-                "shape_dtype_device_hash_and_finiteness_authenticated"
-            )
+            or equivalence.get("shape_dtype_device_hash_and_finiteness_authenticated")
             is not True
             or body.get("numeric_policy_sha256")
             != expected_policy["numeric_policy_sha256"]
@@ -10639,17 +10095,13 @@ class Lfm2DynamicClosedLoopAdapter:
             or accounting_values[0] <= 0
             or accounting_values[1] != accounting_values[0]
             or accounting_values[2] <= 0
-            or accounting_values[3]
-            != accounting_values[1] + accounting_values[2]
-            or accounting_values[4]
-            != accounting_values[0] - accounting_values[3]
+            or accounting_values[3] != accounting_values[1] + accounting_values[2]
+            or accounting_values[4] != accounting_values[0] - accounting_values[3]
             or accounting_values[4] >= 0
             or body.get("all_sealed_batches_compared") is not True
             or tuple(body.get("proof_selected_layer_indices", ())) == ()
             or any(
-                isinstance(index, bool)
-                or not isinstance(index, int)
-                or index < 0
+                isinstance(index, bool) or not isinstance(index, int) or index < 0
                 for index in body.get("proof_selected_layer_indices", ())
             )
             or len(tuple(body.get("proof_selected_layer_indices", ())))
@@ -10664,9 +10116,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 "Heterogeneous single-pass causal certification proof "
                 "semantics are invalid."
             )
-        registry_key = (
-            self._heterogeneous_single_pass_certification_registry_key(body)
-        )
+        registry_key = self._heterogeneous_single_pass_certification_registry_key(body)
         if body.get("certification_registry_key") != registry_key:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Heterogeneous single-pass causal certification registry "
@@ -10702,10 +10152,8 @@ class Lfm2DynamicClosedLoopAdapter:
         plain.pop("certification_sha256", None)
         registry_key = plain.get("certification_registry_key")
         if not isinstance(registry_key, str) or len(registry_key) != 64:
-            registry_key = (
-                self._heterogeneous_single_pass_certification_registry_key(
-                    plain
-                )
+            registry_key = self._heterogeneous_single_pass_certification_registry_key(
+                plain
             )
         self._heterogeneous_single_pass_certification_registry[registry_key] = (
             certification
@@ -10717,9 +10165,7 @@ class Lfm2DynamicClosedLoopAdapter:
 
         return len(self.child_layers) - 1
 
-    def _terminal_composition_extra_layers(
-        self, scope: FoldScope
-    ) -> tuple[int, ...]:
+    def _terminal_composition_extra_layers(self, scope: FoldScope) -> tuple[int, ...]:
         """Return the extra layers the terminal composition floor observes.
 
         The floor measures the *last* layer's held-out ``residual.post_layer``
@@ -10979,8 +10425,7 @@ class Lfm2DynamicClosedLoopAdapter:
         """
 
         return bool(
-            self.config.replay_capture_mode
-            == CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
+            self.config.replay_capture_mode == CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
         )
 
     def _merged_child_evidence_profile(
@@ -11050,9 +10495,7 @@ class Lfm2DynamicClosedLoopAdapter:
 
     def replay_and_capture_child_merged(
         self,
-        requests: Sequence[
-            tuple[FoldScope, CapturePoint, Sequence[TrajectoryRecord]]
-        ],
+        requests: Sequence[tuple[FoldScope, CapturePoint, Sequence[TrajectoryRecord]]],
         audit: ClosedLoopAudit,
     ) -> tuple[ChildTrajectoryCapture, ...]:
         """Serve two same-state layer capture points from one union replay.
@@ -11077,9 +10520,10 @@ class Lfm2DynamicClosedLoopAdapter:
             CapturePoint.POST_DOWNSTREAM,
             CapturePoint.PRE_PRODUCER,
         )
-        if len(resolved) != 2 or tuple(
-            point for _scope, point, _records in resolved
-        ) != expected_points:
+        if (
+            len(resolved) != 2
+            or tuple(point for _scope, point, _records in resolved) != expected_points
+        ):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "A merged LFM2 capture must be one post-downstream point "
                 "followed by the next layer's pre-producer point."
@@ -11093,18 +10537,14 @@ class Lfm2DynamicClosedLoopAdapter:
         if (
             any(index < 0 for index in layer_indices)
             or layer_indices[0] == layer_indices[1]
-            or any(
-                index not in self._selected_layers for index in layer_indices
-            )
+            or any(index not in self._selected_layers for index in layer_indices)
             or any(not records for _scope, _point, records in resolved)
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Merged LFM2 capture layers must be two distinct selected "
                 "layers with populated trajectory coverage."
             )
-        merged_requests = tuple(
-            (scope, point) for scope, point, _records in resolved
-        )
+        merged_requests = tuple((scope, point) for scope, point, _records in resolved)
         selected_layers = tuple(
             sorted(
                 set(layer_indices).union(
@@ -11179,9 +10619,7 @@ class Lfm2DynamicClosedLoopAdapter:
         if secondary_parent_borrow is not None:
             # The deferred consumer runs after this layer ends, so this borrow
             # is the one live borrow the layer-terminal idle release tolerates.
-            self._deferred_merged_parent_borrows.append(
-                secondary_parent_borrow
-            )
+            self._deferred_merged_parent_borrows.append(secondary_parent_borrow)
         return (primary, secondary)
 
     def _replay_and_capture_child_selected(
@@ -11193,9 +10631,7 @@ class Lfm2DynamicClosedLoopAdapter:
         *,
         selected_layer_indices: Sequence[int],
         body_internal_role: str | None = None,
-        child_evidence_profile_override: (
-            Lfm2ChildEvidenceProfile | None
-        ) = None,
+        child_evidence_profile_override: (Lfm2ChildEvidenceProfile | None) = None,
         merged_parent_profile_requests: (
             tuple[tuple[FoldScope, CapturePoint], ...] | None
         ) = None,
@@ -11238,9 +10674,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 selected_layers=selected_layers,
                 parent_profile_borrow=parent_profile_borrow,
                 body_internal_role=body_internal_role,
-                child_evidence_profile_override=(
-                    child_evidence_profile_override
-                ),
+                child_evidence_profile_override=(child_evidence_profile_override),
             )
         except BaseException:
             if parent_profile_borrow is not None:
@@ -11255,24 +10689,19 @@ class Lfm2DynamicClosedLoopAdapter:
     ) -> Lfm2PairedReplay:
         """Pair one replay while authenticating invariant bridge inputs once."""
 
-        if (self.selective_session is None) != (
-            parent_profile_borrow is None
-        ):
+        if (self.selective_session is None) != (parent_profile_borrow is None):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "A child replay parent-profile borrow must match the "
                 "adapter's selective parent session."
             )
         parent_batches = (
-            None
-            if parent_profile_borrow is None
-            else parent_profile_borrow.batches
+            None if parent_profile_borrow is None else parent_profile_borrow.batches
         )
         bridge_adapter = self.tokenizer_bridge_trace_adapter
         if bridge_adapter is None:
             if self._tokenizer_bridge_input_pair_ledger is not None:
                 raise Lfm2DynamicClosedLoopAdapterError(
-                    "An unbridged adapter retained tokenizer input-pair "
-                    "evidence."
+                    "An unbridged adapter retained tokenizer input-pair evidence."
                 )
             return pair_lfm2_parent_child_replay(
                 self.parent_cache,
@@ -11282,14 +10711,12 @@ class Lfm2DynamicClosedLoopAdapter:
 
         ledger = self._tokenizer_bridge_input_pair_ledger
         if ledger is None:
-            ledger = (
-                preverify_lfm2_parent_child_tokenizer_bridge_input_pairs(
-                    self.parent_cache,
-                    replay,
-                    tokenizer_bridge_trace_adapter=bridge_adapter,
-                    parent_batches=parent_batches,
-                    parent_cache_session=self.selective_session,
-                )
+            ledger = preverify_lfm2_parent_child_tokenizer_bridge_input_pairs(
+                self.parent_cache,
+                replay,
+                tokenizer_bridge_trace_adapter=bridge_adapter,
+                parent_batches=parent_batches,
+                parent_cache_session=self.selective_session,
             )
             self._tokenizer_bridge_input_pair_ledger = ledger
         return pair_lfm2_parent_child_replay(
@@ -11342,9 +10769,7 @@ class Lfm2DynamicClosedLoopAdapter:
         selected_layers: tuple[int, ...],
         parent_profile_borrow: _SelectedParentProfileBorrow | None,
         body_internal_role: str | None,
-        child_evidence_profile_override: (
-            Lfm2ChildEvidenceProfile | None
-        ) = None,
+        child_evidence_profile_override: (Lfm2ChildEvidenceProfile | None) = None,
     ) -> ChildTrajectoryCapture:
         """Build one child capture while transferring a parent-profile borrow."""
 
@@ -11372,8 +10797,7 @@ class Lfm2DynamicClosedLoopAdapter:
         causal_equivalence_reference = None
         heterogeneous_single_pass = bool(
             self._child_heterogeneous_layout is not None
-            and self.config.replay_capture_mode
-            == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
+            and self.config.replay_capture_mode == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
         )
         certification_policy = (
             _heterogeneous_single_pass_equivalence_policy(
@@ -11398,9 +10822,10 @@ class Lfm2DynamicClosedLoopAdapter:
                 self.child_model
             ).identity_sha256
             candidates = []
-            for registry_key, certification in (
-                self._heterogeneous_single_pass_certification_registry.items()
-            ):
+            for (
+                registry_key,
+                certification,
+            ) in self._heterogeneous_single_pass_certification_registry.items():
                 authenticated = (
                     self._authenticate_heterogeneous_single_pass_certification(
                         certification
@@ -11435,8 +10860,7 @@ class Lfm2DynamicClosedLoopAdapter:
             if candidates:
                 authenticated_certification = candidates[0]
         requires_heterogeneous_certification = bool(
-            heterogeneous_single_pass
-            and authenticated_certification is None
+            heterogeneous_single_pass and authenticated_certification is None
         )
         # One resolution serves both replays of this capture point: the
         # certification reference and the sealed capture see the same child,
@@ -11465,8 +10889,7 @@ class Lfm2DynamicClosedLoopAdapter:
         replay_phase = None
         if (
             self.child_replay_phase_cache_context is not None
-            and self.config.replay_capture_mode
-            == CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
+            and self.config.replay_capture_mode == CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
             and causal_equivalence_reference is None
         ):
             replay_phase = load_or_capture_lfm2_child_replay_phase_resumable(
@@ -11482,9 +10905,7 @@ class Lfm2DynamicClosedLoopAdapter:
             )
             replay = replay_phase.replay
             replay_timing = replay.capture_timing
-            raw_checkpoint_resume = replay_timing.get(
-                "batch_checkpoint_resume"
-            )
+            raw_checkpoint_resume = replay_timing.get("batch_checkpoint_resume")
             checkpoint_resume = (
                 raw_checkpoint_resume
                 if isinstance(raw_checkpoint_resume, Mapping)
@@ -11500,16 +10921,12 @@ class Lfm2DynamicClosedLoopAdapter:
                 LFM2_CHILD_REPLAY_PHASE_CACHE_RESOLVED_STAGE,
                 scope_id=scope.scope_id,
                 capture_point=point.value,
-                phase_key_sha256=(
-                    replay_phase.entry.phase_key.phase_key_sha256
-                ),
+                phase_key_sha256=(replay_phase.entry.phase_key.phase_key_sha256),
                 completion_sha256=replay_phase.entry.completion_sha256,
                 replay_sha256=replay_phase.replay_sha256,
                 cache_hit=replay_phase.cache_hit,
                 producer_invoked=replay_phase.producer_invoked,
-                publication_race_lost=(
-                    replay_phase.publication_race_lost
-                ),
+                publication_race_lost=(replay_phase.publication_race_lost),
                 current_invocation_child_forwards=(
                     checkpoint_resume.get(
                         "current_invocation_child_forwards",
@@ -11567,10 +10984,8 @@ class Lfm2DynamicClosedLoopAdapter:
             runtime.get("parent_forward_count") != 0
             or runtime.get("tokenizer_accessed") is not False
             or forwards.get("parent") != 0
-            or selection.get("replay_capture_mode")
-            != self.config.replay_capture_mode
-            or tuple(selection.get("selected_layer_indices", ()))
-            != selected_layers
+            or selection.get("replay_capture_mode") != self.config.replay_capture_mode
+            or tuple(selection.get("selected_layer_indices", ())) != selected_layers
             or selection.get("child_evidence_profile")
             != (
                 None
@@ -11618,8 +11033,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 "Child replay forward benchmark metadata is invalid."
             )
         if (
-            self.config.replay_capture_mode
-            == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
+            self.config.replay_capture_mode == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
             and replay_child_forwards != len(self.parent_cache)
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
@@ -11628,34 +11042,25 @@ class Lfm2DynamicClosedLoopAdapter:
         certification_reference_child_forwards = 0
         if causal_equivalence_reference is not None:
             reference_metadata = causal_equivalence_reference.metadata
-            reference_forwards = reference_metadata.get(
-                "forward_counts", {}
-            )
+            reference_forwards = reference_metadata.get("forward_counts", {})
             reference_selection = reference_metadata.get("selection", {})
-            reference_benchmark = reference_metadata.get(
-                "replay_benchmark", {}
-            )
-            certification_reference_child_forwards = (
-                reference_benchmark.get("actual_child_forwards")
+            reference_benchmark = reference_metadata.get("replay_benchmark", {})
+            certification_reference_child_forwards = reference_benchmark.get(
+                "actual_child_forwards"
             )
             reference_canonical_forwards = reference_benchmark.get(
                 "canonical_prefix_child_forwards"
             )
-            reference_saved_forwards = reference_benchmark.get(
-                "saved_child_forwards"
-            )
+            reference_saved_forwards = reference_benchmark.get("saved_child_forwards")
             if (
                 isinstance(certification_reference_child_forwards, bool)
-                or not isinstance(
-                    certification_reference_child_forwards, int
-                )
+                or not isinstance(certification_reference_child_forwards, int)
                 or certification_reference_child_forwards <= 0
                 or isinstance(reference_canonical_forwards, bool)
                 or not isinstance(reference_canonical_forwards, int)
                 or reference_canonical_forwards
                 != certification_reference_child_forwards
-                or reference_canonical_forwards
-                != canonical_prefix_child_forwards
+                or reference_canonical_forwards != canonical_prefix_child_forwards
                 or reference_saved_forwards != 0
                 or reference_forwards.get("child")
                 != certification_reference_child_forwards
@@ -11668,12 +11073,9 @@ class Lfm2DynamicClosedLoopAdapter:
                     "accounting is invalid."
                 )
         actual_child_forwards = (
-            replay_child_forwards
-            + certification_reference_child_forwards
+            replay_child_forwards + certification_reference_child_forwards
         )
-        saved_child_forwards = (
-            canonical_prefix_child_forwards - actual_child_forwards
-        )
+        saved_child_forwards = canonical_prefix_child_forwards - actual_child_forwards
         causal_contract_sha256 = None
         causal_certification_sha256 = None
         causal_certification_registry_key = None
@@ -11681,26 +11083,16 @@ class Lfm2DynamicClosedLoopAdapter:
         numeric_policy_sha256 = None
         replay_numeric_policy_sha256 = None
         non_logit_envelope_sha256 = None
-        if (
-            self.config.replay_capture_mode
-            == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
-        ):
+        if self.config.replay_capture_mode == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE:
             first_capture = replay.load_batch(0).capture
-            causal_contract = first_capture.get(
-                "causal_equivalence_contract"
-            )
-            if (
-                not isinstance(causal_contract, Mapping)
-                or not isinstance(
-                    causal_contract.get("contract_sha256"), str
-                )
+            causal_contract = first_capture.get("causal_equivalence_contract")
+            if not isinstance(causal_contract, Mapping) or not isinstance(
+                causal_contract.get("contract_sha256"), str
             ):
                 raise Lfm2DynamicClosedLoopAdapterError(
                     "Single-pass child replay omitted its causal contract."
                 )
-            causal_contract_sha256 = str(
-                causal_contract["contract_sha256"]
-            )
+            causal_contract_sha256 = str(causal_contract["contract_sha256"])
             numeric_policy_sha256 = _digest(
                 causal_contract.get("numeric_policy_sha256"),
                 "single-pass causal contract numeric policy SHA-256",
@@ -11714,13 +11106,10 @@ class Lfm2DynamicClosedLoopAdapter:
                 "single-pass causal contract non-logit envelope SHA-256",
             )
             for batch in replay.iter_batches():
-                batch_contract = batch.capture.get(
-                    "causal_equivalence_contract"
-                )
+                batch_contract = batch.capture.get("causal_equivalence_contract")
                 if (
                     not isinstance(batch_contract, Mapping)
-                    or batch_contract.get("contract_sha256")
-                    != causal_contract_sha256
+                    or batch_contract.get("contract_sha256") != causal_contract_sha256
                 ):
                     raise Lfm2DynamicClosedLoopAdapterError(
                         "Single-pass child replay causal contracts differ "
@@ -11740,18 +11129,14 @@ class Lfm2DynamicClosedLoopAdapter:
                         "Heterogeneous single-pass numeric policy differs "
                         "from its causal contract."
                     )
-                runtime_binding = causal_contract.get(
-                    "heterogeneous_runtime_binding"
-                )
+                runtime_binding = causal_contract.get("heterogeneous_runtime_binding")
                 if (
                     not isinstance(runtime_binding, Mapping)
                     or runtime_binding.get("descriptor_sha256")
                     != self._child_heterogeneous_layout.descriptor_sha256
                     or runtime_binding.get("execution_sha256")
                     != replay.metadata["execution"]["execution_sha256"]
-                    or not isinstance(
-                        runtime_binding.get("binding_sha256"), str
-                    )
+                    or not isinstance(runtime_binding.get("binding_sha256"), str)
                 ):
                     raise Lfm2DynamicClosedLoopAdapterError(
                         "Heterogeneous single-pass runtime binding differs "
@@ -11759,51 +11144,32 @@ class Lfm2DynamicClosedLoopAdapter:
                     )
                 if requires_heterogeneous_certification:
                     if causal_equivalence_reference is None:
-                        raise AssertionError(
-                            "missing heterogeneous causal reference"
-                        )
-                    equivalence = replay.metadata.get(
-                        "causal_equivalence"
-                    )
+                        raise AssertionError("missing heterogeneous causal reference")
+                    equivalence = replay.metadata.get("causal_equivalence")
                     if (
                         not isinstance(equivalence, Mapping)
                         or equivalence.get("reference_supplied") is not True
                         or equivalence.get("tolerance_equivalent") is not True
-                        or isinstance(
-                            equivalence.get("compared_tensors"), bool
-                        )
-                        or not isinstance(
-                            equivalence.get("compared_tensors"), int
-                        )
+                        or isinstance(equivalence.get("compared_tensors"), bool)
+                        or not isinstance(equivalence.get("compared_tensors"), int)
                         or equivalence["compared_tensors"] <= 0
-                        or isinstance(
-                            equivalence.get("compared_logits"), bool
-                        )
-                        or not isinstance(
-                            equivalence.get("compared_logits"), int
-                        )
+                        or isinstance(equivalence.get("compared_logits"), bool)
+                        or not isinstance(equivalence.get("compared_logits"), int)
                         or equivalence["compared_logits"] <= 0
-                        or equivalence.get("rtol")
-                        != certification_policy["rtol"]
-                        or equivalence.get("atol")
-                        != certification_policy["atol"]
+                        or equivalence.get("rtol") != certification_policy["rtol"]
+                        or equivalence.get("atol") != certification_policy["atol"]
                         or equivalence.get("top1_required") is not True
                         or equivalence.get("logit_error_model")
                         != certification_policy["logit_error_model"]
                         or equivalence.get("non_logit_error_model")
                         != certification_policy["non_logit_error_model"]
-                        or equivalence.get("non_logit_tolerance_unchanged")
-                        is not False
+                        or equivalence.get("non_logit_tolerance_unchanged") is not False
                         or equivalence.get("numeric_policy_sha256")
                         != certification_policy["numeric_policy_sha256"]
                         or equivalence.get("replay_numeric_policy_sha256")
-                        != certification_policy[
-                            "replay_numeric_policy_sha256"
-                        ]
+                        != certification_policy["replay_numeric_policy_sha256"]
                         or equivalence.get("non_logit_envelope_sha256")
-                        != certification_policy[
-                            "non_logit_envelope_sha256"
-                        ]
+                        != certification_policy["non_logit_envelope_sha256"]
                         or equivalence.get(
                             "shape_dtype_device_hash_and_finiteness_authenticated"
                         )
@@ -11821,9 +11187,7 @@ class Lfm2DynamicClosedLoopAdapter:
                         "descriptor_sha256": (
                             self._child_heterogeneous_layout.descriptor_sha256
                         ),
-                        "runtime_binding_sha256": runtime_binding[
-                            "binding_sha256"
-                        ],
+                        "runtime_binding_sha256": runtime_binding["binding_sha256"],
                         "causal_contract_sha256": causal_contract_sha256,
                         "numeric_policy_sha256": certification_policy[
                             "numeric_policy_sha256"
@@ -11834,31 +11198,25 @@ class Lfm2DynamicClosedLoopAdapter:
                         "non_logit_envelope_sha256": certification_policy[
                             "non_logit_envelope_sha256"
                         ],
-                        "proof_child_identity_sha256": replay.metadata[
-                            "child"
-                        ]["identity_sha256"],
+                        "proof_child_identity_sha256": replay.metadata["child"][
+                            "identity_sha256"
+                        ],
                         "proof_corpus_sha256": replay.metadata["corpus"][
                             "corpus_sha256"
                         ],
-                        "proof_selection_sha256": replay.metadata[
-                            "selection"
-                        ]["selection_sha256"],
-                        "proof_execution_sha256": replay.metadata[
-                            "execution"
-                        ]["execution_sha256"],
-                        "proof_selected_layer_indices": list(
-                            selected_layers
-                        ),
+                        "proof_selection_sha256": replay.metadata["selection"][
+                            "selection_sha256"
+                        ],
+                        "proof_execution_sha256": replay.metadata["execution"][
+                            "execution_sha256"
+                        ],
+                        "proof_selected_layer_indices": list(selected_layers),
                         "canonical_reference_replay_sha256": (
                             causal_equivalence_reference.replay_sha256
                         ),
-                        "proof_single_pass_replay_sha256": (
-                            replay.replay_sha256
-                        ),
+                        "proof_single_pass_replay_sha256": (replay.replay_sha256),
                         "equivalence": dict(equivalence),
-                        "strict_equivalence_policy": dict(
-                            certification_policy
-                        ),
+                        "strict_equivalence_policy": dict(certification_policy),
                         "proof_forward_accounting": {
                             "canonical_baseline_child_forwards": (
                                 canonical_prefix_child_forwards
@@ -11866,9 +11224,7 @@ class Lfm2DynamicClosedLoopAdapter:
                             "canonical_reference_child_forwards": (
                                 certification_reference_child_forwards
                             ),
-                            "single_pass_child_forwards": (
-                                replay_child_forwards
-                            ),
+                            "single_pass_child_forwards": (replay_child_forwards),
                             "total_certification_child_forwards": (
                                 actual_child_forwards
                             ),
@@ -11883,8 +11239,7 @@ class Lfm2DynamicClosedLoopAdapter:
                         ),
                     }
                     certification_registry_key = (
-                        self
-                        ._heterogeneous_single_pass_certification_registry_key(
+                        self._heterogeneous_single_pass_certification_registry_key(
                             certification_body
                         )
                     )
@@ -11901,16 +11256,12 @@ class Lfm2DynamicClosedLoopAdapter:
                             certification_registry_key
                         )
                     )
-                    if (
-                        existing is not None
-                        and _canonical_json_plain_copy(
-                            existing,
-                            "registered heterogeneous certification",
-                        )
-                        != _canonical_json_plain_copy(
-                            admitted_certification,
-                            "admitted heterogeneous certification",
-                        )
+                    if existing is not None and _canonical_json_plain_copy(
+                        existing,
+                        "registered heterogeneous certification",
+                    ) != _canonical_json_plain_copy(
+                        admitted_certification,
+                        "admitted heterogeneous certification",
                     ):
                         raise Lfm2DynamicClosedLoopAdapterError(
                             "An immutable heterogeneous certification registry "
@@ -11938,9 +11289,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     certification_sha256,
                     certification_registry_key,
                 ) = authenticated_certification
-                proof_forward_accounting = certification.get(
-                    "proof_forward_accounting"
-                )
+                proof_forward_accounting = certification.get("proof_forward_accounting")
                 if (
                     certification.get("descriptor_sha256")
                     != self._child_heterogeneous_layout.descriptor_sha256
@@ -11962,20 +11311,12 @@ class Lfm2DynamicClosedLoopAdapter:
                     != replay.metadata["selection"]["selection_sha256"]
                     or certification.get("proof_execution_sha256")
                     != replay.metadata["execution"]["execution_sha256"]
-                    or tuple(
-                        certification.get(
-                            "proof_selected_layer_indices", ()
-                        )
-                    )
+                    or tuple(certification.get("proof_selected_layer_indices", ()))
                     != selected_layers
                     or not isinstance(proof_forward_accounting, Mapping)
-                    or proof_forward_accounting.get(
-                        "canonical_baseline_child_forwards"
-                    )
+                    or proof_forward_accounting.get("canonical_baseline_child_forwards")
                     != canonical_prefix_child_forwards
-                    or proof_forward_accounting.get(
-                        "single_pass_child_forwards"
-                    )
+                    or proof_forward_accounting.get("single_pass_child_forwards")
                     != replay_child_forwards
                 ):
                     raise Lfm2DynamicClosedLoopAdapterError(
@@ -12012,9 +11353,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 if child_evidence_profile is None
                 else child_evidence_profile.profile_role
             ),
-            child_evidence_profile=(
-                child_evidence_profile
-            ),
+            child_evidence_profile=(child_evidence_profile),
             child_evidence_profile_sha256=(
                 None
                 if child_evidence_profile is None
@@ -12026,15 +11365,11 @@ class Lfm2DynamicClosedLoopAdapter:
                 certification_reference_child_forwards
             ),
             actual_child_forwards=actual_child_forwards,
-            canonical_prefix_child_forwards=(
-                canonical_prefix_child_forwards
-            ),
+            canonical_prefix_child_forwards=(canonical_prefix_child_forwards),
             saved_child_forwards=saved_child_forwards,
             causal_contract_sha256=causal_contract_sha256,
             causal_certification_sha256=causal_certification_sha256,
-            causal_certification_registry_key=(
-                causal_certification_registry_key
-            ),
+            causal_certification_registry_key=(causal_certification_registry_key),
             causal_certification=causal_certification,
             numeric_policy_sha256=numeric_policy_sha256,
             replay_numeric_policy_sha256=replay_numeric_policy_sha256,
@@ -12049,9 +11384,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     "schema": "neural-forge-lfm2-child-capture-envelope-v4",
                     "scope": scope.as_dict(),
                     "point": point.value,
-                    "record_keys": [
-                        list(value) for value in _record_keys(records)
-                    ],
+                    "record_keys": [list(value) for value in _record_keys(records)],
                     "replay_sha256": replay.replay_sha256,
                     "selected_layer_indices": list(selected_layers),
                     "selection_sha256": replay.metadata["selection"][
@@ -12074,9 +11407,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     ),
                     "all_batches_replayed": True,
                     "canonical_causal_phase_schema": True,
-                    "replay_capture_mode": (
-                        self.config.replay_capture_mode
-                    ),
+                    "replay_capture_mode": (self.config.replay_capture_mode),
                     "replay_child_forwards": replay_child_forwards,
                     "certification_reference_child_forwards": (
                         certification_reference_child_forwards
@@ -12086,22 +11417,14 @@ class Lfm2DynamicClosedLoopAdapter:
                         canonical_prefix_child_forwards
                     ),
                     "saved_child_forwards": saved_child_forwards,
-                    "causal_contract_sha256": (
-                        causal_contract_sha256
-                    ),
-                    "causal_certification_sha256": (
-                        causal_certification_sha256
-                    ),
+                    "causal_contract_sha256": (causal_contract_sha256),
+                    "causal_certification_sha256": (causal_certification_sha256),
                     "causal_certification_registry_key": (
                         causal_certification_registry_key
                     ),
                     "numeric_policy_sha256": numeric_policy_sha256,
-                    "replay_numeric_policy_sha256": (
-                        replay_numeric_policy_sha256
-                    ),
-                    "non_logit_envelope_sha256": (
-                        non_logit_envelope_sha256
-                    ),
+                    "replay_numeric_policy_sha256": (replay_numeric_policy_sha256),
+                    "non_logit_envelope_sha256": (non_logit_envelope_sha256),
                 }
             ),
             payload=_CapturePayloadLease(
@@ -12110,9 +11433,7 @@ class Lfm2DynamicClosedLoopAdapter:
             ),
         )
 
-    def _capture_payload(
-        self, capture: ChildTrajectoryCapture
-    ) -> _CapturePayload:
+    def _capture_payload(self, capture: ChildTrajectoryCapture) -> _CapturePayload:
         lease = capture.payload
         if not isinstance(lease, _CapturePayloadLease):
             raise Lfm2DynamicClosedLoopAdapterError(
@@ -12129,23 +11450,17 @@ class Lfm2DynamicClosedLoopAdapter:
             not isinstance(parent_borrow, _SelectedParentProfileBorrow)
             or parent_borrow.released
             or parent_borrow.owner is not self
-            or self._active_selected_parent_profile
-            is not parent_borrow.profile
+            or self._active_selected_parent_profile is not parent_borrow.profile
             or parent_borrow.capture_point != capture.point.value
-            or parent_borrow.selected_layer_indices
-            != payload.selected_layer_indices
+            or parent_borrow.selected_layer_indices != payload.selected_layer_indices
             or parent_borrow.profile.selected_layer_indices
             != payload.selected_layer_indices
             or parent_borrow.profile.borrow_count <= 0
             or parent_borrow.borrow_sha256
             != canonical_sha256(
                 {
-                    "schema": (
-                        "neural-forge-lfm2-selected-parent-profile-borrow-v1"
-                    ),
-                    "profile_sha256": (
-                        parent_borrow.profile.profile_sha256
-                    ),
+                    "schema": ("neural-forge-lfm2-selected-parent-profile-borrow-v1"),
+                    "profile_sha256": (parent_borrow.profile.profile_sha256),
                     "capture_point": parent_borrow.capture_point,
                     "selected_layer_indices": list(
                         parent_borrow.selected_layer_indices
@@ -12163,13 +11478,10 @@ class Lfm2DynamicClosedLoopAdapter:
         certification_registry_key = None
         if (
             self._child_heterogeneous_layout is not None
-            and self.config.replay_capture_mode
-            == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
+            and self.config.replay_capture_mode == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
         ):
-            authenticated = (
-                self._authenticate_heterogeneous_single_pass_certification(
-                    payload.causal_certification
-                )
+            authenticated = self._authenticate_heterogeneous_single_pass_certification(
+                payload.causal_certification
             )
             if authenticated is not None:
                 certification_body = authenticated[0]
@@ -12194,13 +11506,9 @@ class Lfm2DynamicClosedLoopAdapter:
                 "point": capture.point.value,
                 "record_keys": [list(value) for value in capture.record_keys],
                 "replay_sha256": payload.replay_sha256,
-                "selected_layer_indices": list(
-                    payload.selected_layer_indices
-                ),
+                "selected_layer_indices": list(payload.selected_layer_indices),
                 "selection_sha256": payload.selection_sha256,
-                "child_evidence_profile_role": (
-                    payload.child_evidence_profile_role
-                ),
+                "child_evidence_profile_role": (payload.child_evidence_profile_role),
                 "child_evidence_profile": (
                     None
                     if payload.child_evidence_profile is None
@@ -12222,19 +11530,13 @@ class Lfm2DynamicClosedLoopAdapter:
                 ),
                 "saved_child_forwards": payload.saved_child_forwards,
                 "causal_contract_sha256": payload.causal_contract_sha256,
-                "causal_certification_sha256": (
-                    payload.causal_certification_sha256
-                ),
+                "causal_certification_sha256": (payload.causal_certification_sha256),
                 "causal_certification_registry_key": (
                     payload.causal_certification_registry_key
                 ),
                 "numeric_policy_sha256": payload.numeric_policy_sha256,
-                "replay_numeric_policy_sha256": (
-                    payload.replay_numeric_policy_sha256
-                ),
-                "non_logit_envelope_sha256": (
-                    payload.non_logit_envelope_sha256
-                ),
+                "replay_numeric_policy_sha256": (payload.replay_numeric_policy_sha256),
+                "non_logit_envelope_sha256": (payload.non_logit_envelope_sha256),
             }
         )
         if (
@@ -12244,8 +11546,7 @@ class Lfm2DynamicClosedLoopAdapter:
             or not payload.selected_layer_indices
             or payload.selected_layer_indices
             != tuple(sorted(set(payload.selected_layer_indices)))
-            or payload.paired.selected_layer_indices
-            != payload.selected_layer_indices
+            or payload.paired.selected_layer_indices != payload.selected_layer_indices
             or payload.paired.child_evidence_profile_role
             != payload.child_evidence_profile_role
             or payload.paired.child_evidence_profile_sha256
@@ -12286,27 +11587,20 @@ class Lfm2DynamicClosedLoopAdapter:
                 "capture selection SHA-256",
             )
             != payload.selection_sha256
-            or payload.replay_capture_mode
-            != self.config.replay_capture_mode
+            or payload.replay_capture_mode != self.config.replay_capture_mode
             or (
-                payload.replay_capture_mode
-                == CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
+                payload.replay_capture_mode == CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
                 and authenticated_child_evidence_profile is None
             )
             or (
-                payload.replay_capture_mode
-                != CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
+                payload.replay_capture_mode != CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
                 and authenticated_child_evidence_profile is not None
             )
             or isinstance(payload.replay_child_forwards, bool)
             or not isinstance(payload.replay_child_forwards, int)
             or payload.replay_child_forwards <= 0
-            or isinstance(
-                payload.certification_reference_child_forwards, bool
-            )
-            or not isinstance(
-                payload.certification_reference_child_forwards, int
-            )
+            or isinstance(payload.certification_reference_child_forwards, bool)
+            or not isinstance(payload.certification_reference_child_forwards, int)
             or payload.certification_reference_child_forwards < 0
             or isinstance(payload.actual_child_forwards, bool)
             or not isinstance(payload.actual_child_forwards, int)
@@ -12317,25 +11611,17 @@ class Lfm2DynamicClosedLoopAdapter:
             )
             or isinstance(payload.canonical_prefix_child_forwards, bool)
             or not isinstance(payload.canonical_prefix_child_forwards, int)
-            or payload.canonical_prefix_child_forwards
-            < payload.replay_child_forwards
+            or payload.canonical_prefix_child_forwards < payload.replay_child_forwards
             or isinstance(payload.saved_child_forwards, bool)
             or not isinstance(payload.saved_child_forwards, int)
             or payload.saved_child_forwards
-            != (
-                payload.canonical_prefix_child_forwards
-                - payload.actual_child_forwards
-            )
+            != (payload.canonical_prefix_child_forwards - payload.actual_child_forwards)
             or (
-                self.config.replay_capture_mode
-                == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
+                self.config.replay_capture_mode == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
                 and any(
                     not isinstance(value, str)
                     or len(value) != 64
-                    or any(
-                        character not in "0123456789abcdef"
-                        for character in value
-                    )
+                    or any(character not in "0123456789abcdef" for character in value)
                     for value in (
                         payload.causal_contract_sha256,
                         payload.numeric_policy_sha256,
@@ -12345,8 +11631,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 )
             )
             or (
-                self.config.replay_capture_mode
-                != CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
+                self.config.replay_capture_mode != CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
                 and any(
                     value is not None
                     for value in (
@@ -12375,28 +11660,19 @@ class Lfm2DynamicClosedLoopAdapter:
                 and (
                     certification_sha256 is None
                     or not isinstance(certification_body, Mapping)
-                    or payload.causal_certification_sha256
-                    != certification_sha256
+                    or payload.causal_certification_sha256 != certification_sha256
                     or payload.causal_certification_registry_key
                     != certification_registry_key
                     or certification_body.get("proof_selection_sha256")
                     != payload.selection_sha256
-                    or tuple(
-                        certification_body.get(
-                            "proof_selected_layer_indices", ()
-                        )
-                    )
+                    or tuple(certification_body.get("proof_selected_layer_indices", ()))
                     != payload.selected_layer_indices
                     or payload.numeric_policy_sha256
                     != certification_body.get("numeric_policy_sha256")
                     or payload.replay_numeric_policy_sha256
-                    != certification_body.get(
-                        "replay_numeric_policy_sha256"
-                    )
+                    != certification_body.get("replay_numeric_policy_sha256")
                     or payload.non_logit_envelope_sha256
-                    != certification_body.get(
-                        "non_logit_envelope_sha256"
-                    )
+                    != certification_body.get("non_logit_envelope_sha256")
                 )
             )
         ):
@@ -12611,20 +11887,14 @@ class Lfm2DynamicClosedLoopAdapter:
             require_tied=self._child_heterogeneous_layout is None,
         )
         source_input_rows = (
-            source_input.detach()
-            .to(device="cpu", dtype=torch.float32)
-            .contiguous()
+            source_input.detach().to(device="cpu", dtype=torch.float32).contiguous()
         )
         source_output_rows = (
-            source_output.detach()
-            .to(device="cpu", dtype=torch.float32)
-            .contiguous()
+            source_output.detach().to(device="cpu", dtype=torch.float32).contiguous()
         )
         transport_report_sha256 = None
         if self.tokenizer_bridge_artifact is None:
-            callback = getattr(
-                self.coordinate_map, "fold_consumer_weight", None
-            )
+            callback = getattr(self.coordinate_map, "fold_consumer_weight", None)
             if not callable(callback):
                 callback = getattr(self.coordinate_map, "encode", None)
             if not callable(callback):
@@ -12663,14 +11933,16 @@ class Lfm2DynamicClosedLoopAdapter:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "The source vocabulary projections are malformed."
             )
-        projected_input = projected_input.detach().to(
-            device="cpu",
-            dtype=child_input.dtype,
-        ).contiguous()
-        projected = (
-            projected.detach()
-            .to(device="cpu", dtype=child_output.dtype)
+        projected_input = (
+            projected_input.detach()
+            .to(
+                device="cpu",
+                dtype=child_input.dtype,
+            )
             .contiguous()
+        )
+        projected = (
+            projected.detach().to(device="cpu", dtype=child_output.dtype).contiguous()
         )
         live_input = child_input.detach().to(device="cpu").contiguous()
         live = child_output.detach().to(device="cpu").contiguous()
@@ -12684,15 +11956,9 @@ class Lfm2DynamicClosedLoopAdapter:
             )
         binding = canonical_sha256(
             {
-                "schema": (
-                    "neural-forge-lfm2-source-bound-output-interface-v2"
-                ),
-                "source_input_vocabulary_sha256": _tensor_sha256(
-                    source_input_rows
-                ),
-                "source_output_vocabulary_sha256": _tensor_sha256(
-                    source_output_rows
-                ),
+                "schema": ("neural-forge-lfm2-source-bound-output-interface-v2"),
+                "source_input_vocabulary_sha256": _tensor_sha256(source_input_rows),
+                "source_output_vocabulary_sha256": _tensor_sha256(source_output_rows),
                 "map_sha256": self.map_sha256,
                 "tokenizer_bridge_artifact_sha256": (
                     None
@@ -12700,9 +11966,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     else self.tokenizer_bridge_artifact.artifact_sha256
                 ),
                 "vocabulary_transport_report_sha256": transport_report_sha256,
-                "projected_input_vocabulary_sha256": _tensor_sha256(
-                    projected_input
-                ),
+                "projected_input_vocabulary_sha256": _tensor_sha256(projected_input),
                 "projected_output_vocabulary_sha256": _tensor_sha256(projected),
                 "vocabulary_size": int(projected.shape[0]),
                 "target_width": int(projected.shape[1]),
@@ -12719,10 +11983,7 @@ class Lfm2DynamicClosedLoopAdapter:
         phase: str,
     ) -> Any:
         value = batch.child.tensors[
-            (
-                f"{phase}.layer."
-                f"{len(self.child_layers) - 1:03d}.residual.post_layer"
-            )
+            (f"{phase}.layer.{len(self.child_layers) - 1:03d}.residual.post_layer")
         ]
         normalized = _analytical_rms_norm(
             value,
@@ -12748,9 +12009,7 @@ class Lfm2DynamicClosedLoopAdapter:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Child output replay has no phase-row metadata."
             )
-        matches = [
-            value for value in metadata if value.get("phase") == phase
-        ]
+        matches = [value for value in metadata if value.get("phase") == phase]
         if len(matches) != 1:
             raise Lfm2DynamicClosedLoopAdapterError(
                 f"Child output replay has ambiguous metadata for {phase!r}."
@@ -12758,9 +12017,7 @@ class Lfm2DynamicClosedLoopAdapter:
         row = matches[0]
         sample_start = int(row["sample_start"])
         sample_count = int(row["sample_count"])
-        input_ids = batch.child.input_ids.detach().to(
-            device="cpu", dtype=torch.long
-        )
+        input_ids = batch.child.input_ids.detach().to(device="cpu", dtype=torch.long)
         forced_ids = batch.child.forced_decode_ids.detach().to(
             device="cpu", dtype=torch.long
         )
@@ -12805,9 +12062,7 @@ class Lfm2DynamicClosedLoopAdapter:
         runtime_weight = (
             None
             if materialized_weight is None
-            else materialized_weight.detach().to(
-                device="cpu", dtype=torch.float64
-            )
+            else materialized_weight.detach().to(device="cpu", dtype=torch.float64)
         )
         for index in batch_indices:
             batch = paired.load_batch(index)
@@ -12838,8 +12093,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     )
                 else:
                     candidate = (
-                        hidden.to(dtype=torch.float64)
-                        @ runtime_weight.transpose(0, 1)
+                        hidden.to(dtype=torch.float64) @ runtime_weight.transpose(0, 1)
                     ).contiguous()
                 if (
                     tuple(parent.shape) != tuple(candidate.shape)
@@ -12865,9 +12119,7 @@ class Lfm2DynamicClosedLoopAdapter:
             "eos_token_id",
             None,
         )
-        if isinstance(value, Sequence) and not isinstance(
-            value, (str, bytes)
-        ):
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
             value = next(
                 (
                     item
@@ -12914,12 +12166,10 @@ class Lfm2DynamicClosedLoopAdapter:
         sequence_nll = 0.0
         sequence_rows = 0
         eos_rows = 0
-        for _hidden, parent, candidate, targets in (
-            self._iter_output_blocks(
-                paired,
-                batch_indices,
-                materialized_weight=materialized_weight,
-            )
+        for _hidden, parent, candidate, targets in self._iter_output_blocks(
+            paired,
+            batch_indices,
+            materialized_weight=materialized_weight,
         ):
             vocabulary_size = int(parent.shape[1])
             eos_token_id = self._eos_token_id(vocabulary_size)
@@ -12932,144 +12182,85 @@ class Lfm2DynamicClosedLoopAdapter:
                     int(parent.shape[0]),
                     start + self.config.output_metric_chunk_rows,
                 )
-                parent_chunk = parent[start:stop].to(
-                    dtype=torch.float64
-                )
-                candidate_chunk = candidate[start:stop].to(
-                    dtype=torch.float64
-                )
-                parent_log_probability = torch.log_softmax(
-                    parent_chunk, dim=-1
-                )
-                candidate_log_probability = torch.log_softmax(
-                    candidate_chunk, dim=-1
-                )
+                parent_chunk = parent[start:stop].to(dtype=torch.float64)
+                candidate_chunk = candidate[start:stop].to(dtype=torch.float64)
+                parent_log_probability = torch.log_softmax(parent_chunk, dim=-1)
+                candidate_log_probability = torch.log_softmax(candidate_chunk, dim=-1)
                 parent_probability = parent_log_probability.exp()
                 chunk_rows = int(parent_chunk.shape[0])
                 rows += chunk_rows
                 sums["kl"] += float(
                     (
                         parent_probability
-                        * (
-                            parent_log_probability
-                            - candidate_log_probability
-                        )
+                        * (parent_log_probability - candidate_log_probability)
                     )
                     .sum()
                     .item()
                 )
                 sums["cross_entropy"] += float(
-                    (
-                        -parent_probability
-                        * candidate_log_probability
-                    )
-                    .sum()
-                    .item()
+                    (-parent_probability * candidate_log_probability).sum().item()
                 )
                 sums["parent_entropy"] += float(
-                    (
-                        -parent_probability
-                        * parent_log_probability
-                    )
-                    .sum()
-                    .item()
+                    (-parent_probability * parent_log_probability).sum().item()
                 )
-                parent_winner = parent_chunk.argmax(
-                    dim=-1, keepdim=True
-                )
-                candidate_winner = candidate_chunk.argmax(
-                    dim=-1, keepdim=True
-                )
+                parent_winner = parent_chunk.argmax(dim=-1, keepdim=True)
+                candidate_winner = candidate_chunk.argmax(dim=-1, keepdim=True)
                 sums["top1_agreement"] += float(
                     (parent_winner == candidate_winner).sum().item()
                 )
-                winner_log_probability = (
-                    candidate_log_probability.gather(
-                        1, parent_winner
-                    ).squeeze(1)
-                )
-                sums["winner_nll"] += float(
-                    (-winner_log_probability).sum().item()
-                )
-                top_two = torch.topk(
-                    candidate_chunk, k=2, dim=-1
-                )
-                best_is_parent = (
-                    top_two.indices[:, :1] == parent_winner
+                winner_log_probability = candidate_log_probability.gather(
+                    1, parent_winner
                 ).squeeze(1)
+                sums["winner_nll"] += float((-winner_log_probability).sum().item())
+                top_two = torch.topk(candidate_chunk, k=2, dim=-1)
+                best_is_parent = (top_two.indices[:, :1] == parent_winner).squeeze(1)
                 competitor = torch.where(
                     best_is_parent,
                     top_two.values[:, 1],
                     top_two.values[:, 0],
                 )
-                winner_logit = candidate_chunk.gather(
-                    1, parent_winner
-                ).squeeze(1)
+                winner_logit = candidate_chunk.gather(1, parent_winner).squeeze(1)
                 margin = winner_logit - competitor
                 sums["winner_margin"] += float(margin.sum().item())
-                sums["winner_margin_positive"] += float(
-                    (margin > 0.0).sum().item()
-                )
+                sums["winner_margin_positive"] += float((margin > 0.0).sum().item())
                 difference = candidate_chunk - parent_chunk
-                sums["logit_squared_error"] += float(
-                    difference.square().sum().item()
-                )
-                sums["parent_logit_square"] += float(
-                    parent_chunk.square().sum().item()
-                )
+                sums["logit_squared_error"] += float(difference.square().sum().item())
+                sums["parent_logit_square"] += float(parent_chunk.square().sum().item())
                 target_chunk = targets[start:stop]
                 known = target_chunk >= 0
                 if bool(known.any().item()):
                     known_targets = target_chunk[known].reshape(-1, 1)
                     sequence_nll += float(
-                        (
-                            -candidate_log_probability[known].gather(
-                                1, known_targets
-                            )
-                        )
+                        (-candidate_log_probability[known].gather(1, known_targets))
                         .sum()
                         .item()
                     )
                     sequence_rows += int(known.sum().item())
                 if eos_token_id is not None:
-                    eos = torch.full_like(
-                        parent_winner, eos_token_id
+                    eos = torch.full_like(parent_winner, eos_token_id)
+                    parent_top_two = torch.topk(parent_chunk, k=2, dim=-1)
+                    parent_best_is_eos = (parent_top_two.indices[:, :1] == eos).squeeze(
+                        1
                     )
-                    parent_top_two = torch.topk(
-                        parent_chunk, k=2, dim=-1
-                    )
-                    parent_best_is_eos = (
-                        parent_top_two.indices[:, :1] == eos
-                    ).squeeze(1)
                     parent_competitor = torch.where(
                         parent_best_is_eos,
                         parent_top_two.values[:, 1],
                         parent_top_two.values[:, 0],
                     )
-                    candidate_best_is_eos = (
-                        top_two.indices[:, :1] == eos
-                    ).squeeze(1)
+                    candidate_best_is_eos = (top_two.indices[:, :1] == eos).squeeze(1)
                     candidate_competitor = torch.where(
                         candidate_best_is_eos,
                         top_two.values[:, 1],
                         top_two.values[:, 0],
                     )
                     parent_eos_margin = (
-                        parent_chunk[:, eos_token_id]
-                        - parent_competitor
+                        parent_chunk[:, eos_token_id] - parent_competitor
                     )
                     candidate_eos_margin = (
-                        candidate_chunk[:, eos_token_id]
-                        - candidate_competitor
+                        candidate_chunk[:, eos_token_id] - candidate_competitor
                     )
                     sums["eos_margin_squared_error"] += float(
-                        (
-                            candidate_eos_margin
-                            - parent_eos_margin
-                        )
-                        .square()
-                        .sum()
-                        .item()
+                        (candidate_eos_margin - parent_eos_margin).square().sum().item()
                     )
                     eos_rows += chunk_rows
         if rows <= 0 or vocabulary_size <= 1:
@@ -13084,19 +12275,11 @@ class Lfm2DynamicClosedLoopAdapter:
             "rows": rows,
             "vocabulary_size": vocabulary_size,
             "full_vocabulary_parent_kl": sums["kl"] / rows,
-            "full_vocabulary_parent_distribution_nll": (
-                sums["cross_entropy"] / rows
-            ),
-            "full_vocabulary_parent_entropy": (
-                sums["parent_entropy"] / rows
-            ),
+            "full_vocabulary_parent_distribution_nll": (sums["cross_entropy"] / rows),
+            "full_vocabulary_parent_entropy": (sums["parent_entropy"] / rows),
             "parent_winner_nll": sums["winner_nll"] / rows,
-            "parent_winner_top1_agreement": (
-                sums["top1_agreement"] / rows
-            ),
-            "parent_winner_mean_margin": (
-                sums["winner_margin"] / rows
-            ),
+            "parent_winner_top1_agreement": (sums["top1_agreement"] / rows),
+            "parent_winner_mean_margin": (sums["winner_margin"] / rows),
             "parent_winner_positive_margin_fraction": (
                 sums["winner_margin_positive"] / rows
             ),
@@ -13104,18 +12287,14 @@ class Lfm2DynamicClosedLoopAdapter:
                 sums["logit_squared_error"] / target_square
             ),
             "known_sequence_token_nll": (
-                0.0
-                if sequence_rows == 0
-                else sequence_nll / sequence_rows
+                0.0 if sequence_rows == 0 else sequence_nll / sequence_rows
             ),
             "known_sequence_token_rows": sequence_rows,
             "eos_token_id_available": eos_rows > 0,
             "eos_margin_rmse": (
                 0.0
                 if eos_rows == 0
-                else math.sqrt(
-                    sums["eos_margin_squared_error"] / eos_rows
-                )
+                else math.sqrt(sums["eos_margin_squared_error"] / eos_rows)
             ),
             "finite": True,
             "teacher_forced": True,
@@ -13165,12 +12344,7 @@ class Lfm2DynamicClosedLoopAdapter:
             target_square += float(live.square().sum().item())
             rows += int(live.shape[0])
             top1_agreement += int(
-                (
-                    offline.argmax(dim=-1)
-                    == live.argmax(dim=-1)
-                )
-                .sum()
-                .item()
+                (offline.argmax(dim=-1) == live.argmax(dim=-1)).sum().item()
             )
         if rows <= 0:
             raise Lfm2DynamicClosedLoopAdapterError(
@@ -13179,8 +12353,7 @@ class Lfm2DynamicClosedLoopAdapter:
         return {
             "rows": rows,
             "relative_rmse": math.sqrt(
-                squared_error
-                / max(target_square, torch.finfo(torch.float64).tiny)
+                squared_error / max(target_square, torch.finfo(torch.float64).tiny)
             ),
             "top1_agreement": top1_agreement / rows,
             "post_install_replayed_through_input_embedding": True,
@@ -13202,9 +12375,7 @@ class Lfm2DynamicClosedLoopAdapter:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Producer scope must identify one LFM2 layer."
             )
-        if not isinstance(
-            parent_endpoints.payload, _EndpointPayload
-        ):
+        if not isinstance(parent_endpoints.payload, _EndpointPayload):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Producer parent endpoint envelope is invalid."
             )
@@ -13227,9 +12398,7 @@ class Lfm2DynamicClosedLoopAdapter:
             layer_index=layer_index,
             operator_kind=operator_kind,
             coordinate_map_callback=self._project_parent,
-            norm_fit_callback=self._fit_norm(
-                target_layer.operator_norm
-            ),
+            norm_fit_callback=self._fit_norm(target_layer.operator_norm),
         )
         baseline = self._heldout_layer_metrics(
             capture.paired,
@@ -13285,16 +12454,10 @@ class Lfm2DynamicClosedLoopAdapter:
                 residual_assignment_sha256=self.map_sha256,
                 norm_epsilon=self._attention_norm_epsilon(target),
                 ridge=self.config.ridge,
-                max_prior_delta_ratio=(
-                    self.config.max_prior_delta_ratio
-                ),
+                max_prior_delta_ratio=(self.config.max_prior_delta_ratio),
                 cluster_ridge=self.config.cluster_ridge,
-                cluster_max_iterations=(
-                    self.config.cluster_max_iterations
-                ),
-                cluster_distance_chunk_size=(
-                    self.config.cluster_distance_chunk_size
-                ),
+                cluster_max_iterations=(self.config.cluster_max_iterations),
+                cluster_distance_chunk_size=(self.config.cluster_distance_chunk_size),
             )
         else:
             source = source_layer.conv
@@ -13316,17 +12479,13 @@ class Lfm2DynamicClosedLoopAdapter:
                 source_out_proj_bias=source_writer.bias,
                 target_in_proj_weight_template=target.in_proj.weight,
                 target_conv_weight_template=target.conv.weight,
-                target_out_proj_weight_template=(
-                    target_writer.effective_weight
-                ),
+                target_out_proj_weight_template=(target_writer.effective_weight),
                 target_in_proj_bias_template=target.in_proj.bias,
                 target_conv_bias_template=target.conv.bias,
                 target_out_proj_bias_template=target_writer.bias,
                 cases=operator_cases.fit_cases,
                 residual_assignment=self._short_conv_assignments[layer_index],
-                external_residual_assignment=(
-                    self._short_conv_residual_assignment
-                ),
+                external_residual_assignment=(self._short_conv_residual_assignment),
                 in_proj_weight_prior=target.in_proj.weight.detach(),
                 in_proj_bias_prior=(
                     None
@@ -13334,13 +12493,9 @@ class Lfm2DynamicClosedLoopAdapter:
                     else target.in_proj.bias.detach()
                 ),
                 out_proj_weight_prior=target_writer.effective_weight,
-                out_proj_bias_prior=(
-                    target_writer.bias
-                ),
+                out_proj_bias_prior=(target_writer.bias),
                 ridge=self.config.ridge,
-                max_prior_delta_ratio=(
-                    self.config.max_prior_delta_ratio
-                ),
+                max_prior_delta_ratio=(self.config.max_prior_delta_ratio),
             )
         attention_score_fit = None
         attention_score_validation = None
@@ -13348,33 +12503,25 @@ class Lfm2DynamicClosedLoopAdapter:
             operator_kind == "full_attention"
             and self.config.attention_score_candidate_gate_enabled
         ):
-            score_thresholds = (
-                Lfm2AttentionScorePreservationThresholds(
-                    maximum_softmax_fisher_error=(
-                        self.config
-                        .attention_score_maximum_softmax_fisher_error
-                    ),
-                    maximum_js_divergence=(
-                        self.config
-                        .attention_score_maximum_js_divergence
-                    ),
-                    minimum_top1_key_agreement_fraction=(
-                        self.config
-                        .attention_score_minimum_top1_key_agreement_fraction
-                    ),
-                    minimum_top_k_pair_order_agreement_fraction=(
-                        self.config
-                        .attention_score_minimum_top_k_pair_order_agreement_fraction
-                    ),
-                    minimum_winner_margin_sign_agreement_fraction=(
-                        self.config
-                        .attention_score_minimum_winner_margin_sign_agreement_fraction
-                    ),
-                    minimum_relative_margin_floor_retention_fraction=(
-                        self.config
-                        .attention_score_minimum_relative_margin_floor_retention_fraction
-                    ),
-                )
+            score_thresholds = Lfm2AttentionScorePreservationThresholds(
+                maximum_softmax_fisher_error=(
+                    self.config.attention_score_maximum_softmax_fisher_error
+                ),
+                maximum_js_divergence=(
+                    self.config.attention_score_maximum_js_divergence
+                ),
+                minimum_top1_key_agreement_fraction=(
+                    self.config.attention_score_minimum_top1_key_agreement_fraction
+                ),
+                minimum_top_k_pair_order_agreement_fraction=(
+                    self.config.attention_score_minimum_top_k_pair_order_agreement_fraction
+                ),
+                minimum_winner_margin_sign_agreement_fraction=(
+                    self.config.attention_score_minimum_winner_margin_sign_agreement_fraction
+                ),
+                minimum_relative_margin_floor_retention_fraction=(
+                    self.config.attention_score_minimum_relative_margin_floor_retention_fraction
+                ),
             )
             query_norm = getattr(
                 getattr(target, "q_layernorm", None),
@@ -13399,9 +12546,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 evaluate_lfm2_compiled_attention_producer_score_preservation(
                     compiled,
                     operator_cases.fit_cases,
-                    thresholds=(
-                        Lfm2AttentionScorePreservationThresholds()
-                    ),
+                    thresholds=(Lfm2AttentionScorePreservationThresholds()),
                     **score_options,
                 )
             )
@@ -13416,9 +12561,7 @@ class Lfm2DynamicClosedLoopAdapter:
             if not attention_score_validation.accepted:
                 failed_checks = [
                     name
-                    for name, accepted in (
-                        attention_score_validation.checks
-                    )
+                    for name, accepted in (attention_score_validation.checks)
                     if accepted is False
                 ]
                 raise Lfm2DynamicClosedLoopAdapterError(
@@ -13436,12 +12579,8 @@ class Lfm2DynamicClosedLoopAdapter:
                 split_sha256=split.split_sha256,
             ),
             compiled=compiled,
-            operator_norm_weight=self._materializer_weight(
-                materializer
-            ),
-            operator_norm_report_sha256=self._norm_report_sha256(
-                materializer
-            ),
+            operator_norm_weight=self._materializer_weight(materializer),
+            operator_norm_report_sha256=self._norm_report_sha256(materializer),
             baseline_validation=baseline,
             attention_score_fit=attention_score_fit,
             attention_score_validation=attention_score_validation,
@@ -13468,14 +12607,10 @@ class Lfm2DynamicClosedLoopAdapter:
             {
                 "schema": "neural-forge-lfm2-producer-artifact-v1",
                 "scope": scope.as_dict(),
-                "fit_record_keys": [
-                    list(value) for value in _record_keys(fit_records)
-                ],
+                "fit_record_keys": [list(value) for value in _record_keys(fit_records)],
                 "operator_kind": operator_kind,
                 "compiled_state_sha256": compiled.compiled_state_sha256,
-                "operator_norm_report_sha256": (
-                    payload.operator_norm_report_sha256
-                ),
+                "operator_norm_report_sha256": (payload.operator_norm_report_sha256),
                 "attractor_baseline_snapshot_sha256": (
                     None
                     if attractor_baseline is None
@@ -13514,9 +12649,7 @@ class Lfm2DynamicClosedLoopAdapter:
             metadata=_scalar_metadata(
                 {
                     "operator_kind": operator_kind,
-                    "compiled_state_sha256": (
-                        compiled.compiled_state_sha256
-                    ),
+                    "compiled_state_sha256": (compiled.compiled_state_sha256),
                     "all_parent_batches_available": True,
                     "actual_child_capture_used": True,
                     "map_sha256": self.map_sha256,
@@ -13549,20 +12682,17 @@ class Lfm2DynamicClosedLoopAdapter:
                     "attention_score_validation_top1_key_agreement": (
                         None
                         if attention_score_validation is None
-                        else attention_score_validation
-                        .top1_key_agreement_fraction
+                        else attention_score_validation.top1_key_agreement_fraction
                     ),
                     "attention_score_validation_top_k_pair_order_agreement": (
                         None
                         if attention_score_validation is None
-                        else attention_score_validation
-                        .top_k_pair_order_agreement_fraction
+                        else attention_score_validation.top_k_pair_order_agreement_fraction
                     ),
                     "attention_score_validation_margin_floor_retention": (
                         None
                         if attention_score_validation is None
-                        else attention_score_validation
-                        .relative_margin_floor_retention_fraction
+                        else attention_score_validation.relative_margin_floor_retention_fraction
                     ),
                     "attention_score_state_sha256": (
                         getattr(compiled, "score_state_sha256", None)
@@ -13614,26 +12744,17 @@ class Lfm2DynamicClosedLoopAdapter:
         norm_before = norm.weight.detach().to(device="cpu").clone()
         transaction = None
         try:
-            self._copy_norm_weight(
-                norm, payload.operator_norm_weight
-            )
+            self._copy_norm_weight(norm, payload.operator_norm_weight)
             if payload.operator_kind == "full_attention":
-                if (
-                    self.config.attention_consumer_mode
-                    == "coupled-value-output"
-                ):
-                    transaction = (
-                        install_lfm2_structural_attention_score_producer_fold(
-                            target_layer.self_attn,
-                            payload.compiled,
-                        )
+                if self.config.attention_consumer_mode == "coupled-value-output":
+                    transaction = install_lfm2_structural_attention_score_producer_fold(
+                        target_layer.self_attn,
+                        payload.compiled,
                     )
                 else:
-                    transaction = (
-                        install_lfm2_structural_attention_producer_fold(
-                            target_layer.self_attn,
-                            payload.compiled,
-                        )
+                    transaction = install_lfm2_structural_attention_producer_fold(
+                        target_layer.self_attn,
+                        payload.compiled,
                     )
             else:
                 target_writer = self._short_conv_writer_view(
@@ -13649,10 +12770,8 @@ class Lfm2DynamicClosedLoopAdapter:
                     raise Lfm2DynamicClosedLoopAdapterError(
                         "ShortConv writer changed after producer compilation."
                     )
-                transaction = (
-                    install_lfm2_structural_short_conv_producer_fold(
-                        target_layer.conv, payload.compiled
-                    )
+                transaction = install_lfm2_structural_short_conv_producer_fold(
+                    target_layer.conv, payload.compiled
                 )
         except Exception:
             if transaction is not None and transaction.active:
@@ -13703,11 +12822,7 @@ class Lfm2DynamicClosedLoopAdapter:
             )
         producer = self._producer_payloads.get(layer_index)
         transaction = self._split_transactions.get(layer_index)
-        if (
-            producer is None
-            or transaction is None
-            or not transaction.active
-        ):
+        if producer is None or transaction is None or not transaction.active:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Consumer fitting requires an installed producer."
             )
@@ -13719,79 +12834,44 @@ class Lfm2DynamicClosedLoopAdapter:
         target_layer = self.child_layers[layer_index]
         if producer.operator_kind == "full_attention":
             target = target_layer.self_attn
-            if (
-                self.config.attention_consumer_mode
-                == "coupled-value-output"
-            ):
-                compiled_consumer = (
-                    compile_lfm2_structural_attention_value_output_fold(
-                        producer=producer.compiled,
-                        target_value_weight_template=(
-                            target.v_proj.weight
-                        ),
-                        target_output_weight_template=(
-                            target.out_proj.weight
-                        ),
-                        actual_child_contexts=contexts.fit_contexts,
-                        cases=producer.operator_cases.fit_cases,
-                        live_value_weight=target.v_proj.weight.detach(),
-                        value_weight_prior=(
-                            producer.compiled.value_weight
-                        ),
-                        output_weight_prior=(
-                            target.out_proj.weight.detach()
-                        ),
-                        query_norm_weight=getattr(
-                            getattr(target, "q_layernorm", None),
-                            "weight",
-                            None,
-                        ),
-                        key_norm_weight=getattr(
-                            getattr(target, "k_layernorm", None),
-                            "weight",
-                            None,
-                        ),
-                        norm_epsilon=(
-                            self._attention_norm_epsilon(target)
-                        ),
-                        ridge=self.config.ridge,
-                        context_ridge=(
-                            self.config
-                            .attention_value_output_context_ridge
-                        ),
-                        max_prior_delta_ratio=(
-                            self.config.max_prior_delta_ratio
-                        ),
-                        iterations=(
-                            self.config
-                            .attention_value_output_iterations
-                        ),
-                        fit_tolerance=(
-                            self.config
-                            .attention_value_output_fit_tolerance
-                        ),
-                        context_equivalence_tolerance=(
-                            self.config
-                            .attention_value_output_context_equivalence_tolerance
-                        ),
-                    )
+            if self.config.attention_consumer_mode == "coupled-value-output":
+                compiled_consumer = compile_lfm2_structural_attention_value_output_fold(
+                    producer=producer.compiled,
+                    target_value_weight_template=(target.v_proj.weight),
+                    target_output_weight_template=(target.out_proj.weight),
+                    actual_child_contexts=contexts.fit_contexts,
+                    cases=producer.operator_cases.fit_cases,
+                    live_value_weight=target.v_proj.weight.detach(),
+                    value_weight_prior=(producer.compiled.value_weight),
+                    output_weight_prior=(target.out_proj.weight.detach()),
+                    query_norm_weight=getattr(
+                        getattr(target, "q_layernorm", None),
+                        "weight",
+                        None,
+                    ),
+                    key_norm_weight=getattr(
+                        getattr(target, "k_layernorm", None),
+                        "weight",
+                        None,
+                    ),
+                    norm_epsilon=(self._attention_norm_epsilon(target)),
+                    ridge=self.config.ridge,
+                    context_ridge=(self.config.attention_value_output_context_ridge),
+                    max_prior_delta_ratio=(self.config.max_prior_delta_ratio),
+                    iterations=(self.config.attention_value_output_iterations),
+                    fit_tolerance=(self.config.attention_value_output_fit_tolerance),
+                    context_equivalence_tolerance=(
+                        self.config.attention_value_output_context_equivalence_tolerance
+                    ),
                 )
             else:
-                compiled_consumer = (
-                    compile_lfm2_structural_attention_consumer_fold(
-                        target_output_weight_template=(
-                            target.out_proj.weight
-                        ),
-                        actual_child_contexts=contexts.fit_contexts,
-                        cases=producer.operator_cases.fit_cases,
-                        output_weight_prior=(
-                            target.out_proj.weight.detach()
-                        ),
-                        ridge=self.config.ridge,
-                        max_prior_delta_ratio=(
-                            self.config.max_prior_delta_ratio
-                        ),
-                    )
+                compiled_consumer = compile_lfm2_structural_attention_consumer_fold(
+                    target_output_weight_template=(target.out_proj.weight),
+                    actual_child_contexts=contexts.fit_contexts,
+                    cases=producer.operator_cases.fit_cases,
+                    output_weight_prior=(target.out_proj.weight.detach()),
+                    ridge=self.config.ridge,
+                    max_prior_delta_ratio=(self.config.max_prior_delta_ratio),
                 )
         else:
             target = target_layer.conv
@@ -13808,25 +12888,15 @@ class Lfm2DynamicClosedLoopAdapter:
                 raise Lfm2DynamicClosedLoopAdapterError(
                     "ShortConv consumer writer changed after producer install."
                 )
-            compiled_consumer = (
-                compile_lfm2_structural_short_conv_consumer_fold(
-                    target_out_proj_weight_template=(
-                        target_writer.effective_weight
-                    ),
-                    target_out_proj_bias_template=(
-                        target_writer.bias
-                    ),
-                    actual_child_contexts=contexts.fit_contexts,
-                    cases=producer.operator_cases.fit_cases,
-                    out_proj_weight_prior=target_writer.effective_weight,
-                    out_proj_bias_prior=(
-                        target_writer.bias
-                    ),
-                    ridge=self.config.ridge,
-                    max_prior_delta_ratio=(
-                        self.config.max_prior_delta_ratio
-                    ),
-                )
+            compiled_consumer = compile_lfm2_structural_short_conv_consumer_fold(
+                target_out_proj_weight_template=(target_writer.effective_weight),
+                target_out_proj_bias_template=(target_writer.bias),
+                actual_child_contexts=contexts.fit_contexts,
+                cases=producer.operator_cases.fit_cases,
+                out_proj_weight_prior=target_writer.effective_weight,
+                out_proj_bias_prior=(target_writer.bias),
+                ridge=self.config.ridge,
+                max_prior_delta_ratio=(self.config.max_prior_delta_ratio),
             )
         factor_artifact = (
             None
@@ -13848,24 +12918,16 @@ class Lfm2DynamicClosedLoopAdapter:
             {
                 "schema": "neural-forge-lfm2-consumer-artifact-v1",
                 "scope": scope.as_dict(),
-                "fit_record_keys": [
-                    list(value) for value in _record_keys(fit_records)
-                ],
+                "fit_record_keys": [list(value) for value in _record_keys(fit_records)],
                 "operator_kind": producer.operator_kind,
-                "compiled_state_sha256": (
-                    compiled_consumer.compiled_state_sha256
-                ),
+                "compiled_state_sha256": (compiled_consumer.compiled_state_sha256),
                 "actual_child_context_sha256": (
                     compiled_consumer.actual_child_context_sha256
                 ),
-                "producer_replay_sha256": (
-                    capture.replay_sha256
-                ),
+                "producer_replay_sha256": (capture.replay_sha256),
                 "split_sha256": split.split_sha256,
                 "factor_consumer_artifact_sha256": (
-                    None
-                    if factor_artifact is None
-                    else factor_artifact.artifact_sha256
+                    None if factor_artifact is None else factor_artifact.artifact_sha256
                 ),
             }
         )
@@ -13879,9 +12941,7 @@ class Lfm2DynamicClosedLoopAdapter:
             metadata=_scalar_metadata(
                 {
                     "operator_kind": producer.operator_kind,
-                    "compiled_state_sha256": (
-                        compiled_consumer.compiled_state_sha256
-                    ),
+                    "compiled_state_sha256": (compiled_consumer.compiled_state_sha256),
                     "actual_child_context_sha256": (
                         compiled_consumer.actual_child_context_sha256
                     ),
@@ -13894,9 +12954,7 @@ class Lfm2DynamicClosedLoopAdapter:
                         else factor_artifact.artifact_sha256
                     ),
                     "short_conv_factor_writer_rank": (
-                        None
-                        if factor_artifact is None
-                        else factor_artifact.writer_rank
+                        None if factor_artifact is None else factor_artifact.writer_rank
                     ),
                     "short_conv_factor_relative_frobenius_error": (
                         None
@@ -13985,12 +13043,10 @@ class Lfm2DynamicClosedLoopAdapter:
                 payload.compiled,
                 Lfm2CompiledStructuralAttentionValueOutputFold,
             ):
-                report = (
-                    install_lfm2_structural_attention_value_output_fold(
-                        target_layer.self_attn,
-                        payload.compiled,
-                        transaction,
-                    )
+                report = install_lfm2_structural_attention_value_output_fold(
+                    target_layer.self_attn,
+                    payload.compiled,
+                    transaction,
                 )
             else:
                 report = install_lfm2_structural_attention_consumer_fold(
@@ -14033,16 +13089,13 @@ class Lfm2DynamicClosedLoopAdapter:
                         != factor_artifact.dense_action_sha256
                     ):
                         raise Lfm2DynamicClosedLoopAdapterError(
-                            "ShortConv factor consumer lost its authenticated "
-                            "binding."
+                            "ShortConv factor consumer lost its authenticated binding."
                         )
-                    report = (
-                        install_lfm2_structural_short_conv_factor_consumer_fold(
-                            target_layer.conv,
-                            encoder_weight=factor_artifact.encoder_weight,
-                            decoder_weight=factor_artifact.decoder_weight,
-                            transaction=transaction,
-                        )
+                    report = install_lfm2_structural_short_conv_factor_consumer_fold(
+                        target_layer.conv,
+                        encoder_weight=factor_artifact.encoder_weight,
+                        decoder_weight=factor_artifact.decoder_weight,
+                        transaction=transaction,
                     )
                 except Exception:
                     if transaction.active:
@@ -14062,9 +13115,7 @@ class Lfm2DynamicClosedLoopAdapter:
             metadata={
                 "consumer_fitted_from_actual_child_context": True,
                 "split_transaction_committed": True,
-                "parameter_values_verified": (
-                    report.parameter_values_verified
-                ),
+                "parameter_values_verified": (report.parameter_values_verified),
                 "attention_consumer_mode": (
                     self.config.attention_consumer_mode
                     if payload.operator_kind == "full_attention"
@@ -14172,9 +13223,7 @@ class Lfm2DynamicClosedLoopAdapter:
             relative_ridge_lambda=self.config.relative_ridge_lambda,
             cluster_ridge=self.config.cluster_ridge,
             cluster_max_iterations=self.config.cluster_max_iterations,
-            cluster_distance_chunk_size=(
-                self.config.cluster_distance_chunk_size
-            ),
+            cluster_distance_chunk_size=(self.config.cluster_distance_chunk_size),
             **(
                 {}
                 if input_error_covariance is None
@@ -14206,31 +13255,26 @@ class Lfm2DynamicClosedLoopAdapter:
         }
         if self.config.mlp_solver_conditioning_diagnostics:
             correction_reports = [
-                value.as_dict()
-                for value in compiled_mlp.prior_correction_reports
+                value.as_dict() for value in compiled_mlp.prior_correction_reports
             ]
             correction_reports_by_role = {
-                str(value.get("role")): value
-                for value in correction_reports
+                str(value.get("role")): value for value in correction_reports
             }
             if any(
-                "solver_conditioning"
-                not in correction_reports_by_role.get(role, {})
+                "solver_conditioning" not in correction_reports_by_role.get(role, {})
                 # W13R R3(c): mlp_down joins the two roles item 8 shipped with.
                 for role in ("mlp_gate", "mlp_up", "mlp_down")
             ):
                 raise Lfm2DynamicClosedLoopAdapterError(
                     "Requested MLP solver diagnostics were not materialized."
                 )
-            correction_json, correction_nonfinite_json = (
-                _durable_diagnostic_json(
-                    correction_reports,
-                    "MLP prior-correction diagnostics",
-                )
+            correction_json, correction_nonfinite_json = _durable_diagnostic_json(
+                correction_reports,
+                "MLP prior-correction diagnostics",
             )
-            durable_diagnostic_metadata[
-                "mlp_prior_correction_reports_json"
-            ] = correction_json
+            durable_diagnostic_metadata["mlp_prior_correction_reports_json"] = (
+                correction_json
+            )
             if correction_nonfinite_json is not None:
                 durable_diagnostic_metadata[
                     "mlp_prior_correction_reports_nonfinite_json"
@@ -14246,9 +13290,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 dict(gate_operating_point),
                 "MLP gate operating-point diagnostics",
             )
-            durable_diagnostic_metadata[
-                "mlp_gate_operating_point_json"
-            ] = gate_json
+            durable_diagnostic_metadata["mlp_gate_operating_point_json"] = gate_json
             if gate_nonfinite_json is not None:
                 durable_diagnostic_metadata[
                     "mlp_gate_operating_point_nonfinite_json"
@@ -14261,9 +13303,7 @@ class Lfm2DynamicClosedLoopAdapter:
         )
         payload = _DownstreamPayload(
             compiled=compiled_mlp,
-            ffn_norm_weight=self._materializer_weight(
-                mlp_cases.norm_materializer
-            ),
+            ffn_norm_weight=self._materializer_weight(mlp_cases.norm_materializer),
             ffn_norm_report_sha256=self._norm_report_sha256(
                 mlp_cases.norm_materializer
             ),
@@ -14274,15 +13314,9 @@ class Lfm2DynamicClosedLoopAdapter:
             {
                 "schema": "neural-forge-lfm2-downstream-artifact-v1",
                 "scope": scope.as_dict(),
-                "fit_record_keys": [
-                    list(value) for value in _record_keys(fit_records)
-                ],
-                "compiled_state_sha256": (
-                    compiled_mlp.compiled_state_sha256
-                ),
-                "ffn_norm_report_sha256": (
-                    payload.ffn_norm_report_sha256
-                ),
+                "fit_record_keys": [list(value) for value in _record_keys(fit_records)],
+                "compiled_state_sha256": (compiled_mlp.compiled_state_sha256),
+                "ffn_norm_report_sha256": (payload.ffn_norm_report_sha256),
                 "candidate_post_operator_replay_sha256": (
                     candidate.child_replay_sha256
                 ),
@@ -14313,9 +13347,7 @@ class Lfm2DynamicClosedLoopAdapter:
                         # Same discipline as the noise-aware evidence above: a
                         # boundary solved under the W13R remedy arm must not be
                         # confusable with the absolute-ridge control's layer.
-                        "relative_ridge_lambda": (
-                            self.config.relative_ridge_lambda
-                        ),
+                        "relative_ridge_lambda": (self.config.relative_ridge_lambda),
                         "body_max_prior_delta_ratio": (
                             self.config.mlp_max_prior_delta_ratio
                         ),
@@ -14332,9 +13364,7 @@ class Lfm2DynamicClosedLoopAdapter:
             payload=payload,
             metadata=_scalar_metadata(
                 {
-                    "compiled_state_sha256": (
-                        compiled_mlp.compiled_state_sha256
-                    ),
+                    "compiled_state_sha256": (compiled_mlp.compiled_state_sha256),
                     "mlp_input_source": (
                         "candidate_post_operator_actual_child_context"
                     ),
@@ -14352,9 +13382,7 @@ class Lfm2DynamicClosedLoopAdapter:
                         else {
                             "noise_aware_ridge_applied": True,
                             "noise_aware_ridge_source_layer_index": int(
-                                input_error_evidence[
-                                    "estimated_from_layer_index"
-                                ]
+                                input_error_evidence["estimated_from_layer_index"]
                             ),
                             "noise_aware_ridge_scale": float(
                                 input_error_evidence["input_error_scale"]
@@ -14403,15 +13431,9 @@ class Lfm2DynamicClosedLoopAdapter:
         state_before = self.child_state_fingerprint()
         topology_before = self.child_topology_fingerprint()
         target_layer = self.child_layers[layer_index]
-        norm_before = (
-            target_layer.ffn_norm.weight.detach()
-            .to(device="cpu")
-            .clone()
-        )
+        norm_before = target_layer.ffn_norm.weight.detach().to(device="cpu").clone()
         try:
-            self._copy_norm_weight(
-                target_layer.ffn_norm, payload.ffn_norm_weight
-            )
+            self._copy_norm_weight(target_layer.ffn_norm, payload.ffn_norm_weight)
             report = install_lfm2_structural_mlp_fold(
                 target_layer.feed_forward, payload.compiled
             )
@@ -14420,9 +13442,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     "MLP installation report was rejected."
                 )
         except Exception:
-            self._copy_norm_weight(
-                target_layer.ffn_norm, norm_before
-            )
+            self._copy_norm_weight(target_layer.ffn_norm, norm_before)
             raise
         return self._receipt(
             scope=scope,
@@ -14487,8 +13507,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 self.child_model,
                 phase=f"post-macro-cell-layer-{layer_index:06d}",
             )
-            if gate is not None
-            and self.config.terminal_free_run_tripwire_enabled
+            if gate is not None and self.config.terminal_free_run_tripwire_enabled
             else None
         )
         endpoint_decision = self._validation_decision(
@@ -14496,9 +13515,7 @@ class Lfm2DynamicClosedLoopAdapter:
             records=validation_records,
             baseline=producer.baseline_validation,
             candidate=candidate,
-            minimum_improvement=(
-                self.config.minimum_layer_relative_rmse_improvement
-            ),
+            minimum_improvement=(self.config.minimum_layer_relative_rmse_improvement),
             endpoint="post-layer residual",
             terminal_baseline=producer.terminal_baseline,
             terminal_candidate=terminal_candidate,
@@ -14536,9 +13553,7 @@ class Lfm2DynamicClosedLoopAdapter:
         )
         attractor_payload = attractor_decision.as_dict()
         attractor_metrics = attractor_candidate.metrics
-        accepted = bool(
-            endpoint_decision.accepted and attractor_decision.accepted
-        )
+        accepted = bool(endpoint_decision.accepted and attractor_decision.accepted)
         reasons = [endpoint_decision.reason]
         if attractor_decision.accepted:
             reasons.append("macro-cell free-rollout attractor gate accepted")
@@ -14573,9 +13588,7 @@ class Lfm2DynamicClosedLoopAdapter:
         metrics.update(
             {
                 "macro_cell_attractor_gate_enabled": True,
-                "macro_cell_attractor_gate_accepted": (
-                    attractor_decision.accepted
-                ),
+                "macro_cell_attractor_gate_accepted": (attractor_decision.accepted),
                 "macro_cell_attractor_decision_sha256": (
                     attractor_decision.decision_sha256
                 ),
@@ -14646,6 +13659,1049 @@ class Lfm2DynamicClosedLoopAdapter:
 
     # -- Whole-body residual reclosure ---------------------------------
 
+    def _body_reclosure_parameter_restore_manifest(
+        self,
+    ) -> tuple[Mapping[str, Any], Mapping[str, Any], Mapping[str, str]]:
+        """Describe and snapshot every unique physical child Parameter.
+
+        The cache restores a complete post-body parameter state.  Keeping the
+        inventory complete makes a hit fail closed if a later adapter version
+        adds, removes, reties, reshapes, or changes the dtype of even one
+        physical Parameter.  Duplicate names are recorded as aliases and are
+        never serialized as independent tensors.
+        """
+
+        torch = _torch()
+        named = tuple(
+            sorted(
+                self.child_model.named_parameters(remove_duplicate=False),
+                key=lambda item: item[0],
+            )
+        )
+        if not named:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Body-reclosure cache restore has no physical Parameters."
+            )
+        canonical_by_id: dict[int, str] = {}
+        tensors: dict[str, Any] = {}
+        aliases: dict[str, str] = {}
+        inventory = []
+        for name, parameter in named:
+            if (
+                not isinstance(name, str)
+                or not name
+                or not isinstance(parameter, torch.nn.Parameter)
+                or parameter.layout != torch.strided
+                or parameter.device.type == "meta"
+            ):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Body-reclosure cache requires named materialized dense Parameters."
+                )
+            canonical = canonical_by_id.setdefault(id(parameter), name)
+            if canonical == name:
+                snapshot = parameter.detach().to(device="cpu").contiguous().clone()
+                if torch.is_floating_point(snapshot) and not bool(
+                    torch.isfinite(snapshot).all().item()
+                ):
+                    raise Lfm2DynamicClosedLoopAdapterError(
+                        "Body-reclosure cache cannot snapshot a non-finite "
+                        f"Parameter {name!r}."
+                    )
+                tensors[name] = snapshot
+            else:
+                aliases[name] = canonical
+            inventory.append(
+                {
+                    "name": name,
+                    "canonical_name": canonical,
+                    "shape": [int(value) for value in parameter.shape],
+                    "stride": [int(value) for value in parameter.stride()],
+                    "storage_offset": int(parameter.storage_offset()),
+                    "dtype": str(parameter.dtype),
+                    "layout": str(parameter.layout),
+                    "requires_grad": bool(parameter.requires_grad),
+                }
+            )
+        unique = {id(parameter): parameter for _, parameter in named}
+        exact_count = sum(int(value.numel()) for value in unique.values())
+        manifest = _canonical_json_plain_copy(
+            {
+                "schema": ("neural-forge-lfm2-body-reclosure-parameter-restore-v1"),
+                "tensor_payload_kind": (
+                    "complete-post-body-unique-physical-parameter-state"
+                ),
+                "parameter_inventory": inventory,
+                "tensor_names": sorted(tensors),
+                "aliases": dict(sorted(aliases.items())),
+                "unique_parameter_objects": len(unique),
+                "exact_unique_parameter_count": exact_count,
+                "in_place_copy_required": True,
+                "parameter_rebinding_allowed": False,
+                "buffer_mutation_allowed": False,
+            },
+            "body-reclosure parameter restore manifest",
+        )
+        return (
+            MappingProxyType(manifest),
+            MappingProxyType(tensors),
+            MappingProxyType(dict(sorted(aliases.items()))),
+        )
+
+    def _body_reclosure_phase_request(
+        self,
+        *,
+        child_capture: ChildTrajectoryCapture,
+        capture: _CapturePayload,
+        split_sha256: str,
+        row_alignment_sha256: str,
+        completion_body: Mapping[str, Any],
+        completion_receipts: Sequence[Mapping[str, Any]],
+    ) -> Lfm2BodyReclosurePhaseRequest | None:
+        context = self.body_reclosure_phase_cache_context
+        if context is None:
+            return None
+        restore_manifest, _tensors, _aliases = (
+            self._body_reclosure_parameter_restore_manifest()
+        )
+        tokenizer_evidence = (
+            self.identity_tokenizer_evidence_sha256
+            if self.tokenizer_bridge_artifact is None
+            else self.tokenizer_bridge_artifact.artifact_sha256
+        )
+        selection_sha256 = (
+            None
+            if self.heterogeneous_layout_selection_receipt is None
+            else self.heterogeneous_layout_selection_receipt.receipt_sha256
+        )
+        portable_completion_receipts = [
+            {
+                "layer_index": receipt["layer_index"],
+                "layer_ordinal": receipt["layer_ordinal"],
+                "selected_layer_indices": receipt["selected_layer_indices"],
+                "completion_binding_sha256": receipt["completion_binding_sha256"],
+                "trajectory_split_sha256": receipt["trajectory_split_sha256"],
+                "adapter_stage_split_sha256": _canonical_json_plain_copy(
+                    receipt["adapter_stage_split_sha256"],
+                    "portable completion adapter-stage splits",
+                ),
+                "portable_state_chain": _canonical_json_plain_copy(
+                    receipt["portable_state_chain"],
+                    "portable completion state chain",
+                ),
+            }
+            for receipt in completion_receipts
+        ]
+        portable_completion_proof = {
+            "schema": ("neural-forge-lfm2-accepted-layer-portable-completion-proof-v1"),
+            "completion_binding_sha256": completion_body["completion_binding"][
+                "completion_binding_sha256"
+            ],
+            "selected_layer_indices": completion_body["selected_layer_indices"],
+            "completed_layer_indices": completion_body["completed_layer_indices"],
+            "portable_receipts": portable_completion_receipts,
+            "portable_initial_child_state_sha256": completion_body[
+                "portable_initial_child_state_sha256"
+            ],
+            "portable_final_child_state_sha256": completion_body[
+                "portable_final_child_state_sha256"
+            ],
+            "portable_child_topology_sha256": completion_body[
+                "portable_child_topology_sha256"
+            ],
+            "complete_ordered_prefix": True,
+        }
+        math_contract = {
+            "schema": "neural-forge-lfm2-moving-gauge-body-math-v1",
+            "body_reclosure_mode": self.body_reclosure_mode,
+            "body_coordinate_completion_recipe": (
+                self.body_coordinate_completion_recipe
+            ),
+            "coordinate_map_sha256": self.map_sha256,
+            "parent_residual_operator_manifest_sha256": (
+                self.parent_residual_operator_manifest_sha256
+            ),
+            "moving_gauge_writer_reclosure_acceptance": (
+                self.moving_gauge_writer_reclosure_acceptance
+            ),
+            "moving_gauge_boundary_regression_tolerance": (
+                self.moving_gauge_boundary_regression_tolerance
+            ),
+            "moving_gauge_writer_reclosure_norm_ratio_ceiling": (
+                self.moving_gauge_writer_reclosure_norm_ratio_ceiling
+            ),
+            "moving_gauge_margin_row_weights_enabled": (
+                self.config.moving_gauge_margin_row_weights_enabled
+            ),
+            "moving_gauge_margin_row_weight_floor": (
+                self.config.moving_gauge_margin_row_weight_floor
+            ),
+            "moving_gauge_margin_row_weight_ceiling": (
+                self.config.moving_gauge_margin_row_weight_ceiling
+            ),
+            "moving_gauge_margin_floor_fraction": (
+                self.config.moving_gauge_margin_floor_fraction
+            ),
+            "causal_completion_algorithm": (
+                "moving-gauge-v3-forward-reverse-plus-causal-preview-v2"
+            ),
+        }
+        evidence_contract = {
+            "schema": "neural-forge-lfm2-body-reclosure-evidence-v1",
+            "parent_cache_key": self.parent_cache.cache_key,
+            "parent_fingerprint": self.parent_cache.parent_fingerprint,
+            "paired_replay_sha256": capture.paired.pairing_sha256,
+            "split_sha256": split_sha256,
+            "row_alignment_sha256": row_alignment_sha256,
+            # The authenticated receipt/ledger seals mix process-local live
+            # Parameter identities into their install state chain.  They are
+            # verified immediately before this request is built, but are not
+            # portable cache identity.  Bind the ledger's authenticated,
+            # process-neutral policy/source binding and complete portable
+            # state chain instead.
+            "accepted_layer_portable_completion_proof": (portable_completion_proof),
+            "accepted_layer_portable_completion_proof_sha256": (
+                canonical_sha256(portable_completion_proof)
+            ),
+            "tokenizer_evidence_sha256": tokenizer_evidence,
+            "source_graph_fingerprint": self.source_graph_fingerprint,
+            "heterogeneous_layout_selection_sha256": selection_sha256,
+            "replay_config": self.replay_config.as_dict(),
+        }
+        abi_contract = {
+            "schema": "neural-forge-lfm2-body-reclosure-adapter-abi-v1",
+            "adapter": (
+                "neural_forge.hf_lfm2_dynamic_closed_loop_adapter."
+                "Lfm2DynamicClosedLoopAdapter"
+            ),
+            "restore_manifest": dict(restore_manifest),
+            "fit_preview_verification": "fresh-terminal-child-recapture",
+            "heldout_verification": "fresh-full-child-recapture",
+            "parent_runtime_required_on_hit": False,
+            "parameter_install": "torch-no-grad-copy-in-place",
+        }
+        acceptance_policy = {
+            "terminal_composition_floor_enabled": (
+                self.config.terminal_composition_floor_enabled
+            ),
+            "terminal_composition_absolute_floor_enabled": (
+                self.config.terminal_composition_absolute_floor_enabled
+            ),
+            "terminal_composition_non_regression_enabled": (
+                self.config.terminal_composition_non_regression_enabled
+            ),
+            "terminal_composition_regression_tolerance": (
+                self.config.terminal_composition_regression_tolerance
+            ),
+            "performance_metrics_diagnostic_only": (
+                self.config.performance_metrics_diagnostic_only
+            ),
+            "all_layer_finite_numeric_checks_diagnostic_only": (
+                self.config.all_layer_finite_numeric_checks_diagnostic_only
+            ),
+        }
+        return build_lfm2_body_reclosure_phase_request(
+            portable_pre_child_state_sha256=portable_child_state_sha256(
+                self.child_model
+            ),
+            portable_pre_child_topology_sha256=(
+                portable_child_topology_sha256(self.child_model)
+            ),
+            pre_capture_sha256=child_capture.capture_sha256,
+            math_contract=math_contract,
+            evidence_contract=evidence_contract,
+            abi_contract=abi_contract,
+            acceptance_policy=acceptance_policy,
+        )
+
+    @staticmethod
+    def _body_reclosure_fit_metrics_manifest(
+        metrics: FitMetrics | None,
+    ) -> Mapping[str, Any] | None:
+        if metrics is None:
+            return None
+        return {
+            "rows": int(metrics.rows),
+            "output_width": int(metrics.output_width),
+            "rmse": float(metrics.rmse),
+            "target_rms": float(metrics.target_rms),
+            "relative_rmse": float(metrics.relative_rmse),
+            "mean_cosine_similarity": float(metrics.mean_cosine_similarity),
+            "finite": bool(metrics.finite),
+        }
+
+    def _cached_body_reclosure_payload(
+        self,
+        *,
+        request: Lfm2BodyReclosurePhaseRequest,
+        hit: AuthenticatedLfm2BodyReclosurePhase,
+        fit_records: Sequence[TrajectoryRecord],
+        fit_indices: tuple[int, ...],
+        split_sha256: str,
+        row_alignment_sha256: str,
+        terminal_baseline: FitMetrics | None,
+        state_before: str,
+        topology_before: str,
+        physical_before: str,
+        unique_count: int,
+        unique_objects: int,
+        child_capture: ChildTrajectoryCapture,
+    ) -> _BodyReclosurePayload:
+        hit.artifact.reauthenticate()
+        metadata = hit.artifact.artifact_metadata
+        restore_manifest = metadata["restore_manifest"]
+        validation_manifest = metadata["validation_manifest"]
+        parameter_ids = tuple(restore_manifest["tensor_names"])
+        body = {
+            "schema": "neural-forge-lfm2-body-reclosure-artifact-v1",
+            "mode": LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
+            "identity_preservation": False,
+            "fit_record_keys": [list(value) for value in _record_keys(fit_records)],
+            "split_sha256": split_sha256,
+            "pre_body_capture_sha256": child_capture.capture_sha256,
+            "child_state_sha256_before": state_before,
+            "child_topology_sha256_before": topology_before,
+            "physical_contract_sha256_before": physical_before,
+            "exact_unique_parameter_count": unique_count,
+            "unique_parameter_objects": unique_objects,
+            "row_alignment_sha256": row_alignment_sha256,
+            "parameter_ids": list(parameter_ids),
+            "phase_cache_hit": True,
+            "phase_cache_request_sha256": request.request_sha256,
+            "phase_cache_key_sha256": request.phase_key.phase_key_sha256,
+            "phase_cache_completion_sha256": hit.completion_sha256,
+            "phase_cache_artifact_sha256": hit.artifact.artifact_sha256,
+            "portable_post_child_state_sha256": metadata[
+                "portable_post_child_state_sha256"
+            ],
+            "portable_post_child_topology_sha256": metadata[
+                "portable_post_child_topology_sha256"
+            ],
+            "boundary_count": validation_manifest["boundary_count"],
+            "transition_count": validation_manifest["transition_count"],
+            "physical_parameter_mutation_requested": True,
+            "runtime_sidecar_required": False,
+            "execution": {
+                "parent_forward_calls": 0,
+                "parent_trace_regeneration_calls": 0,
+                "training_steps": 0,
+                "backward_calls": 0,
+                "optimizer_steps": 0,
+            },
+        }
+        report = _seal_immutable_json_mapping(
+            body,
+            "report_sha256",
+            "cached moving-gauge body-reclosure artifact",
+        )
+        return _BodyReclosurePayload(
+            mode=LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
+            identity_preservation=False,
+            child_state_sha256_before=state_before,
+            child_topology_sha256_before=topology_before,
+            physical_contract_sha256_before=physical_before,
+            split_sha256=split_sha256,
+            row_alignment_sha256=row_alignment_sha256,
+            completion=None,
+            replacement_state=None,
+            input_producer_state=None,
+            parameter_ids=parameter_ids,
+            seed_weight_sha256=(),
+            seed_physical_state_sha256=(),
+            factor_writer_artifacts=(),
+            causal_operator_parameter_ids=(),
+            causal_operator_replacement_weights=(),
+            causal_operator_factor_writer_artifacts=(),
+            causal_w2_parameter_ids=(),
+            causal_w2_replacement_weights=(),
+            causal_w2_step_receipts=(),
+            fit_batch_indices=fit_indices,
+            report=report,
+            terminal_baseline=terminal_baseline,
+            phase_cache_request=request,
+            phase_cache_hit=hit,
+        )
+
+    def _compiled_body_reclosure_stage(
+        self,
+        scope: FoldScope,
+        fit_records: Sequence[TrajectoryRecord],
+        payload: _BodyReclosurePayload,
+    ) -> CompiledFoldStage:
+        self._body_reclosure_payload = payload
+        artifact_sha256 = str(payload.report["report_sha256"])
+        cache_metadata: dict[str, JsonScalar] = {}
+        if payload.phase_cache_hit is not None:
+            cache_metadata = {
+                "body_reclosure_phase_cache_hit": True,
+                "body_reclosure_phase_cache_key_sha256": (
+                    payload.phase_cache_hit.request.phase_key.phase_key_sha256
+                ),
+                "body_reclosure_phase_cache_completion_sha256": (
+                    payload.phase_cache_hit.completion_sha256
+                ),
+                "body_reclosure_phase_cache_artifact_sha256": (
+                    payload.phase_cache_hit.artifact.artifact_sha256
+                ),
+                "body_reclosure_phase_cache_solvers_executed": 0,
+            }
+        return CompiledFoldStage(
+            scope=scope,
+            stage=CompileStage.BODY_RECLOSURE,
+            fit_record_keys=_record_keys(fit_records),
+            artifact_sha256=artifact_sha256,
+            payload=payload,
+            metadata=_scalar_metadata(
+                {
+                    "body_reclosure_mode": payload.mode,
+                    "identity_preservation": payload.identity_preservation,
+                    "split_sha256": payload.split_sha256,
+                    "row_alignment_sha256": payload.row_alignment_sha256,
+                    "physical_writer_count": len(payload.parameter_ids),
+                    "factor_writer_count": len(payload.factor_writer_artifacts),
+                    "factor_writer_artifact_sha256": (
+                        None
+                        if not payload.factor_writer_artifacts
+                        else canonical_sha256(
+                            [
+                                artifact.artifact_sha256
+                                for artifact in payload.factor_writer_artifacts
+                            ]
+                        )
+                    ),
+                    "body_coordinate_completion_result_sha256": (
+                        None
+                        if payload.completion is None
+                        else payload.completion.receipt["result_sha256"]
+                    ),
+                    "moving_gauge_replacement_state_sha256": (
+                        None
+                        if payload.replacement_state is None
+                        else payload.replacement_state.report["report_sha256"]
+                    ),
+                    "input_producer_reclosure_state_sha256": (
+                        None
+                        if payload.input_producer_state is None
+                        else payload.input_producer_state.report["report_sha256"]
+                    ),
+                    "causal_w2_reclosure_count": len(payload.causal_w2_parameter_ids),
+                    "causal_operator_consumer_reclosure_count": len(
+                        payload.causal_operator_parameter_ids
+                    ),
+                    "causal_action_aware_factor_writer_count": len(
+                        payload.causal_operator_factor_writer_artifacts
+                    ),
+                    "parent_forward_calls": 0,
+                    "training_steps": 0,
+                    **_boundary_acceptance_metadata(payload.report),
+                    **cache_metadata,
+                }
+            ),
+        )
+
+    def _install_cached_body_reclosure(
+        self,
+        *,
+        scope: FoldScope,
+        compiled: CompiledFoldStage,
+        payload: _BodyReclosurePayload,
+        audit: ClosedLoopAudit,
+        state_before: str,
+        topology_before: str,
+        physical_before: str,
+        unique_count_before: int,
+    ) -> InstallReceipt:
+        torch = _torch()
+        hit = payload.phase_cache_hit
+        request = payload.phase_cache_request
+        if hit is None or request is None or hit.request != request:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Cached body reclosure lost its authenticated request binding."
+            )
+        hit.artifact.reauthenticate()
+        metadata = hit.artifact.artifact_metadata
+        restore_manifest = metadata["restore_manifest"]
+        validation_manifest = metadata["validation_manifest"]
+        current_manifest, _current_tensors, current_aliases = (
+            self._body_reclosure_parameter_restore_manifest()
+        )
+        if (
+            _canonical_json_plain_copy(
+                current_manifest,
+                "live body-reclosure restore manifest",
+            )
+            != _canonical_json_plain_copy(
+                restore_manifest,
+                "cached body-reclosure restore manifest",
+            )
+            or dict(current_aliases) != dict(hit.artifact.aliases)
+            or tuple(sorted(hit.artifact.tensors))
+            != tuple(restore_manifest["tensor_names"])
+            or portable_child_topology_sha256(self.child_model)
+            != request.document["portable_pre_child_topology_sha256"]
+            or metadata["portable_post_child_topology_sha256"]
+            != request.document["portable_pre_child_topology_sha256"]
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Cached body-reclosure restore topology, aliases, or tensor "
+                "inventory differs from the live blank child."
+            )
+        copies = hit.artifact.authenticated_tensor_copies()
+        named = dict(self.child_model.named_parameters(remove_duplicate=False))
+        canonical_names = tuple(restore_manifest["tensor_names"])
+        if tuple(sorted(copies)) != canonical_names:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Cached body-reclosure tensor names differ from the restore manifest."
+            )
+        for name in canonical_names:
+            target = named.get(name)
+            source = copies[name]
+            if (
+                not isinstance(target, torch.nn.Parameter)
+                or tuple(target.shape) != tuple(source.shape)
+                or target.dtype != source.dtype
+                or target.layout != source.layout
+                or source.device.type != "cpu"
+                or (
+                    torch.is_floating_point(source)
+                    and not bool(torch.isfinite(source).all().item())
+                )
+            ):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    f"Cached body-reclosure tensor {name!r} cannot be copied "
+                    "into its physical Parameter."
+                )
+        parameter_id_before = {name: id(parameter) for name, parameter in named.items()}
+        with torch.no_grad():
+            for name in canonical_names:
+                named[name].copy_(copies[name], non_blocking=False)
+        named_after = dict(self.child_model.named_parameters(remove_duplicate=False))
+        physical_after, unique_count_after, _ = self._physical_parameter_contract()
+        if (
+            parameter_id_before
+            != {name: id(parameter) for name, parameter in named_after.items()}
+            or physical_after != physical_before
+            or unique_count_after != unique_count_before
+            or self.child_topology_fingerprint() != topology_before
+            or portable_child_state_sha256(self.child_model)
+            != metadata["portable_post_child_state_sha256"]
+            or portable_child_topology_sha256(self.child_model)
+            != metadata["portable_post_child_topology_sha256"]
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Cached body reclosure did not restore the exact portable "
+                "post-state in-place while preserving the physical contract."
+            )
+        fit_records = tuple(self._records[index] for index in payload.fit_batch_indices)
+        terminal_layer_index = len(self.child_layers) - 1
+        self._emit_body_progress(
+            "body_reclosure_phase_cache_fit_preview_started",
+            layer_index=terminal_layer_index,
+        )
+        fresh_preview = self._body_internal_recapture(
+            fit_records,
+            audit,
+            selected_layer_indices=(terminal_layer_index,),
+            body_internal_role="terminal_receipt",
+        )
+        fit_preview_capture_sha256 = self._authenticated_capture_sha256_and_release(
+            fresh_preview
+        )
+        self._emit_body_progress(
+            "body_reclosure_phase_cache_fit_preview_completed",
+            layer_index=terminal_layer_index,
+            capture_sha256=fit_preview_capture_sha256,
+        )
+        if fit_preview_capture_sha256 != validation_manifest.get(
+            "fit_preview_capture_sha256"
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Cached body reclosure failed its fresh fit-preview "
+                "recapture verification."
+            )
+        # The replay above is read-only; authenticate the complete physical
+        # contract one more time so a hostile capture hook cannot substitute a
+        # Parameter, gradient, storage, alias, dtype, or module mode.
+        physical_final, unique_count_final, _ = self._physical_parameter_contract()
+        if (
+            physical_final != physical_before
+            or unique_count_final != unique_count_before
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Fresh cached-body fit verification changed the child contract."
+            )
+        self._body_reclosure_installed_artifact_sha256 = compiled.artifact_sha256
+        return self._receipt(
+            scope=scope,
+            stage=CompileStage.BODY_RECLOSURE,
+            artifact_sha256=compiled.artifact_sha256,
+            state_before=state_before,
+            topology_before=topology_before,
+            metadata={
+                "body_reclosure_mode": payload.mode,
+                "identity_preservation": False,
+                "body_reclosure_phase_cache_hit": True,
+                "body_reclosure_phase_cache_key_sha256": (
+                    request.phase_key.phase_key_sha256
+                ),
+                "body_reclosure_phase_cache_completion_sha256": (hit.completion_sha256),
+                "body_reclosure_phase_cache_artifact_sha256": (
+                    hit.artifact.artifact_sha256
+                ),
+                "body_reclosure_phase_cache_fit_preview_sha256": (
+                    fit_preview_capture_sha256
+                ),
+                "physical_contract_preserved": True,
+                "parameter_rebinding_count": 0,
+                "exact_unique_parameter_count": unique_count_final,
+                "parent_forward_calls": 0,
+                "training_steps": 0,
+            },
+        )
+
+    def _prepare_body_reclosure_cache_publication(
+        self,
+        *,
+        payload: _BodyReclosurePayload,
+        fit_preview_capture_sha256: str,
+    ) -> None:
+        request = payload.phase_cache_request
+        if (
+            self.body_reclosure_phase_cache_context is None
+            or request is None
+            or payload.phase_cache_hit is not None
+        ):
+            return
+        if (
+            payload.replacement_state is None
+            or payload.input_producer_state is None
+            or not payload.replacement_state.verify_authentication()
+            or not payload.input_producer_state.verify_authentication()
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Cold body reclosure cannot stage an unauthenticated math "
+                "artifact for cache publication."
+            )
+        restore_manifest, tensors, aliases = (
+            self._body_reclosure_parameter_restore_manifest()
+        )
+        portable_post_state = portable_child_state_sha256(self.child_model)
+        portable_post_topology = portable_child_topology_sha256(self.child_model)
+        if (
+            portable_post_topology
+            != request.document["portable_pre_child_topology_sha256"]
+            or portable_post_state
+            == request.document["portable_pre_child_state_sha256"]
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Cold body reclosure did not produce a distinct portable "
+                "post-state with the original blank-child topology."
+            )
+        final_factor_artifacts = {
+            **dict(
+                self._moving_gauge_factor_artifacts_by_parameter_id(
+                    payload.factor_writer_artifacts
+                )
+            ),
+            **dict(
+                self._moving_gauge_factor_artifacts_by_parameter_id(
+                    payload.causal_operator_factor_writer_artifacts
+                )
+            ),
+        }
+        producer_parameters = self._moving_gauge_input_producer_parameters()
+        self._body_reclosure_phase_cache_pending = (
+            _PendingBodyReclosureCachePublication(
+                request=request,
+                tensors=tensors,
+                aliases=aliases,
+                restore_manifest=restore_manifest,
+                portable_post_child_state_sha256=portable_post_state,
+                portable_post_child_topology_sha256=portable_post_topology,
+                cold_math_report_sha256=str(payload.report["report_sha256"]),
+                math_artifact_sha256=str(payload.report["report_sha256"]),
+                fit_preview_capture_sha256=fit_preview_capture_sha256,
+                boundary_count=len(payload.replacement_state.boundaries),
+                transition_count=len(payload.replacement_state.transitions),
+                physical_writer_count=len(payload.parameter_ids),
+                factor_writer_count=len(final_factor_artifacts),
+                action_aware_factor_writer_count=len(
+                    payload.causal_operator_factor_writer_artifacts
+                ),
+                input_producer_count=len(producer_parameters),
+                fresh_primal_w2_reclosure_count=len(payload.causal_w2_parameter_ids),
+                fresh_primal_operator_consumer_reclosure_count=len(
+                    payload.causal_operator_parameter_ids
+                ),
+            )
+        )
+
+    def _publish_validated_body_reclosure_cache(
+        self,
+        *,
+        post_capture_sha256: str,
+        terminal_baseline: FitMetrics | None,
+        terminal_candidate: FitMetrics | None,
+        heldout_terminal_relative_rmse: float,
+    ) -> AuthenticatedLfm2BodyReclosurePhase | None:
+        pending = self._body_reclosure_phase_cache_pending
+        context = self.body_reclosure_phase_cache_context
+        if pending is None or context is None:
+            return None
+        finite_evidence = bool(
+            math.isfinite(heldout_terminal_relative_rmse)
+            and (
+                terminal_baseline is None
+                or self._fit_metrics_are_finite(terminal_baseline)
+            )
+            and (
+                terminal_candidate is None
+                or self._fit_metrics_are_finite(terminal_candidate)
+            )
+        )
+        if not finite_evidence:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "A non-finite body-reclosure result cannot be published to "
+                "the reusable phase cache."
+            )
+        current_manifest, current_tensors, current_aliases = (
+            self._body_reclosure_parameter_restore_manifest()
+        )
+        if (
+            dict(current_manifest) != dict(pending.restore_manifest)
+            or dict(current_aliases) != dict(pending.aliases)
+            or portable_child_state_sha256(self.child_model)
+            != pending.portable_post_child_state_sha256
+            or portable_child_topology_sha256(self.child_model)
+            != pending.portable_post_child_topology_sha256
+            or any(
+                _tensor_sha256(current_tensors[name])
+                != _tensor_sha256(pending.tensors[name])
+                for name in pending.tensors
+            )
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "The live validated child differs from the pending cold "
+                "body-reclosure cache snapshot."
+            )
+        validation_manifest = {
+            "schema": ("neural-forge-lfm2-body-reclosure-validation-evidence-v1"),
+            "fit_preview_capture_sha256": (pending.fit_preview_capture_sha256),
+            "heldout_post_capture_sha256": post_capture_sha256,
+            "terminal_baseline": (
+                self._body_reclosure_fit_metrics_manifest(terminal_baseline)
+            ),
+            "terminal_candidate": (
+                self._body_reclosure_fit_metrics_manifest(terminal_candidate)
+            ),
+            "heldout_terminal_relative_rmse": (heldout_terminal_relative_rmse),
+            "boundary_count": pending.boundary_count,
+            "transition_count": pending.transition_count,
+            "physical_writer_count": pending.physical_writer_count,
+            "factor_writer_count": pending.factor_writer_count,
+            "action_aware_factor_writer_count": (
+                pending.action_aware_factor_writer_count
+            ),
+            "input_producer_count": pending.input_producer_count,
+            "fresh_primal_w2_reclosure_count": (
+                pending.fresh_primal_w2_reclosure_count
+            ),
+            "fresh_primal_operator_consumer_reclosure_count": (
+                pending.fresh_primal_operator_consumer_reclosure_count
+            ),
+            "finite_numeric_evidence": True,
+            "fresh_full_child_recapture": True,
+            "structural_authentication_complete": True,
+            "parent_forward_calls": 0,
+            "training_steps": 0,
+        }
+        artifact = Lfm2BodyReclosureArtifact(
+            tensors=pending.tensors,
+            aliases=pending.aliases,
+            artifact_metadata={
+                "math_artifact_sha256": pending.math_artifact_sha256,
+                "portable_post_child_state_sha256": (
+                    pending.portable_post_child_state_sha256
+                ),
+                "portable_post_child_topology_sha256": (
+                    pending.portable_post_child_topology_sha256
+                ),
+                "post_capture_sha256": post_capture_sha256,
+                "cold_math_report_sha256": (pending.cold_math_report_sha256),
+                "restore_manifest": dict(pending.restore_manifest),
+                "validation_manifest": validation_manifest,
+            },
+        )
+        published = publish_lfm2_body_reclosure_phase(
+            context,
+            pending.request,
+            artifact,
+        )
+        published.artifact.reauthenticate()
+        self._body_reclosure_phase_cache_hit = published
+        self._body_reclosure_phase_cache_pending = None
+        return published
+
+    def _validate_cached_body_reclosure(
+        self,
+        *,
+        scope: FoldScope,
+        validation_records: Sequence[TrajectoryRecord],
+        payload: _BodyReclosurePayload,
+        capture: _CapturePayload,
+        child_capture: ChildTrajectoryCapture,
+        exact_count: int,
+    ) -> ValidationDecision:
+        hit = payload.phase_cache_hit
+        if hit is None:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Cached body-reclosure validation has no authenticated hit."
+            )
+        hit.artifact.reauthenticate()
+        metadata = hit.artifact.artifact_metadata
+        validation_manifest = metadata["validation_manifest"]
+        current_manifest, current_tensors, current_aliases = (
+            self._body_reclosure_parameter_restore_manifest()
+        )
+        if (
+            _canonical_json_plain_copy(
+                current_manifest,
+                "live validated body-reclosure restore manifest",
+            )
+            != _canonical_json_plain_copy(
+                metadata["restore_manifest"],
+                "cached validated body-reclosure restore manifest",
+            )
+            or dict(current_aliases) != dict(hit.artifact.aliases)
+            or portable_child_state_sha256(self.child_model)
+            != metadata["portable_post_child_state_sha256"]
+            or portable_child_topology_sha256(self.child_model)
+            != metadata["portable_post_child_topology_sha256"]
+            or child_capture.capture_sha256 != metadata["post_capture_sha256"]
+            or child_capture.capture_sha256
+            != validation_manifest["heldout_post_capture_sha256"]
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Cached body reclosure failed fresh whole-child post-state, "
+                "topology, alias, or held-out capture authentication."
+            )
+        del current_tensors
+        indices = self._batch_indices(validation_records)
+        terminal_candidate = self._heldout_terminal_metrics(
+            capture.paired,
+            batch_indices=indices,
+        )
+        terminal_baseline_manifest = self._body_reclosure_fit_metrics_manifest(
+            payload.terminal_baseline
+        )
+        terminal_candidate_manifest = self._body_reclosure_fit_metrics_manifest(
+            terminal_candidate
+        )
+        if (
+            None
+            if terminal_baseline_manifest is None
+            else dict(terminal_baseline_manifest)
+        ) != (
+            None
+            if validation_manifest["terminal_baseline"] is None
+            else dict(validation_manifest["terminal_baseline"])
+        ) or (
+            None
+            if terminal_candidate_manifest is None
+            else dict(terminal_candidate_manifest)
+        ) != (
+            None
+            if validation_manifest["terminal_candidate"] is None
+            else dict(validation_manifest["terminal_candidate"])
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Cached body reclosure fresh terminal evidence differs from "
+                "the cold validated artifact."
+            )
+        self._release_capture_payload(child_capture, capture)
+        del capture
+        release_closed_loop_capture_memory()
+        relative_rmse = float(validation_manifest["heldout_terminal_relative_rmse"])
+        if (
+            validation_manifest.get("finite_numeric_evidence") is not True
+            or not math.isfinite(relative_rmse)
+            or (
+                payload.terminal_baseline is not None
+                and not self._fit_metrics_are_finite(payload.terminal_baseline)
+            )
+            or (
+                terminal_candidate is not None
+                and not self._fit_metrics_are_finite(terminal_candidate)
+            )
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Cached body reclosure carries non-finite terminal evidence."
+            )
+        floor_engaged, floor_reasons, floor_metrics = self._terminal_composition_floor(
+            layer_index=None,
+            baseline=payload.terminal_baseline,
+            candidate=terminal_candidate,
+        )
+        terminal_floor_metrics_finite = bool(
+            self._fit_metrics_are_finite(payload.terminal_baseline)
+            and self._fit_metrics_are_finite(terminal_candidate)
+        )
+        numeric_metrics_diagnostic_only = bool(
+            self.config.performance_metrics_diagnostic_only
+            or self.config.all_layer_finite_numeric_checks_diagnostic_only
+        )
+        finite_floor_failure_is_diagnostic = bool(
+            floor_reasons
+            and numeric_metrics_diagnostic_only
+            and terminal_floor_metrics_finite
+        )
+        nonfinite_floor_reasons = (
+            ("body-reclosure terminal floor metrics are nonfinite or unauthenticated",)
+            if floor_engaged and not terminal_floor_metrics_finite
+            else ()
+        )
+        blocking_floor_reasons = tuple(nonfinite_floor_reasons) + (
+            () if finite_floor_failure_is_diagnostic else tuple(floor_reasons)
+        )
+        reason = (
+            "moving_gauge_v3 authenticated phase-cache restore passed on "
+            "fresh fit and held-out full-child recaptures"
+        )
+        accepted = True
+        if finite_floor_failure_is_diagnostic:
+            before = _terminal_relative_rmse_text(payload.terminal_baseline)
+            after = _terminal_relative_rmse_text(terminal_candidate)
+            tolerance = self.config.terminal_composition_regression_tolerance
+            reason = "; ".join(
+                (
+                    reason,
+                    "finite body-reclosure terminal regression recorded "
+                    "diagnostically without numeric decision authority: the "
+                    "composed held-out terminal relative RMSE moved from "
+                    f"{before} before the reclosure to {after} after it, beyond "
+                    f"the non-regression tolerance {tolerance:.9g}",
+                    *floor_reasons,
+                    "manual whole-output intelligence review is required",
+                )
+            )
+        elif blocking_floor_reasons:
+            accepted = False
+            if nonfinite_floor_reasons:
+                reason = "; ".join(
+                    (
+                        reason,
+                        "body reclosure refused: terminal floor evidence did "
+                        "not pass finite numeric authentication",
+                        *blocking_floor_reasons,
+                    )
+                )
+            else:
+                before = _terminal_relative_rmse_text(payload.terminal_baseline)
+                after = _terminal_relative_rmse_text(terminal_candidate)
+                tolerance = self.config.terminal_composition_regression_tolerance
+                reason = "; ".join(
+                    (
+                        reason,
+                        "body reclosure refused: the composed held-out terminal "
+                        f"relative RMSE moved from {before} before the reclosure "
+                        f"to {after} after it, beyond the terminal "
+                        f"non-regression tolerance {tolerance:.9g}",
+                        *blocking_floor_reasons,
+                    )
+                )
+        terminal_metrics: dict[str, JsonScalar] = {
+            f"body_reclosure_{name}": value for name, value in floor_metrics.items()
+        }
+        if floor_engaged:
+            terminal_metrics.update(
+                {
+                    "body_reclosure_terminal_composition_floor_failed": bool(
+                        floor_reasons or nonfinite_floor_reasons
+                    ),
+                    "body_reclosure_terminal_floor_metrics_finite": (
+                        terminal_floor_metrics_finite
+                    ),
+                    "body_reclosure_terminal_non_regression_failure_is_diagnostic_only": (
+                        finite_floor_failure_is_diagnostic
+                    ),
+                    "body_reclosure_terminal_floor_numeric_authentication_failed": (
+                        bool(nonfinite_floor_reasons)
+                    ),
+                    "body_reclosure_terminal_non_regression_has_decision_authority": (
+                        not (
+                            numeric_metrics_diagnostic_only
+                            and terminal_floor_metrics_finite
+                        )
+                    ),
+                    "body_reclosure_terminal_floor_retains_authority_under_diagnostic_only": (
+                        not (
+                            numeric_metrics_diagnostic_only
+                            and terminal_floor_metrics_finite
+                        )
+                    ),
+                    "body_reclosure_terminal_non_regression_is_the_ported_a12_rule": True,
+                    "body_reclosure_manual_intelligence_review_required": (
+                        finite_floor_failure_is_diagnostic
+                    ),
+                    "body_reclosure_finite_numeric_policy_diagnostic_only": (
+                        numeric_metrics_diagnostic_only
+                    ),
+                }
+            )
+        return ValidationDecision(
+            scope=scope,
+            accepted=accepted,
+            validation_record_keys=_record_keys(validation_records),
+            reason=reason,
+            metrics=_scalar_metadata(
+                {
+                    **terminal_metrics,
+                    "body_reclosure_mode": payload.mode,
+                    "identity_preservation": False,
+                    "actual_full_child_recaptured": True,
+                    "heldout_terminal_relative_rmse": relative_rmse,
+                    "boundary_count": validation_manifest["boundary_count"],
+                    "transition_count": validation_manifest["transition_count"],
+                    "physical_writer_count": validation_manifest[
+                        "physical_writer_count"
+                    ],
+                    "factor_writer_count": validation_manifest["factor_writer_count"],
+                    "action_aware_factor_writer_count": validation_manifest[
+                        "action_aware_factor_writer_count"
+                    ],
+                    "input_producer_count": validation_manifest["input_producer_count"],
+                    "fresh_primal_w2_reclosure_count": validation_manifest[
+                        "fresh_primal_w2_reclosure_count"
+                    ],
+                    "fresh_primal_operator_consumer_reclosure_count": (
+                        validation_manifest[
+                            "fresh_primal_operator_consumer_reclosure_count"
+                        ]
+                    ),
+                    "input_producer_reclosure_complete": True,
+                    "per_layer_causal_recapture_complete": False,
+                    "body_reclosure_phase_cache_hit": True,
+                    "body_reclosure_phase_cache_key_sha256": (
+                        hit.request.phase_key.phase_key_sha256
+                    ),
+                    "body_reclosure_phase_cache_completion_sha256": (
+                        hit.completion_sha256
+                    ),
+                    "exact_unique_parameter_count": exact_count,
+                    "performance_metrics_diagnostic_only": True,
+                    "performance_metrics_are_decision_authority": False,
+                    "global_performance_metrics_diagnostic_only": (
+                        self.config.performance_metrics_diagnostic_only
+                    ),
+                    "all_layer_finite_numeric_checks_diagnostic_only": (
+                        self.config.all_layer_finite_numeric_checks_diagnostic_only
+                    ),
+                    "manual_whole_output_review_required": True,
+                    "parent_forward_calls": 0,
+                    "training_steps": 0,
+                }
+            ),
+        )
+
     @_releases_capture_arguments(
         (3, "child_capture"),
         release_idle_parent_profile=True,
@@ -14683,9 +14739,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 "schema": "neural-forge-lfm2-body-reclosure-artifact-v1",
                 "mode": LFM2_BODY_RECLOSURE_DISABLED,
                 "identity_preservation": True,
-                "fit_record_keys": [
-                    list(value) for value in _record_keys(fit_records)
-                ],
+                "fit_record_keys": [list(value) for value in _record_keys(fit_records)],
                 "split_sha256": split.split_sha256,
                 "pre_body_capture_sha256": child_capture.capture_sha256,
                 "child_state_sha256_before": state_before,
@@ -14789,6 +14843,46 @@ class Lfm2DynamicClosedLoopAdapter:
                     fit_indices,
                 )
             )
+            phase_cache_request = self._body_reclosure_phase_request(
+                child_capture=child_capture,
+                capture=capture,
+                split_sha256=split_sha256,
+                row_alignment_sha256=row_alignment_sha256,
+                completion_body=completion_body,
+                completion_receipts=completion_receipts,
+            )
+            self._body_reclosure_phase_cache_request = phase_cache_request
+            if phase_cache_request is not None:
+                phase_cache_hit = lookup_lfm2_body_reclosure_phase(
+                    self.body_reclosure_phase_cache_context,
+                    phase_cache_request,
+                )
+                if phase_cache_hit is not None:
+                    self._body_reclosure_phase_cache_hit = phase_cache_hit
+                    payload = self._cached_body_reclosure_payload(
+                        request=phase_cache_request,
+                        hit=phase_cache_hit,
+                        fit_records=fit_records,
+                        fit_indices=fit_indices,
+                        split_sha256=split_sha256,
+                        row_alignment_sha256=row_alignment_sha256,
+                        terminal_baseline=terminal_baseline,
+                        state_before=state_before,
+                        topology_before=topology_before,
+                        physical_before=physical_before,
+                        unique_count=unique_count,
+                        unique_objects=unique_objects,
+                        child_capture=child_capture,
+                    )
+                    self._release_capture_payload(child_capture, capture)
+                    del capture
+                    del split
+                    release_closed_loop_capture_memory()
+                    return self._compiled_body_reclosure_stage(
+                        scope,
+                        fit_records,
+                        payload,
+                    )
             # Snapshot the uniform profile locally rather than reading adapter
             # state inside the boundary loop: a later manifest build would
             # otherwise be able to move it underneath this transaction.  When
@@ -14968,9 +15062,7 @@ class Lfm2DynamicClosedLoopAdapter:
             parameter_ids = tuple(replacement_state.parameter_ids)
             seed_weight_sha256 = tuple(
                 fingerprint_lfm2_moving_gauge_tensor(
-                    self._moving_gauge_site_logical_weight(
-                        writer_sites[parameter_id]
-                    )
+                    self._moving_gauge_site_logical_weight(writer_sites[parameter_id])
                 )
                 for parameter_id in parameter_ids
             )
@@ -15051,8 +15143,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     )
                     for index in range(len(self.child_layers))
                 )
-                or len(causal_operator_replacement_weights)
-                != len(self.child_layers)
+                or len(causal_operator_replacement_weights) != len(self.child_layers)
                 or len(causal_operator_factor_writer_artifacts)
                 != sum(
                     site.topology == "factorized"
@@ -15092,9 +15183,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 "schema": "neural-forge-lfm2-body-reclosure-artifact-v1",
                 "mode": LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
                 "identity_preservation": False,
-                "fit_record_keys": [
-                    list(value) for value in _record_keys(fit_records)
-                ],
+                "fit_record_keys": [list(value) for value in _record_keys(fit_records)],
                 "split_sha256": split_sha256,
                 "pre_body_capture_sha256": child_capture.capture_sha256,
                 "pre_body_replay_sha256": pre_body_replay_sha256,
@@ -15117,9 +15206,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 "parent_residual_operator_manifest_sha256": (
                     self.parent_residual_operator_manifest_sha256
                 ),
-                "accepted_layer_completion_ledger_sha256": (
-                    completion_ledger_sha256
-                ),
+                "accepted_layer_completion_ledger_sha256": (completion_ledger_sha256),
                 "accepted_layer_completion_receipt_chain_head_sha256": (
                     completion_body["receipt_chain_head_sha256"]
                 ),
@@ -15145,20 +15232,16 @@ class Lfm2DynamicClosedLoopAdapter:
                 "reverse_reconciliation_sweep_count": 1,
                 "parameter_ids": list(parameter_ids),
                 "seed_weight_sha256": list(seed_weight_sha256),
-                "seed_physical_state_sha256": list(
-                    seed_physical_state_sha256
-                ),
+                "seed_physical_state_sha256": list(seed_physical_state_sha256),
                 "replacement_weight_sha256": list(
                     replacement_state.report["replacement_weight_sha256"]
                 ),
                 "factor_writer_count": len(factor_writer_artifacts),
                 "factor_writer_parameter_ids": [
-                    artifact.parameter_id
-                    for artifact in factor_writer_artifacts
+                    artifact.parameter_id for artifact in factor_writer_artifacts
                 ],
                 "factor_writer_artifact_sha256": [
-                    artifact.artifact_sha256
-                    for artifact in factor_writer_artifacts
+                    artifact.artifact_sha256 for artifact in factor_writer_artifacts
                 ],
                 "factor_writer_requested_action_sha256": [
                     artifact.requested_action_sha256
@@ -15178,9 +15261,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 "input_producer_parameter_ids": list(
                     input_producer_state.report["parameter_ids"]
                 ),
-                "causal_operator_parameter_ids": list(
-                    causal_operator_parameter_ids
-                ),
+                "causal_operator_parameter_ids": list(causal_operator_parameter_ids),
                 "causal_operator_replacement_weight_sha256": [
                     fingerprint_lfm2_moving_gauge_tensor(value)
                     for value in causal_operator_replacement_weights
@@ -15203,8 +15284,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     for value in causal_w2_replacement_weights
                 ],
                 "causal_w2_step_sha256": [
-                    value["result_sha256"]
-                    for value in causal_w2_step_receipts
+                    value["result_sha256"] for value in causal_w2_step_receipts
                 ],
                 "input_producer_reclosure_complete": True,
                 "fresh_primal_operator_consumer_reclosure_complete": True,
@@ -15242,9 +15322,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 seed_weight_sha256=seed_weight_sha256,
                 seed_physical_state_sha256=seed_physical_state_sha256,
                 factor_writer_artifacts=factor_writer_artifacts,
-                causal_operator_parameter_ids=(
-                    causal_operator_parameter_ids
-                ),
+                causal_operator_parameter_ids=(causal_operator_parameter_ids),
                 causal_operator_replacement_weights=(
                     causal_operator_replacement_weights
                 ),
@@ -15257,70 +15335,13 @@ class Lfm2DynamicClosedLoopAdapter:
                 fit_batch_indices=fit_indices,
                 report=report,
                 terminal_baseline=terminal_baseline,
+                phase_cache_request=phase_cache_request,
             )
 
-        self._body_reclosure_payload = payload
-        artifact_sha256 = str(payload.report["report_sha256"])
-        return CompiledFoldStage(
-            scope=scope,
-            stage=CompileStage.BODY_RECLOSURE,
-            fit_record_keys=_record_keys(fit_records),
-            artifact_sha256=artifact_sha256,
-            payload=payload,
-            metadata=_scalar_metadata(
-                {
-                    "body_reclosure_mode": payload.mode,
-                    "identity_preservation": payload.identity_preservation,
-                    "split_sha256": payload.split_sha256,
-                    "row_alignment_sha256": payload.row_alignment_sha256,
-                    "physical_writer_count": len(payload.parameter_ids),
-                    "factor_writer_count": len(
-                        payload.factor_writer_artifacts
-                    ),
-                    "factor_writer_artifact_sha256": (
-                        None
-                        if not payload.factor_writer_artifacts
-                        else canonical_sha256(
-                            [
-                                artifact.artifact_sha256
-                                for artifact in payload.factor_writer_artifacts
-                            ]
-                        )
-                    ),
-                    "body_coordinate_completion_result_sha256": (
-                        None
-                        if payload.completion is None
-                        else payload.completion.receipt["result_sha256"]
-                    ),
-                    "moving_gauge_replacement_state_sha256": (
-                        None
-                        if payload.replacement_state is None
-                        else payload.replacement_state.report["report_sha256"]
-                    ),
-                    "input_producer_reclosure_state_sha256": (
-                        None
-                        if payload.input_producer_state is None
-                        else payload.input_producer_state.report["report_sha256"]
-                    ),
-                    "causal_w2_reclosure_count": len(
-                        payload.causal_w2_parameter_ids
-                    ),
-                    "causal_operator_consumer_reclosure_count": len(
-                        payload.causal_operator_parameter_ids
-                    ),
-                    "causal_action_aware_factor_writer_count": len(
-                        payload.causal_operator_factor_writer_artifacts
-                    ),
-                    "parent_forward_calls": 0,
-                    "training_steps": 0,
-                    # Additive and empty unless the reclosure ran guarded, so an
-                    # unguarded run's compiled metadata is byte-identical.  This
-                    # is the only surface ``CompiledFoldStage.as_dict`` puts in
-                    # the sealed run report, which is why W13M found no gate
-                    # decisions anywhere in the run directory.
-                    **_boundary_acceptance_metadata(payload.report),
-                }
-            ),
+        return self._compiled_body_reclosure_stage(
+            scope,
+            fit_records,
+            payload,
         )
 
     def install_body_reclosure(
@@ -15346,9 +15367,7 @@ class Lfm2DynamicClosedLoopAdapter:
         )
         state_before = self.child_state_fingerprint()
         topology_before = self.child_topology_fingerprint()
-        physical_before, unique_count_before, _ = (
-            self._physical_parameter_contract()
-        )
+        physical_before, unique_count_before, _ = self._physical_parameter_contract()
         if (
             state_before != payload.child_state_sha256_before
             or topology_before != payload.child_topology_sha256_before
@@ -15356,6 +15375,17 @@ class Lfm2DynamicClosedLoopAdapter:
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Live child changed after body-reclosure compilation."
+            )
+        if payload.phase_cache_hit is not None:
+            return self._install_cached_body_reclosure(
+                scope=scope,
+                compiled=compiled,
+                payload=payload,
+                audit=audit,
+                state_before=state_before,
+                topology_before=topology_before,
+                physical_before=physical_before,
+                unique_count_before=unique_count_before,
             )
         if payload.identity_preservation:
             if (
@@ -15376,9 +15406,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 raise Lfm2DynamicClosedLoopAdapterError(
                     "Disabled body reclosure contains a mutation payload."
                 )
-            self._body_reclosure_installed_artifact_sha256 = (
-                compiled.artifact_sha256
-            )
+            self._body_reclosure_installed_artifact_sha256 = compiled.artifact_sha256
             return self._receipt(
                 scope=scope,
                 stage=CompileStage.BODY_RECLOSURE,
@@ -15407,23 +15435,19 @@ class Lfm2DynamicClosedLoopAdapter:
             != payload.report.get("body_coordinate_completion_result_sha256")
             or input_state.report.get("report_sha256")
             != payload.report.get("input_producer_reclosure_state_sha256")
-            or len(payload.causal_operator_parameter_ids)
-            != len(self.child_layers)
+            or len(payload.causal_operator_parameter_ids) != len(self.child_layers)
             or len(payload.causal_operator_replacement_weights)
             != len(self.child_layers)
             or len(payload.causal_w2_parameter_ids) != len(self.child_layers)
-            or len(payload.causal_w2_replacement_weights)
-            != len(self.child_layers)
+            or len(payload.causal_w2_replacement_weights) != len(self.child_layers)
             or len(payload.causal_w2_step_receipts) != len(self.child_layers)
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Enabled moving-gauge body artifact failed authentication."
             )
         writer_sites = self._moving_gauge_writer_sites()
-        initial_factor_artifacts = (
-            self._moving_gauge_factor_artifacts_by_parameter_id(
-                payload.factor_writer_artifacts
-            )
+        initial_factor_artifacts = self._moving_gauge_factor_artifacts_by_parameter_id(
+            payload.factor_writer_artifacts
         )
         causal_operator_factor_artifacts = (
             self._moving_gauge_factor_artifacts_by_parameter_id(
@@ -15444,8 +15468,7 @@ class Lfm2DynamicClosedLoopAdapter:
         }
         if (
             set(writer_sites) != set(payload.parameter_ids)
-            or set(producer_parameters)
-            != set(input_state.replacements_by_parameter_id)
+            or set(producer_parameters) != set(input_state.replacements_by_parameter_id)
             or set(initial_factor_artifacts) != expected_factor_ids
             or set(final_factor_artifacts) != expected_factor_ids
             or set(causal_operator_factor_artifacts)
@@ -15456,33 +15479,22 @@ class Lfm2DynamicClosedLoopAdapter:
             }
             or payload.report.get("factor_writer_artifact_sha256")
             != tuple(
-                artifact.artifact_sha256
-                for artifact in payload.factor_writer_artifacts
+                artifact.artifact_sha256 for artifact in payload.factor_writer_artifacts
             )
-            or payload.report.get(
-                "causal_operator_factor_writer_artifact_sha256"
-            )
+            or payload.report.get("causal_operator_factor_writer_artifact_sha256")
             != tuple(
                 artifact.artifact_sha256
-                for artifact in (
-                    payload.causal_operator_factor_writer_artifacts
-                )
+                for artifact in (payload.causal_operator_factor_writer_artifacts)
             )
             or payload.report.get("causal_operator_factorization_method")
             != tuple(
                 artifact.factorization_method
-                for artifact in (
-                    payload.causal_operator_factor_writer_artifacts
-                )
+                for artifact in (payload.causal_operator_factor_writer_artifacts)
             )
-            or payload.report.get(
-                "causal_operator_factor_action_evidence_sha256"
-            )
+            or payload.report.get("causal_operator_factor_action_evidence_sha256")
             != tuple(
                 artifact.action_evidence_sha256
-                for artifact in (
-                    payload.causal_operator_factor_writer_artifacts
-                )
+                for artifact in (payload.causal_operator_factor_writer_artifacts)
             )
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
@@ -15516,14 +15528,13 @@ class Lfm2DynamicClosedLoopAdapter:
         )
         if (
             current_seed_sha256 != payload.seed_weight_sha256
-            or current_physical_seed_sha256
-            != payload.seed_physical_state_sha256
+            or current_physical_seed_sha256 != payload.seed_physical_state_sha256
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Moving-gauge physical writer seeds changed before install."
             )
-        writer_physical_parameters = (
-            self._moving_gauge_physical_writer_parameters(writer_sites)
+        writer_physical_parameters = self._moving_gauge_physical_writer_parameters(
+            writer_sites
         )
         initial_hashes = {
             **{
@@ -15543,15 +15554,12 @@ class Lfm2DynamicClosedLoopAdapter:
                 initial_factor_artifacts,
             )
         )
-        fit_records = tuple(
-            self._records[index] for index in payload.fit_batch_indices
-        )
+        fit_records = tuple(self._records[index] for index in payload.fit_batch_indices)
         # ``fingerprint`` authenticates the same publication boundaries the
         # capture chain does, without replaying the child at any of them.  The
         # one replay it keeps is the terminal capture after the loop.
         fingerprint_verification = (
-            self.install_verification_mode
-            == LFM2_INSTALL_VERIFICATION_FINGERPRINT
+            self.install_verification_mode == LFM2_INSTALL_VERIFICATION_FINGERPRINT
         )
         fingerprint_chain: list[Mapping[str, Any]] = []
         current_capture_sha256: str | None = None
@@ -15597,10 +15605,8 @@ class Lfm2DynamicClosedLoopAdapter:
                 selected_layer_indices=(0,),
                 body_internal_role="pre_operator",
             )
-            current_capture_sha256 = (
-                self._authenticated_capture_sha256_and_release(
-                    current_capture
-                )
+            current_capture_sha256 = self._authenticated_capture_sha256_and_release(
+                current_capture
             )
             self._emit_body_progress(
                 "moving_gauge_install_recapture_completed",
@@ -15638,8 +15644,7 @@ class Lfm2DynamicClosedLoopAdapter:
                         "layer_index": layer_index,
                         "capture_boundary": capture_boundary,
                         "group_sha256": (
-                            self
-                            ._authenticate_moving_gauge_install_fingerprints(
+                            self._authenticate_moving_gauge_install_fingerprints(
                                 layer_index=layer_index,
                                 capture_boundary=capture_boundary,
                                 installed_sha256=installed_sha256,
@@ -15661,9 +15666,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 selected_layer_indices=selected_layer_indices,
                 body_internal_role=body_internal_role,
             )
-            capture_sha256 = (
-                self._authenticated_capture_sha256_and_release(capture)
-            )
+            capture_sha256 = self._authenticated_capture_sha256_and_release(capture)
             self._emit_body_progress(
                 "moving_gauge_install_recapture_completed",
                 layer_index=layer_index,
@@ -15677,9 +15680,7 @@ class Lfm2DynamicClosedLoopAdapter:
             return capture_sha256
 
         installation_steps = []
-        for layer_index, planned_step in enumerate(
-            payload.causal_w2_step_receipts
-        ):
+        for layer_index, planned_step in enumerate(payload.causal_w2_step_receipts):
             _authenticate_immutable_json_mapping(
                 planned_step,
                 "result_sha256",
@@ -15691,9 +15692,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     for role in ("q", "k", "v")
                 )
             else:
-                operator_ids = (
-                    f"model.layers.{layer_index}.conv.in_proj.weight",
-                )
+                operator_ids = (f"model.layers.{layer_index}.conv.in_proj.weight",)
             mlp_ids = tuple(
                 f"model.layers.{layer_index}.feed_forward.{role}.weight"
                 for role in ("w1", "w3")
@@ -15727,10 +15726,8 @@ class Lfm2DynamicClosedLoopAdapter:
             if (
                 planned_step.get("layer_index") != layer_index
                 or planned_step.get("parameter_id") != w2_id
-                or planned_step.get("operator_consumer_parameter_id")
-                != operator_id
-                or tuple(planned_step.get("operator_parameter_ids", ()))
-                != operator_ids
+                or planned_step.get("operator_consumer_parameter_id") != operator_id
+                or tuple(planned_step.get("operator_parameter_ids", ())) != operator_ids
                 or tuple(planned_step.get("mlp_parameter_ids", ())) != mlp_ids
                 or not capture_chain_matches
                 or tuple(
@@ -15740,26 +15737,18 @@ class Lfm2DynamicClosedLoopAdapter:
                     )
                 )
                 != tuple(
-                    fingerprint_lfm2_moving_gauge_tensor(
-                        producer_replacements[value]
-                    )
+                    fingerprint_lfm2_moving_gauge_tensor(producer_replacements[value])
                     for value in operator_ids
                 )
-                or planned_step.get(
-                    "operator_consumer_replacement_weight_sha256"
-                )
+                or planned_step.get("operator_consumer_replacement_weight_sha256")
                 != fingerprint_lfm2_moving_gauge_tensor(
                     causal_operator_replacements[operator_id]
                 )
-                or planned_step.get(
-                    "operator_consumer_factor_artifact_sha256"
-                )
+                or planned_step.get("operator_consumer_factor_artifact_sha256")
                 != (
                     None
                     if operator_id not in causal_operator_factor_artifacts
-                    else causal_operator_factor_artifacts[
-                        operator_id
-                    ].artifact_sha256
+                    else causal_operator_factor_artifacts[operator_id].artifact_sha256
                 )
                 or tuple(
                     planned_step.get(
@@ -15768,15 +15757,11 @@ class Lfm2DynamicClosedLoopAdapter:
                     )
                 )
                 != tuple(
-                    fingerprint_lfm2_moving_gauge_tensor(
-                        producer_replacements[value]
-                    )
+                    fingerprint_lfm2_moving_gauge_tensor(producer_replacements[value])
                     for value in mlp_ids
                 )
                 or planned_step.get("replacement_weight_sha256")
-                != fingerprint_lfm2_moving_gauge_tensor(
-                    causal_w2_replacements[w2_id]
-                )
+                != fingerprint_lfm2_moving_gauge_tensor(causal_w2_replacements[w2_id])
             ):
                 raise Lfm2DynamicClosedLoopAdapterError(
                     "Moving-gauge causal publication order or capture "
@@ -15802,9 +15787,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 ),
                 installed_sha256=(
                     tuple(
-                        fingerprint_lfm2_moving_gauge_tensor(
-                            producer_parameters[value]
-                        )
+                        fingerprint_lfm2_moving_gauge_tensor(producer_parameters[value])
                         for value in operator_ids
                     )
                     if fingerprint_verification
@@ -15859,11 +15842,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     not fingerprint_verification
                     or self._moving_gauge_writer_publication_matches(
                         writer_sites,
-                        {
-                            operator_id: causal_operator_replacements[
-                                operator_id
-                            ]
-                        },
+                        {operator_id: causal_operator_replacements[operator_id]},
                         causal_operator_factor_artifacts,
                     )
                 ),
@@ -15888,9 +15867,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 ),
                 installed_sha256=(
                     tuple(
-                        fingerprint_lfm2_moving_gauge_tensor(
-                            producer_parameters[value]
-                        )
+                        fingerprint_lfm2_moving_gauge_tensor(producer_parameters[value])
                         for value in mlp_ids
                     )
                     if fingerprint_verification
@@ -15957,9 +15934,7 @@ class Lfm2DynamicClosedLoopAdapter:
             installation_steps.append(
                 {
                     "layer_index": layer_index,
-                    "pre_operator_capture_sha256": (
-                        pre_operator_capture_sha256
-                    ),
+                    "pre_operator_capture_sha256": (pre_operator_capture_sha256),
                     "post_operator_producer_capture_sha256": (
                         post_operator_producer_capture_sha256
                     ),
@@ -15969,9 +15944,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     "post_mlp_producer_capture_sha256": (
                         post_mlp_producer_capture_sha256
                     ),
-                    "post_w2_capture_sha256": (
-                        post_w2_capture_sha256
-                    ),
+                    "post_w2_capture_sha256": (post_w2_capture_sha256),
                     "verification": (
                         "replacement_weight_fingerprint"
                         if fingerprint_verification
@@ -15995,10 +15968,8 @@ class Lfm2DynamicClosedLoopAdapter:
                     "Fingerprint install verification has no terminal boundary "
                     "to prove."
                 )
-            expected_terminal_capture_sha256 = (
-                payload.causal_w2_step_receipts[-1].get(
-                    "post_w2_capture_sha256"
-                )
+            expected_terminal_capture_sha256 = payload.causal_w2_step_receipts[-1].get(
+                "post_w2_capture_sha256"
             )
             self._emit_body_progress(
                 "moving_gauge_install_recapture_started",
@@ -16011,10 +15982,8 @@ class Lfm2DynamicClosedLoopAdapter:
                 selected_layer_indices=(terminal_layer_index,),
                 body_internal_role="terminal_receipt",
             )
-            terminal_capture_sha256 = (
-                self._authenticated_capture_sha256_and_release(
-                    terminal_capture
-                )
+            terminal_capture_sha256 = self._authenticated_capture_sha256_and_release(
+                terminal_capture
             )
             self._emit_body_progress(
                 "moving_gauge_install_recapture_completed",
@@ -16036,9 +16005,7 @@ class Lfm2DynamicClosedLoopAdapter:
             install_verification_chain_sha256 = canonical_sha256(
                 {
                     "schema": LFM2_INSTALL_FINGERPRINT_CHAIN_SCHEMA,
-                    "install_verification_mode": (
-                        self.install_verification_mode
-                    ),
+                    "install_verification_mode": (self.install_verification_mode),
                     "groups": [dict(value) for value in fingerprint_chain],
                     "terminal_capture_sha256": terminal_capture_sha256,
                 }
@@ -16057,19 +16024,14 @@ class Lfm2DynamicClosedLoopAdapter:
             **dict(writer_physical_parameters),
             **dict(producer_parameters),
         }
-        if (
-            not self._moving_gauge_writer_publication_matches(
-                writer_sites,
-                expected_writer_final,
-                final_factor_artifacts,
-            )
-            or any(
-                fingerprint_lfm2_moving_gauge_tensor(
-                    producer_parameters[name]
-                )
-                != fingerprint_lfm2_moving_gauge_tensor(value)
-                for name, value in producer_replacements.items()
-            )
+        if not self._moving_gauge_writer_publication_matches(
+            writer_sites,
+            expected_writer_final,
+            final_factor_artifacts,
+        ) or any(
+            fingerprint_lfm2_moving_gauge_tensor(producer_parameters[name])
+            != fingerprint_lfm2_moving_gauge_tensor(value)
+            for name, value in producer_replacements.items()
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Moving-gauge causal publication differs from its preview plan."
@@ -16096,6 +16058,14 @@ class Lfm2DynamicClosedLoopAdapter:
                 "moving_gauge_v3 did not materially publish in-place while "
                 "preserving the exact physical child contract."
             )
+        if current_capture_sha256 is None:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Moving-gauge install produced no authenticated fit preview."
+            )
+        self._prepare_body_reclosure_cache_publication(
+            payload=payload,
+            fit_preview_capture_sha256=current_capture_sha256,
+        )
         self._body_reclosure_installed_artifact_sha256 = compiled.artifact_sha256
         return self._receipt(
             scope=scope,
@@ -16107,9 +16077,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 "body_reclosure_mode": payload.mode,
                 "identity_preservation": False,
                 "physical_writer_count": len(payload.parameter_ids),
-                "physical_writer_parameter_count": len(
-                    writer_physical_parameters
-                ),
+                "physical_writer_parameter_count": len(writer_physical_parameters),
                 "factor_writer_count": len(final_factor_artifacts),
                 "action_aware_factor_writer_count": len(
                     causal_operator_factor_artifacts
@@ -16120,9 +16088,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 "exact_unique_parameter_count": unique_count_after,
                 "forward_sweep_count": 1,
                 "reverse_reconciliation_sweep_count": 1,
-                "fresh_primal_w2_reclosure_count": len(
-                    payload.causal_w2_parameter_ids
-                ),
+                "fresh_primal_w2_reclosure_count": len(payload.causal_w2_parameter_ids),
                 "fresh_primal_operator_consumer_reclosure_count": len(
                     payload.causal_operator_parameter_ids
                 ),
@@ -16141,15 +16107,11 @@ class Lfm2DynamicClosedLoopAdapter:
                     {}
                     if not fingerprint_verification
                     else {
-                        "install_verification_mode": (
-                            self.install_verification_mode
-                        ),
+                        "install_verification_mode": (self.install_verification_mode),
                         "install_verification_chain_sha256": (
                             install_verification_chain_sha256
                         ),
-                        "install_fingerprint_group_count": len(
-                            fingerprint_chain
-                        ),
+                        "install_fingerprint_group_count": len(fingerprint_chain),
                     }
                 ),
             },
@@ -16186,11 +16148,21 @@ class Lfm2DynamicClosedLoopAdapter:
                 "Body-reclosure heldout endpoint selection changed."
             )
         capture = self._capture_payload(child_capture)
+        post_capture_sha256 = child_capture.capture_sha256
         physical_after, exact_count, _ = self._physical_parameter_contract()
         if physical_after != payload.physical_contract_sha256_before:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Body reclosure changed parameter identity, storage, gradient, "
                 "mode, or exact count."
+            )
+        if payload.phase_cache_hit is not None:
+            return self._validate_cached_body_reclosure(
+                scope=scope,
+                validation_records=validation_records,
+                payload=payload,
+                capture=capture,
+                child_capture=child_capture,
+                exact_count=exact_count,
             )
         if payload.identity_preservation:
             self._release_capture_payload(child_capture, capture)
@@ -16226,10 +16198,8 @@ class Lfm2DynamicClosedLoopAdapter:
                 "Moving-gauge causal replacement authentication was lost."
             )
         writer_sites = self._moving_gauge_writer_sites()
-        initial_factor_artifacts = (
-            self._moving_gauge_factor_artifacts_by_parameter_id(
-                payload.factor_writer_artifacts
-            )
+        initial_factor_artifacts = self._moving_gauge_factor_artifacts_by_parameter_id(
+            payload.factor_writer_artifacts
         )
         causal_operator_factor_artifacts = (
             self._moving_gauge_factor_artifacts_by_parameter_id(
@@ -16269,23 +16239,17 @@ class Lfm2DynamicClosedLoopAdapter:
             **causal_operator_replacements,
             **causal_w2_replacements,
         }
-        if (
-            not self._moving_gauge_writer_publication_matches(
-                writer_sites,
-                expected_writer_final,
-                final_factor_artifacts,
-            )
-            or any(
-                fingerprint_lfm2_moving_gauge_tensor(
-                    producer_parameters[name]
-                )
-                != fingerprint_lfm2_moving_gauge_tensor(value)
-                for name, value in producer_replacements.items()
-            )
+        if not self._moving_gauge_writer_publication_matches(
+            writer_sites,
+            expected_writer_final,
+            final_factor_artifacts,
+        ) or any(
+            fingerprint_lfm2_moving_gauge_tensor(producer_parameters[name])
+            != fingerprint_lfm2_moving_gauge_tensor(value)
+            for name, value in producer_replacements.items()
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
-                "A published moving-gauge causal parameter differs from its "
-                "artifact."
+                "A published moving-gauge causal parameter differs from its artifact."
             )
         # The post-reclosure half of the ported A12 rule.  Same construction,
         # same held-out rows, same terminal endpoint as the pre-reclosure
@@ -16316,7 +16280,8 @@ class Lfm2DynamicClosedLoopAdapter:
         denominator = (target.square().sum(dim=1) * weights).sum()
         relative_rmse = float(
             torch.sqrt(
-                numerator / max(float(denominator.item()), torch.finfo(torch.float64).tiny)
+                numerator
+                / max(float(denominator.item()), torch.finfo(torch.float64).tiny)
             ).item()
         )
         if not math.isfinite(relative_rmse):
@@ -16352,10 +16317,7 @@ class Lfm2DynamicClosedLoopAdapter:
             and terminal_floor_metrics_finite
         )
         nonfinite_floor_reasons = (
-            (
-                "body-reclosure terminal floor metrics are nonfinite or "
-                "unauthenticated",
-            )
+            ("body-reclosure terminal floor metrics are nonfinite or unauthenticated",)
             if floor_engaged and not terminal_floor_metrics_finite
             else ()
         )
@@ -16401,13 +16363,9 @@ class Lfm2DynamicClosedLoopAdapter:
                     )
                 )
             else:
-                before = _terminal_relative_rmse_text(
-                    payload.terminal_baseline
-                )
+                before = _terminal_relative_rmse_text(payload.terminal_baseline)
                 after = _terminal_relative_rmse_text(terminal_candidate)
-                tolerance = (
-                    self.config.terminal_composition_regression_tolerance
-                )
+                tolerance = self.config.terminal_composition_regression_tolerance
                 reason = "; ".join(
                     (
                         reason,
@@ -16419,8 +16377,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     )
                 )
         terminal_metrics: dict[str, JsonScalar] = {
-            f"body_reclosure_{name}": value
-            for name, value in floor_metrics.items()
+            f"body_reclosure_{name}": value for name, value in floor_metrics.items()
         }
         if floor_engaged:
             terminal_metrics.update(
@@ -16457,6 +16414,27 @@ class Lfm2DynamicClosedLoopAdapter:
                     ),
                     "body_reclosure_finite_numeric_policy_diagnostic_only": (
                         numeric_metrics_diagnostic_only
+                    ),
+                }
+            )
+        published_phase = self._publish_validated_body_reclosure_cache(
+            post_capture_sha256=post_capture_sha256,
+            terminal_baseline=payload.terminal_baseline,
+            terminal_candidate=terminal_candidate,
+            heldout_terminal_relative_rmse=relative_rmse,
+        )
+        if published_phase is not None:
+            terminal_metrics.update(
+                {
+                    "body_reclosure_phase_cache_published": True,
+                    "body_reclosure_phase_cache_key_sha256": (
+                        published_phase.request.phase_key.phase_key_sha256
+                    ),
+                    "body_reclosure_phase_cache_completion_sha256": (
+                        published_phase.completion_sha256
+                    ),
+                    "body_reclosure_phase_cache_artifact_sha256": (
+                        published_phase.artifact.artifact_sha256
                     ),
                 }
             )
@@ -16501,8 +16479,7 @@ class Lfm2DynamicClosedLoopAdapter:
                         self.config.performance_metrics_diagnostic_only
                     ),
                     "all_layer_finite_numeric_checks_diagnostic_only": (
-                        self.config
-                        .all_layer_finite_numeric_checks_diagnostic_only
+                        self.config.all_layer_finite_numeric_checks_diagnostic_only
                     ),
                     "manual_whole_output_review_required": True,
                     "parent_forward_calls": 0,
@@ -16528,24 +16505,14 @@ class Lfm2DynamicClosedLoopAdapter:
         validation: bool,
     ) -> FitMetrics:
         torch = _torch()
-        inputs = (
-            pairs.validation_inputs
-            if validation
-            else pairs.fit_inputs
-        )
-        targets = (
-            pairs.validation_targets
-            if validation
-            else pairs.fit_targets
-        )
+        inputs = pairs.validation_inputs if validation else pairs.fit_inputs
+        targets = pairs.validation_targets if validation else pairs.fit_targets
         if not inputs or len(inputs) != len(targets):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Final-norm metric pairs are empty or misaligned."
             )
         predictions = [
-            _analytical_rms_norm(
-                value, module, "child final norm"
-            )
+            _analytical_rms_norm(value, module, "child final norm")
             .to(dtype=torch.float64)
             .reshape(-1, int(self.coordinate_map.target_width))
             for value in inputs
@@ -16594,9 +16561,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 validation_targets=pairs.validation_targets,
             )
         )
-        baseline = self._final_norm_metrics(
-            pairs, module=child_norm, validation=True
-        )
+        baseline = self._final_norm_metrics(pairs, module=child_norm, validation=True)
         payload = _FinalNormPayload(
             fitted_weight=self._materializer_weight(materializer),
             fit_report_sha256=self._norm_report_sha256(materializer),
@@ -16607,15 +16572,11 @@ class Lfm2DynamicClosedLoopAdapter:
         artifact_sha = canonical_sha256(
             {
                 "schema": "neural-forge-lfm2-final-norm-artifact-v1",
-                "fit_record_keys": [
-                    list(value) for value in _record_keys(fit_records)
-                ],
+                "fit_record_keys": [list(value) for value in _record_keys(fit_records)],
                 "fit_report_sha256": payload.fit_report_sha256,
                 "split_sha256": split.split_sha256,
                 "map_sha256": self.map_sha256,
-                "runs_after_selected_layers": list(
-                    self._selected_layers
-                ),
+                "runs_after_selected_layers": list(self._selected_layers),
             }
         )
         self._final_payload = payload
@@ -16653,9 +16614,7 @@ class Lfm2DynamicClosedLoopAdapter:
             )
         state_before = self.child_state_fingerprint()
         topology_before = self.child_topology_fingerprint()
-        self._copy_norm_weight(
-            _final_norm(self.child_model), payload.fitted_weight
-        )
+        self._copy_norm_weight(_final_norm(self.child_model), payload.fitted_weight)
         return self._receipt(
             scope=scope,
             stage=CompileStage.FINAL_NORMALIZATION,
@@ -16690,9 +16649,7 @@ class Lfm2DynamicClosedLoopAdapter:
         fit_indices = tuple(
             index
             for index in range(len(self.parent_cache))
-            if index not in frozenset(
-                self._batch_indices(validation_records)
-            )
+            if index not in frozenset(self._batch_indices(validation_records))
         )
         fit_records = tuple(self._records[index] for index in fit_indices)
         split = self._split(capture.paired, fit_records)
@@ -16737,20 +16694,14 @@ class Lfm2DynamicClosedLoopAdapter:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Output-interface compiler received a non-output scope."
             )
-        if not isinstance(
-            parent_endpoints.payload, _EndpointPayload
-        ):
+        if not isinstance(parent_endpoints.payload, _EndpointPayload):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Output-interface parent endpoint envelope is invalid."
             )
         capture = self._capture_payload(child_capture)
         split = self._split(capture.paired, fit_records)
-        base_weight, source_binding_sha256 = (
-            self._source_bound_output_weight()
-        )
-        base64 = base_weight.to(
-            device="cpu", dtype=torch.float64
-        ).contiguous()
+        base_weight, source_binding_sha256 = self._source_bound_output_weight()
+        base64 = base_weight.to(device="cpu", dtype=torch.float64).contiguous()
         width = int(base64.shape[1])
         identity = torch.eye(width, dtype=torch.float64)
         output_is_tied = self._child_heterogeneous_layout is None
@@ -16778,17 +16729,14 @@ class Lfm2DynamicClosedLoopAdapter:
             artifact_sha = canonical_sha256(
                 {
                     "schema": (
-                        "neural-forge-lfm2-tied-output-interface-"
-                        "identity-skip-v1"
+                        "neural-forge-lfm2-tied-output-interface-identity-skip-v1"
                         if output_is_tied
                         else (
-                            "neural-forge-lfm2-untied-output-interface-"
-                            "identity-skip-v2"
+                            "neural-forge-lfm2-untied-output-interface-identity-skip-v2"
                         )
                     ),
                     "fit_record_keys": [
-                        list(value)
-                        for value in _record_keys(fit_records)
+                        list(value) for value in _record_keys(fit_records)
                     ],
                     "source_binding_sha256": source_binding_sha256,
                     "base_weight_sha256": base_weight_sha256,
@@ -16854,20 +16802,16 @@ class Lfm2DynamicClosedLoopAdapter:
                             "necessary_not_sufficient"
                         ): True,
                         (
-                            "external_whole_output_behavior_gate_required_"
-                            "for_promotion"
+                            "external_whole_output_behavior_gate_required_for_promotion"
                         ): True,
                     }
                 ),
             )
         gram = base64.transpose(0, 1) @ base64
         gram_singular = torch.linalg.eigvalsh(gram)
-        if (
-            not bool(torch.isfinite(gram_singular).all().item())
-            or float(gram_singular[0].item())
-            <= torch.finfo(torch.float64).eps
-            * max(float(gram_singular[-1].item()), 1.0)
-        ):
+        if not bool(torch.isfinite(gram_singular).all().item()) or float(
+            gram_singular[0].item()
+        ) <= torch.finfo(torch.float64).eps * max(float(gram_singular[-1].item()), 1.0):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "The tied output basis is rank-deficient in FP64."
             )
@@ -16876,11 +16820,9 @@ class Lfm2DynamicClosedLoopAdapter:
         parent_times_base_parts = []
         parent_logit_square = 0.0
         fit_rows = 0
-        for hidden, parent, _candidate, _targets in (
-            self._iter_output_blocks(
-                capture.paired,
-                split.fit_batch_indices,
-            )
+        for hidden, parent, _candidate, _targets in self._iter_output_blocks(
+            capture.paired,
+            split.fit_batch_indices,
         ):
             hidden64 = hidden.to(dtype=torch.float64)
             hidden_parts.append(hidden64)
@@ -16894,21 +16836,15 @@ class Lfm2DynamicClosedLoopAdapter:
                     int(parent.shape[0]),
                     start + self.config.output_metric_chunk_rows,
                 )
-                parent64 = parent[start:stop].to(
-                    dtype=torch.float64
-                )
+                parent64 = parent[start:stop].to(dtype=torch.float64)
                 parent_times_base_parts.append(parent64 @ base64)
-                parent_logit_square += float(
-                    parent64.square().sum().item()
-                )
+                parent_logit_square += float(parent64.square().sum().item())
         if fit_rows <= 0 or not hidden_parts:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Output-interface fit has no sealed trajectory rows."
             )
         hidden_rows = torch.cat(hidden_parts, dim=0)
-        parent_times_base = torch.cat(
-            parent_times_base_parts, dim=0
-        )
+        parent_times_base = torch.cat(parent_times_base_parts, dim=0)
         if (
             int(hidden_rows.shape[0]) != fit_rows
             or int(parent_times_base.shape[0]) != fit_rows
@@ -16919,9 +16855,7 @@ class Lfm2DynamicClosedLoopAdapter:
         projected_parent_latent = torch.linalg.solve(
             gram, parent_times_base.transpose(0, 1)
         ).transpose(0, 1)
-        if not bool(
-            torch.isfinite(projected_parent_latent).all().item()
-        ):
+        if not bool(torch.isfinite(projected_parent_latent).all().item()):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Output-subspace projection produced non-finite rows."
             )
@@ -16933,13 +16867,10 @@ class Lfm2DynamicClosedLoopAdapter:
         ridge_effective = self.config.output_ridge * ridge_scale
         system = hidden_gram + ridge_effective * identity
         right_hand_side = (
-            hidden_rows.transpose(0, 1)
-            @ projected_parent_latent
+            hidden_rows.transpose(0, 1) @ projected_parent_latent
             + ridge_effective * identity
         )
-        raw_transform = torch.linalg.solve(
-            system, right_hand_side
-        ).contiguous()
+        raw_transform = torch.linalg.solve(system, right_hand_side).contiguous()
         if not bool(torch.isfinite(raw_transform).all().item()):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "FP64 output-interface solve produced non-finite values."
@@ -16950,33 +16881,19 @@ class Lfm2DynamicClosedLoopAdapter:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "The tied base vocabulary weight has zero norm."
             )
-        raw_delta = base64 @ (
-            raw_transform.transpose(0, 1) - identity
-        )
-        raw_delta_ratio = float(
-            torch.linalg.vector_norm(raw_delta).item()
-        ) / base_norm
+        raw_delta = base64 @ (raw_transform.transpose(0, 1) - identity)
+        raw_delta_ratio = float(torch.linalg.vector_norm(raw_delta).item()) / base_norm
         alpha = 1.0
-        if (
-            raw_delta_ratio
-            > self.config.output_max_prior_delta_ratio
-        ):
-            alpha = (
-                self.config.output_max_prior_delta_ratio
-                / raw_delta_ratio
-            )
+        if raw_delta_ratio > self.config.output_max_prior_delta_ratio:
+            alpha = self.config.output_max_prior_delta_ratio / raw_delta_ratio
 
         def bounded_transform(value: float):
             result = identity + value * (raw_transform - identity)
             singular = torch.linalg.svdvals(result)
-            condition = float(
-                (singular[0] / singular[-1]).item()
-            )
+            condition = float((singular[0] / singular[-1]).item())
             return result, singular, condition
 
-        transform, singular_values, condition_number = (
-            bounded_transform(alpha)
-        )
+        transform, singular_values, condition_number = bounded_transform(alpha)
         for _attempt in range(64):
             if (
                 bool(torch.isfinite(singular_values).all().item())
@@ -16987,9 +16904,7 @@ class Lfm2DynamicClosedLoopAdapter:
             ):
                 break
             alpha *= 0.5
-            transform, singular_values, condition_number = (
-                bounded_transform(alpha)
-            )
+            transform, singular_values, condition_number = bounded_transform(alpha)
         else:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "No globally interpolated output transform satisfies the "
@@ -16999,20 +16914,19 @@ class Lfm2DynamicClosedLoopAdapter:
         candidate_weight = None
         materialized_delta_ratio = math.inf
         for _attempt in range(64):
-            transform, singular_values, condition_number = (
-                bounded_transform(alpha)
-            )
+            transform, singular_values, condition_number = bounded_transform(alpha)
             candidate64 = base64 @ transform.transpose(0, 1)
             candidate_weight = (
-                candidate64.to(dtype=base_weight.dtype)
-                .contiguous()
-                .clone()
+                candidate64.to(dtype=base_weight.dtype).contiguous().clone()
             )
-            materialized_delta_ratio = float(
-                torch.linalg.vector_norm(
-                    candidate_weight.to(dtype=torch.float64) - base64
-                ).item()
-            ) / base_norm
+            materialized_delta_ratio = (
+                float(
+                    torch.linalg.vector_norm(
+                        candidate_weight.to(dtype=torch.float64) - base64
+                    ).item()
+                )
+                / base_norm
+            )
             if (
                 materialized_delta_ratio
                 <= self.config.output_max_prior_delta_ratio
@@ -17020,8 +16934,7 @@ class Lfm2DynamicClosedLoopAdapter:
             ):
                 break
             alpha *= 0.99 * (
-                self.config.output_max_prior_delta_ratio
-                / materialized_delta_ratio
+                self.config.output_max_prior_delta_ratio / materialized_delta_ratio
             )
         else:
             raise Lfm2DynamicClosedLoopAdapterError(
@@ -17034,8 +16947,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 "Materialized tied output weight is invalid."
             )
         if (
-            condition_number
-            > self.config.output_max_transform_condition_number
+            condition_number > self.config.output_max_transform_condition_number
             or float(singular_values[-1].item())
             < self.config.output_min_transform_singular_value
         ):
@@ -17056,26 +16968,13 @@ class Lfm2DynamicClosedLoopAdapter:
             torch.finfo(torch.float64).tiny,
         )
         body_latent_relative_rmse = math.sqrt(
-            float(
-                (
-                    fitted_latent - projected_parent_latent
-                )
-                .square()
-                .sum()
-                .item()
-            )
+            float((fitted_latent - projected_parent_latent).square().sum().item())
             / latent_denominator
         )
         projected_energy = float(
-            (
-                parent_times_base * projected_parent_latent
-            )
-            .sum()
-            .item()
+            (parent_times_base * projected_parent_latent).sum().item()
         )
-        output_subspace_squared_error = max(
-            0.0, parent_logit_square - projected_energy
-        )
+        output_subspace_squared_error = max(0.0, parent_logit_square - projected_energy)
         output_subspace_relative_rmse = math.sqrt(
             output_subspace_squared_error
             / max(
@@ -17097,12 +16996,8 @@ class Lfm2DynamicClosedLoopAdapter:
             interpolation_alpha=alpha,
             materialized_delta_ratio=materialized_delta_ratio,
             transform_condition_number=condition_number,
-            transform_min_singular_value=float(
-                singular_values[-1].item()
-            ),
-            output_subspace_relative_rmse=(
-                output_subspace_relative_rmse
-            ),
+            transform_min_singular_value=float(singular_values[-1].item()),
+            output_subspace_relative_rmse=(output_subspace_relative_rmse),
             body_latent_relative_rmse=body_latent_relative_rmse,
             identity_skip=False,
         )
@@ -17111,14 +17006,9 @@ class Lfm2DynamicClosedLoopAdapter:
                 "schema": (
                     "neural-forge-lfm2-tied-global-output-interface-v1"
                     if output_is_tied
-                    else (
-                        "neural-forge-lfm2-untied-global-output-interface-v2"
-                    )
+                    else ("neural-forge-lfm2-untied-global-output-interface-v2")
                 ),
-                "fit_record_keys": [
-                    list(value)
-                    for value in _record_keys(fit_records)
-                ],
+                "fit_record_keys": [list(value) for value in _record_keys(fit_records)],
                 "source_binding_sha256": source_binding_sha256,
                 "base_weight_sha256": base_weight_sha256,
                 "candidate_weight_sha256": candidate_weight_sha256,
@@ -17127,13 +17017,9 @@ class Lfm2DynamicClosedLoopAdapter:
                 "map_sha256": self.map_sha256,
                 "ridge_effective": ridge_effective,
                 "interpolation_alpha": alpha,
-                "materialized_delta_ratio": (
-                    materialized_delta_ratio
-                ),
+                "materialized_delta_ratio": (materialized_delta_ratio),
                 "transform_condition_number": condition_number,
-                "transform_min_singular_value": float(
-                    singular_values[-1].item()
-                ),
+                "transform_min_singular_value": float(singular_values[-1].item()),
                 "global_latent_transform": True,
                 "per_token_row_fitting": False,
                 "source_weights_and_sealed_cache_only": True,
@@ -17153,9 +17039,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     "target_width": width,
                     "source_binding_sha256": source_binding_sha256,
                     "base_weight_sha256": base_weight_sha256,
-                    "candidate_weight_sha256": (
-                        candidate_weight_sha256
-                    ),
+                    "candidate_weight_sha256": (candidate_weight_sha256),
                     "transform_sha256": transform_sha256,
                     "output_interface_mode": "fit-transform",
                     "identity_skip": False,
@@ -17167,28 +17051,18 @@ class Lfm2DynamicClosedLoopAdapter:
                     "all_vocabulary_rows_transformed_together": True,
                     "interpolation_alpha": alpha,
                     "raw_delta_ratio": raw_delta_ratio,
-                    "materialized_delta_ratio": (
-                        materialized_delta_ratio
-                    ),
-                    "maximum_delta_ratio": (
-                        self.config.output_max_prior_delta_ratio
-                    ),
+                    "materialized_delta_ratio": (materialized_delta_ratio),
+                    "maximum_delta_ratio": (self.config.output_max_prior_delta_ratio),
                     "transform_condition_number": condition_number,
                     "maximum_transform_condition_number": (
                         self.config.output_max_transform_condition_number
                     ),
-                    "transform_min_singular_value": float(
-                        singular_values[-1].item()
-                    ),
+                    "transform_min_singular_value": float(singular_values[-1].item()),
                     "minimum_transform_singular_value": (
                         self.config.output_min_transform_singular_value
                     ),
-                    "output_subspace_relative_rmse": (
-                        output_subspace_relative_rmse
-                    ),
-                    "body_latent_relative_rmse": (
-                        body_latent_relative_rmse
-                    ),
+                    "output_subspace_relative_rmse": (output_subspace_relative_rmse),
+                    "body_latent_relative_rmse": (body_latent_relative_rmse),
                     (
                         "tied_input_output_parameter_required"
                         if output_is_tied
@@ -17205,12 +17079,10 @@ class Lfm2DynamicClosedLoopAdapter:
                     "backward_calls": 0,
                     "optimizer_steps": 0,
                     (
-                        "teacher_forced_terminal_acceptance_is_"
-                        "necessary_not_sufficient"
+                        "teacher_forced_terminal_acceptance_is_necessary_not_sufficient"
                     ): True,
                     (
-                        "external_whole_output_behavior_gate_required_"
-                        "for_promotion"
+                        "external_whole_output_behavior_gate_required_for_promotion"
                     ): True,
                 }
             ),
@@ -17247,15 +17119,13 @@ class Lfm2DynamicClosedLoopAdapter:
         gradient_id = None if gradient is None else id(gradient)
         if payload.identity_skip:
             if (
-                payload.candidate_weight_sha256
-                != payload.base_weight_sha256
+                payload.candidate_weight_sha256 != payload.base_weight_sha256
                 or payload.materialized_delta_ratio != 0.0
                 or not torch.equal(
                     payload.candidate_weight,
                     payload.base_weight,
                 )
-                or _tensor_sha256(parameter)
-                != payload.base_weight_sha256
+                or _tensor_sha256(parameter) != payload.base_weight_sha256
             ):
                 raise Lfm2DynamicClosedLoopAdapterError(
                     "Identity output-interface artifact is not byte-exact."
@@ -17265,14 +17135,9 @@ class Lfm2DynamicClosedLoopAdapter:
             if (
                 installed is not parameter
                 or id(installed) != parameter_id
-                or (
-                    None
-                    if installed.grad is None
-                    else id(installed.grad)
-                )
+                or (None if installed.grad is None else id(installed.grad))
                 != gradient_id
-                or _tensor_sha256(installed)
-                != payload.base_weight_sha256
+                or _tensor_sha256(installed) != payload.base_weight_sha256
             ):
                 raise Lfm2DynamicClosedLoopAdapterError(
                     "Identity output-interface skip changed parameter state."
@@ -17280,9 +17145,7 @@ class Lfm2DynamicClosedLoopAdapter:
             metadata = {
                 "parameter_id_preserved": True,
                 "gradient_identity_preserved": True,
-                "candidate_weight_sha256": (
-                    payload.candidate_weight_sha256
-                ),
+                "candidate_weight_sha256": (payload.candidate_weight_sha256),
                 "output_interface_mode": "identity-skip",
                 "identity_skip": True,
                 "parameter_write_calls": 0,
@@ -17326,14 +17189,9 @@ class Lfm2DynamicClosedLoopAdapter:
             if (
                 installed is not parameter
                 or id(installed) != parameter_id
-                or (
-                    None
-                    if installed.grad is None
-                    else id(installed.grad)
-                )
+                or (None if installed.grad is None else id(installed.grad))
                 != gradient_id
-                or _tensor_sha256(installed)
-                != payload.candidate_weight_sha256
+                or _tensor_sha256(installed) != payload.candidate_weight_sha256
             ):
                 raise Lfm2DynamicClosedLoopAdapterError(
                     "Output installation changed identity or bytes."
@@ -17400,13 +17258,9 @@ class Lfm2DynamicClosedLoopAdapter:
         if (
             scope.kind != "output_interface"
             or payload is None
-            or not isinstance(
-                parent_endpoints.payload, _EndpointPayload
-            )
-            or baseline_capture.point
-            is not CapturePoint.PRE_OUTPUT_INTERFACE
-            or candidate_capture.point
-            is not CapturePoint.POST_OUTPUT_INTERFACE
+            or not isinstance(parent_endpoints.payload, _EndpointPayload)
+            or baseline_capture.point is not CapturePoint.PRE_OUTPUT_INTERFACE
+            or candidate_capture.point is not CapturePoint.POST_OUTPUT_INTERFACE
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Output-interface validation inputs are invalid."
@@ -17420,17 +17274,13 @@ class Lfm2DynamicClosedLoopAdapter:
         baseline = self._capture_payload(baseline_capture)
         candidate = self._capture_payload(candidate_capture)
         indices = self._batch_indices(validation_records)
-        baseline_metrics = self._output_metrics(
-            baseline.paired, indices
-        )
+        baseline_metrics = self._output_metrics(baseline.paired, indices)
         offline_metrics = self._output_metrics(
             baseline.paired,
             indices,
             materialized_weight=payload.candidate_weight,
         )
-        candidate_metrics = self._output_metrics(
-            candidate.paired, indices
-        )
+        candidate_metrics = self._output_metrics(candidate.paired, indices)
         feedback = self._offline_live_output_comparison(
             baseline.paired,
             candidate.paired,
@@ -17444,20 +17294,16 @@ class Lfm2DynamicClosedLoopAdapter:
             "eos_token_id_available",
         ):
             if not (
-                baseline_metrics[key]
-                == offline_metrics[key]
-                == candidate_metrics[key]
+                baseline_metrics[key] == offline_metrics[key] == candidate_metrics[key]
             ):
                 raise Lfm2DynamicClosedLoopAdapterError(
                     "Output validation metric coverage changed."
                 )
         tolerance = self.config.output_validation_tolerance
-        kl_improvement = float(
-            baseline_metrics["full_vocabulary_parent_kl"]
-        ) - float(candidate_metrics["full_vocabulary_parent_kl"])
-        known_sequence_rows = int(
-            candidate_metrics["known_sequence_token_rows"]
+        kl_improvement = float(baseline_metrics["full_vocabulary_parent_kl"]) - float(
+            candidate_metrics["full_vocabulary_parent_kl"]
         )
+        known_sequence_rows = int(candidate_metrics["known_sequence_token_rows"])
         known_sequence_nll_improvement = float(
             baseline_metrics["known_sequence_token_nll"]
         ) - float(candidate_metrics["known_sequence_token_nll"])
@@ -17486,10 +17332,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     if name not in nonfinite_metrics:
                         nonfinite_metrics.append(name)
         failed_gates = []
-        if (
-            kl_improvement + tolerance
-            < self.config.minimum_output_kl_improvement
-        ):
+        if kl_improvement + tolerance < self.config.minimum_output_kl_improvement:
             failed_gates.append("full_vocabulary_parent_kl")
         if known_sequence_rows > 0 and (
             known_sequence_nll_improvement + tolerance
@@ -17498,13 +17341,10 @@ class Lfm2DynamicClosedLoopAdapter:
             failed_gates.append("known_sequence_token_nll")
         if eos_available and (
             eos_margin_rmse_regression
-            > self.config.maximum_output_eos_margin_rmse_regression
-            + tolerance
+            > self.config.maximum_output_eos_margin_rmse_regression + tolerance
         ):
             failed_gates.append("eos_margin_rmse")
-        identity_replay_exact = (
-            baseline_metrics == candidate_metrics
-        )
+        identity_replay_exact = baseline_metrics == candidate_metrics
         numeric_diagnostic_only = bool(
             self.config.performance_metrics_diagnostic_only
             or self.config.all_layer_finite_numeric_checks_diagnostic_only
@@ -17512,17 +17352,12 @@ class Lfm2DynamicClosedLoopAdapter:
         if payload.identity_skip:
             if not identity_replay_exact:
                 raise Lfm2DynamicClosedLoopAdapterError(
-                    "Identity output-interface skip changed live output "
-                    "behavior."
+                    "Identity output-interface skip changed live output behavior."
                 )
             accepted = not nonfinite_metrics
         else:
             accepted = bool(
-                not nonfinite_metrics
-                and (
-                    not failed_gates
-                    or numeric_diagnostic_only
-                )
+                not nonfinite_metrics and (not failed_gates or numeric_diagnostic_only)
             )
         counterfactual_threshold_passed = bool(
             not nonfinite_metrics and not failed_gates
@@ -17532,9 +17367,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 _json_safe_diagnostic_scalar(kl_improvement)
             ),
             "known_sequence_nll_improvement": (
-                _json_safe_diagnostic_scalar(
-                    known_sequence_nll_improvement
-                )
+                _json_safe_diagnostic_scalar(known_sequence_nll_improvement)
             ),
             "eos_margin_rmse_regression": _json_safe_diagnostic_scalar(
                 eos_margin_rmse_regression
@@ -17550,29 +17383,19 @@ class Lfm2DynamicClosedLoopAdapter:
             ),
             "output_validation_tolerance": tolerance,
             "failed_gate_count": len(failed_gates),
-            "failed_gates": (
-                "none" if not failed_gates else ",".join(failed_gates)
-            ),
+            "failed_gates": ("none" if not failed_gates else ",".join(failed_gates)),
             "counterfactual_performance_threshold_passed": (
                 counterfactual_threshold_passed
             ),
-            "performance_metrics_diagnostic_only": (
-                numeric_diagnostic_only
-            ),
-            "performance_metrics_are_decision_authority": (
-                not numeric_diagnostic_only
-            ),
+            "performance_metrics_diagnostic_only": (numeric_diagnostic_only),
+            "performance_metrics_are_decision_authority": (not numeric_diagnostic_only),
             "performance_metrics_finite": not nonfinite_metrics,
             "nonfinite_metric_count": len(nonfinite_metrics),
             "nonfinite_metrics": (
-                "none"
-                if not nonfinite_metrics
-                else ",".join(nonfinite_metrics)
+                "none" if not nonfinite_metrics else ",".join(nonfinite_metrics)
             ),
             "output_interface_mode": (
-                "identity-skip"
-                if payload.identity_skip
-                else "fit-transform"
+                "identity-skip" if payload.identity_skip else "fit-transform"
             ),
             "identity_skip": payload.identity_skip,
             "identity_replay_exact": identity_replay_exact,
@@ -17592,13 +17415,9 @@ class Lfm2DynamicClosedLoopAdapter:
             "training_steps": 0,
             "backward_calls": 0,
             "optimizer_steps": 0,
-            "teacher_forced_terminal_acceptance_is_necessary_not_sufficient": (
-                True
-            ),
+            "teacher_forced_terminal_acceptance_is_necessary_not_sufficient": (True),
             "external_whole_output_behavior_gate_required_for_promotion": True,
-            "promotion_authority": (
-                "external_whole_output_semantic_behavior_gate"
-            ),
+            "promotion_authority": ("external_whole_output_semantic_behavior_gate"),
         }
         if self.config.all_layer_finite_numeric_checks_diagnostic_only:
             metrics.update(
@@ -17629,9 +17448,7 @@ class Lfm2DynamicClosedLoopAdapter:
             ("offline_vs_live", feedback),
         ):
             for key, value in values.items():
-                metrics[f"{prefix}_{key}"] = (
-                    _json_safe_diagnostic_scalar(value)
-                )
+                metrics[f"{prefix}_{key}"] = _json_safe_diagnostic_scalar(value)
         if payload.identity_skip:
             reason = (
                 "explicit identity output-interface skip preserved output bytes "
@@ -17645,8 +17462,7 @@ class Lfm2DynamicClosedLoopAdapter:
             if nonfinite_metrics:
                 reason = (
                     "held-out full-vocabulary live-child output interface "
-                    "rejected nonfinite metrics: "
-                    + ",".join(nonfinite_metrics)
+                    "rejected nonfinite metrics: " + ",".join(nonfinite_metrics)
                 )
             elif failed_gates and numeric_diagnostic_only:
                 reason = (
@@ -17664,8 +17480,7 @@ class Lfm2DynamicClosedLoopAdapter:
             else:
                 reason = (
                     "held-out full-vocabulary live-child output interface "
-                    "rejected gates: "
-                    + ",".join(failed_gates)
+                    "rejected gates: " + ",".join(failed_gates)
                 )
         return ValidationDecision(
             scope=scope,

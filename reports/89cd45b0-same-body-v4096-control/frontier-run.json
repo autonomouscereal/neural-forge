@@ -1,0 +1,24 @@
+{
+  "all_retained_candidates_materialized": true,
+  "bridge_only_diagnostic_control": true,
+  "candidate_ids": [
+    "same-body-v4096-identity-bridge"
+  ],
+  "candidate_metric_threshold_used_for_materialization": false,
+  "decoded_behavior_is_primary_evidence": true,
+  "materializations": [
+    {
+      "candidate_id": "same-body-v4096-identity-bridge",
+      "candidate_state_sha256": "3b9f2f7dc2451b2df910e76b8efdb40159beb9690a02059e39bcd48b7899266e",
+      "checkpoint_path": "/home/cereal/model-surgery-lab/artifacts/lfm2_bridge_only_control_20260723/89cd45b0/same-body-v4096-p40-gpu1-a0001/checkpoint",
+      "fold_receipt_sha256": "00a573609cb7666e60e665b26eba6d5cf636fc5daa9166742a37b913e8140d28",
+      "model_state_sha256": "3b9f2f7dc2451b2df910e76b8efdb40159beb9690a02059e39bcd48b7899266e",
+      "standalone_fresh_reload_verified": true,
+      "unique_parameters": 166778624
+    }
+  ],
+  "run_directory": "/home/cereal/model-surgery-lab/artifacts/lfm2_bridge_only_control_20260723/89cd45b0/same-body-v4096-p40-gpu1-a0001",
+  "run_sha256": "f505fb9afcf6b4c70311f746596a315de1bf13b71dbefe9f3082ff25aaf3e3b2",
+  "schema": "neural-forge-lfm2-semantic-terminal-frontier-run-v1",
+  "status": "complete"
+}
