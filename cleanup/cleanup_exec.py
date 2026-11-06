@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""cleanup_exec.py 1.2.0 - remove experimental weight directories one unit at a time, recording each first.
+"""cleanup_exec.py 1.3.0 - remove experimental weight directories one unit at a time, recording each first.
 
 Owner order (Cyril, 2026-10-21): "[Cyril quote withheld]".
 
@@ -24,6 +24,15 @@ Per unit, in order (a failure stops the worker; a refusal skips the unit and is 
   5. ledger    - for registered checkpoints: oc_checkpoint.py set-status --cyril-ruling (status unchanged)
   6. delete    - rm -rf --one-file-system -- <path> (argument list, no shell); git-tracked files are left in place
   7. verify    - path absent; df recorded; rows -> 'deleted', model_deletion -> 'deleted'
+
+1.3.0 (rescope after Cyril's fold-init ruling of 2026-10-21):
+  --overrides FILE   per-unit waivers, each with a written reason, for exactly two gate checks: references from
+                     a named source file (e.g. a historical receipt that names the unit) and data directories under
+                     a named relative prefix (e.g. pytest fixtures). Every other check still applies. Waivers used
+                     are recorded in the preflight (omni_lab model_deletion.preflight, DELETION_RECEIPT.json).
+  --pre-delete-digest PLAN_INDEX:DIR:SHA256
+                     before anything is recorded for that unit, oc_seal.directory_digest(DIR) must equal SHA256
+                     (the surviving copy of a duplicate is re-verified immediately before the duplicate goes).
 
     PY=/home/cereal/.venvs/chimera-intake/bin/python
     set -a; . ~/.config/omni-lab/env; set +a
@@ -52,7 +61,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
-TOOL = "cleanup_exec 1.2.0"
+TOOL = "cleanup_exec 1.3.0"
 OWNER_ORDER = "[Cyril quote withheld]"
 OC = "/home/cereal/omni-campaign"
 LX = "/mnt/lexar/omni-campaign"
@@ -267,11 +276,16 @@ def git_tracked(unit: str) -> list[str]:
     return []
 
 
-def gate(u: dict, protected: list[dict], generic: set[str], refs: RefIndex, scan: dict | None = None) -> dict:
-    """Every reason this unit must not be deleted now ([] = clear), plus what was checked."""
+def gate(u: dict, protected: list[dict], generic: set[str], refs: RefIndex, scan: dict | None = None,
+         overrides: dict | None = None) -> dict:
+    """Every reason this unit must not be deleted now ([] = clear), plus what was checked.
+    overrides (1.3.0): {plan_index: {"ref_sources": {file: reason}, "datadir_prefixes": {rel: reason}}}."""
     unit = u["path"]
     reasons: list[str] = []
     checked: dict = {"at": now(), "tool": TOOL}
+    ov = (overrides or {}).get(u["plan_index"], {})
+    ref_ov, dir_ov = ov.get("ref_sources", {}), ov.get("datadir_prefixes", {})
+    waived: dict = {"ref_sources": {}, "datadirs": {}}
     if not os.path.lexists(unit):
         return {"reasons": ["path absent"], "checked": checked, "absent": True}
     if os.path.islink(unit) or not (os.path.isdir(unit) or os.path.isfile(unit)) or os.path.realpath(unit) != unit:
@@ -295,6 +309,11 @@ def gate(u: dict, protected: list[dict], generic: set[str], refs: RefIndex, scan
             hits.append((src, t))
         elif unit.startswith(t + "/") and t not in generic:
             parent_hits.append((src, t))
+    for src, t in hits + parent_hits:
+        if src in ref_ov:
+            waived["ref_sources"].setdefault(src, {"reason": ref_ov[src], "tokens": 0})["tokens"] += 1
+    hits = [(s, t) for s, t in hits if s not in ref_ov]
+    parent_hits = [(s, t) for s, t in parent_hits if s not in ref_ov]
     if hits:
         reasons.append(f"referenced (unit or inside): {sorted(set(hits))[:8]}")
     if parent_hits:
@@ -309,6 +328,13 @@ def gate(u: dict, protected: list[dict], generic: set[str], refs: RefIndex, scan
     if big:
         reasons.append(f"non-weight file >= 50 MB (may be data): {big[:5]}")
     datadirs = [os.path.relpath(d, unit) for d in dirs if os.path.basename(d) in DATA_DIR_NAMES]
+    for rel in datadirs:
+        pre = next((p for p in dir_ov if under(rel, p.rstrip("/"))), None)
+        if pre is not None:
+            waived["datadirs"].setdefault(pre, {"reason": dir_ov[pre], "dirs": 0})["dirs"] += 1
+    datadirs = [rel for rel in datadirs if not any(under(rel, p.rstrip("/")) for p in dir_ov)]
+    if waived["ref_sources"] or waived["datadirs"]:
+        checked["overrides_applied"] = waived
     if datadirs:
         reasons.append(f"data directory inside: {datadirs[:5]}")
     tc = []
@@ -650,13 +676,53 @@ def load(args):
     return units, protected, generic
 
 
+def load_overrides(path: str | None) -> dict:
+    """{plan_index: {"ref_sources": {file: reason}, "datadir_prefixes": {rel: reason}}}; every waiver needs a reason."""
+    if not path:
+        return {}
+    raw = json.load(open(path, encoding="utf-8"))
+    out = {}
+    for k, v in raw["units"].items():
+        for kind in ("ref_sources", "datadir_prefixes"):
+            for key, reason in v.get(kind, {}).items():
+                if not isinstance(reason, str) or len(reason.strip()) < 20:
+                    raise ValueError(f"override {k}/{kind}/{key} has no written reason")
+        out[int(k)] = v
+    return out
+
+
+def pre_delete_checks(specs: list[str] | None) -> dict[int, list[tuple[str, str]]]:
+    out: dict[int, list[tuple[str, str]]] = {}
+    for s in specs or []:
+        idx, d, want = s.split(":", 2)
+        if not re.fullmatch(r"[0-9a-f]{64}", want):
+            raise ValueError(f"--pre-delete-digest {s}: not a sha256")
+        out.setdefault(int(idx), []).append((d, want))
+    return out
+
+
+def verify_surviving_copies(checks: list[tuple[str, str]], fh_log, unit: str) -> list[dict]:
+    """oc_seal.directory_digest of each surviving copy must still equal its recorded sha256 (raises otherwise)."""
+    sys.path.insert(0, f"{OC}/ledger")
+    from oc_seal import directory_digest
+    done = []
+    for d, want in checks:
+        live, entries = directory_digest(d)
+        if live != want:
+            raise RuntimeError(f"surviving copy {d} digests {live}, expected {want}; refusing to delete {unit}")
+        done.append({"dir": d, "directory_sha256": live, "files": len(entries), "at": now()})
+        log(fh_log, unit=unit, step="surviving-copy-verified", dir=d, directory_sha256=live)
+    return done
+
+
 def cmd_gate(args) -> int:
     units, protected, generic = load(args)
+    overrides = load_overrides(args.overrides)
     refs = RefIndex()
     scan = proc_scan()
     out = []
     for u in units:
-        g = gate(u, protected, generic, refs, scan)
+        g = gate(u, protected, generic, refs, scan, overrides)
         out.append({"plan_index": u["plan_index"], "path": u["path"], "volume": u["volume"], "size_gb": u["size_gb"],
                     "reasons": g["reasons"], "checked": g["checked"]})
         print(f"{'CLEAR' if not g['reasons'] else 'BLOCK'} {u['plan_index']:>3} {u['size_gb']:>7} {u['path']}"
@@ -670,6 +736,8 @@ def cmd_execute(args) -> int:
     import omni_lab_db as db
     from ingest import common as C
     units, protected, generic = load(args)
+    overrides = load_overrides(args.overrides)
+    survivors = pre_delete_checks(args.pre_delete_digest)
     units = [u for u in units if u["volume"] == args.volume]
     units.sort(key=lambda u: -u["size_bytes_du"])
     if args.only:
@@ -689,7 +757,7 @@ def cmd_execute(args) -> int:
             log(fh, step="stop", volume=args.volume, deleted=done, blocked=blocked, why="STOP file present")
             return 0
         try:
-            g = gate(u, protected, generic, refs)
+            g = gate(u, protected, generic, refs, overrides=overrides)
             if g.get("absent"):
                 log(fh, unit=unit, plan_index=u["plan_index"], step="absent-already")
                 continue
@@ -702,7 +770,9 @@ def cmd_execute(args) -> int:
             u["digest_mode_used"] = mode
             g["preflight"] = {**g["checked"], "git_tracked_kept": tracked, "reasons": [],
                               "generic_roots_sha256": hashlib.sha256(json.dumps(sorted(generic)).encode()).hexdigest(),
-                              "protected_entries": len(protected)}
+                              "protected_entries": len(protected),
+                              "protected_sha256": sha256_file(args.protected), "units_sha256": sha256_file(args.units),
+                              "overrides_sha256": sha256_file(args.overrides) if args.overrides else None}
             log(fh, unit=unit, plan_index=u["plan_index"], step="gate-clear", digest_mode=mode, files=g["checked"]["files"],
                 git_tracked=len(tracked))
             if args.dry_run:
@@ -712,6 +782,8 @@ def cmd_execute(args) -> int:
             rec_dir = os.path.join(args.recipe_root, (ledger_ids[0] if len(ledger_ids) == 1 else
                                                  os.path.basename(u["recipe_archive"].rstrip("/"))))
             arch = archive(u, m, g, rec_dir, tracked)
+            if u["plan_index"] in survivors:
+                g["preflight"]["surviving_copies_verified"] = verify_surviving_copies(survivors[u["plan_index"]], fh, unit)
             df_before = df(args.volume)
             receipt = {"schema": "omni-lab.deletion-receipt.v1", "tool": TOOL, "owner_order": OWNER_ORDER,
                        "unit": {k: u[k] for k in ("path", "volume", "what", "reason", "plan_index", "size_bytes_du")},
@@ -781,6 +853,7 @@ def main() -> int:
         p.add_argument("--units", required=True)
         p.add_argument("--protected", required=True)
         p.add_argument("--generic", required=True)
+        p.add_argument("--overrides", default=None, help="per-unit reasoned waivers (1.3.0)")
     sub.choices["gate"].add_argument("--out", required=True)
     e = sub.choices["execute"]
     e.add_argument("--volume", required=True, choices=sorted(VOLUME_MOUNT))
@@ -790,6 +863,8 @@ def main() -> int:
     e.add_argument("--dry-run", action="store_true")
     e.add_argument("--recipe-root", default=RECIPE_ROOT)
     e.add_argument("--hash-threads", type=int, default=1)
+    e.add_argument("--pre-delete-digest", action="append", default=None, metavar="PLAN_INDEX:DIR:SHA256",
+                   help="surviving copy that must still digest to SHA256 before the unit is recorded/deleted")
     args = ap.parse_args()
     return cmd_gate(args) if args.cmd == "gate" else cmd_execute(args)
 

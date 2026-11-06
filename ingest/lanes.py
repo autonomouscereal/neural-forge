@@ -16,6 +16,8 @@ LANE_PROJECT = {
     "L-K3": "k3", "L-K3ACC": "k3",
     "L-DATA": "corpus", "L-SPEECH-DATA": "speech", "L-MEDIA-DATA": "media",
     "L-FOLD": "neural-forge", "L-RESEARCH": "neural-forge",
+    # 2026-10-21 P40 lane policy: experiments, and the serving cards (corpus generation + Sprite; media worker)
+    "L-EXP": "neural-forge", "L-SERVE": "corpus", "L-MEDIA": "media",
 }
 
 

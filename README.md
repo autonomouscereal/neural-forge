@@ -18,6 +18,7 @@ every existing result format, the runner (`omni_lab.py run` / `compare` / `list`
 | Code (workstation) | `C:/Users/cereal/Documents/ai training/omni-lab/` (local git, never pushed) |
 | Code (AI server) | `/home/cereal/omni-campaign/lab/` (same bytes; check with `sha256sum`) |
 | Server runtime env | `/home/cereal/.config/omni-lab/env`, mode 600. Generated from the vault, same pattern as `/home/cereal/.config/chimera-intake/env` |
+| Backups | Nightly verified `pg_dump`: `/mnt/lexar/omni-campaign/backups/omni_lab/` + NAS `/mnt/ai_data/backups/omni-lab-postgres/omni_lab/`. See "Backups" |
 
 ## Connecting (no secrets in this repo)
 
@@ -132,7 +133,7 @@ The comparison of the S0 parent import, OMNI1 and the full-KD run-1 student on b
 - **Only one saved `test`** (`smoke-bank2-cpu`) and one runner-produced eval run (37881, a CPU smoke test on PARENT-Q35-0.8B).
 - **Two engines have not run end to end:** `chimera` and `gguf`.
 - **No media suites can run through the runner yet.** Media evals exist only as ingested S8 results (`s8_media_smoke`, `s8_qvl_describe`).
-- **No cron is installed.** Ingest is run by hand. No existing training job calls `log-run` yet, so new runs appear only after an `ingest`.
+- **No ingest cron is installed** (the only omni_lab cron is the nightly backup). Ingest is run by hand. No existing training job calls `log-run` yet, so new runs appear only after an `ingest`.
 - **Not ingested:** Codex sessions (`.codex/sessions`).
 - **Folding record is a snapshot.** `inventory/2026-10-22-foldrec` (86 shards) was loaded on 2026-10-28 (batches 272 + 273: 7,895 arms; see that folder's README). The shard files are not in git; a new extraction pass needs a re-run of `ingest foldrec`.
 - **GPU mapping is approximate for status-line runs.** GPU indices from status lines are mapped through today's `nvidia-smi` order (`run_device.detail.mapping = 'index-from-status'`).
@@ -280,7 +281,9 @@ What `run` does, in order:
    one the model's previous eval recorded.
 3. It checks the cards. Each `--gpus` card is locked with `flock` on `$OC/distill/queues/gpu<N>.lock`
    (non-blocking: a held lock refuses the run), then refused if it uses more than `--busy-limit` MiB (2000).
-   GPU5 is refused without `--allow-gpu5`, and host MemAvailable must stay above `--mem-floor-gib` (40).
+   A serving card (the `ask_first` lanes in LANES.json: GPU0+GPU6 L-SERVE, GPU4 L-MEDIA) is refused without
+   `--allow-serving-gpus`, which needs Cyril's approval (2026-10-21; GPU5 is no longer reserved and `--allow-gpu5`
+   is a no-op). Host MemAvailable must stay above `--mem-floor-gib` (40).
    `--dry-run` applies the same refusals without locking.
 4. It writes the `run` row (status `running`) and `spec.json` into
    `/mnt/lexar/omni-campaign/scratch/omni-lab-runs/<utc>-<engine>-<model>-<suite>/`, then starts the worker
@@ -353,6 +356,54 @@ $PY omni_lab.py log-run end $RID --status pass --exit-code 0 --receipt receipt-0
 
 `log-run` uses a 10 s statement timeout. Keep the `|| true` so a database outage never stops a job; the
 existing ingesters still pick its receipt up later.
+
+## Backups
+
+Added 2026-10-21 (Cyril: "[Cyril quote withheld]"). One script backs up `omni_lab` and `chimera_corpus`;
+`agent_memory` keeps its own job (`backup_agent_memory_pg.sh`, 02:20).
+
+| What | Where |
+|---|---|
+| Script | `/home/cereal/agent-memory-backup/bin/backup_pg_db.sh` 2.0.0 (source: skill `agent-memory-backup`, `scripts/backup_pg_db.sh`) |
+| Schedule | AI server cron `50 2 * * *` (server local time), `run-all` over `omni_lab chimera_corpus`, block `# BEGIN pg-db-backup` |
+| Lexar copy | `/mnt/lexar/omni-campaign/backups/omni_lab/{dumps,manifests,restore-lists}/`, newest id in `latest_backup_id.txt` |
+| NAS copy | `/mnt/ai_data/backups/omni-lab-postgres/omni_lab/` (the share the agent-memory backups use) |
+| Log | `/home/cereal/agent-memory-backup/logs/pg-db-backup.log` |
+| Record | one `run` row per backup: project `lab`, kind `other`, `run_key` `backup:pg:<backup_id>`, receipt = the manifest |
+
+Each run:
+
+1. Opens a REPEATABLE READ transaction, exports its snapshot and counts every table in it.
+2. `pg_dump --format=custom --snapshot=<that snapshot>`, run inside the container as its own superuser (no
+   credential is passed). Writes `<id>.dump.sha256` beside the dump (`sha256sum -c` format) and runs
+   `pg_restore --list`.
+3. Restores into the throwaway `omni_lab_restore_test`. Every table must exist on both sides with the same row
+   count; this is exact because the counts and the dump read one snapshot. Then drops the test database.
+4. Publishes the dump, sidecar, manifest (`pg-db-backup.v2`, with the source and restored count of every table)
+   and restore list, then prunes.
+5. Copies those four files to the NAS and re-checks the sidecar there. A full or unreachable share (it must keep
+   1 GiB free after the copy) is logged and recorded as `nas_copy_verified = 0`. It never fails the backup.
+6. Writes the `run` row with `omni_lab.py log-run`, sourcing `/home/cereal/.config/omni-lab/env` in a subshell
+   (vault-generated, mode 600). The row is inserted after the snapshot, so it is not in its own dump. Metrics:
+   `size_bytes`, `tables`, `source_rows`, `restored_rows`, `tables_mismatched`, `nas_copy_verified`. A failed run
+   ends the row as `fail`, removes its `incoming/` directory and drops the test database.
+
+Retention is the same on both copies: the newest dump of each of the 14 most recent days that have a backup, the
+newest of each of the 8 most recent ISO weeks, plus every dump younger than 48 hours, so on-demand points taken
+before a migration survive the nightly prune. Days are counted from the dumps, so if backups stop, nothing ages out.
+
+```
+S=/home/cereal/agent-memory-backup/bin/backup_pg_db.sh
+DB_NAME=omni_lab $S run          # on demand: before a migration or a bulk delete
+$S status                        # latest id, newest dumps on both copies, the cron block
+$S restore-help                  # restore command template (scratch database first)
+cd $OC/lab && $PY omni_lab.py sql "SELECT id, run_key, status, ended_at FROM run WHERE run_key LIKE 'backup:pg:%' ORDER BY id DESC LIMIT 5"
+```
+
+First v2 run (2026-10-21T21:19:48Z): `omni_lab_20261021T211948Z.dump`, 7,268,997 B, sha256 `42644f3a64c2…`,
+39 tables, 39,964 rows in the source snapshot and 39,964 after the restore. Both copies hash the same. Run row 38026.
+The four v1 dumps from earlier on 2026-10-21 (the W0 pre-cleanup pair plus two omni_lab points taken during the
+cleanup) stay where they were, in `/mnt/lexar/backups/postgres/<db>/`, outside the rotation.
 
 ## Rollback
 

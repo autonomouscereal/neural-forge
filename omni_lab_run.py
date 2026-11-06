@@ -10,11 +10,14 @@
 
 Card rules (run): cards are named by nvidia-smi index; each is claimed with flock on
 $OC/distill/queues/gpu<N>.lock (the queues' own lock files, non-blocking: a held lock refuses the run),
-then refused if it already uses more than --busy-limit MiB (default 2000); GPU5 is refused unless
---allow-gpu5; host MemAvailable must stay above --mem-floor-gib.  The locks are held until the worker exits.
+then refused if it already uses more than --busy-limit MiB (default 2000); a serving card (the ask_first lanes'
+cards in LANES.json: GPU0+GPU6 L-SERVE, GPU4 L-MEDIA) is refused unless --allow-serving-gpus, which needs Cyril's
+approval (2026-10-21; GPU5 is no longer reserved, --allow-gpu5 is a no-op kept for old command lines); host
+MemAvailable must stay above --mem-floor-gib.  The locks are held until the worker exits.
 """
 from __future__ import annotations
 
+import argparse
 import fnmatch
 import json
 import os
@@ -197,11 +200,38 @@ def mem_available_gib() -> float | None:
     return None
 
 
-def check_cards(smi: dict[int, dict], indexes: list[int], *, allow_gpu5: bool, busy_limit: int) -> list[dict]:
-    """The card rules without the locks (dry-run uses this alone): GPU5 only with --allow-gpu5, every card
-    present in nvidia-smi and using no more than busy_limit MiB.  Raises LabError on the first violation."""
-    if 5 in indexes and not allow_gpu5:
-        raise db.LabError("GPU5 is never used unless told: pass --allow-gpu5")
+SERVING_FALLBACK = {0: ["serving (LANES.json unreadable)"], 4: ["serving (LANES.json unreadable)"],
+                    6: ["serving (LANES.json unreadable)"]}
+
+
+def serving_cards(path: str | None = None) -> dict[int, list[str]]:
+    """GPU index -> the ask_first (serving) lanes of $Q/LANES.json that list it.  An unreadable or malformed
+    registry gives SERVING_FALLBACK (GPU0/4/6), never an empty set."""
+    try:
+        with open(path or f"{C.Q}/LANES.json", encoding="utf-8") as handle:
+            lanes = json.load(handle)["lanes"]
+        out: dict[int, list[str]] = {}
+        for name, lane in lanes.items():
+            if isinstance(lane, dict) and lane.get("ask_first") is True:
+                for card in lane.get("cards", []):
+                    if type(card) is not int:
+                        raise ValueError(f"card {card!r}")
+                    out.setdefault(card, []).append(name)
+        return out
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return dict(SERVING_FALLBACK)
+
+
+def check_cards(smi: dict[int, dict], indexes: list[int], *, busy_limit: int, allow_serving: bool = False,
+                serving: dict[int, list[str]] | None = None) -> list[dict]:
+    """The card rules without the locks (dry-run uses this alone): a serving card only with --allow-serving-gpus
+    (Cyril's approval), every card present in nvidia-smi and using no more than busy_limit MiB.  Raises LabError
+    on the first violation."""
+    serving = serving_cards() if serving is None else serving
+    for i in indexes:
+        if i in serving and not allow_serving:
+            raise db.LabError(f"GPU{i} is a serving card ({','.join(serving[i])}: Sprite + data generation); pulling it "
+                              "needs Cyril's approval: pass --allow-serving-gpus")
     if len(set(indexes)) != len(indexes):
         raise db.LabError(f"a card is named twice: {indexes}")
     cards = []
@@ -214,11 +244,12 @@ def check_cards(smi: dict[int, dict], indexes: list[int], *, allow_gpu5: bool, b
     return cards
 
 
-def claim_cards(indexes: list[int], *, allow_gpu5: bool, busy_limit: int) -> tuple[list[dict], list[Any]]:
+def claim_cards(indexes: list[int], *, busy_limit: int, allow_serving: bool = False) -> tuple[list[dict], list[Any]]:
     """flock each $Q/gpu<N>.lock (non-blocking) and check the card is idle; returns (cards, open lock files).
-    Refuses (LabError) on the first card that is locked, busy, missing, or GPU5 without --allow-gpu5."""
+    Refuses (LabError) on the first card that is locked, busy, missing, or a serving card without
+    --allow-serving-gpus."""
     import fcntl
-    check_cards(nvidia_smi(), indexes, allow_gpu5=allow_gpu5, busy_limit=busy_limit)
+    check_cards(nvidia_smi(), indexes, busy_limit=busy_limit, allow_serving=allow_serving)
     held: list = []
     try:
         for i in indexes:
@@ -229,7 +260,7 @@ def claim_cards(indexes: list[int], *, allow_gpu5: bool, busy_limit: int) -> tup
                 fh.close()
                 raise db.LabError(f"gpu{i}.lock is held by another job ({C.Q}/gpu{i}.lock)") from None
             held.append(fh)
-        cards = check_cards(nvidia_smi(), indexes, allow_gpu5=allow_gpu5, busy_limit=busy_limit)  # re-read under the locks
+        cards = check_cards(nvidia_smi(), indexes, busy_limit=busy_limit, allow_serving=allow_serving)  # re-read under the locks
     except BaseException:
         for fh in held:
             fh.close()
@@ -437,10 +468,11 @@ def _run(conn, args, t0: float) -> int:
             raise db.LabError(f"MemAvailable {avail:.1f} GiB < floor {floor} GiB")
         if spec["device"]["kind"] == "cuda":
             if args.dry_run:
-                spec["device"]["cards"] = check_cards(nvidia_smi(), devices, allow_gpu5=args.allow_gpu5,
-                                                      busy_limit=args.busy_limit)
+                spec["device"]["cards"] = check_cards(nvidia_smi(), devices, busy_limit=args.busy_limit,
+                                                      allow_serving=args.allow_serving_gpus)
             else:
-                spec["device"]["cards"], held = claim_cards(devices, allow_gpu5=args.allow_gpu5, busy_limit=args.busy_limit)
+                spec["device"]["cards"], held = claim_cards(devices, busy_limit=args.busy_limit,
+                                                            allow_serving=args.allow_serving_gpus)
             spec["device"]["driver"] = (spec["device"]["cards"] or [{}])[0].get("driver")
         run_dir = runs_root() / (f"{spec['created_utc']}-{spec['engine']}-{re.sub(r'[^A-Za-z0-9.-]+', '-', spec['model']['model_key'])[-32:]}"
                                   f"-{spec['suite']['name']}-{spec['run_key'][-6:]}")
@@ -1068,7 +1100,9 @@ def add_parsers(sub) -> None:
     p.add_argument("--server-url", help="gguf: URL of a RUNNING llama-server")
     p.add_argument("--threads", type=int, default=8)
     p.add_argument("--nice", type=int, default=15)
-    p.add_argument("--allow-gpu5", action="store_true")
+    p.add_argument("--allow-gpu5", action="store_true", help=argparse.SUPPRESS)  # no-op since 2026-10-21 (GPU5 released)
+    p.add_argument("--allow-serving-gpus", action="store_true",
+                   help="use a serving card (GPU0/4/6: Sprite + data generation); only with Cyril's approval")
     p.add_argument("--busy-limit", type=int, default=2000, help="refuse a card using more than this many MiB")
     p.add_argument("--mem-floor-gib", type=float, default=40.0)
     p.add_argument("--baseline", help="run ids to compare against (default: auto; 'none' to skip)")
