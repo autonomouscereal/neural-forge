@@ -1,0 +1,4 @@
+USER: What is 17 times 23? Show the steps.
+
+REPLY (15 tokens):
+<|out|><|text|><|/out|>A man is holding a tennis racket in his hand.<|im_end|>

@@ -1,0 +1,4 @@
+USER: Translate 'where is the train station' into Spanish and French.
+
+REPLY (51 tokens):
+<|out|><|text|><|/out|><|out|><|text|><|/out|><|out|><|text|><|/out|><|out|><|text|><|/out|><|out|><|text|><|/out|><|out|><|text|><|/out|><|out|><|text|><|/out|><|out|><|text|><|/out|><|out|><|text|><|/out|><|out|><|text|><|/out|><|out|><|text|><|/out|><|out|><|text|><|/out|><|out|><|text|><|/out|><|out|><|text|><|/out|>A woman's name is not present.<|im_end|>

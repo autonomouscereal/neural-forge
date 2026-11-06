@@ -1,0 +1,4 @@
+USER: describe it
+
+REPLY (7 tokens):
+<|out|><|audio|><|/out|>A man speaking<|im_end|>

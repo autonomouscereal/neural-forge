@@ -1,0 +1,4 @@
+USER: What is 17 times 23? Show the steps.
+
+REPLY (22 tokens):
+<|out|><|text|><|/out|><|out|><|text|><|/out|><|out|><|text|><|/out|><|out|><|text|><|/out|><|out|><|text|><|/out|>A man is a little girl<|im_end|>

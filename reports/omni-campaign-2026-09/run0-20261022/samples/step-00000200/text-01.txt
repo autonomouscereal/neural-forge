@@ -1,0 +1,4 @@
+USER: Explain in three sentences why the sky is blue.
+
+REPLY (17 tokens):
+<|out|><|audio|><|/out|>A small white object is in the middle of a white background.<|im_end|>

@@ -1,0 +1,6 @@
+USER: Write a short Python function that returns the n-th Fibonacci number.
+
+REPLY (256 tokens):
+```
+def def factorial def fact_base factorial factorial // n factorial n factorial(n // n n n
+    n = n // n = n // n(n n) n = n // n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n | 32 | n n n n n n n n n | n n | n | n | n n | n | n n | n | n | n | n | n | n | n | n | n | n | n | n | n | n | n | n | n

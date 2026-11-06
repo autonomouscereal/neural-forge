@@ -1,0 +1,4 @@
+USER: What is 17 times 23? Show the steps.
+
+REPLY (10 tokens):
+<|out|><|audio|><|/out|>A man speaks then his voice<|im_end|>

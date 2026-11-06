@@ -1,0 +1,4 @@
+USER: describe it
+
+REPLY (8 tokens):
+<|out|><|image|><|/out|>A man in a white

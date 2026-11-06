@@ -1,0 +1,4 @@
+USER: Explain in three sentences why the sky is blue.
+
+REPLY (18 tokens):
+<|out|><|text|><|/out|><|out|><|text|><|/out|><|out|><|text|><|/out|><|out|><|text|><|/out|><|out|><|text|><|/out|><|out|>)<|im_end|>

@@ -869,3 +869,49 @@ No candidate was marked INCLUDE IN RUN 0, so run 0 adopts none, and none goes in
   - `/home/cereal/omni-campaign/rulings/arch_v2_init_source.json`
   - `/mnt/lexar/omni-campaign/run0/{inits, milestones, protected}/`
   - `/mnt/lexar/omnicoder_0.1.0/models/hf/hub/datasets--librispeech_asr/blobs`
+
+---
+
+## Addendum B2 (2026-10-28): the support products in run 0, lead decisions and the mixture
+
+Claude leads Omni (Cyril, 10-14). Each item below is a **lead call** that Cyril may revise. Cyril ordered the products themselves: "fix the audio gap", TTS "4 sure", "[Cyril quote withheld]", "[Cyril quote withheld]", and on 10-28 "[Cyril quote withheld]". The data is manifest **v4** (area B branch `claude/run0-b-20261022`). Details are in `data_manifest.md`.
+
+### Lead calls
+
+**Audio and joint audio-video**
+- **New `sfx` bucket (3 %).** It holds `sfx_caption_v1` (Clotho + AudioCaps: sound captioning, and sound generation from Clotho only) and the `av_label_v1` part of `ext-av-understand` (VGGSound: sound and AV class labels).
+- **New `av_joint` bucket (3 %).** It holds the `av_caption_v1` part of `ext-av-understand` (AVCaps, AudioCaps-on-AudioSet and VALOR: AV captions plus audio captions) and `ext-av-gen` (joint video-then-audio generation, half of the bucket). One built source is split between `sfx` and `av_joint` by the staging product of its clips (`media_origin_products`); nothing is rebuilt.
+- **`video_understand` keeps `video_caption_v1`.** That is MSR-VTT human captions at 0.75 of the bucket, with the judged intake video taking the rest.
+- **AVCaps is counted once.** Its 2,061 clips are in both `video_caption_v1` and `av_caption_v1`. They train only in `av_joint`, and `ext-video-caption` refuses every `video_caption_v1:avcaps:` clip.
+- **AudioCaps is 24 kHz.** It trains understanding at full weight. Generation is never trained on upsampled audio: a generation record whose target audio was recorded below 38.4 kHz is not served (`gen_min_source_sr 38400` on `ext-sound` and `ext-av-gen`, and future builds stop writing them). The twin of such a record has no audio target and is still served. Speech TTS is unchanged: plan §2.5 trains it with the band-limited loss.
+- **The hold-out stays strict.** VALOR clips lost to the VGGSound test set stay held. Every product's held clip ids, YouTube ids and captions are folded into run 0's hold-out set **r1** (below), and a train clip whose YouTube video is held is refused even when its own split says train.
+- **The music bucket is music only (4 %).** ACE intake, MAESTRO and MTG-Jamendo at 0.10.
+- **New `audio_edit` bucket (0.5 %).** SonicMaster restore pairs, degraded in and clean out as an audio edit.
+- **Tier-2 audio (FSD50K first) waits until after launch.**
+
+**Concept, intent, edits**
+- **`coco-tts-captions`:** the concept-interleaved bucket at 2 %. It reads `records.jsonl`, takes a clip only once the product manifest lists its FLAC with a sha256, and is re-synced by the daily intake as new blocks land.
+- **`strata-intent-bank`:** twins only. The clarify rows (no ruling yet) are excluded and never read. The ambiguous rows (label-check disagreements) are held in r1.
+- **`strata-edit-instructions` and `coco-procedural-edits`:** the crop mismatch is fixed. An edit's source image is now cut exactly like its result (same size, same centre crop; the source used to get 512x416 uncropped against the result's 512x384). `coco-procedural-edits` was rebuilt and the old source retired; it trains at full weight (0.05 of `image_gen`). The instructions themselves train inside the edit records.
+- **`coco-edit-pairs`** (unjudged Qwen-Image renders): only pairs the Strata media judge passed (`judged: true`, verdict pass) enter training. Today that is none, and all 13 wait in intake. Any record that says `judged: false` is refused at load as well.
+
+**Text, KD, K3**
+- **`strata-kd-gen`:** teacher id `strata-q4kxl-abl-v2` (omni_lab model 2571), as its own teacher key `strata_q4`. `flash-next-strata-iq3s` (model 2572) keeps the key `strata`. The two are separate identities sharing the plan's strata KD weight (1.0, or 0.3 where K3 is present). Where the same prompt exists in both, the Q4 row is served and the IQ3_S-era `intake-strata-text` copy is denied.
+- **`registry-text/v1` replaces the allowlisted part of `text_clean_v1` (never both).** It is CE until a teacher cache exists. `text_clean_v1` stays in the manifest disabled, because the top-10 alarm's `holdout_text` rows still come from it with both caches. Every registry-text document that any held row touches is denied (`--text-clean-mode kd` restores the old behaviour). The cost is that the Q38 + Strata KD on about 5.4M allowlisted tokens is replaced by CE on the same documents until a cache pass.
+- **`pdf-corpus/v1`:** CE text, cut to run 0's 4,096-position main lane by the real Qwen3.5 token count (at most 3,600 tokens a chunk, request included in the margin). Before this, 3.6 % of the 10,000-character chunks did not fit. The PDF and registry-text documents were rebuilt and the old sources retired.
+- **`registry-media/v2`:** Jamendo goes to the music bucket (the track in, its public title / artist / human tags out; tags in, music out where tags exist). SonicMaster restore pairs go to `audio_edit`: two aligned 10 s windows per pair. Degraded-only clips have no target and are skipped.
+- **K3** (lead ruling `k3-cache-ratify-run0-L1-2026-10-28`, Relay 204083): the provisional bf16 cache is ratified for run 0. Every loss term is masked on the listed documents: all 521 spans of `k3_authorship_exclude_v1.json` (sha256 prefix f10d4750), which are 500 exclude plus the 21 review documents. The B-0 audit of the 21: all are `manual_cleanup_batch_000156_v10_memory_harness` rows, an agent's memory harness, so they are masked too. The authorship field guard already reads `corpus/k3` by rid through `author_allow_v1.json` (no listed rid is on the allowlist). The spans are now also masked by their own positions, pinned by sha256, and the leakcheck proves each span has no target position.
+- **Exclusions stay.** No Claude- or Codex-authored text is ever a target, and there is no small-model data. The DeepSeek-R1 solutions in OpenR1-Math and DeepMath stay.
+
+**Memory harvest** (Cyril, 10-28: "[Cyril quote withheld]")
+- **New `memory_tool` bucket (2 %, a tool-use share)** fed from `run0-intake-staging/memory-toolcall/v<N>/`. Every version and every sealed batch is read, and the daily intake sync picks up new batches.
+- Only records under ruling `cyril-memory-harvest-2026-10-28` are read. A record must have Strata on every assistant turn, Cyril on the first user turn, tool output on later user turns and a lead template as the system turn. Anything else is refused whole.
+- Cyril's prompt and the real tool results are context (`loss_mask` false). Only Strata's turns are targets. No batch has landed yet, so the bucket's share goes to `tool` until one does. Launch does not wait for it.
+
+**Hold-out set r1.** `/mnt/lexar/omni-campaign/run0/holdout/r1` is registry v3 copied byte for byte (the v3 file hashes match `HOLDOUT_REGISTRY_v3.json`). Added to it: the hold-out ids and texts of `sfx_caption_v1`, `av_caption_v1`, `av_label_v1` and `video_caption_v1`, and the intent bank's ambiguous requests.
+- It sits beside run 0, not in `corpus/holdouts`, because `intake.py` takes the newest `HOLDOUT_REGISTRY_v<K>.json` there. A registry v4 belongs to the intake owner, and these banks should be folded into it.
+- The v4 manifest screens every served record against r1: media sha256, held clip ids, held YouTube ids, exact text and 13-word shingles over every non-template text. It also screens every trained corpus row against r1's additions. Every hit is denied through `deny_records` / `deny_rows`.
+
+### The B2 mixture (manifest v4)
+
+_Filled in when v4 is sealed._

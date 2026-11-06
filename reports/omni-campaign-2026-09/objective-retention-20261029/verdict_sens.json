@@ -1,0 +1,65 @@
+{
+ "n": 410,
+ "dead_count_hist": {
+  "0": 73,
+  "10": 17,
+  "11": 6,
+  "6": 22,
+  "4": 27,
+  "2": 40,
+  "5": 19,
+  "7": 29,
+  "1": 39,
+  "3": 29,
+  "8": 13,
+  "9": 12,
+  "13": 4
+ },
+ "auc": {
+  "free_run_top1_match": {
+   "auc": 0.9368371212121213,
+   "n_alive": 80,
+   "n_dead": 330
+  },
+  "mean_lcp_h64": {
+   "auc": 0.9356060606060606,
+   "n_alive": 80,
+   "n_dead": 330
+  },
+  "drift_vs_control": {
+   "auc": 0.9746401515151515,
+   "n_alive": 80,
+   "n_dead": 330
+  },
+  "ppl_lambada": {
+   "auc": 0.9771880819366853,
+   "n_alive": 12,
+   "n_dead": 179
+  },
+  "ppl_wikitext": {
+   "auc": 0.9599627560521415,
+   "n_alive": 12,
+   "n_dead": 179
+  },
+  "terminal_cos_vs_parent": {
+   "auc": 0.9674940898345153,
+   "n_alive": 9,
+   "n_dead": 282
+  },
+  "terminal_relL2_vs_parent": {
+   "auc": 0.9580378250591016,
+   "n_alive": 9,
+   "n_dead": 282
+  },
+  "heldout_local_relL2": {
+   "auc": 0.8835534213685474,
+   "n_alive": 70,
+   "n_dead": 119
+  },
+  "write_heldout_cos": {
+   "auc": 0.4768796992481203,
+   "n_alive": 70,
+   "n_dead": 114
+  }
+ }
+}

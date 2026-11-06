@@ -1,0 +1,833 @@
+{
+ "contact_sheet": "contact_sheet.png",
+ "items": [
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "3d-01-slices.png",
+    "3d-01-cfg3-slices.png"
+   ],
+   "finite": true,
+   "id": "3d-01",
+   "kind": "generate",
+   "rows": 512,
+   "seconds": 20.600875378586352,
+   "std": 0.21888728439807892,
+   "std_by_cfg": {
+    "1": 0.21888728439807892,
+    "3": 0.2588334083557129
+   }
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|image|>"
+   ],
+   "files": [
+    "decide-describe.txt"
+   ],
+   "id": "decide-describe",
+   "kind": "decision",
+   "seconds": 1.4860584530979395,
+   "text": "<|out|><|image|><|/out|>A man in a white",
+   "tokens": 8
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|image|>"
+   ],
+   "files": [
+    "decide-redraw.txt"
+   ],
+   "id": "decide-redraw",
+   "kind": "decision",
+   "seconds": 1.5070914886891842,
+   "text": "<|out|><|image|><|/out|>A man in a white",
+   "tokens": 8
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "edit-01.png",
+    "edit-01-cfg3.png"
+   ],
+   "finite": true,
+   "id": "edit-01",
+   "kind": "edit",
+   "rows": 192,
+   "seconds": 16.83408958557993,
+   "std": 0.47715258598327637,
+   "std_by_cfg": {
+    "1": 0.47715258598327637,
+    "3": 0.5184954404830933
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "image-01.png",
+    "image-01-cfg3.png"
+   ],
+   "finite": true,
+   "id": "image-01",
+   "kind": "generate",
+   "rows": 256,
+   "seconds": 12.323562912642956,
+   "std": 0.48270896077156067,
+   "std_by_cfg": {
+    "1": 0.48270896077156067,
+    "3": 0.5381839871406555
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "image-02.png",
+    "image-02-cfg3.png"
+   ],
+   "finite": true,
+   "id": "image-02",
+   "kind": "generate",
+   "rows": 192,
+   "seconds": 9.881987134926021,
+   "std": 0.43324869871139526,
+   "std_by_cfg": {
+    "1": 0.43324869871139526,
+    "3": 0.5075519680976868
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "image-03.png",
+    "image-03-cfg3.png"
+   ],
+   "finite": true,
+   "id": "image-03",
+   "kind": "generate",
+   "rows": 192,
+   "seconds": 10.20153330732137,
+   "std": 0.38682252168655396,
+   "std_by_cfg": {
+    "1": 0.38682252168655396,
+    "3": 0.5156530737876892
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "image-04.png",
+    "image-04-cfg3.png"
+   ],
+   "finite": true,
+   "id": "image-04",
+   "kind": "generate",
+   "rows": 256,
+   "seconds": 12.458577527664602,
+   "std": 0.4700484275817871,
+   "std_by_cfg": {
+    "1": 0.4700484275817871,
+    "3": 0.5404374003410339
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "music-01.wav",
+    "music-01-cfg3.wav"
+   ],
+   "finite": true,
+   "id": "music-01",
+   "kind": "generate",
+   "rows": 125,
+   "seconds": 9.249575668014586,
+   "std": 0.0952189639210701,
+   "std_by_cfg": {
+    "1": 0.0952189639210701,
+    "3": 0.24948805570602417
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "music-02.wav",
+    "music-02-cfg3.wav"
+   ],
+   "finite": true,
+   "id": "music-02",
+   "kind": "generate",
+   "rows": 125,
+   "seconds": 8.913705183193088,
+   "std": 0.11459817737340927,
+   "std_by_cfg": {
+    "1": 0.11459817737340927,
+    "3": 0.24434848129749298
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "speech-01.wav",
+    "speech-01-cfg3.wav"
+   ],
+   "finite": true,
+   "id": "speech-01",
+   "kind": "generate",
+   "rows": 50,
+   "seconds": 6.973678014241159,
+   "std": 0.12809930741786957,
+   "std_by_cfg": {
+    "1": 0.12809930741786957,
+    "3": 0.34514522552490234
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "speech-02.wav",
+    "speech-02-cfg3.wav"
+   ],
+   "finite": true,
+   "id": "speech-02",
+   "kind": "generate",
+   "rows": 50,
+   "seconds": 7.086553533561528,
+   "std": 0.11569394916296005,
+   "std_by_cfg": {
+    "1": 0.11569394916296005,
+    "3": 0.41986390948295593
+   }
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|audio|>"
+   ],
+   "files": [
+    "text-01.txt"
+   ],
+   "id": "text-01",
+   "kind": "text",
+   "seconds": 1.8895313469693065,
+   "text": "<|out|><|audio|><|/out|>a person is sitting on a chair in a blue shirt.<|im_end|>",
+   "tokens": 16
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|image|>"
+   ],
+   "files": [
+    "text-02.txt"
+   ],
+   "id": "text-02",
+   "kind": "text",
+   "seconds": 3.913944532163441,
+   "text": "<|out|><|image|><|/out|>```python def main():    print(fib.__qualiques) if not all True or or or or or no data is provided.<|im_end|>",
+   "tokens": 31
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|image|>"
+   ],
+   "files": [
+    "text-03.txt"
+   ],
+   "id": "text-03",
+   "kind": "text",
+   "seconds": 40.95695945248008,
+   "text": "<|out|><|image|><|/out|> 7, 777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777",
+   "tokens": 256
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|audio|>"
+   ],
+   "files": [
+    "text-04.txt"
+   ],
+   "id": "text-04",
+   "kind": "text",
+   "seconds": 2.090746024623513,
+   "text": "<|out|><|audio|><|/out|>a woman is sitting on a bed with a book on it.<|im_end|>",
+   "tokens": 17
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|audio|>"
+   ],
+   "files": [
+    "text-05.txt"
+   ],
+   "id": "text-05",
+   "kind": "text",
+   "seconds": 3.00327393040061,
+   "text": "<|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|>The alarm is on, the room is in the living area.<|im_end|>",
+   "tokens": 26
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|audio|>"
+   ],
+   "files": [
+    "text-06.txt"
+   ],
+   "id": "text-06",
+   "kind": "text",
+   "seconds": 1.915310638025403,
+   "text": "<|out|><|audio|><|/out|>A car is being loaded with a large number of people.<|im_end|>",
+   "tokens": 16
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|audio|>"
+   ],
+   "files": [
+    "tool-01.txt"
+   ],
+   "id": "tool-01",
+   "kind": "text",
+   "seconds": 2.2429979918524623,
+   "text": "<|out|><|audio|><|/out|><|out|><|audio|><|/out|>The user is asking about the weather conditions.<|im_end|>",
+   "tokens": 16
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|audio|>"
+   ],
+   "files": [
+    "tool-02.txt"
+   ],
+   "id": "tool-02",
+   "kind": "text",
+   "seconds": 5.094528278335929,
+   "text": "<|out|><|audio|><|/out|><|out|><|audio|><|/out|>The user is at home, waiting for the next available room. I need to book a 20 minutes after the scheduled appointment.<|im_end|>",
+   "tokens": 34
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "video-01-frame000.png",
+    "video-01.mp4",
+    "video-01-cfg3-frame000.png",
+    "video-01-cfg3.mp4"
+   ],
+   "finite": true,
+   "id": "video-01",
+   "kind": "generate",
+   "rows": 1440,
+   "seconds": 50.70013604871929,
+   "std": 0.17258267104625702,
+   "std_by_cfg": {
+    "1": 0.17258267104625702,
+    "3": 0.25797566771507263
+   }
+  }
+ ],
+ "ranks": [
+  {
+   "errors": [],
+   "items": [
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|audio|>"
+     ],
+     "files": [
+      "text-01.txt"
+     ],
+     "id": "text-01",
+     "kind": "text",
+     "seconds": 1.8895313469693065,
+     "text": "<|out|><|audio|><|/out|>a person is sitting on a chair in a blue shirt.<|im_end|>",
+     "tokens": 16
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|audio|>"
+     ],
+     "files": [
+      "text-05.txt"
+     ],
+     "id": "text-05",
+     "kind": "text",
+     "seconds": 3.00327393040061,
+     "text": "<|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|>The alarm is on, the room is in the living area.<|im_end|>",
+     "tokens": 26
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|image|>"
+     ],
+     "files": [
+      "decide-describe.txt"
+     ],
+     "id": "decide-describe",
+     "kind": "decision",
+     "seconds": 1.4860584530979395,
+     "text": "<|out|><|image|><|/out|>A man in a white",
+     "tokens": 8
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "image-03.png",
+      "image-03-cfg3.png"
+     ],
+     "finite": true,
+     "id": "image-03",
+     "kind": "generate",
+     "rows": 192,
+     "seconds": 10.20153330732137,
+     "std": 0.38682252168655396,
+     "std_by_cfg": {
+      "1": 0.38682252168655396,
+      "3": 0.5156530737876892
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "speech-02.wav",
+      "speech-02-cfg3.wav"
+     ],
+     "finite": true,
+     "id": "speech-02",
+     "kind": "generate",
+     "rows": 50,
+     "seconds": 7.086553533561528,
+     "std": 0.11569394916296005,
+     "std_by_cfg": {
+      "1": 0.11569394916296005,
+      "3": 0.41986390948295593
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "3d-01-slices.png",
+      "3d-01-cfg3-slices.png"
+     ],
+     "finite": true,
+     "id": "3d-01",
+     "kind": "generate",
+     "rows": 512,
+     "seconds": 20.600875378586352,
+     "std": 0.21888728439807892,
+     "std_by_cfg": {
+      "1": 0.21888728439807892,
+      "3": 0.2588334083557129
+     }
+    }
+   ],
+   "rank": 0,
+   "seconds": 44.26792685221881,
+   "skipped": [],
+   "step": 150
+  },
+  {
+   "errors": [],
+   "items": [
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|image|>"
+     ],
+     "files": [
+      "text-02.txt"
+     ],
+     "id": "text-02",
+     "kind": "text",
+     "seconds": 3.913944532163441,
+     "text": "<|out|><|image|><|/out|>```python def main():    print(fib.__qualiques) if not all True or or or or or no data is provided.<|im_end|>",
+     "tokens": 31
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|audio|>"
+     ],
+     "files": [
+      "text-06.txt"
+     ],
+     "id": "text-06",
+     "kind": "text",
+     "seconds": 1.915310638025403,
+     "text": "<|out|><|audio|><|/out|>A car is being loaded with a large number of people.<|im_end|>",
+     "tokens": 16
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|image|>"
+     ],
+     "files": [
+      "decide-redraw.txt"
+     ],
+     "id": "decide-redraw",
+     "kind": "decision",
+     "seconds": 1.5070914886891842,
+     "text": "<|out|><|image|><|/out|>A man in a white",
+     "tokens": 8
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "image-04.png",
+      "image-04-cfg3.png"
+     ],
+     "finite": true,
+     "id": "image-04",
+     "kind": "generate",
+     "rows": 256,
+     "seconds": 12.458577527664602,
+     "std": 0.4700484275817871,
+     "std_by_cfg": {
+      "1": 0.4700484275817871,
+      "3": 0.5404374003410339
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "music-01.wav",
+      "music-01-cfg3.wav"
+     ],
+     "finite": true,
+     "id": "music-01",
+     "kind": "generate",
+     "rows": 125,
+     "seconds": 9.249575668014586,
+     "std": 0.0952189639210701,
+     "std_by_cfg": {
+      "1": 0.0952189639210701,
+      "3": 0.24948805570602417
+     }
+    }
+   ],
+   "rank": 1,
+   "seconds": 29.04457046277821,
+   "skipped": [],
+   "step": 150
+  },
+  {
+   "errors": [],
+   "items": [
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|image|>"
+     ],
+     "files": [
+      "text-03.txt"
+     ],
+     "id": "text-03",
+     "kind": "text",
+     "seconds": 40.95695945248008,
+     "text": "<|out|><|image|><|/out|> 7, 777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777",
+     "tokens": 256
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|audio|>"
+     ],
+     "files": [
+      "tool-01.txt"
+     ],
+     "id": "tool-01",
+     "kind": "text",
+     "seconds": 2.2429979918524623,
+     "text": "<|out|><|audio|><|/out|><|out|><|audio|><|/out|>The user is asking about the weather conditions.<|im_end|>",
+     "tokens": 16
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "image-01.png",
+      "image-01-cfg3.png"
+     ],
+     "finite": true,
+     "id": "image-01",
+     "kind": "generate",
+     "rows": 256,
+     "seconds": 12.323562912642956,
+     "std": 0.48270896077156067,
+     "std_by_cfg": {
+      "1": 0.48270896077156067,
+      "3": 0.5381839871406555
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "edit-01.png",
+      "edit-01-cfg3.png"
+     ],
+     "finite": true,
+     "id": "edit-01",
+     "kind": "edit",
+     "rows": 192,
+     "seconds": 16.83408958557993,
+     "std": 0.47715258598327637,
+     "std_by_cfg": {
+      "1": 0.47715258598327637,
+      "3": 0.5184954404830933
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "music-02.wav",
+      "music-02-cfg3.wav"
+     ],
+     "finite": true,
+     "id": "music-02",
+     "kind": "generate",
+     "rows": 125,
+     "seconds": 8.913705183193088,
+     "std": 0.11459817737340927,
+     "std_by_cfg": {
+      "1": 0.11459817737340927,
+      "3": 0.24434848129749298
+     }
+    }
+   ],
+   "rank": 2,
+   "seconds": 81.27140102535486,
+   "skipped": [],
+   "step": 150
+  },
+  {
+   "errors": [],
+   "items": [
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|audio|>"
+     ],
+     "files": [
+      "text-04.txt"
+     ],
+     "id": "text-04",
+     "kind": "text",
+     "seconds": 2.090746024623513,
+     "text": "<|out|><|audio|><|/out|>a woman is sitting on a bed with a book on it.<|im_end|>",
+     "tokens": 17
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|audio|>"
+     ],
+     "files": [
+      "tool-02.txt"
+     ],
+     "id": "tool-02",
+     "kind": "text",
+     "seconds": 5.094528278335929,
+     "text": "<|out|><|audio|><|/out|><|out|><|audio|><|/out|>The user is at home, waiting for the next available room. I need to book a 20 minutes after the scheduled appointment.<|im_end|>",
+     "tokens": 34
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "image-02.png",
+      "image-02-cfg3.png"
+     ],
+     "finite": true,
+     "id": "image-02",
+     "kind": "generate",
+     "rows": 192,
+     "seconds": 9.881987134926021,
+     "std": 0.43324869871139526,
+     "std_by_cfg": {
+      "1": 0.43324869871139526,
+      "3": 0.5075519680976868
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "speech-01.wav",
+      "speech-01-cfg3.wav"
+     ],
+     "finite": true,
+     "id": "speech-01",
+     "kind": "generate",
+     "rows": 50,
+     "seconds": 6.973678014241159,
+     "std": 0.12809930741786957,
+     "std_by_cfg": {
+      "1": 0.12809930741786957,
+      "3": 0.34514522552490234
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "video-01-frame000.png",
+      "video-01.mp4",
+      "video-01-cfg3-frame000.png",
+      "video-01-cfg3.mp4"
+     ],
+     "finite": true,
+     "id": "video-01",
+     "kind": "generate",
+     "rows": 1440,
+     "seconds": 50.70013604871929,
+     "std": 0.17258267104625702,
+     "std_by_cfg": {
+      "1": 0.17258267104625702,
+      "3": 0.25797566771507263
+     }
+    }
+   ],
+   "rank": 3,
+   "seconds": 74.74116461072117,
+   "skipped": [],
+   "step": 150
+  }
+ ],
+ "schema": "chimera_omni.run0.dump_index.v1",
+ "step": 150
+}

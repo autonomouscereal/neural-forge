@@ -1,0 +1,4 @@
+USER: What's the weather in Lisbon?
+
+REPLY (13 tokens):
+<|out|><|text|><|/out|>The user is asking about the weather conditions.<|im_end|>

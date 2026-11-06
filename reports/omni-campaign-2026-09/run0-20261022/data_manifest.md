@@ -1,16 +1,54 @@
 # Run 0 data manifest (area B)
 
-Status: 2026-10-28. Data for run 0 (co2-2b planted from Qwen3.5-2B, distilled on every modality on 4 P40s), built to `RUN0_BUILD_PLAN.md` revision 2 (§2.5, §3.3, §4 B-0..B-6). Two sealed manifest versions exist. **v2 is the one to train on.** v1 has two defects, listed below, that v2 fixes.
+Status: 2026-10-28 (updated 23:20Z). Data for run 0 (co2-2b planted from Qwen3.5-2B, distilled on every modality on 4 P40s), built to `RUN0_BUILD_PLAN.md` revision 2 (§2.5, §3.3, §4 B-0..B-6). Three sealed manifest versions exist. **v3 is the one to train on.**
+- **v2 does not load in the trainer**, because of the data-code defects under "Trainer integration" below.
+- v3 is v2 plus three things:
+  - the top-10 alarm's `holdout_text` bucket;
+  - 200 newly voxelised meshes (`hy3d-voxel64@v3`);
+  - the trainable-position estimates.
+- v1 has two more defects, listed further down.
 
 | Version | File (server) | sha256 | omni_lab | Code |
 |---|---|---|---|---|
-| **v2** (train) | `/home/cereal/omni-campaign/run0/data/run0_data_v2.json` | `04a0114b1c4de6a28a0e1111f68e3697e6ae0fab76f9d911e92d8f27ecd4a06f` | build run 40383; dataset `run0/data` (id 559), dataset_version v2 (id 572), run_dataset output | `9f5d5d5` |
+| **v3** (train) | `/home/cereal/omni-campaign/run0/data/run0_data_v3.json` | `cbe10cd880a4781b47bd123022ffea0b0d9c37b2325bb3ae6e56db4ca5bc6bdc` | build run 40408; dataset `run0/data` (id 559), dataset_version v3 (id 574), run_dataset output; trainer probe run 40415 (pass) | `3c7eb84` |
+| v2 (superseded) | `/home/cereal/omni-campaign/run0/data/run0_data_v2.json` | `04a0114b1c4de6a28a0e1111f68e3697e6ae0fab76f9d911e92d8f27ecd4a06f` | build run 40383; dataset_version v2 (id 572); trainer probe run 40414 (fail, before the fix) | `9f5d5d5` |
 | v1 (superseded) | `/home/cereal/omni-campaign/run0/data/run0_data_v1.json` | `0fed531b86e33c6797b89926b857e8f52c215716123d7e26b692698ca62851d1` | build run 40310; dataset_version v1 (id 568) | `dadee8b` |
 
-- Code: chimera-omni branch `claude/run0-b-20261022`, pushed to origin. Every build ran from a commit-pinned copy, `/home/cereal/omni-campaign/run0/code-b-<commit>/` with `DEPLOYED.json` (commit plus tgz sha256, uploaded hash matched).
-- Tests: `tests/test_run0_data_torch_optional.py`, run on the server Pascal venv (torch, scipy, ffmpeg), CPU only. At HEAD `ca66303`, 48 collected: 47 passed, 1 skipped, exit 0. The skipped one is the grammar test through the real layout API, which needs area A's A-2 (not on this branch). At `9f5d5d5` (the v2 build), 45 collected: 44 passed, 1 skipped.
+- **Code:** chimera-omni branch `claude/run0-b-20261022` at HEAD `abeb31f`, pushed to origin.
+  - Every build ran from a commit-pinned copy, `/home/cereal/omni-campaign/run0/code-b-<commit>/`, made with `git archive` and carrying a `DEPLOYED.json` (commit plus tgz sha256; the uploaded hash matched).
+  - **Area C must merge `abeb31f`**: run0-c-20261028 has B only up to `a92c44d`. The two loader fixes are in `a3edb2e`.
+- **Tests:** `tests/test_run0_data_torch_optional.py`, run on the server Pascal venv (torch, scipy, ffmpeg), CPU only.
+  - On this branch at `abeb31f`: 53 collected, 51 passed, 2 skipped, exit 0. The skipped two are the real-layout grammar tests, which need area A's A-2 (not on this branch).
+  - In the A+B+C tree (run0-c-20261028 `beceb23` + this branch): 52 passed, 1 skipped (the "refuses until A-2" test). The real-layout tests pass there. Area A's `test_run0_arch` and area C's `test_run0_trainer` (54 passed) also pass, exit 0.
 - Every build was CPU only: `CUDA_VISIBLE_DEVICES=""`, `nice 15`, `ionice idle`, `oom_score_adj 800` (the OOM killer takes the build before strata-llama), and a transient user unit capped by `MemoryMax`. No GPU was touched, and nothing was written to the NAS.
-- Where the data lives: the 10-22 parts are in `/home/cereal/omni-campaign/run0/data/parts` (root, 16 GB). Everything built on 10-28 is in `/mnt/lexar/omni-campaign/run0/data/parts` (31 GB), so root stays at 113 GB free. Manifests and logs are in `/home/cereal/omni-campaign/run0/data/{run0_data_vN.json, logs/}`.
+- Where the data lives:
+  - the 10-22 parts are in `/home/cereal/omni-campaign/run0/data/parts` (root, 16 GB);
+  - everything built on 10-28 is in `/mnt/lexar/omni-campaign/run0/data/parts` (31 GB), including `hy3d-voxel64@v3`. Root has 179 GB free at the v3 seal;
+  - the voxel set v3 is in `/mnt/lexar/omni-campaign/corpus/derived/hy3d_voxel64/v3`;
+  - manifests and logs are in `/home/cereal/omni-campaign/run0/data/{run0_data_vN.json, logs/}`.
+
+## Trainer integration (B-4 acceptance: the trainer loads the manifest)
+
+Until now B was tested only on its own. On 10-28 the real manifests were run through area C's `Run0Batcher`, the code path `v2_trainer` preflight and training use (`build_run0_batcher`). The tree was run0-c-20261028 `beceb23` (C rev 2, with A rev 2 `38703ba` and B `a92c44d`), with this branch merged on top. CPU only, launch budgets `--understand-tokens 8192 --gen-tokens 4096`. The probe is `/home/cereal/omni-campaign/run0/scratch-int/load_v2.py`.
+
+**v2 failed on the B code it was sealed with.** There were two defects, both missed because C's own tests feed the batcher a `fake_build_sources`:
+1. `TrainerError: run-0 manifest buckets without a source: ['long']`. `build_sources` skipped share-0 buckets, and `Run0Batcher` refuses any manifest bucket without a source, so launch would have stopped at preflight. Fixed: every bucket gets a source. A share-0 bucket gets an empty one, which is never drawn and costs no host RAM.
+2. `ValueError: a sample carries one output decision`, on the first multi-turn tool or text chat. `realize` called `V2Sample.decision()` on every assistant turn, and area A's layout takes one decision per sample. Fixed inside B: earlier replies write the same supervised `<|out|> … <|/out|>` group through `control_token` (plan §2.3: every reply opens with a decision), and the last reply declares the sample.
+
+With the fix, both v2 and v3 load:
+
+| Check (v3, rank 0 and rank 3 of 4) | Result |
+|---|---|
+| Sources for every bucket | 14 buckets; `long` is empty (share 0); `holdout_text` is whole on every rank |
+| `Run0Batcher.build()` | 30 of 30 micro-batches per rank, no error; positions per bucket track the shares (text_kd 0.25, image_gen 0.14, speech 0.12, image_understand 0.11, k3 0.07-0.10, tool 0.07-0.08, …) |
+| Per-source sweep (every child source of every bucket, twin views included, 6 draws each) | 85 sources, 0 failures |
+| Holdout slice (`run0_holdout`, 16 items) | 16 items with q38 and Strata teachers; 43k and 55k KD positions |
+| Batch build time | p50 1.4-3.1 s, max 7.7-42.7 s (the max is a video decode) |
+| Host RAM per data rank (VmRSS) | 0.5 GB after the imports, 2.0 GB after `build_sources`, 2.7 GB after 30 batches, 3.7 GB peak under the sweep |
+
+**Host RAM for area C.** Four ranks of data alone hold about 8-11 GB of host RAM. That is a large part of run 0's ~20 GiB host budget. Prefetch depth and video decode concurrency should be counted against it.
+
+Not verified: a forward or backward pass on these batches. There is no init yet (Qwen3.5-2B is not on disk), so C's `preflight --data-config` cannot run. The probe calls the same `build_run0_batcher` the preflight calls.
 
 ## What each manifest holds
 
@@ -18,7 +56,55 @@ Shares are position shares per optimizer step (plan §2.5). A share marked `(+x)
 
 Unit counts are the plan's raw rows: each row is 3,072 values, which is 80 ms of 38.4 kHz audio, one 32x32 image patch, one 2-frame video tubelet at 12.5 fps (32x16 per frame), or one 8^3 block of a 64^3 volume. Positions are estimates: media rows, plus headers, plus text at about 3.5 characters per token. Corpus sources count their real token lengths exactly.
 
-### v2 (train on this): buckets
+### v3 (train on this): buckets
+
+The supply column gives the day each bucket fills its 7-day window, from `logs/supply_projection_run0_data_v3.json`. "10+ d" means beyond the 10-day run. It counts only the positions the author allowlist leaves trainable (`positions_trainable_est`).
+
+| Bucket | Share | Kind | Cap (epochs/7d) | Sources | Records | Positions (est.) | Media rows | 10-day supply at 33M / 46M per day |
+|---|---|---|---|---|---|---|---|---|
+| text_kd | 0.26 (+long) | text_kd | 6 | 15 | 62.2k | 151.02M | - | 10+ d / 10+ d |
+| k3 | 0.08 | text_kd | 6 | 4 | - | 1.99M | - | 3.3 d / 2.4 d |
+| tool | 0.08 | text_kd | 6 | 4 | 3.3k | 10.50M | - | 10+ d / 10+ d |
+| long | 0.00 | long | 8 | 0 | - | 0 | - | - / - |
+| decision_twins | 0.04 | twin | 4 | 1 | 256 | 74.7k | image 65.0k | 10+ d / 10+ d |
+| image_understand | 0.12 | understand | 4 | 1 | 118.3k | 38.14M | image 31.68M | 10+ d / 10+ d |
+| image_gen | 0.12 | generate | 4 | 6 | 121.6k | 41.46M | image 35.06M | 10+ d / 10+ d |
+| video_understand | 0.02 | understand | 4 | 3 | 39.7k | 82.22M | video 76.02M, audio 3.89M | 10+ d / 10+ d |
+| video_gen | 0.04 | generate | 4 | 4 | 20.7k | 31.54M | video 29.74M, audio 480.1k | 10+ d / 10+ d |
+| speech | 0.12 | mixed | 4 | 4 | 105.8k | 16.31M | audio 9.71M | 10+ d / 10+ d |
+| music | 0.06 | mixed | 4 | 4 | 49.7k | 8.51M | audio 6.15M | 10+ d / 10+ d |
+| 3d | 0.03 | mixed | 4 | 3 | 2.9k | 1.69M | image 79.6k, 3d 1.50M | 6.8 d / 4.9 d |
+| concept | 0.03 | mixed | 4 | 2 | 168 | 68.6k | image 44.7k, audio 8.0k | 0.3 d / 0.2 d |
+| holdout_text | 0.00 (never trained) | text_kd | 1000 | 12 | 16 rows | about 65k (the manifest records the whole shard, 12.35M: fixed in `abeb31f` for the next seal) | - | - |
+| **total (trained)** | | | | 51 live (+ `long_v1` disabled) | 524.5k | 383.54M | | |
+
+**The text floor holds for all 10 days at both rates.** The text and tool share is 0.42, and served/floor is 1.05 every day.
+
+What v3 adds to v2:
+- **`holdout_text`.** The top-10 alarm's fixed held-out slice (plan §2.9). `v2_trainer` reads buckets named `holdout*`.
+  - It holds 16 `text_clean_v1` rows, one or two per shard. Each is a row the guard serves, covered by both teacher caches.
+  - The rows are picked round-robin by `sha256(source:row)`, so every later seal of the same corpora and allowlist picks the same rows (`rows_sha256 32105a932de67a78`).
+  - They are in the trained shards' `deny_rows`, and `validate_manifest` refuses a holdout row that any trained source could serve.
+  - The bucket is built whole on every rank (rank 0 of 1).
+- **`hy3d-voxel64@v3`.** A new voxel set, `hy3d_voxel64` v3, built from all 414 judged mesh items.
+  - 399 were candidates, 15 were excluded before voxelising, and the rest passed the pre-registered rules 1.0.0.
+  - The source holds only the objects no earlier voxel version has. 132 were refused as already in v2 and 42 as being in a val or test split, which leaves 200 train objects and 600 records (volume_gen, volume_text_gen and volume_caption, 200 each).
+  - It adds 307k 3D rows and 51k image rows; the 3D gain is 1.0 and the image gain 0.56.
+  - The 3D bucket now lasts 6.8 / 4.9 days instead of 5.3 / 3.8.
+- **`positions_trainable_est`** on the allowlisted corpora, so the projection now shows K3 at its real 3.3 / 2.4 days.
+
+The v3 seal (`run0_build_v3.sh 3c7eb84 3`) ran these steps:
+1. the voxel build (3 workers, about 45 min);
+2. the hy3d part;
+3. `final_steps.sh`: manifest, then per-source verify (33 record sources, all rc 0), then verify-kd (rc 0, including the 12 holdout copies), the projection (rc 0), the summary and omni_lab.
+
+The first attempt was killed by systemd-oomd 16 minutes in, during a Strata reload, which was host-wide pressure. The rerun peaked at 3.5 GB through the voxel step and at 16.2 GB (mostly reclaimable teacher-cache page cache) in the seal, inside an 18 G cap. Host MemAvailable stayed at 84-125 GiB. The first attempt's 76 volumes are kept under `hy3d_voxel64/_failed_builds/`; the tool never deletes them.
+
+### v3: per-task and per-modality totals (trained buckets)
+
+Same as v2 below, except for the 3D tasks: volume_text_gen 1,311, volume_gen 311, volume_caption 311 (plus volume_label 1,000). The 3D rows are 1,501,696 and the image rows 66,928,512.
+
+### v2 (superseded by v3): buckets
 
 | Bucket | Share | Kind | Cap (epochs/7d) | Sources | Records | Positions (est.) | Media rows | 10-day supply at 33M / 46M per day |
 |---|---|---|---|---|---|---|---|---|
@@ -83,7 +169,9 @@ Buckets that stop before day 10:
 | audio | 20,235,433 |
 | 3d | 1,194,496 |
 
-### v2: every source
+### v2 and v3: every source
+
+v3 holds every v2 source below, plus `hy3d-voxel64@v3` and the 12 holdout copies (the last rows of the table).
 
 The text corpora come with their teacher caches: Q38-27BU HF bf16 top-64 + lse, the RVN IQ3_S Strata cache (not the live Q4_K_XL), and K3 provisional bf16 xtok, per ruling L1. `verify-kd` checked them on the real caches: the KD positions are finite, and top-10 mass is 0.99-1.00 (`logs/verify_kd_run0_data_v2.json`). Every record source was re-hashed against its `part.json` and re-checked record by record. 16 records per part were then decoded through the training loader and cut by the v2 rule (`final_steps.sh` step 4). Every media entry gave exactly the rows its record declares, at 3,072 values per row, all finite. Packet RMS after the gain was 0.43-0.53.
 
@@ -140,6 +228,8 @@ The text corpora come with their teacher caches: Q38-27BU HF bf16 top-64 + lse, 
 | `modelnet10-64` | 3d | public | 2.0k | volume_label 1.0k, volume_text_gen 1.0k | 1.09M | 3d 1.02M | 3d 1.00 | `4ac68b237dc43678` |
 | `coco-tts-concept@20261028T122343Z` | concept | media-teacher | 120 | concept_interleaved 120 | 49.0k | image 31.9k, audio 5.8k | image 0.84, audio 5.86 | `dde6c5d18203e36f` |
 | `coco-tts-concept@20261028T123014Z` | concept | media-teacher | 48 | concept_interleaved 48 | 19.6k | image 12.8k, audio 2.2k | image 0.76, audio 5.80 | `8873808645259a73` |
+| `hy3d-voxel64@v3` (v3) | 3d | media-teacher | 600 | volume_gen 200, volume_text_gen 200, volume_caption 200 | 389.8k | image 51.2k, 3d 307.2k | 3d 1.00, image 0.56 | `f70d509760331555` |
+| `holdout:text_clean_v1#text-clean-000NN` x12 (v3) | holdout_text | registry | 16 rows (1-2 per shard) | never trained; the top-10 alarm's slice | about 65k | - | - | the shards' own sha256 |
 
 Licences recorded on the run:
 - COCO 2017: CC BY 4.0 annotations, Flickr images.
@@ -210,7 +300,8 @@ v1 also starves video understanding, video generation and music by day 3-4, whic
   Those 15 rows are refused through `deny_rows`, so 485 rows train. The tool schemas of held-out questions still appear in training prompts, which is accepted: schemas are part of the prompt at test time. BFCL scores on run 0 are not held-out evidence beyond the BFCL-62 split (Cyril, 10-17: "tool-bfcl-native stays as data").
 - **Stale IQ3_S labels.** 134 of the 142 intake batches dated on or after 10-27 still name the old RVN IQ3_S in `_meta.json`. Sealed batches are never edited. The Strata teacher label in the manifest says what the caches are: "the RVN IQ3_S cache, NOT the live Q4_K_XL". New Strata KD from the support workflow (`strata-kd-gen`) carries `strata-q4kxl-abl-v2`.
 - **Prompts.** Intake image, music and video items are trained only when their prompt is Strata-written (`prompt_source.kind=strata`). Per-batch refusal counts are in each intake `source.json`. Mesh items go to the hy3d path, and non-final H3 SOL stages are refused.
-- The full B-0 report is `logs/provenance_audit_20261028.json`, with `logs/bfcl_holdout_rows.json` and `logs/bfcl_holdout_probe.json`.
+- The B-0 report is `data_provenance_audit.md` (next to this file). The raw JSON is `logs/provenance_audit_20261028.json`, with `logs/bfcl_holdout_rows.json` and `logs/bfcl_holdout_probe.json`.
+- **WIT does not load:** the Lexar copy is TSV metadata only, with no images. It is not used in run 0.
 
 ## Streaming intake (B-6)
 
@@ -254,7 +345,7 @@ All of them arrive through these daily slices. The D4 TTS concept records and ne
 
 ## Gaps (Q7, for Cyril)
 
-- **3D** starves by day 4-5. hy3d-voxel64 still holds the 10-22 set (111 items); the judged GLBs from the 10-28 intake (740 mesh items) were not voxelised in this build.
+- **3D** reaches its cap on day 6.8 / 4.9 in v3, up from day 5.3 / 3.8. Every judged mesh is now voxelised: 311 train objects across `hy3d-voxel64` and `@v3`, plus ModelNet10's 1,000. More arrive only as new meshes are judged.
 - **Concept-interleaved data** is thin: 168 records. The D4 TTS job adds them as media-gate admits work.
 - **K3** is capped by day 2-3.
 - **No strata-kd-gen yet.** The writer's Q4 KD corpus, with no `lse`, is not wired. It needs a teacher-identity ruling and the `n_probs` check (C-15).
@@ -274,4 +365,10 @@ All of them arrive through these daily slices. The D4 TTS concept records and ne
   - FLAC piped to stdout carried a 0-sample STREAMINFO. Fixed by encoding to a seekable file, checked by a test;
   - the 10-28 08:00Z seal attempt died on `toolcall_flash_v1`'s `lengths` key.
 - Decode failures in v2: 203 of 48,166 planned clips (0.4 %). Most are Clotho 7z member names with HTML entities (fixed in `b0744f6` for the next sync), plus silent tracks and clips shorter than 1.92 s. Each one is counted in `source.json`, with examples.
-- Not verified: the trainer serving these sources end to end through the real layout API. That needs area A's A-2 on the integration branch; the one skipped test pins it.
+- v3:
+  - built with `run0_build_v3.sh 3c7eb84 3` (voxel set v3, the hy3d part, then the seal) in an 18G transient unit;
+  - the first try was killed by systemd-oomd during a Strata reload, and the rerun passed;
+  - root has 179 GB free and the Lexar 194 GB at the seal;
+  - nothing was written to the NAS.
+- Trainer integration: verified through area C's `Run0Batcher` (section above; omni_lab probe runs 40414 fail on v2, 40415 pass on v3).
+- Not verified: a model forward or backward pass on these batches, because no init exists yet. C's `preflight --data-config` must be run once area A plants.

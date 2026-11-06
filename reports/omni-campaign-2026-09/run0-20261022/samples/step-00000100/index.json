@@ -1,0 +1,847 @@
+{
+ "contact_sheet": "contact_sheet.png",
+ "items": [
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "3d-01-slices.png",
+    "3d-01-cfg3-slices.png"
+   ],
+   "finite": true,
+   "id": "3d-01",
+   "kind": "generate",
+   "rows": 512,
+   "seconds": 20.661699409596622,
+   "std": 0.19844751060009003,
+   "std_by_cfg": {
+    "1": 0.19844751060009003,
+    "3": 0.24469086527824402
+   }
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|text|>"
+   ],
+   "files": [
+    "decide-describe.txt"
+   ],
+   "id": "decide-describe",
+   "kind": "decision",
+   "seconds": 2.204023445956409,
+   "text": "<|out|><|text|><|/out|>A man in a white",
+   "tokens": 8
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|text|>"
+   ],
+   "files": [
+    "decide-redraw.txt"
+   ],
+   "id": "decide-redraw",
+   "kind": "decision",
+   "seconds": 2.0884558856487274,
+   "text": "<|out|><|text|><|/out|>A man in a white",
+   "tokens": 8
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "edit-01.png",
+    "edit-01-cfg3.png"
+   ],
+   "finite": true,
+   "id": "edit-01",
+   "kind": "edit",
+   "rows": 192,
+   "seconds": 16.859617399983108,
+   "std": 0.31436535716056824,
+   "std_by_cfg": {
+    "1": 0.31436535716056824,
+    "3": 0.3329389691352844
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "image-01.png",
+    "image-01-cfg3.png"
+   ],
+   "finite": true,
+   "id": "image-01",
+   "kind": "generate",
+   "rows": 256,
+   "seconds": 12.426482611335814,
+   "std": 0.32216817140579224,
+   "std_by_cfg": {
+    "1": 0.32216817140579224,
+    "3": 0.3735564053058624
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "image-02.png",
+    "image-02-cfg3.png"
+   ],
+   "finite": true,
+   "id": "image-02",
+   "kind": "generate",
+   "rows": 192,
+   "seconds": 9.789829191751778,
+   "std": 0.3061926066875458,
+   "std_by_cfg": {
+    "1": 0.3061926066875458,
+    "3": 0.26096653938293457
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "image-03.png",
+    "image-03-cfg3.png"
+   ],
+   "finite": true,
+   "id": "image-03",
+   "kind": "generate",
+   "rows": 192,
+   "seconds": 10.102174417115748,
+   "std": 0.32400819659233093,
+   "std_by_cfg": {
+    "1": 0.32400819659233093,
+    "3": 0.38559630513191223
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "image-04.png",
+    "image-04-cfg3.png"
+   ],
+   "finite": true,
+   "id": "image-04",
+   "kind": "generate",
+   "rows": 256,
+   "seconds": 12.483604336157441,
+   "std": 0.3225541412830353,
+   "std_by_cfg": {
+    "1": 0.3225541412830353,
+    "3": 0.2520458698272705
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "music-01.wav",
+    "music-01-cfg3.wav"
+   ],
+   "finite": true,
+   "id": "music-01",
+   "kind": "generate",
+   "rows": 125,
+   "seconds": 9.175758022814989,
+   "std": 0.3952799141407013,
+   "std_by_cfg": {
+    "1": 0.3952799141407013,
+    "3": 0.7380268573760986
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "music-02.wav",
+    "music-02-cfg3.wav"
+   ],
+   "finite": true,
+   "id": "music-02",
+   "kind": "generate",
+   "rows": 125,
+   "seconds": 9.340155385434628,
+   "std": 0.3881521224975586,
+   "std_by_cfg": {
+    "1": 0.3881521224975586,
+    "3": 0.8197978138923645
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "speech-01.wav",
+    "speech-01-cfg3.wav"
+   ],
+   "finite": true,
+   "id": "speech-01",
+   "kind": "generate",
+   "rows": 50,
+   "seconds": 6.827516462653875,
+   "std": 0.32027295231819153,
+   "std_by_cfg": {
+    "1": 0.32027295231819153,
+    "3": 0.7454006671905518
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "speech-02.wav",
+    "speech-02-cfg3.wav"
+   ],
+   "finite": true,
+   "id": "speech-02",
+   "kind": "generate",
+   "rows": 50,
+   "seconds": 6.950097918510437,
+   "std": 0.6490893959999084,
+   "std_by_cfg": {
+    "1": 0.6490893959999084,
+    "3": 0.9567996859550476
+   }
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|text|>",
+    "<|audio|>"
+   ],
+   "files": [
+    "text-01.txt"
+   ],
+   "id": "text-01",
+   "kind": "text",
+   "seconds": 38.091536454856396,
+   "text": "<|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|text|><|/out|>A microphone is playing the microphone<|audio|><|/out|><|audio|><|/out|><|out|><|audio|><|/out|><|audio|><|/out|><|out|><|audio|><|/out|><|audio|><|/out|><|out|><|audio|><|/out|><|audio|><|/out|><|out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><",
+   "tokens": 256
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|audio|>",
+    "<|video|>"
+   ],
+   "files": [
+    "text-02.txt"
+   ],
+   "id": "text-02",
+   "kind": "text",
+   "seconds": 37.897845852188766,
+   "text": "<|out|><|video|><|audio|><|/out|><|out|><|video|><|audio|><|/out|><|out|><|video|><|audio|><|/out|><|out|><|video|><|audio|><|/out|><|out|><|video|><|audio|><|/out|><|out|><|video|><|audio|><|/out|><|out|><|video|><|audio|><|/out|><|out|><|video|><|audio|><|/out|><|out|><|video|><|audio|><|/out|><|out|><|video|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio",
+   "tokens": 256
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|text|>",
+    "<|audio|>",
+    "<|video|>"
+   ],
+   "files": [
+    "text-03.txt"
+   ],
+   "id": "text-03",
+   "kind": "text",
+   "seconds": 1.7563604470342398,
+   "text": "<|out|><|video|><|audio|><|/out|><|text|><|/out|>A man is on a bus.<|im_end|>",
+   "tokens": 14
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|audio|>"
+   ],
+   "files": [
+    "text-04.txt"
+   ],
+   "id": "text-04",
+   "kind": "text",
+   "seconds": 38.972027470357716,
+   "text": "<|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The",
+   "tokens": 256
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|audio|>",
+    "<|video|>"
+   ],
+   "files": [
+    "text-05.txt"
+   ],
+   "id": "text-05",
+   "kind": "text",
+   "seconds": 39.38317483384162,
+   "text": "<|out|><|video|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>A man is playing the drum, and the instruments, and the instruments, and the instruments, and the instruments, and instruments are all playing instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments,",
+   "tokens": 256
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|text|>",
+    "<|audio|>",
+    "<|video|>"
+   ],
+   "files": [
+    "text-06.txt"
+   ],
+   "id": "text-06",
+   "kind": "text",
+   "seconds": 39.43952946923673,
+   "text": "<|out|><|video|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|text|><|/out|>The user is listening to the<|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The",
+   "tokens": 256
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|text|>"
+   ],
+   "files": [
+    "tool-01.txt"
+   ],
+   "id": "tool-01",
+   "kind": "text",
+   "seconds": 1.8718559350818396,
+   "text": "<|out|><|text|><|/out|>The user is asking about the weather conditions.<|im_end|>",
+   "tokens": 13
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|text|>"
+   ],
+   "files": [
+    "tool-02.txt"
+   ],
+   "id": "tool-02",
+   "kind": "text",
+   "seconds": 2.5163204558193684,
+   "text": "<|out|><|text|><|/out|>The user is asking about the current status of the customer's account.<|im_end|>",
+   "tokens": 18
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "video-01-frame000.png",
+    "video-01.mp4",
+    "video-01-cfg3-frame000.png",
+    "video-01-cfg3.mp4"
+   ],
+   "finite": true,
+   "id": "video-01",
+   "kind": "generate",
+   "rows": 1440,
+   "seconds": 54.21180546656251,
+   "std": 0.13683748245239258,
+   "std_by_cfg": {
+    "1": 0.13683748245239258,
+    "3": 0.16002650558948517
+   }
+  }
+ ],
+ "ranks": [
+  {
+   "errors": [],
+   "items": [
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|text|>",
+      "<|audio|>"
+     ],
+     "files": [
+      "text-01.txt"
+     ],
+     "id": "text-01",
+     "kind": "text",
+     "seconds": 38.091536454856396,
+     "text": "<|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|text|><|/out|>A microphone is playing the microphone<|audio|><|/out|><|audio|><|/out|><|out|><|audio|><|/out|><|audio|><|/out|><|out|><|audio|><|/out|><|audio|><|/out|><|out|><|audio|><|/out|><|audio|><|/out|><|out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><|/out|><|audio|><",
+     "tokens": 256
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|audio|>",
+      "<|video|>"
+     ],
+     "files": [
+      "text-05.txt"
+     ],
+     "id": "text-05",
+     "kind": "text",
+     "seconds": 39.38317483384162,
+     "text": "<|out|><|video|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>A man is playing the drum, and the instruments, and the instruments, and the instruments, and the instruments, and instruments are all playing instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments, and instruments,",
+     "tokens": 256
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|text|>"
+     ],
+     "files": [
+      "decide-describe.txt"
+     ],
+     "id": "decide-describe",
+     "kind": "decision",
+     "seconds": 2.204023445956409,
+     "text": "<|out|><|text|><|/out|>A man in a white",
+     "tokens": 8
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "image-03.png",
+      "image-03-cfg3.png"
+     ],
+     "finite": true,
+     "id": "image-03",
+     "kind": "generate",
+     "rows": 192,
+     "seconds": 10.102174417115748,
+     "std": 0.32400819659233093,
+     "std_by_cfg": {
+      "1": 0.32400819659233093,
+      "3": 0.38559630513191223
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "speech-02.wav",
+      "speech-02-cfg3.wav"
+     ],
+     "finite": true,
+     "id": "speech-02",
+     "kind": "generate",
+     "rows": 50,
+     "seconds": 6.950097918510437,
+     "std": 0.6490893959999084,
+     "std_by_cfg": {
+      "1": 0.6490893959999084,
+      "3": 0.9567996859550476
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "3d-01-slices.png",
+      "3d-01-cfg3-slices.png"
+     ],
+     "finite": true,
+     "id": "3d-01",
+     "kind": "generate",
+     "rows": 512,
+     "seconds": 20.661699409596622,
+     "std": 0.19844751060009003,
+     "std_by_cfg": {
+      "1": 0.19844751060009003,
+      "3": 0.24469086527824402
+     }
+    }
+   ],
+   "rank": 0,
+   "seconds": 117.39289211854339,
+   "skipped": [],
+   "step": 100
+  },
+  {
+   "errors": [],
+   "items": [
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|audio|>",
+      "<|video|>"
+     ],
+     "files": [
+      "text-02.txt"
+     ],
+     "id": "text-02",
+     "kind": "text",
+     "seconds": 37.897845852188766,
+     "text": "<|out|><|video|><|audio|><|/out|><|out|><|video|><|audio|><|/out|><|out|><|video|><|audio|><|/out|><|out|><|video|><|audio|><|/out|><|out|><|video|><|audio|><|/out|><|out|><|video|><|audio|><|/out|><|out|><|video|><|audio|><|/out|><|out|><|video|><|audio|><|/out|><|out|><|video|><|audio|><|/out|><|out|><|video|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio",
+     "tokens": 256
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|text|>",
+      "<|audio|>",
+      "<|video|>"
+     ],
+     "files": [
+      "text-06.txt"
+     ],
+     "id": "text-06",
+     "kind": "text",
+     "seconds": 39.43952946923673,
+     "text": "<|out|><|video|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|text|><|/out|>The user is listening to the<|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The",
+     "tokens": 256
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|text|>"
+     ],
+     "files": [
+      "decide-redraw.txt"
+     ],
+     "id": "decide-redraw",
+     "kind": "decision",
+     "seconds": 2.0884558856487274,
+     "text": "<|out|><|text|><|/out|>A man in a white",
+     "tokens": 8
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "image-04.png",
+      "image-04-cfg3.png"
+     ],
+     "finite": true,
+     "id": "image-04",
+     "kind": "generate",
+     "rows": 256,
+     "seconds": 12.483604336157441,
+     "std": 0.3225541412830353,
+     "std_by_cfg": {
+      "1": 0.3225541412830353,
+      "3": 0.2520458698272705
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "music-01.wav",
+      "music-01-cfg3.wav"
+     ],
+     "finite": true,
+     "id": "music-01",
+     "kind": "generate",
+     "rows": 125,
+     "seconds": 9.175758022814989,
+     "std": 0.3952799141407013,
+     "std_by_cfg": {
+      "1": 0.3952799141407013,
+      "3": 0.7380268573760986
+     }
+    }
+   ],
+   "rank": 1,
+   "seconds": 101.085310052149,
+   "skipped": [],
+   "step": 100
+  },
+  {
+   "errors": [],
+   "items": [
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|text|>",
+      "<|audio|>",
+      "<|video|>"
+     ],
+     "files": [
+      "text-03.txt"
+     ],
+     "id": "text-03",
+     "kind": "text",
+     "seconds": 1.7563604470342398,
+     "text": "<|out|><|video|><|audio|><|/out|><|text|><|/out|>A man is on a bus.<|im_end|>",
+     "tokens": 14
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|text|>"
+     ],
+     "files": [
+      "tool-01.txt"
+     ],
+     "id": "tool-01",
+     "kind": "text",
+     "seconds": 1.8718559350818396,
+     "text": "<|out|><|text|><|/out|>The user is asking about the weather conditions.<|im_end|>",
+     "tokens": 13
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "image-01.png",
+      "image-01-cfg3.png"
+     ],
+     "finite": true,
+     "id": "image-01",
+     "kind": "generate",
+     "rows": 256,
+     "seconds": 12.426482611335814,
+     "std": 0.32216817140579224,
+     "std_by_cfg": {
+      "1": 0.32216817140579224,
+      "3": 0.3735564053058624
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "edit-01.png",
+      "edit-01-cfg3.png"
+     ],
+     "finite": true,
+     "id": "edit-01",
+     "kind": "edit",
+     "rows": 192,
+     "seconds": 16.859617399983108,
+     "std": 0.31436535716056824,
+     "std_by_cfg": {
+      "1": 0.31436535716056824,
+      "3": 0.3329389691352844
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "music-02.wav",
+      "music-02-cfg3.wav"
+     ],
+     "finite": true,
+     "id": "music-02",
+     "kind": "generate",
+     "rows": 125,
+     "seconds": 9.340155385434628,
+     "std": 0.3881521224975586,
+     "std_by_cfg": {
+      "1": 0.3881521224975586,
+      "3": 0.8197978138923645
+     }
+    }
+   ],
+   "rank": 2,
+   "seconds": 42.25453315395862,
+   "skipped": [],
+   "step": 100
+  },
+  {
+   "errors": [],
+   "items": [
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|audio|>"
+     ],
+     "files": [
+      "text-04.txt"
+     ],
+     "id": "text-04",
+     "kind": "text",
+     "seconds": 38.972027470357716,
+     "text": "<|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The<|audio|><|/out|><|out|><|audio|><|/out|>The",
+     "tokens": 256
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|text|>"
+     ],
+     "files": [
+      "tool-02.txt"
+     ],
+     "id": "tool-02",
+     "kind": "text",
+     "seconds": 2.5163204558193684,
+     "text": "<|out|><|text|><|/out|>The user is asking about the current status of the customer's account.<|im_end|>",
+     "tokens": 18
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "image-02.png",
+      "image-02-cfg3.png"
+     ],
+     "finite": true,
+     "id": "image-02",
+     "kind": "generate",
+     "rows": 192,
+     "seconds": 9.789829191751778,
+     "std": 0.3061926066875458,
+     "std_by_cfg": {
+      "1": 0.3061926066875458,
+      "3": 0.26096653938293457
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "speech-01.wav",
+      "speech-01-cfg3.wav"
+     ],
+     "finite": true,
+     "id": "speech-01",
+     "kind": "generate",
+     "rows": 50,
+     "seconds": 6.827516462653875,
+     "std": 0.32027295231819153,
+     "std_by_cfg": {
+      "1": 0.32027295231819153,
+      "3": 0.7454006671905518
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "video-01-frame000.png",
+      "video-01.mp4",
+      "video-01-cfg3-frame000.png",
+      "video-01-cfg3.mp4"
+     ],
+     "finite": true,
+     "id": "video-01",
+     "kind": "generate",
+     "rows": 1440,
+     "seconds": 54.21180546656251,
+     "std": 0.13683748245239258,
+     "std_by_cfg": {
+      "1": 0.13683748245239258,
+      "3": 0.16002650558948517
+     }
+    }
+   ],
+   "rank": 3,
+   "seconds": 112.31758905667812,
+   "skipped": [],
+   "step": 100
+  }
+ ],
+ "schema": "chimera_omni.run0.dump_index.v1",
+ "step": 100
+}

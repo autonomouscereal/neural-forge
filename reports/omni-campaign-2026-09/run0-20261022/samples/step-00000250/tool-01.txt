@@ -1,0 +1,10 @@
+USER: What's the weather in Lisbon?
+
+REPLY (40 tokens):
+<|out|><|text|><|/out|><think>
+
+</think>
+
+I'll help you with your question.
+
+I'll help you with your question. Let me see if there's anything else I can help you with that?<|im_end|>

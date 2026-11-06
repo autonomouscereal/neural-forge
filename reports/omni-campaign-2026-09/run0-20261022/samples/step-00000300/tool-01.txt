@@ -1,0 +1,4 @@
+USER: What's the weather in Lisbon?
+
+REPLY (14 tokens):
+<|out|><|text|><|/out|>A car is parked on the side of the street<|im_end|>

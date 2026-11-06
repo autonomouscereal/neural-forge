@@ -1,0 +1,5 @@
+USER: Put 'dentist' on my calendar for next Tuesday at 3pm.
+
+REPLY (16 tokens):
+<|out|><|text|><|/out|><think>
+1. **Call a doctor for you today.<|im_end|>

@@ -1,0 +1,4 @@
+USER: What is 17 times 23? Show the steps.
+
+REPLY (12 tokens):
+<|out|><|text|><|/out|>A car is driving down the street.<|im_end|>

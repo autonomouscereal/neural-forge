@@ -1,0 +1,4 @@
+USER: describe it
+
+REPLY (8 tokens):
+<|out|><|text|><|/out|><|out|><|text|><|/out|><|text|><|/out|>

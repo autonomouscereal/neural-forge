@@ -1,0 +1,61 @@
+USER: Write a short Python function that returns the n-th Fibonacci number.
+
+REPLY (256 tokens):
+<|out|><|text|><|/out|><think>
+</think>
+
+To generate a test suite for Fibonaccionacci numbers using Fibonacci numbers starting from a starting point $n$. Here is a complete solution using Python libraries `math` and standard library `math` and standard library `math` and standard library `math` and standard library `math` and standard library `math` and math` libraries (`mathmath import math import math as math
+
+```python
+def fibonacci_sequence(n):
+    """
+    """
+    """
+    """
+    """
+    """
+    """
+    """
+    """ Returns Fibonacci numbers starting from Fibonacci numbers starting from 1 to n."
+    """
+    """
+    """
+    """
+    """
+    """
+    """
+    """
+    """
+    """
+    """
+    """
+    """
+    """
+    """
+    """
+    """
+    """
+    """
+    """
+    """
+    """
+    """
+    """
+    """
+    """
+    """
+    """
+    """
+    """
+    """
+    """
+    """
+    """
+    """
+    """
+    """
+    """
+    """
+    """
+    """
+

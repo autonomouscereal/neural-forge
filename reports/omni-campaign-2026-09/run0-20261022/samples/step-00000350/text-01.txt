@@ -1,0 +1,4 @@
+USER: Explain in three sentences why the sky is blue.
+
+REPLY (11 tokens):
+<|out|><|audio|><|/out|>The sun is shining on the ground<|im_end|>

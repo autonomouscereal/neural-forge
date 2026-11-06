@@ -1,0 +1,4 @@
+USER: Summarise the plot of Romeo and Juliet in two sentences.
+
+REPLY (12 tokens):
+<|out|><|audio|><|/out|>The man speaks then he speaks to him<|im_end|>

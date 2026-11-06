@@ -1,0 +1,4 @@
+USER: Write a short Python function that returns the n-th Fibonacci number.
+
+REPLY (6 tokens):
+<think>ց code here.<|im_end|>

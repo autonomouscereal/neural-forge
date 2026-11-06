@@ -1,0 +1,839 @@
+{
+ "contact_sheet": "contact_sheet.png",
+ "items": [
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "3d-01-slices.png",
+    "3d-01-cfg3-slices.png"
+   ],
+   "finite": true,
+   "id": "3d-01",
+   "kind": "generate",
+   "rows": 512,
+   "seconds": 20.603716428391635,
+   "std": 0.1453871876001358,
+   "std_by_cfg": {
+    "1": 0.1453871876001358,
+    "3": 0.2766171991825104
+   }
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|text|>"
+   ],
+   "files": [
+    "decide-describe.txt"
+   ],
+   "id": "decide-describe",
+   "kind": "decision",
+   "seconds": 1.4855089988559484,
+   "text": "<|out|><|text|><|/out|>A man is holding a",
+   "tokens": 8
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|text|>",
+    "<|image|>"
+   ],
+   "files": [
+    "decide-redraw.txt"
+   ],
+   "id": "decide-redraw",
+   "kind": "decision",
+   "seconds": 1.4184162272140384,
+   "text": "<|out|><|text|><|image|><|/out|>A man is holding",
+   "tokens": 8
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "edit-01.png",
+    "edit-01-cfg3.png"
+   ],
+   "finite": true,
+   "id": "edit-01",
+   "kind": "edit",
+   "rows": 192,
+   "seconds": 16.996006960980594,
+   "std": 0.2491917610168457,
+   "std_by_cfg": {
+    "1": 0.2491917610168457,
+    "3": 0.28239989280700684
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "image-01.png",
+    "image-01-cfg3.png"
+   ],
+   "finite": true,
+   "id": "image-01",
+   "kind": "generate",
+   "rows": 256,
+   "seconds": 12.389721035026014,
+   "std": 0.12546537816524506,
+   "std_by_cfg": {
+    "1": 0.12546537816524506,
+    "3": 0.3826635479927063
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "image-02.png",
+    "image-02-cfg3.png"
+   ],
+   "finite": true,
+   "id": "image-02",
+   "kind": "generate",
+   "rows": 192,
+   "seconds": 9.422667632810771,
+   "std": 0.16238532960414886,
+   "std_by_cfg": {
+    "1": 0.16238532960414886,
+    "3": 0.38453933596611023
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "image-03.png",
+    "image-03-cfg3.png"
+   ],
+   "finite": true,
+   "id": "image-03",
+   "kind": "generate",
+   "rows": 192,
+   "seconds": 10.08250361867249,
+   "std": 0.15783661603927612,
+   "std_by_cfg": {
+    "1": 0.15783661603927612,
+    "3": 0.34681686758995056
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "image-04.png",
+    "image-04-cfg3.png"
+   ],
+   "finite": true,
+   "id": "image-04",
+   "kind": "generate",
+   "rows": 256,
+   "seconds": 12.30411578901112,
+   "std": 0.13246436417102814,
+   "std_by_cfg": {
+    "1": 0.13246436417102814,
+    "3": 0.3177967667579651
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "music-01.wav",
+    "music-01-cfg3.wav"
+   ],
+   "finite": true,
+   "id": "music-01",
+   "kind": "generate",
+   "rows": 125,
+   "seconds": 8.967419509775937,
+   "std": 0.1753959357738495,
+   "std_by_cfg": {
+    "1": 0.1753959357738495,
+    "3": 0.3921472728252411
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "music-02.wav",
+    "music-02-cfg3.wav"
+   ],
+   "finite": true,
+   "id": "music-02",
+   "kind": "generate",
+   "rows": 125,
+   "seconds": 9.293601831421256,
+   "std": 0.18224482238292694,
+   "std_by_cfg": {
+    "1": 0.18224482238292694,
+    "3": 0.39444810152053833
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "speech-01.wav",
+    "speech-01-cfg3.wav"
+   ],
+   "finite": true,
+   "id": "speech-01",
+   "kind": "generate",
+   "rows": 50,
+   "seconds": 6.390157775953412,
+   "std": 0.18279239535331726,
+   "std_by_cfg": {
+    "1": 0.18279239535331726,
+    "3": 0.3808338940143585
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "speech-02.wav",
+    "speech-02-cfg3.wav"
+   ],
+   "finite": true,
+   "id": "speech-02",
+   "kind": "generate",
+   "rows": 50,
+   "seconds": 6.804654253646731,
+   "std": 0.17569182813167572,
+   "std_by_cfg": {
+    "1": 0.17569182813167572,
+    "3": 0.372635155916214
+   }
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|text|>"
+   ],
+   "files": [
+    "text-01.txt"
+   ],
+   "id": "text-01",
+   "kind": "text",
+   "seconds": 1.6120656551793218,
+   "text": "<|out|><|text|><|/out|>A man is flying a kite in the sky.<|im_end|>",
+   "tokens": 14
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|text|>"
+   ],
+   "files": [
+    "text-02.txt"
+   ],
+   "id": "text-02",
+   "kind": "text",
+   "seconds": 33.374500051140785,
+   "text": "<|out|><|text|><|/out|><think>\n</think>\n\n```python\ndef fib(self):\n        if not self._fib_list): return False\n    \n    def __init__(self): self._self._count) self self._count)\n        self._self._count)\n        self._self._count)\n        self.count += self.count())\n        self.count += 1\n        self[self[\"count\"] += 1\n        self[self[\"count\"] += 1])\n        self[self[\"count\"] += 1])\n        self[self[\"count\"] += 1])\n        self[self[\"count\"] += 1])\n        self[self[\"count\"] += 1])\n        self[self[\"count\"] += 1])\n        self[self[\"count\"] += 1])\n        self[self[\"count\"] += 1])\n        self[self[\"count\"] = self[\"count\", \"count\"]\n        self[\"count\"], \"count\"] = self[\"count\", \"count\"]\n        self[\"count\"], \"status\": \"pending\", \"status\": \"pending\", \"status\": \"pending\"}]}<|im_end|>",
+   "tokens": 231
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|text|>"
+   ],
+   "files": [
+    "text-03.txt"
+   ],
+   "id": "text-03",
+   "kind": "text",
+   "seconds": 5.257973240688443,
+   "text": "<|out|><|text|><|/out|><think>\n</think>\n\nTo find the value of the expression $2 \\times 1\\) and then add it to the original number of times the number of items in the original set.<|im_end|>",
+   "tokens": 41
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|text|>",
+    "<|audio|>"
+   ],
+   "files": [
+    "text-04.txt"
+   ],
+   "id": "text-04",
+   "kind": "text",
+   "seconds": 5.653138289228082,
+   "text": "<|out|><|text|><|/out|><think>\n\n</think>\n\n<tool_call>\n<function=predict<|audio|><|/out|><think>\n<|out|><|text|><|/out|><think>\n\n</think>\n\n<tool_call>\n<function=predict<|audio|><|/out|></parameter>\n<parameter=pred>\n</parameter>\n</function>\n</tool_call><|im_end|>",
+   "tokens": 52
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|text|>"
+   ],
+   "files": [
+    "text-05.txt"
+   ],
+   "id": "text-05",
+   "kind": "text",
+   "seconds": 2.425868945196271,
+   "text": "<|out|><|text|><|/out|><think>\n\n</think>\n\n<|out|><|text|><|/out|>a man is sitting on a couch with a laptop<|im_end|>",
+   "tokens": 21
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|text|>",
+    "<|audio|>"
+   ],
+   "files": [
+    "text-06.txt"
+   ],
+   "id": "text-06",
+   "kind": "text",
+   "seconds": 1.8177115451544523,
+   "text": "<|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|text|><|/out|>a man is talking about a train<|im_end|>",
+   "tokens": 17
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|text|>"
+   ],
+   "files": [
+    "tool-01.txt"
+   ],
+   "id": "tool-01",
+   "kind": "text",
+   "seconds": 7.981914542615414,
+   "text": "<|out|><|text|><|/out|><think>\n\n</think>\n\nI'll help you with that. Let me check the weather for you right now.\n\n<tool_call>\n<function=get_weather>\n<parameter=country>\nItaly\n</parameter>\n</function>\n</tool_call><|im_end|>",
+   "tokens": 51
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|text|>"
+   ],
+   "files": [
+    "tool-02.txt"
+   ],
+   "id": "tool-02",
+   "kind": "text",
+   "seconds": 6.486092660576105,
+   "text": "<|out|><|text|><|/out|><think>\n\n</think>\n\n<tool_call>\n<function=get_calendar_events>\n<parameter=date>\nnext friday\n</parameter>\n<parameter=date>\nnext\n</parameter>\n</function>\n</tool_call><|im_end|>",
+   "tokens": 45
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "video-01-frame000.png",
+    "video-01.mp4",
+    "video-01-cfg3-frame000.png",
+    "video-01-cfg3.mp4"
+   ],
+   "finite": true,
+   "id": "video-01",
+   "kind": "generate",
+   "rows": 1440,
+   "seconds": 50.315619269385934,
+   "std": 0.1392277181148529,
+   "std_by_cfg": {
+    "1": 0.1392277181148529,
+    "3": 0.2822507321834564
+   }
+  }
+ ],
+ "ranks": [
+  {
+   "errors": [],
+   "items": [
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|text|>"
+     ],
+     "files": [
+      "text-01.txt"
+     ],
+     "id": "text-01",
+     "kind": "text",
+     "seconds": 1.6120656551793218,
+     "text": "<|out|><|text|><|/out|>A man is flying a kite in the sky.<|im_end|>",
+     "tokens": 14
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|text|>"
+     ],
+     "files": [
+      "text-05.txt"
+     ],
+     "id": "text-05",
+     "kind": "text",
+     "seconds": 2.425868945196271,
+     "text": "<|out|><|text|><|/out|><think>\n\n</think>\n\n<|out|><|text|><|/out|>a man is sitting on a couch with a laptop<|im_end|>",
+     "tokens": 21
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|text|>"
+     ],
+     "files": [
+      "decide-describe.txt"
+     ],
+     "id": "decide-describe",
+     "kind": "decision",
+     "seconds": 1.4855089988559484,
+     "text": "<|out|><|text|><|/out|>A man is holding a",
+     "tokens": 8
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "image-03.png",
+      "image-03-cfg3.png"
+     ],
+     "finite": true,
+     "id": "image-03",
+     "kind": "generate",
+     "rows": 192,
+     "seconds": 10.08250361867249,
+     "std": 0.15783661603927612,
+     "std_by_cfg": {
+      "1": 0.15783661603927612,
+      "3": 0.34681686758995056
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "speech-02.wav",
+      "speech-02-cfg3.wav"
+     ],
+     "finite": true,
+     "id": "speech-02",
+     "kind": "generate",
+     "rows": 50,
+     "seconds": 6.804654253646731,
+     "std": 0.17569182813167572,
+     "std_by_cfg": {
+      "1": 0.17569182813167572,
+      "3": 0.372635155916214
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "3d-01-slices.png",
+      "3d-01-cfg3-slices.png"
+     ],
+     "finite": true,
+     "id": "3d-01",
+     "kind": "generate",
+     "rows": 512,
+     "seconds": 20.603716428391635,
+     "std": 0.1453871876001358,
+     "std_by_cfg": {
+      "1": 0.1453871876001358,
+      "3": 0.2766171991825104
+     }
+    }
+   ],
+   "rank": 0,
+   "seconds": 43.014388660900295,
+   "skipped": [],
+   "step": 550
+  },
+  {
+   "errors": [],
+   "items": [
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|text|>"
+     ],
+     "files": [
+      "text-02.txt"
+     ],
+     "id": "text-02",
+     "kind": "text",
+     "seconds": 33.374500051140785,
+     "text": "<|out|><|text|><|/out|><think>\n</think>\n\n```python\ndef fib(self):\n        if not self._fib_list): return False\n    \n    def __init__(self): self._self._count) self self._count)\n        self._self._count)\n        self._self._count)\n        self.count += self.count())\n        self.count += 1\n        self[self[\"count\"] += 1\n        self[self[\"count\"] += 1])\n        self[self[\"count\"] += 1])\n        self[self[\"count\"] += 1])\n        self[self[\"count\"] += 1])\n        self[self[\"count\"] += 1])\n        self[self[\"count\"] += 1])\n        self[self[\"count\"] += 1])\n        self[self[\"count\"] += 1])\n        self[self[\"count\"] = self[\"count\", \"count\"]\n        self[\"count\"], \"count\"] = self[\"count\", \"count\"]\n        self[\"count\"], \"status\": \"pending\", \"status\": \"pending\", \"status\": \"pending\"}]}<|im_end|>",
+     "tokens": 231
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|text|>",
+      "<|audio|>"
+     ],
+     "files": [
+      "text-06.txt"
+     ],
+     "id": "text-06",
+     "kind": "text",
+     "seconds": 1.8177115451544523,
+     "text": "<|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|text|><|/out|>a man is talking about a train<|im_end|>",
+     "tokens": 17
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|text|>",
+      "<|image|>"
+     ],
+     "files": [
+      "decide-redraw.txt"
+     ],
+     "id": "decide-redraw",
+     "kind": "decision",
+     "seconds": 1.4184162272140384,
+     "text": "<|out|><|text|><|image|><|/out|>A man is holding",
+     "tokens": 8
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "image-04.png",
+      "image-04-cfg3.png"
+     ],
+     "finite": true,
+     "id": "image-04",
+     "kind": "generate",
+     "rows": 256,
+     "seconds": 12.30411578901112,
+     "std": 0.13246436417102814,
+     "std_by_cfg": {
+      "1": 0.13246436417102814,
+      "3": 0.3177967667579651
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "music-01.wav",
+      "music-01-cfg3.wav"
+     ],
+     "finite": true,
+     "id": "music-01",
+     "kind": "generate",
+     "rows": 125,
+     "seconds": 8.967419509775937,
+     "std": 0.1753959357738495,
+     "std_by_cfg": {
+      "1": 0.1753959357738495,
+      "3": 0.3921472728252411
+     }
+    }
+   ],
+   "rank": 1,
+   "seconds": 57.88222897052765,
+   "skipped": [],
+   "step": 550
+  },
+  {
+   "errors": [],
+   "items": [
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|text|>"
+     ],
+     "files": [
+      "text-03.txt"
+     ],
+     "id": "text-03",
+     "kind": "text",
+     "seconds": 5.257973240688443,
+     "text": "<|out|><|text|><|/out|><think>\n</think>\n\nTo find the value of the expression $2 \\times 1\\) and then add it to the original number of times the number of items in the original set.<|im_end|>",
+     "tokens": 41
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|text|>"
+     ],
+     "files": [
+      "tool-01.txt"
+     ],
+     "id": "tool-01",
+     "kind": "text",
+     "seconds": 7.981914542615414,
+     "text": "<|out|><|text|><|/out|><think>\n\n</think>\n\nI'll help you with that. Let me check the weather for you right now.\n\n<tool_call>\n<function=get_weather>\n<parameter=country>\nItaly\n</parameter>\n</function>\n</tool_call><|im_end|>",
+     "tokens": 51
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "image-01.png",
+      "image-01-cfg3.png"
+     ],
+     "finite": true,
+     "id": "image-01",
+     "kind": "generate",
+     "rows": 256,
+     "seconds": 12.389721035026014,
+     "std": 0.12546537816524506,
+     "std_by_cfg": {
+      "1": 0.12546537816524506,
+      "3": 0.3826635479927063
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "edit-01.png",
+      "edit-01-cfg3.png"
+     ],
+     "finite": true,
+     "id": "edit-01",
+     "kind": "edit",
+     "rows": 192,
+     "seconds": 16.996006960980594,
+     "std": 0.2491917610168457,
+     "std_by_cfg": {
+      "1": 0.2491917610168457,
+      "3": 0.28239989280700684
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "music-02.wav",
+      "music-02-cfg3.wav"
+     ],
+     "finite": true,
+     "id": "music-02",
+     "kind": "generate",
+     "rows": 125,
+     "seconds": 9.293601831421256,
+     "std": 0.18224482238292694,
+     "std_by_cfg": {
+      "1": 0.18224482238292694,
+      "3": 0.39444810152053833
+     }
+    }
+   ],
+   "rank": 2,
+   "seconds": 51.9192899921909,
+   "skipped": [],
+   "step": 550
+  },
+  {
+   "errors": [],
+   "items": [
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|text|>",
+      "<|audio|>"
+     ],
+     "files": [
+      "text-04.txt"
+     ],
+     "id": "text-04",
+     "kind": "text",
+     "seconds": 5.653138289228082,
+     "text": "<|out|><|text|><|/out|><think>\n\n</think>\n\n<tool_call>\n<function=predict<|audio|><|/out|><think>\n<|out|><|text|><|/out|><think>\n\n</think>\n\n<tool_call>\n<function=predict<|audio|><|/out|></parameter>\n<parameter=pred>\n</parameter>\n</function>\n</tool_call><|im_end|>",
+     "tokens": 52
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|text|>"
+     ],
+     "files": [
+      "tool-02.txt"
+     ],
+     "id": "tool-02",
+     "kind": "text",
+     "seconds": 6.486092660576105,
+     "text": "<|out|><|text|><|/out|><think>\n\n</think>\n\n<tool_call>\n<function=get_calendar_events>\n<parameter=date>\nnext friday\n</parameter>\n<parameter=date>\nnext\n</parameter>\n</function>\n</tool_call><|im_end|>",
+     "tokens": 45
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "image-02.png",
+      "image-02-cfg3.png"
+     ],
+     "finite": true,
+     "id": "image-02",
+     "kind": "generate",
+     "rows": 192,
+     "seconds": 9.422667632810771,
+     "std": 0.16238532960414886,
+     "std_by_cfg": {
+      "1": 0.16238532960414886,
+      "3": 0.38453933596611023
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "speech-01.wav",
+      "speech-01-cfg3.wav"
+     ],
+     "finite": true,
+     "id": "speech-01",
+     "kind": "generate",
+     "rows": 50,
+     "seconds": 6.390157775953412,
+     "std": 0.18279239535331726,
+     "std_by_cfg": {
+      "1": 0.18279239535331726,
+      "3": 0.3808338940143585
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "video-01-frame000.png",
+      "video-01.mp4",
+      "video-01-cfg3-frame000.png",
+      "video-01-cfg3.mp4"
+     ],
+     "finite": true,
+     "id": "video-01",
+     "kind": "generate",
+     "rows": 1440,
+     "seconds": 50.315619269385934,
+     "std": 0.1392277181148529,
+     "std_by_cfg": {
+      "1": 0.1392277181148529,
+      "3": 0.2822507321834564
+     }
+    }
+   ],
+   "rank": 3,
+   "seconds": 78.26778298709542,
+   "skipped": [],
+   "step": 550
+  }
+ ],
+ "schema": "chimera_omni.run0.dump_index.v1",
+ "step": 550
+}

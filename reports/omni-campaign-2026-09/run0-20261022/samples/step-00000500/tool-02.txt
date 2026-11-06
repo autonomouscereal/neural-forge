@@ -1,0 +1,17 @@
+USER: Put 'dentist' on my calendar for next Tuesday at 3pm.
+
+REPLY (55 tokens):
+<|out|><|text|><|/out|><think>
+
+</think>
+
+<tool_call>
+<function=get_daily_activity>
+<parameter=date>
+2026-10-14
+</parameter>
+<parameter=location>
+New York
+</parameter>
+</function>
+</tool_call><|im_end|>

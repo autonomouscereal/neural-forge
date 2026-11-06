@@ -229,3 +229,36 @@ Prior rulings that still hold:
   - Run links: Q4 is linked to 7 runs (writer = teacher; judge runs = judge). IQ3_S is linked to 52 runs (39 flash-score caches and 13 v2-trainer smokes/probes).
   - This record does not decide whether run 0's `strata` KD weight is shared across the two ids. That stays an area-B teacher-weight call.
   - Records: omni_lab ingest batch 271, written by `register_strata_teacher_ids.py` 1.0.0 (`a18bc3f2…`). The pre-write dump is `/mnt/lexar/omni-campaign/backups/omni_lab/dumps/omni_lab_20261028T134528Z.dump` (sha `a4126fc2…`; restore test exact, NAS copy verified).
+- **2026-10-28 (~19:56Z), second read confirming `k3-cache-ratify-run0-L1-2026-10-28`** (Claude as lead; NOT Cyril's words; Cyril may revise it). A second pass of the run-0 workflow read the same evidence again on its own. It did not lean on the first pass's verdict. **L1 stays RATIFIED for run 0.** No rows, files or weights changed.
+  - **Read:** all 47 Part A documents (23 routes) of `out/k3_behaviour_read.txt` (sha `a36943a4…`, re-hashed and matching on the server and locally), plus every Part B disagreement of 1 nat or more.
+  - **Agrees with the first read:**
+    - K3's teacher-forced top-1 is coherent and on topic in every route. Ids, names, salts and unknowable values are guessed, then copied once they appear in the prefix (tool datasets, HTML and JSON field values, the repeated system prompt).
+    - It reproduces whole code bodies: the suffix automaton, a psycopg2 helper, `awk '/^FAILED/ {print $2}'`, a `find -empty`.
+    - It carries correct arithmetic: 22.60/12.60 → 1.793650, 2615×150 → 392250, 113.75×195 → 22181.25, and the bipartite matching worked to 3/64.
+    - All 14 bf16/fp32 top-1 flips of 1 nat or more are on chat-template or role markup (`<|im`, `role="`, `<think`, the first token of an assistant turn). None is on a content token.
+  - **Adds:** wrong digits in this sample occur only at low confidence.
+    - `real_return_pct` 3.711: K3 wants one more digit, `7` at p 0.24 (the true value is 3.7109).
+    - `net_received` 1684.64: K3 picks `.23` at p 0.03, a flat distribution.
+    - Neither is a confident wrong number, so the KD target keeps that uncertainty and does not teach a false fact.
+  - **Also checked live:** omni_lab `model` rows 2571 `strata-q4kxl-abl-v2` (served from 2026-10-27T17:04:33Z, open-ended) and 2572 `flash-next-strata-iq3s` (2026-10-21T18:21:56Z to 2026-10-27T16:58:09Z) exist as written by ingest batch 271.
+    - The Q4 `sha256.check` shows 4/4 OK, and the `SHA256SUMS` sha is `5e80bc35…`.
+    - The pre-write dump `omni_lab_20261028T134528Z.dump` sha `a4126fc2…` is present.
+  - **Backup:** this file before this entry is `run0-20261022/backups/STAGE_D_RULINGS_2026-10-12.before-k3-L1-reread-20261028T195557Z.md` (`6d2c2d6e…`).
+- **2026-10-28 (~21:50Z), ruling `cyril-memory-harvest-2026-10-28`.** Cyril, verbatim, answering the lead's question (relayed word for word by the 10-28 support follow-up workflow; Claude did not hear it first-hand): "[Cyril quote withheld]". It refines `cyril-no-small-model-data-2026-10-17` ("[Cyril quote withheld]") and is read together with the provider-terms position of 2026-10-18 (Claude/Codex output is not trained on). It does not reverse that position: the harvest enters only in this form.
+  - **The form (binding):**
+    - **Context, `loss_mask` false:** Cyril's own prompts (author `cyril`) and the real tool results/observations recorded in `agent_memory` (author `tool-output`).
+    - **Targets:** every assistant turn and every tool call is authored by **Strata** (`strata-q4kxl-abl-v2`, omni_lab model 2571) through strata-gate at BACKGROUND priority, via the existing `run0-strata-writer` client (task type `memory_tc`; no new client).
+    - **Claude/Codex text is never a target and is not stored in the product.** Only sha256 references (event ids, call keys, prompt sha) stay in `audit.jsonl`.
+    - **Consistency with real results:** a Strata step is kept only while its tool call equals the recorded call that produced the next observation: same tool and equivalent arguments, checked by program (`call_key`). The first Strata turn that differs, answers in text, or calls a tool whose result cannot be replayed ends the episode at that point. An episode with no usable Strata turn is dropped.
+  - **What it does not change:** run 0's row guard (`DEFAULT_ROW_DENY`) and the plan §2.5 exclusion of the raw memory `tool_call` events as targets both stay. The harvest reaches run 0 only as this Strata-authored product.
+  - **Implementation:** chimera-omni `claude/run0-gen-20261028`, writer 1.2.0 `48fa0c0` + 1.2.1 **`f3e5f27`** (pushed). Deployed 2026-10-28T20:46:26Z to `/home/cereal/omni-campaign/run0/gen-writer/code-f3e5f27`.
+    - The seeds come from raw parameterised SQL in a read-only session (vault key `agent_memory_pg`, workstation).
+    - **Prompt screen:** program rules plus Strata's blind author check (`written_by` person, `standalone` true). Since 1.2.1 it also refuses prompts whose transcript is another thread's: 3,400 Codex "prompts" were briefs from threads another agent spawned, recorded under the parent session.
+    - **Residual-secret re-scan:** regexes plus all 109 vault values, exact match, in memory. 195 episodes were dropped; an independent re-scan of the kept seeds found 0.
+    - **Hold-out:** registry v3 screen on the prompt, every observation and every Strata turn.
+    - **Seeds:** 947 episodes (197 Claude Code, 750 Codex; 56 project spaces; diversity round robin over harness × space, per-space cap 150, least-used first tool), sha `802e8c1f…`.
+    - **Staging:** `/mnt/lexar/omni-campaign/run0-intake-staging/memory-toolcall/v1/` (staging contract `chimera_omni.run0.staging.v1`; generator and teacher ids in every batch manifest).
+    - **Duty share:** 0.25 of the writer's Strata time.
+  - **Records:** omni_lab dataset 564 `run0/staging/memory-toolcall`, dataset_version 573 `v1` (unsealed; `run0_register_memory_toolcall.py` 1.0.0 `4d6e520c…` refreshes its counts), run_dataset (writer run 40323, role output). Dumps: before `omni_lab_20261028T205112Z.dump` (`a71760e1…`), after `omni_lab_20261028T220542Z.dump` (`8e2ad381…`); both restore tests exact, both NAS copies verified.
+  - **Open for area B:** run 0's intake does not read this product yet. `run0_build_staging.py` `RECORD_PRODUCTS` has no `memory-toolcall` entry, and area B's `run0_samples.CONDITIONING_AUTHORS` lacks `tool-output`; the gen branch adds it. The tool-bucket weight is area B's call.
+  - **Backup:** this file before this entry is `run0-20261022/backups/STAGE_D_RULINGS_2026-10-12.before-memory-harvest-20261028T205641Z.md` (`69170b21…`).

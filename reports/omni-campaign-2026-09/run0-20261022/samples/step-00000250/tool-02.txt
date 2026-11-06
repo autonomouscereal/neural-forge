@@ -1,0 +1,11 @@
+USER: Put 'dentist' on my calendar for next Tuesday at 3pm.
+
+REPLY (31 tokens):
+<|out|><|text|><|/out|><think>
+<tool_call>
+<tool_call>
+<function=doctor>
+<parameter=location>
+</parameter>
+</function>
+</tool_call><|im_end|>

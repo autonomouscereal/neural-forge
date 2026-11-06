@@ -1,0 +1,835 @@
+{
+ "contact_sheet": "contact_sheet.png",
+ "items": [
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "3d-01-slices.png",
+    "3d-01-cfg3-slices.png"
+   ],
+   "finite": true,
+   "id": "3d-01",
+   "kind": "generate",
+   "rows": 512,
+   "seconds": 20.489088001661003,
+   "std": 0.26907432079315186,
+   "std_by_cfg": {
+    "1": 0.26907432079315186,
+    "3": 0.44209036231040955
+   }
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|text|>"
+   ],
+   "files": [
+    "decide-describe.txt"
+   ],
+   "id": "decide-describe",
+   "kind": "decision",
+   "seconds": 1.5142938988283277,
+   "text": "<|out|><|text|><|/out|>A man in a white",
+   "tokens": 8
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|text|>"
+   ],
+   "files": [
+    "decide-redraw.txt"
+   ],
+   "id": "decide-redraw",
+   "kind": "decision",
+   "seconds": 1.471333253197372,
+   "text": "<|out|><|text|><|/out|>A man in a black",
+   "tokens": 8
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "edit-01.png",
+    "edit-01-cfg3.png"
+   ],
+   "finite": true,
+   "id": "edit-01",
+   "kind": "edit",
+   "rows": 192,
+   "seconds": 16.92538993060589,
+   "std": 0.14389358460903168,
+   "std_by_cfg": {
+    "1": 0.14389358460903168,
+    "3": 0.2250962257385254
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "image-01.png",
+    "image-01-cfg3.png"
+   ],
+   "finite": true,
+   "id": "image-01",
+   "kind": "generate",
+   "rows": 256,
+   "seconds": 12.31365515384823,
+   "std": 0.24653898179531097,
+   "std_by_cfg": {
+    "1": 0.24653898179531097,
+    "3": 0.347534716129303
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "image-02.png",
+    "image-02-cfg3.png"
+   ],
+   "finite": true,
+   "id": "image-02",
+   "kind": "generate",
+   "rows": 192,
+   "seconds": 9.628580873832107,
+   "std": 0.21179310977458954,
+   "std_by_cfg": {
+    "1": 0.21179310977458954,
+    "3": 0.3126946985721588
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "image-03.png",
+    "image-03-cfg3.png"
+   ],
+   "finite": true,
+   "id": "image-03",
+   "kind": "generate",
+   "rows": 192,
+   "seconds": 9.984077616594732,
+   "std": 0.21790477633476257,
+   "std_by_cfg": {
+    "1": 0.21790477633476257,
+    "3": 0.41173669695854187
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "image-04.png",
+    "image-04-cfg3.png"
+   ],
+   "finite": true,
+   "id": "image-04",
+   "kind": "generate",
+   "rows": 256,
+   "seconds": 12.317272573709488,
+   "std": 0.28495943546295166,
+   "std_by_cfg": {
+    "1": 0.28495943546295166,
+    "3": 0.4172142744064331
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "music-01.wav",
+    "music-01-cfg3.wav"
+   ],
+   "finite": true,
+   "id": "music-01",
+   "kind": "generate",
+   "rows": 125,
+   "seconds": 8.95721080712974,
+   "std": 0.5866580009460449,
+   "std_by_cfg": {
+    "1": 0.5866580009460449,
+    "3": 0.399589866399765
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "music-02.wav",
+    "music-02-cfg3.wav"
+   ],
+   "finite": true,
+   "id": "music-02",
+   "kind": "generate",
+   "rows": 125,
+   "seconds": 8.63494258094579,
+   "std": 0.649219274520874,
+   "std_by_cfg": {
+    "1": 0.649219274520874,
+    "3": 0.7772862315177917
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "speech-01.wav",
+    "speech-01-cfg3.wav"
+   ],
+   "finite": true,
+   "id": "speech-01",
+   "kind": "generate",
+   "rows": 50,
+   "seconds": 6.630839594639838,
+   "std": 0.4389825165271759,
+   "std_by_cfg": {
+    "1": 0.4389825165271759,
+    "3": 0.5322306156158447
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "speech-02.wav",
+    "speech-02-cfg3.wav"
+   ],
+   "finite": true,
+   "id": "speech-02",
+   "kind": "generate",
+   "rows": 50,
+   "seconds": 6.895568951033056,
+   "std": 0.44228851795196533,
+   "std_by_cfg": {
+    "1": 0.44228851795196533,
+    "3": 0.6305137872695923
+   }
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|audio|>"
+   ],
+   "files": [
+    "text-01.txt"
+   ],
+   "id": "text-01",
+   "kind": "text",
+   "seconds": 2.139526500366628,
+   "text": "<|out|><|audio|><|/out|>A small white object is in the middle of a white background.<|im_end|>",
+   "tokens": 17
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|image|>"
+   ],
+   "files": [
+    "text-02.txt"
+   ],
+   "id": "text-02",
+   "kind": "text",
+   "seconds": 39.487811476923525,
+   "text": "<|out|><|image|><|/out|>def sum_integers_input = int(str(int(str) if n == 0): return sum(int(str) if n == 0) return 0 if n == 0 or n == 0): return 0 if n == 0 or n < 0) return 0 if n != 0 or n != 0) return 0 if n != 0 or n != 0): return 0 if n < 0 or n < 0 or n < 0) return 0 if n != 0 or n < 0 or n < 0): return 0\n    return 0 if n != 0 or n != 0): return 0\n    return 0 if n == 0 or n == 0 or n != 0): return 0\n    return 0 if n == 0 or n == 0 or n == 0): return 0\n    return 0\n\ndef main() if n == 0:\n        raise ValueError(\"Invalid input must be positive\")\n    if n == 0 or n == 0 or n != 0 or n == 0 or n != 0 or n != 0):\n       ",
+   "tokens": 256
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|text|>"
+   ],
+   "files": [
+    "text-03.txt"
+   ],
+   "id": "text-03",
+   "kind": "text",
+   "seconds": 38.98825248889625,
+   "text": "<|out|><|text|><|/out|>1000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000B000000000000000000000000000000000000000000000000000000000000000d83f5f5b5f5f5b5f5b5f5b5f5b5f5b5f5b5f5b5f5b5f5b5f5b5f5b5f5b5f5b5f5b5f5b5f5b",
+   "tokens": 256
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|image|>"
+   ],
+   "files": [
+    "text-04.txt"
+   ],
+   "id": "text-04",
+   "kind": "text",
+   "seconds": 1.8907421166077256,
+   "text": "<|out|><|image|><|/out|>A bar chart showing the distribution of the two groups.<|im_end|>",
+   "tokens": 15
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|text|>",
+    "<|audio|>"
+   ],
+   "files": [
+    "text-05.txt"
+   ],
+   "id": "text-05",
+   "kind": "text",
+   "seconds": 2.0868151979520917,
+   "text": "<|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|text|><|/out|>A note on a phone<|im_end|>",
+   "tokens": 18
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|audio|>"
+   ],
+   "files": [
+    "text-06.txt"
+   ],
+   "id": "text-06",
+   "kind": "text",
+   "seconds": 5.588548371568322,
+   "text": "<|out|><|audio|><|/out|><|out|><|audio|><|/out|>A person is playing a trumpet, playing the instrument, playing instrument, or both instruments are played on the same instrument, like a banjo, banjo, or banjo, or any other instrument.<|im_end|>",
+   "tokens": 48
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|text|>"
+   ],
+   "files": [
+    "tool-01.txt"
+   ],
+   "id": "tool-01",
+   "kind": "text",
+   "seconds": 47.046487445011735,
+   "text": "<|out|><|text|><|/out|><think>\n\n</think>\n\nI'm sorry to be of the weather forecast, I can see the weather conditions. Let me see if there's a significant amount of rain this year so I can help you get the right information.\n\n<tool_call>\n<function=weather>\n<parameter=location>\nLondon\n</parameter>\n<parameter=location>\nLondon\n</parameter>\n<parameter=location>\nLondon\n</parameter>\n</function>\n</function>\n</parameter>\n</function>\n</parameter>\n</function>\n</parameter>\n</function>\n</parameter>\n</function>\n</parameter>\n<parameter=location>\nLondon, UK\n</parameter>\n<parameter=location>\nLondon\n</parameter>\n<parameter=location>\nLondon\n</parameter>\n<parameter=location>\nLondon\n</parameter>\n<parameter=location>\nLondon\n</parameter>\n</function>\n</parameter>\n<parameter=location>\nLondon\n</parameter>\n<parameter=location>\nLondon\n</parameter>\n<parameter=location>\nLondon\n</parameter>\n<parameter=location>\nLondon\n</parameter>\n<parameter",
+   "tokens": 256
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|text|>"
+   ],
+   "files": [
+    "tool-02.txt"
+   ],
+   "id": "tool-02",
+   "kind": "text",
+   "seconds": 2.299058575183153,
+   "text": "<|out|><|text|><|/out|><think>\n1. **Call a doctor for you today.<|im_end|>",
+   "tokens": 16
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "video-01-frame000.png",
+    "video-01.mp4",
+    "video-01-cfg3-frame000.png",
+    "video-01-cfg3.mp4"
+   ],
+   "finite": true,
+   "id": "video-01",
+   "kind": "generate",
+   "rows": 1440,
+   "seconds": 50.306265799328685,
+   "std": 0.2617396116256714,
+   "std_by_cfg": {
+    "1": 0.2617396116256714,
+    "3": 0.36946141719818115
+   }
+  }
+ ],
+ "ranks": [
+  {
+   "errors": [],
+   "items": [
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|audio|>"
+     ],
+     "files": [
+      "text-01.txt"
+     ],
+     "id": "text-01",
+     "kind": "text",
+     "seconds": 2.139526500366628,
+     "text": "<|out|><|audio|><|/out|>A small white object is in the middle of a white background.<|im_end|>",
+     "tokens": 17
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|text|>",
+      "<|audio|>"
+     ],
+     "files": [
+      "text-05.txt"
+     ],
+     "id": "text-05",
+     "kind": "text",
+     "seconds": 2.0868151979520917,
+     "text": "<|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|text|><|/out|>A note on a phone<|im_end|>",
+     "tokens": 18
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|text|>"
+     ],
+     "files": [
+      "decide-describe.txt"
+     ],
+     "id": "decide-describe",
+     "kind": "decision",
+     "seconds": 1.5142938988283277,
+     "text": "<|out|><|text|><|/out|>A man in a white",
+     "tokens": 8
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "image-03.png",
+      "image-03-cfg3.png"
+     ],
+     "finite": true,
+     "id": "image-03",
+     "kind": "generate",
+     "rows": 192,
+     "seconds": 9.984077616594732,
+     "std": 0.21790477633476257,
+     "std_by_cfg": {
+      "1": 0.21790477633476257,
+      "3": 0.41173669695854187
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "speech-02.wav",
+      "speech-02-cfg3.wav"
+     ],
+     "finite": true,
+     "id": "speech-02",
+     "kind": "generate",
+     "rows": 50,
+     "seconds": 6.895568951033056,
+     "std": 0.44228851795196533,
+     "std_by_cfg": {
+      "1": 0.44228851795196533,
+      "3": 0.6305137872695923
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "3d-01-slices.png",
+      "3d-01-cfg3-slices.png"
+     ],
+     "finite": true,
+     "id": "3d-01",
+     "kind": "generate",
+     "rows": 512,
+     "seconds": 20.489088001661003,
+     "std": 0.26907432079315186,
+     "std_by_cfg": {
+      "1": 0.26907432079315186,
+      "3": 0.44209036231040955
+     }
+    }
+   ],
+   "rank": 0,
+   "seconds": 43.10944431088865,
+   "skipped": [],
+   "step": 200
+  },
+  {
+   "errors": [],
+   "items": [
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|image|>"
+     ],
+     "files": [
+      "text-02.txt"
+     ],
+     "id": "text-02",
+     "kind": "text",
+     "seconds": 39.487811476923525,
+     "text": "<|out|><|image|><|/out|>def sum_integers_input = int(str(int(str) if n == 0): return sum(int(str) if n == 0) return 0 if n == 0 or n == 0): return 0 if n == 0 or n < 0) return 0 if n != 0 or n != 0) return 0 if n != 0 or n != 0): return 0 if n < 0 or n < 0 or n < 0) return 0 if n != 0 or n < 0 or n < 0): return 0\n    return 0 if n != 0 or n != 0): return 0\n    return 0 if n == 0 or n == 0 or n != 0): return 0\n    return 0 if n == 0 or n == 0 or n == 0): return 0\n    return 0\n\ndef main() if n == 0:\n        raise ValueError(\"Invalid input must be positive\")\n    if n == 0 or n == 0 or n != 0 or n == 0 or n != 0 or n != 0):\n       ",
+     "tokens": 256
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|audio|>"
+     ],
+     "files": [
+      "text-06.txt"
+     ],
+     "id": "text-06",
+     "kind": "text",
+     "seconds": 5.588548371568322,
+     "text": "<|out|><|audio|><|/out|><|out|><|audio|><|/out|>A person is playing a trumpet, playing the instrument, playing instrument, or both instruments are played on the same instrument, like a banjo, banjo, or banjo, or any other instrument.<|im_end|>",
+     "tokens": 48
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|text|>"
+     ],
+     "files": [
+      "decide-redraw.txt"
+     ],
+     "id": "decide-redraw",
+     "kind": "decision",
+     "seconds": 1.471333253197372,
+     "text": "<|out|><|text|><|/out|>A man in a black",
+     "tokens": 8
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "image-04.png",
+      "image-04-cfg3.png"
+     ],
+     "finite": true,
+     "id": "image-04",
+     "kind": "generate",
+     "rows": 256,
+     "seconds": 12.317272573709488,
+     "std": 0.28495943546295166,
+     "std_by_cfg": {
+      "1": 0.28495943546295166,
+      "3": 0.4172142744064331
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "music-01.wav",
+      "music-01-cfg3.wav"
+     ],
+     "finite": true,
+     "id": "music-01",
+     "kind": "generate",
+     "rows": 125,
+     "seconds": 8.95721080712974,
+     "std": 0.5866580009460449,
+     "std_by_cfg": {
+      "1": 0.5866580009460449,
+      "3": 0.399589866399765
+     }
+    }
+   ],
+   "rank": 1,
+   "seconds": 67.82223497144878,
+   "skipped": [],
+   "step": 200
+  },
+  {
+   "errors": [],
+   "items": [
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|text|>"
+     ],
+     "files": [
+      "text-03.txt"
+     ],
+     "id": "text-03",
+     "kind": "text",
+     "seconds": 38.98825248889625,
+     "text": "<|out|><|text|><|/out|>1000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000B000000000000000000000000000000000000000000000000000000000000000d83f5f5b5f5f5b5f5b5f5b5f5b5f5b5f5b5f5b5f5b5f5b5f5b5f5b5f5b5f5b5f5b5f5b5f5b",
+     "tokens": 256
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|text|>"
+     ],
+     "files": [
+      "tool-01.txt"
+     ],
+     "id": "tool-01",
+     "kind": "text",
+     "seconds": 47.046487445011735,
+     "text": "<|out|><|text|><|/out|><think>\n\n</think>\n\nI'm sorry to be of the weather forecast, I can see the weather conditions. Let me see if there's a significant amount of rain this year so I can help you get the right information.\n\n<tool_call>\n<function=weather>\n<parameter=location>\nLondon\n</parameter>\n<parameter=location>\nLondon\n</parameter>\n<parameter=location>\nLondon\n</parameter>\n</function>\n</function>\n</parameter>\n</function>\n</parameter>\n</function>\n</parameter>\n</function>\n</parameter>\n</function>\n</parameter>\n<parameter=location>\nLondon, UK\n</parameter>\n<parameter=location>\nLondon\n</parameter>\n<parameter=location>\nLondon\n</parameter>\n<parameter=location>\nLondon\n</parameter>\n<parameter=location>\nLondon\n</parameter>\n</function>\n</parameter>\n<parameter=location>\nLondon\n</parameter>\n<parameter=location>\nLondon\n</parameter>\n<parameter=location>\nLondon\n</parameter>\n<parameter=location>\nLondon\n</parameter>\n<parameter",
+     "tokens": 256
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "image-01.png",
+      "image-01-cfg3.png"
+     ],
+     "finite": true,
+     "id": "image-01",
+     "kind": "generate",
+     "rows": 256,
+     "seconds": 12.31365515384823,
+     "std": 0.24653898179531097,
+     "std_by_cfg": {
+      "1": 0.24653898179531097,
+      "3": 0.347534716129303
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "edit-01.png",
+      "edit-01-cfg3.png"
+     ],
+     "finite": true,
+     "id": "edit-01",
+     "kind": "edit",
+     "rows": 192,
+     "seconds": 16.92538993060589,
+     "std": 0.14389358460903168,
+     "std_by_cfg": {
+      "1": 0.14389358460903168,
+      "3": 0.2250962257385254
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "music-02.wav",
+      "music-02-cfg3.wav"
+     ],
+     "finite": true,
+     "id": "music-02",
+     "kind": "generate",
+     "rows": 125,
+     "seconds": 8.63494258094579,
+     "std": 0.649219274520874,
+     "std_by_cfg": {
+      "1": 0.649219274520874,
+      "3": 0.7772862315177917
+     }
+    }
+   ],
+   "rank": 2,
+   "seconds": 123.90880974009633,
+   "skipped": [],
+   "step": 200
+  },
+  {
+   "errors": [],
+   "items": [
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|image|>"
+     ],
+     "files": [
+      "text-04.txt"
+     ],
+     "id": "text-04",
+     "kind": "text",
+     "seconds": 1.8907421166077256,
+     "text": "<|out|><|image|><|/out|>A bar chart showing the distribution of the two groups.<|im_end|>",
+     "tokens": 15
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|text|>"
+     ],
+     "files": [
+      "tool-02.txt"
+     ],
+     "id": "tool-02",
+     "kind": "text",
+     "seconds": 2.299058575183153,
+     "text": "<|out|><|text|><|/out|><think>\n1. **Call a doctor for you today.<|im_end|>",
+     "tokens": 16
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "image-02.png",
+      "image-02-cfg3.png"
+     ],
+     "finite": true,
+     "id": "image-02",
+     "kind": "generate",
+     "rows": 192,
+     "seconds": 9.628580873832107,
+     "std": 0.21179310977458954,
+     "std_by_cfg": {
+      "1": 0.21179310977458954,
+      "3": 0.3126946985721588
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "speech-01.wav",
+      "speech-01-cfg3.wav"
+     ],
+     "finite": true,
+     "id": "speech-01",
+     "kind": "generate",
+     "rows": 50,
+     "seconds": 6.630839594639838,
+     "std": 0.4389825165271759,
+     "std_by_cfg": {
+      "1": 0.4389825165271759,
+      "3": 0.5322306156158447
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "video-01-frame000.png",
+      "video-01.mp4",
+      "video-01-cfg3-frame000.png",
+      "video-01-cfg3.mp4"
+     ],
+     "finite": true,
+     "id": "video-01",
+     "kind": "generate",
+     "rows": 1440,
+     "seconds": 50.306265799328685,
+     "std": 0.2617396116256714,
+     "std_by_cfg": {
+      "1": 0.2617396116256714,
+      "3": 0.36946141719818115
+     }
+    }
+   ],
+   "rank": 3,
+   "seconds": 70.75558993872255,
+   "skipped": [],
+   "step": 200
+  }
+ ],
+ "schema": "chimera_omni.run0.dump_index.v1",
+ "step": 200
+}

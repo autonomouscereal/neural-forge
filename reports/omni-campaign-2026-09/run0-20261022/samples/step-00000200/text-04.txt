@@ -1,0 +1,4 @@
+USER: Summarise the plot of Romeo and Juliet in two sentences.
+
+REPLY (15 tokens):
+<|out|><|image|><|/out|>A bar chart showing the distribution of the two groups.<|im_end|>

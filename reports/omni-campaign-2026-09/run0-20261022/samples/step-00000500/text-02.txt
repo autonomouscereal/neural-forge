@@ -1,0 +1,12 @@
+USER: Write a short Python function that returns the n-th Fibonacci number.
+
+REPLY (40 tokens):
+<|out|><|text|><|/out|>```python
+def fib(n):
+    if n == 0:
+        return 1
+    return 1
+    
+    return 1
+    
+    return 2**<|im_end|>

@@ -8,6 +8,12 @@ mirrored to `/home/cereal/ai-serve/` (hash-matched at deploy). Server copy of th
 corrects statements in sections 3, 4 and 9 that the reviews proved wrong. Read it before relying on those sections.
 **Status 2026-10-22 06:20Z:** section 10 items 1-4 and 6 are fixed and reviewed, item 5 (pydantic) waits on Cyril;
 GPU6 is capped at 200 W with `--bg-max 4`; the Q4 swap is cancelled (section 10 table and "Also done").
+**Status 2026-10-28 21:44Z:** Strata runs the pcache build: a 24 GiB foreground-only prompt cache, the pinned-slot
+fix, MemorySwapMax=0 and gate 1.4.1. The disk tier is off (the Lexar is exFAT). See section 12 for numbers and rollback.
+**Status 2026-10-29 02:46Z:** the GPU4 ComfyUI containers are capped at 40 GiB host RAM each (cgroup, no swap), general
+uses the RAM-pressure cache instead of `--cache-lru 10`, h3sol runs without pinned memory, and media-gate 1.3.0 frees
+general after 10 min idle. Peak non-reclaimable RAM per job fell from 76 to 38 GiB (general) and from 59 to 9 GiB
+(h3sol). See section 13 for numbers, the cost and rollback.
 
 Cyril's instruction (2026-10-21), in short: the 3090 + RTX 8000 + system RAM run Strata with batching, as Sprite's
 backup brain and Cyril's own model, generating corpus data when idle and dropping that work at once when a user
@@ -50,8 +56,8 @@ ComfyUI profiles on GPU4 (only one container runs at a time; the manager refuses
 
 | Profile | Container : port | Image | Workflows |
 |---|---|---|---|
-| `general` (default, warm) | `comfyui_qwen21_gpu4` : 28334 | ComfyUI 0.37 cu130 (sm75/sm86) | Qwen-Image 2.1 generate + edit, ACE-Step 1.5 music, LTX 2.3 video, Hunyuan3D 2.1 mesh |
-| `h3sol` (on demand) | `comfyui_h3_sol_gpu4` : 28245 | `gauntlet-sol-sm86-v001-20260913` | H3 SOL video: MiniMax H3 Turbo-4 draft 896x512 with audio, GauntletH3Sol attention (SM80+, so GPU4 only), then LTX 2.3 refine to 1344x768 |
+| `general` (default, warm) | `comfyui_qwen21_gpu4` : 28334 | ComfyUI 0.37 cu130 (sm75/sm86) | Qwen-Image 2.1 generate + edit, ACE-Step 1.5 music, LTX 2.3 video, Hunyuan3D 2.1 mesh. Since 2026-10-29: 40 GiB host-RAM cap, `--cache-ram 4 16`, freed after 600 s idle (section 13) |
+| `h3sol` (on demand) | `comfyui_h3_sol_gpu4` : 28245 | `gauntlet-sol-sm86-v001-20260913` (ComfyUI 0.30) | H3 SOL video: MiniMax H3 Turbo-4 draft 896x512 with audio, GauntletH3Sol attention (SM80+, so GPU4 only), then LTX 2.3 refine to 1344x768. Since 2026-10-29: 40 GiB host-RAM cap, `--cache-ram 4 16 --disable-pinned-memory` (section 13) |
 
 A switch takes 32-47 s. `h3sol` is stopped after 5 min idle, then `general` comes back and is re-warmed.
 
@@ -1354,3 +1360,575 @@ headers shipped in Sprite e9cfef3) and 204018 (record the received switch on cap
   - `delete-member` would opt emutest out for good.
 - Four `ai_serve_test_*` databases predate this lane: `bae4c3ff22`, plus three marked invalid by an interrupted drop
   (`6632280401`, `a796031e`, `ad5531db`). They were left alone.
+
+## 12. Strata host-RAM bound (2026-10-28, Strata host-RAM lane; live since 21:44:09Z)
+
+Cyril 2026-10-28 (Relay 204074): "[Cyril quote withheld]" Later the same day (204097):
+"[Cyril quote withheld]". Plan: `STRATA_RAM_2026-10-28.md` (same folder). Code:
+`autonomouscereal/chimera-omni`, branch `claude/strata-ram-20261028`. Evidence: `/home/cereal/ai-serve/evidence/strata-ram-20261028/`
+(`before/`, `apply1/`, `rollback1/`, `reapply1/`, `after/`, `phase0/`).
+
+**What is live.**
+- `strata-llama` runs `/home/cereal/omni-campaign/export/llamacpp-pcache/bin`: the xcache build (b96806d96 +
+  `xcache.patch`) plus `strata-pcache.patch` (tools/server only). Launcher `strata_llama.sh` 1.5.0.
+- It changes three things:
+  - The RAM prompt cache is 24 GiB (`--cache-ram 24576`; was 48).
+  - Background requests are never saved in the cache and never take an entry out of it. The gate sends
+    `cache_store: "none"`.
+  - Fix: a pinned slot emptied by the idle-slot save now loads from the cache. Before, `f_keep` was 0/0 = NaN, so a
+    follow-up re-read the whole prompt.
+- `UMask=0077` and `MemorySwapMax=0` on the unit. Strata's anon is never swapped.
+- New drop-in `/etc/systemd/system/strata-llama.service.d/z-ramcap.conf`. It sorts last; `ctx256k.conf`, `q4kxl.conf`
+  and `vision.conf` are untouched.
+- `strata-gate` 1.4.1 + `kv_tier.py`, new drop-in `strata-gate.service.d/kvtier.conf` (Environment only).
+  - Every generating request gets `cache_store` (background `none`, capture-off member `ram`, else `disk`) and
+    `cache_tag` (sha256 of the capture member key, first 16 hex).
+  - A client's own `cache_*` fields are dropped. No `/prompt-cache/*` route is exposed through :18400.
+  - `/gate/status` has a `kv` block.
+- `capture_admin.py` 1.3.0: `delete-member --yes` and `opt-out` also call llama's `POST /prompt-cache/delete` for the
+  member's tag. That removes the member's cached states. A `service_event` row `kv_delete_member` is written.
+- llama-server has new internal-key routes (127.0.0.1:18401 only): `GET /prompt-cache/status` and
+  `POST /prompt-cache/prefetch|delete|flush`. `/metrics` has `llamacpp:prompt_cache_*` gauges and counters.
+
+**What is not live.**
+- **The disk tier.** `/mnt/lexar` is exFAT (`fmask=0022,dmask=0022`), so every file there is 0644 and `chmod` does
+  nothing. Conversation state there would be world-readable. `strata_llama.sh` refuses any directory that is not
+  `cereal:0700`, so Strata starts RAM-only, and gate 1.4.1 skips the prefetch while llama reports `disk.on false`.
+  `/` is at run 0's free-space floor; `/mnt/ai_data` is the NAS (CIFS).
+  - Proposal (needs a Lexar budget, lead or Cyril): an ext4 image with an ephemeral dm-crypt key (generated at boot,
+    never stored) on the Lexar, ~44 GiB for a 40 GiB tier, mounted 0700 for `cereal`.
+  - Then uncomment `STRATA_PCACHE_DIR` in `z-ramcap.conf`, point it at the mount, and restart. Bounds: 40 GiB, 400
+    files, 168 h, >= 60 GiB left free.
+  - The CPU smoke matrix for the tier passed on 10-28 (14/14, `work/strata-ram-20261028/smoke/smoke_run3.log`),
+    including greedy equality between a RAM-served and a disk-restored entry. It is unproven on the production model.
+- `vm.swappiness` (global, needs Cyril). `MemorySwapMax=0` on the unit covers Strata.
+- Experts to disk: phase 2, workflow strata-host-ram-budget-20261028.
+
+**Measured, through the gate, cyril tier, 3 runs, medians [min-max].** Before = 1.3.0 / xcache build / 48 GiB cache,
+20:06-21:17Z. After = 1.4.1 / pcache build / 24 GiB, 21:46-22:55Z. The host was not quiet. During "before",
+media-judge calibration prep used ~20 cores and an mkfs ran on the Lexar (loadavg ~18-24); during "after", loadavg was
+~11-12. Speed differences are mostly host load, not the change. Prompts were ~10.7k, ~83.5k and ~193k tokens.
+
+| Test | Before | After |
+|---|---|---|
+| short write, tok/s | 18.5 [14.3-20.4] | 26.2 [25.1-27.8] |
+| prompt read 10.7k, tok/s | 188 [185-204] | 271 [248-272] |
+| warm follow-up 10.7k: TTFT s / cache_n | 1.29 / 10,714 | 1.05 / 10,714 |
+| prompt read 83.5k, tok/s | 203 [190-219] | 203 [197-207] |
+| write at 83.5k, tok/s | 11.7 [11.1-12.7] | 11.5 [10.7-12.1] |
+| warm follow-up 83.5k: TTFT s / cache_n | 1.31 / 83,531 | 1.75 [1.28-11.95] / 83,531 (the 11.95 s ran at 22:12Z while 5.5 GiB of llama anon was in swap; MemorySwapMax=0 came at 22:19Z) |
+| prompt read 193k, tok/s (1 run) | 142 | 151 |
+| warm follow-up 193k: TTFT s / cache_n | 1.92 / 193,214 | 1.98 / 193,214 |
+| **pinned follow-up after another slot launched (10.7k): TTFT s / cache_n** | **40.2 / 0 (2 of 3 re-read)** | **1.54 / 10,694 (3 of 3 restored)** |
+| pinned follow-up after a launch, 83.5k (1 run) | not exercised (background refused) | 2.59 s / 83,578 |
+| sprite request with 4 background requests active (3 runs, `after/preempt_sprite.jsonl`) | no sprite preemption in the old build's log today; one cyril preemption freed in 3.90 s | preempted 3/3 (gate log); sprite TTFT 2.43 / 1.73 / 17.3 s; freed 2.51 / 1.82 / > 10 s (stuck). In the stuck case one background cancel (slot 2) reached llama 9.4 s after the other three, and its 576-token ubatch shared the batch with Sprite's 21 tokens. That is the gate-to-llama cancel path, unchanged by this patch. |
+| 256k window / output cap | n_ctx 262,144 on 6 slots; n_predict -1 | the same |
+
+- Greedy outputs are the same text before and after wherever the prompt was the same.
+- Background isolation:
+  - 20 background requests served; `prompt_cache_store_none_total` +31; 0 evictions.
+  - The RAM cache gained no background entry.
+  - In the first 5 min live: 35 background saves refused, 0 evictions. The old build had ~59-212 background entries an hour.
+
+**Host RAM.**
+
+| | Before (20:06Z) | After restart (21:46Z) | After the bench (22:55Z) |
+|---|---|---|---|
+| MemAvailable | 21.5 GiB | 127 GiB | 87 GiB |
+| SwapFree (8 GiB swap) | 0.006 GiB | 5.5 GiB | 0.66 GiB |
+| llama-server RssAnon / VmSwap | 77.4 / 6.0 GiB | 30.3 / 0 GiB | 43.7 / 5.6 GiB |
+| prompt cache in RAM | ~48 GiB | 0 | 17.45 GiB (17 entries, cap 24) |
+
+- At 22:55Z, MemAvailable also includes media-gate's h3sol ComfyUI on GPU4 (~37 GiB anon). It started at ~22:04Z,
+  once MemAvailable was over its 40 GiB floor.
+- The 5.6 GiB VmSwap went out 22:07-22:18Z, during that load, before `MemorySwapMax=0`. It comes back as it is touched
+  and cannot go out again.
+- Strata's bound: experts 71.7 (pinned shmem) + n-gram/embeddings ~27 + cache <= 24 + checkpoints/compute ~3-5 +
+  mmproj ~1 = ~127-130 GiB, of which ~59 GiB anon at most.
+- VRAM is unchanged: GPU0 23.4-23.8 GiB, GPU6 44.6-45.0 GiB.
+
+**Rollback (tested 21:31-21:37Z).**
+- One command: `/home/cereal/ai-serve/strata/strata_ram.sh rollback`. Set `QUIET_WAIT_S=1800` to wait for the quiet
+  window instead of failing.
+- It restores every file from `/home/cereal/ai-serve/backups/strata-ram-20261028T2120Z/` (sha-checked against
+  `MANIFEST`), removes `z-ramcap.conf` and `kvtier.conf` and deletes `kv_tier.py`.
+- It runs `daemon-reload`, then restarts strata-llama, then strata-gate, each in the quiet window. The result is gate
+  1.3.0 and a 48 GiB cache on `llamacpp-xcache/bin`.
+- It verifies every file against the manifest; the 21:37Z run printed "every file matches".
+- By hand: `sudo rm /etc/systemd/system/strata-llama.service.d/z-ramcap.conf /etc/systemd/system/strata-gate.service.d/kvtier.conf`,
+  `sudo systemctl daemon-reload`, `sudo systemctl restart strata-llama` (~6 min), then `sudo systemctl restart strata-gate`.
+- Re-apply: `/home/cereal/ai-serve/work/strata-ram-20261028/apply_seq.sh reapply <label>`. Run it detached with
+  `systemd-run --user`. It stages from `work/strata-ram-20261028/stage/`.
+- Only `MemorySwapMax`: `sudo systemctl set-property --runtime strata-llama MemorySwapMax=infinity` and delete the line
+  in `z-ramcap.conf`.
+- Comment-only drop-in revisions: `backups/strata-ram-20261028T2120Z-post/`.
+
+**Checks.**
+- `strata_ram.sh status`
+- `curl -s -H "Authorization: Bearer $(cat /home/cereal/.config/ai-serve/llama_internal_key)" http://127.0.0.1:18401/prompt-cache/status`
+- `cat /sys/fs/cgroup/system.slice/strata-llama.service/memory.swap.max` (should be `0`)
+- the `kv` block of `/gate/status`
+
+**Incidents and open items.**
+- **Xid 31 on the rolled-back ORIGINAL build**, 21:37:19Z, 12 s after the gate came back.
+  - "CUDA error: an illegal memory access" in `ggml_backend_cuda_synchronize`, then abort and core dump.
+  - MMU fault `FAULT_PDE` at `0x4_03c00000` on PCI 04:00 = GPU0.
+  - It is the same signature as the 10-27 IQ3_S crashes on this b96806d96/xcache base (`0x4_02e00000`). The pcache
+    build shares that code.
+  - It is the only Xid since 11:00Z; no pcache boot has had one. If it recurs, run with `CUDA_LAUNCH_BLOCKING=1`.
+- The gate's thermal guard (GPU6 >= ~70 C) answered 503 to new background repeatedly during the benches.
+- The deployed `gen_worker_text.py` (14:44Z) has no `MODEL_ID`, but `capture_export.py:539` reads `gw.MODEL_ID`, so
+  `test_capture.TestExportRecords` errors. It belongs to the gen-worker-text lane (Relay 204101).
+- No 24 h soak yet: plan step 8, and the 24 vs 32 GiB decision. Phase 2 (tiered experts, target <= ~48 GiB
+  non-reclaimable) is planned in `STRATA_HOST_RAM_BUDGET_2026-10-28.md`.
+
+### 12.1 Fix pass (2026-10-29 00:00-01:00Z): built and staged, NOT deployed (yielded to phase 2)
+
+An independent check of phase 1 found three problems: a follow-up after eviction re-read instead of restoring, because
+the disk tier was off; preemption took 1.8-8.9 s and once stuck past 10 s; 3.8 GiB of Strata was still in swap. The fix
+is built, CPU-tested and staged. Phase 2 (Relay 204110, CLAIM ~00:25Z) came first, so this pass put the phase-1 files
+back at 00:57Z and restarted nothing (Relay 204111 CLAIM, YIELD after it). Code: chimera-omni `claude/strata-ram-20261028`
+@ 1677f0e.
+
+- **Disk tier store (installed and running, inert).**
+  - `strata-kv-store.service` runs `/usr/local/sbin/strata_kv_store.sh`.
+  - Chain: `/mnt/lexar/omni-campaign/strata-kv-store/store.img` (24 GiB, written once) -> loop with direct I/O ->
+    dm-crypt aes-xts-plain64 -> a new ext4 -> `/mnt/strata-kv`, with `pcache/` owned by cereal, mode 0700.
+  - The dm-crypt key comes from /dev/urandom at every start and reaches dmsetup on stdin; it lives only in the kernel.
+  - `stop` (refused while a llama-server has its tier there) or a reboot makes everything written unreadable.
+  - Wanted by nothing until `z-ramcap.conf` names it.
+- **To enable it**, use the staged `z-ramcap.conf` in `work/strata-ram-fix-20261029/stage/`:
+  - `[Unit] Wants=/After=strata-kv-store.service`;
+  - `STRATA_PCACHE_DIR=/mnt/strata-kv/pcache`, MAX_GIB 22, MIN_FREE_GIB 0.5;
+  - `kvtier.conf` with `STRATA_KV_DIR=/mnt/strata-kv/pcache` and MIN_TOKENS 1024.
+- **`strata-preempt.patch`** (tools/server only; build `llamacpp-preempt/bin`, libllama-server-impl.so f10d9481...).
+  It also applies cleanly on `llamacpp-tier`.
+  - Root cause of slow and stuck preemption: `server_response::recv_with_timeout` restarted `wait_for(1 s)` on every
+    notify. The results condvar is notified for every result of every slot, so while any slot streamed, a reader never
+    timed out, never ran `should_stop()`, and a preempted request in prompt processing ran on until its own first token.
+  - Fix: one deadline per wait; disconnect polling 100 ms; background (cache_store none) prompt tokens never share a
+    batch with a processing foreground task; `LLAMA_BG_PROMPT_CHUNK` (left unset).
+  - The chunk stays unset because the production log shows a batch costs ~2.5 s however small (expert uploads):
+    prompts of 128-256 tokens ran at ~76 tok/s, 8k-32k at ~265-286 tok/s.
+  - What remains: the batch already running when a foreground request arrives finishes first, about 2.5-4 s with
+    `-ub 1024`. The server loop cannot stop a GPU batch.
+- **CPU smoke** (`work/strata-ram-fix-20261029/smoke_preempt.log`, qwen35-0p8b f16, 3 slots, -b/-ub 512, 212 tok/s):
+
+  | Check | Old (pcache) | New | New + chunk 128 |
+  |---|---|---|---|
+  | background closed mid-prompt while another slot streams: slot freed after | 32.3 s | 2.9 s | 0.81 s |
+  | foreground request behind a background prompt: wall | 14.0 s | 1.9 s | 1.2 s |
+
+  - Background output equals the same request served alone in every case.
+  - Background makes no prompt progress while foreground generates (p3).
+  - Greedy output old == new.
+  - The run's final check (new build under a flat 2.0 s) FAILED at 2.904 s. That bound was set before knowing that one
+    512-token batch takes 2.4 s on this CPU. The check is now "polling + one batch + 1 s" (3.4 s); it has not been rerun.
+- **Swap**: any strata-llama restart starts VmSwap at 0, and `MemorySwapMax=0` keeps it there. Phase 2's first restart
+  does this. Nothing swapped was pulled back by hand, so phase 2's baseline is unchanged.
+- **Backups**: `/home/cereal/ai-serve/backups/strata-ram-20261029T0031Z/` (MANIFEST, phase-1 state).
+  - `strata_ram.sh` 1.1.0 (staged copy) rolls back from it, store included.
+  - After the revert, the live files match it: z-ramcap 19e26408, kvtier 99b7280d, strata_llama.sh 1.5.0 4d2fd23f,
+    strata_ram.sh 1.0.1 8752c02d.
+- Live state at 00:58Z: MemAvailable ~19 GiB.
+  - Media-gate's qwen21 ComfyUI on GPU4 held ~87 GiB RSS.
+  - llama-server: RssAnon 51.0, VmSwap 3.59 GiB; RAM cache 23.66 GiB, 28 entries; 10 evictions, all dropped.
+
+## 13. Media host-RAM bound (2026-10-29, media lane; live since 01:34:29Z, last applied 02:42:16Z)
+
+Cyril 2026-10-28: "[Cyril quote withheld]". Why: at 2026-10-29 00:45Z MemAvailable
+was 23 GiB because the general ComfyUI on GPU4 held ~87 GiB; run 0 needs ~20 GiB that must not be squeezed out.
+Relay CLAIM 204118. Code: `autonomouscereal/chimera-omni`, branch `claude/media-ram-20261029`. Evidence:
+`/home/cereal/ai-serve/evidence/media-ram-20261029/` (1 Hz sampler `sample.csv`, `validate_{before,after,rollback,freetest}`,
+`report_{before,after}.json`, apply/rollback/reapply logs, `quiet_before_*.json`).
+
+**Why ComfyUI held 60-90 GiB.**
+- ComfyUI 0.37 copies offloaded weights into pinned host buffers up to `MAX_PINNED_MEMORY`, which is ~90 % of the RAM
+  it sees (232 GB on this host).
+- It gives a pin back only when MemAvailable would fall within ~2 GiB of its next pin (`ensure_pin_budget`).
+- `--cache-lru 10` turned off the RAM-pressure node cache, so nothing else released RAM either.
+- Measured: container anon 41-80 GB between jobs; `memory.peak` 92.6 GB over 2 h.
+- h3sol runs ComfyUI 0.30, which does the same against host-wide psutil numbers. It is not cgroup-aware.
+- The knob that exists in 0.37: `comfy/system_memory.py` reads the cgroup `memory.max` for its RAM total, its pin cap
+  and its pin eviction. Its log shows "RAM limited by cgroup to 40960 MB" and "Enabled pinned memory 24576".
+
+**What is live.**
+- `manage_comfy_instances.py`: a new optional registry key, `mem_limit` (e.g. `"40g"`). It renders Compose
+  `mem_limit` = `memswap_limit`, so the container gets no swap. The value is re-checked after `docker compose config`.
+  Instances without the key are unchanged.
+- Registry, `comfyui_qwen21_gpu4`: `mem_limit 40g`; `--cache-lru 10` replaced by `--cache-ram 4 16`.
+  - The RAM-pressure cache evicts old-workflow results while cgroup MemAvailable is under 16 GiB.
+  - It evicts current ones and then pins under 4 GiB.
+- Registry, `comfyui_h3_sol_gpu4`: `mem_limit 40g`, `--cache-ram 4 16 --disable-pinned-memory`.
+  - Without pins, 0.30's host-sized pin budget cannot run into the cap.
+  - Its weights stream from page cache, which the kernel reclaims inside the cap.
+- media-gate 1.3.0: a new profile key, `idle_free_s`; general has 600.
+  - After 10 min without a job, the gate sends a full `/free` (`unload_models` + `free_memory`).
+  - It fires once per idle stretch; a forwarded job re-arms it.
+  - Measured effect: general anon 16.76 -> 2.27 GiB and GPU4 15.2 GB -> 417 MiB within 5 s
+    (`freetest.log`, the same body sent by hand).
+  - It never fires while speech holds the card. A parked container stays parked, still capped.
+- Unchanged: `mem_floor_gib` 40, preemption, tiers, routing, the speech workers.
+  - The speech workers measured ~0.2 GiB idle and ~1.1 GiB each with models loaded.
+
+**Before / after.** Same `gen_worker_media.py validate` set (cyril key, through the gate), background paused, one run
+each. Non-reclaimable = cgroup anon + shmem + swap, peak during the job. Every artifact passed `media_validate`
+(decoded, non-empty), with 0 OOM kills in both containers.
+
+| Job | Before: peak GiB / s | After: peak GiB / s |
+|---|---|---|
+| Qwen image 1024 (from speech; after = first job after the recreate, cold disk) | 31.2 / 66.3 | 16.8 / 123.3 |
+| Qwen edit (source + edit) | 32.5 / 30.3 | 18.1 / 33.3 |
+| ACE-Step 20 s | 41.4 / 42.3 | 27.6 / 72.5 |
+| LTX 2.3 4 s 512x288 | 76.0 / 210.7 | 37.8 / 274.2 |
+| Hunyuan3D (source image + mesh) | 68.2 / 189.9 | 31.1 / 236.9 |
+| h3sol draft + refine, 4 s (h3sol container) | 58.7 / 470.2 | 9.2 / 645.4 |
+| TTS cold + ASR round trip | WER 0/13, first audio 34.8 s | WER 0/13, first audio 32.4 s |
+
+- Idle: general held 25.7 GiB warm before; after an idle free it holds 2.3 GiB.
+  - h3sol held 58.7 GiB until switched away; it now holds 9.2 GiB, with page cache up to the 40 GiB cap.
+- MemAvailable is not a clean comparison, because Strata phase 2 changed under the runs. The minimum during the jobs
+  was 42.9 GiB before and 127.9 GiB after.
+
+**Cost (speed, report-only).**
+- comfy-aimdo reads weight files straight into pins/VRAM, so they are not in page cache. The first job after a
+  (re)start or an idle free reads them from the SATA root disk. The first image read 21.8 GB: 120-166 s cold vs ~15 s
+  warm.
+- A warm same-workflow job is unchanged (edit 33.3 vs 30.3 s).
+- Switching between workflow families is slower (ACE +30 s, LTX +64 s, hy3d +47 s). Causes: more reloads with pins
+  capped at 24 GiB, and higher host load during the after run; not separated.
+- h3sol is +37 %. Under the cap only ~30 GiB of page cache is left, against its weights: draft ~40 GiB (H3 int8
+  19.5, Qwen3-VL 32B nvfp4 14.6, VAE 4.9, LoRA 0.7) and refine ~52 GiB (LTX 2.3 22B 43.0, Gemma 3 12B 8.8). So they
+  are re-read from disk.
+- Container start took 26 s at 01:34Z and 2.7-4.5 min at 02:31-02:42Z, under host load average 64-83.
+
+**Incident (02:28:55-02:34:20Z, ~5.5 min without media).**
+- What happened: the first re-apply stopped the gate and general. Then the manager refused to start general, because
+  the ASR speech worker still held a 256 MiB CUDA context on GPU4 after `/unload`.
+- Recovery: restart both speech workers, `up` general, start the gate.
+- `media_ram.sh` now handles it:
+  - It waits 15 s after `/unload`, then restarts the workers (as the gate's own `speech_unload` does) and refuses if
+    GPU4 is still not clear.
+  - An ERR trap brings general and the gate back on any failure.
+- Proven at 02:36-02:42Z: it hit the stuck-worker case again and completed.
+
+**Rollback (one command; tested 02:20:11-02:23:04Z, then one image ok in 166 s):**
+```
+/home/cereal/ai-serve/media/media_ram.sh rollback   # restores registry, manager, media_gate.py/json from
+                                                    # /home/cereal/ai-serve/backups/media-ram-20261029/ (*.20261029T011125Z,
+                                                    # SHA256SUMS checked), recreates general, restarts the gate
+/home/cereal/ai-serve/media/media_ram.sh show       # what is live
+```
+- After a rollback, the stopped h3sol container is recreated from the old registry entry on its next start.
+- Run it only in a quiet window; it stops the gate for 1-6 min.
+
+**Watch.**
+- `memory.events` `oom_kill` of the two containers (0 so far). A rise means non-pin anon outgrew 40 GiB: raise
+  `mem_limit` in the registry and `up` the container.
+- `media_ram_sample.sh OUT.csv SECONDS` samples both containers, the speech workers and MemAvailable at 1 Hz. The run
+  started 01:12Z stops by itself at 05:12Z.
+
+**Kernel/sysctl:** nothing was changed. Open question for Cyril, not acted on: host `vm.swappiness` is 60 with an 8 GiB
+swap file. The GPU4 containers now cannot swap (`memswap_limit` = `mem_limit`), so this only matters for other services.
+
+## 14. Host memory policy (2026-11-04, memory side session; live since 17:07-17:59Z)
+
+Design and numbers: `AI_SERVER_MEMORY_APPROACH_2026-11-04.md`. Relay CLAIM 204306, STATUS 204309/204311. Cyril
+11-04: "[Cyril quote withheld]". This section answers section 13's open swappiness
+question.
+
+**What is live.**
+- **No swap.** `swapoff /swap.img` ran 17:46-17:50Z. The `/etc/fstab` line is commented (`#memory-policy-20261104#`).
+  `/swap.img` (8 GiB) is kept until 2026-11-11 18:00Z, when `swap-img-delete-20261111.timer` deletes it
+  (`/usr/local/sbin/swap_img_delete.sh`; it refuses while the file is active swap or in fstab). `swap-rollback` recreates
+  the file if it is gone.
+- **Kernel**, persisted in `/etc/sysctl.d/90-ai-server-memory.conf`; the boot values are in its header:
+  `vm.compaction_proactiveness=0`, `vm.watermark_boost_factor=0`, `kernel.numa_balancing=0`.
+  kcompactd1 went from 14.9 % of a core to 0.9 %, and failed page migrations from 30.3k/s to 9.0k/s.
+- **OOM order.** Drop-ins `90-oom-order.conf`:
+  - Batch units at +500: system `omni-lane-*`, `gen-worker-*`, `gpu4-recaption`, `run0-eval-watch`, `media-judge`,
+    `gpu4-judge`; user `omni-lane-*`, `omni-lane@`, `omni-run0-evals(-cpu)`, `omni-run0-milestones`,
+    `omni-data-index`, `run0-tts-captions`.
+  - Run-0 evals and archivers at +300: system `run0-eval-watch`, `omni-run0-evals-cpu`; user `omni-run0-evals(-cpu)`,
+    `omni-run0-milestones`.
+  - Run 0 at -300.
+    - The live tree was set by root at 18:35Z (`memory_policy.sh run0-protect`).
+    - New launches set it themselves: `run0_queue.sh` lowers itself first, and the ranks pass `--oom-score-adj -300`
+      with a `sudo -n` fallback (chimera-omni `claude/run0-blocks-20261029` d27941d/84b3e58, deployed).
+  - `strata-gate` and `media-gate` at -500. Strata already ran at -500 (`z2-budget.conf`). sshd's listener sets -1000 itself.
+- **Batch caps.** MemoryHigh 3G / MemoryMax 4G on `omni-lane-source-audit-strata` and `gen-worker-text`. The other
+  lanes already had MemoryMax 4G. The milestone archiver (user `omni-run0-milestones`) has MemoryHigh 4G.
+- **Backups leave no cold copy.** Both backup cron lines run through `capped.sh --high 4G --reclaim-container
+  agent-memory-postgres --keep-gib 8`.
+  - The backup scripts' own `install-cron` writes the same line (`CACHE_WRAP`; set it empty for the plain line).
+  - A `pg_dump` of the 52 GB agent-memory DB had left 24 GiB cached in the Postgres container, and the 29 GiB dump file
+    sat in cache while rsync trickled it out.
+- **ComfyUI general (GPU4)** runs with `--disable-pinned-memory` since 18:44:30Z. It had been pinning and unpinning
+  30-57 GiB per 5 min. Lead verdict 11-05: KEEP. After 6 h every job type was as fast or faster and every finished task
+  was valid. LTX has too few tasks to call.
+- **ComfyUI h3sol (GPU4)** was OOM-killed at its 40 GiB cap on 11-04 23:58Z. Its RAM cache grew ~3.4 GiB per video task,
+  and with no swap an overshoot is a kill.
+  - The `--cache-ram 12 16` tuning (11-05 00:56Z) was the wrong approach and is superseded. Cyril: "[Cyril quote withheld]"
+  - The GPU-layout session owns the fix (compact weights, shorter clips, `--disable-smart-memory --cache-none`) and writes
+    the h3sol registry args. Nobody else edits them; `h3sol_cache.sh` refuses.
+  - Rule: a batch media container under a hard cap with no swap runs with caching off.
+  - Before and after are measured by `h3sol-watch-20261105` (`evidence/memory-20261104/h3sol-stints.txt`).
+- **Orphan sweep** (read-only, never kills):
+  - The user timer `orphan-sweep.timer` (:05/:35) reports idle python processes whose parent died, if they are above 500 MB and not a service's main process. Log: `evidence/orphan-sweep/orphan-sweep.log`.
+  - The workstation task `OrphanSweepRelay` posts new findings to Relay.
+  - The lead decides what to kill.
+- **systemd-oomd** no longer kills on memory pressure under `user@1000.service` (set-property
+  `ManagedOOMMemoryPressure=auto`, 18:28Z).
+  - It had killed `omni-run0-evals-cpu` twice at step 1250, and run 0's own `omni-run0.service` is a user unit.
+  - The kernel OOM order is the only killer.
+  - Without swap, a `MemoryHigh` below a job's anon peak stalls the job; set it above the measured peak.
+
+**Rules for anything new on this server:**
+1. No swap.
+2. Batch units get `OOMScoreAdjust=500` and a `MemoryMax`.
+3. Watch `MemAvailable`, not `buff/cache`.
+4. One-time big readers run through `/home/cereal/ai-serve/memory/capped.sh --high 4G -- CMD` (a MemoryHigh scope,
+   cron-safe), or use O_DIRECT / fadvise. Never drop caches globally on a timer.
+5. Pinned memory is allocated once per process.
+
+**Commands** (all in `/home/cereal/ai-serve/memory/`):
+```
+memory_policy.sh status                     # sysctl, swap, drop-ins, MemAvailable
+memory_policy.sh rollback-all               # oomd, caps, OOM drop-ins + live values, swap back on, sysctl to boot values
+memory_policy.sh sysctl-rollback <key>      # one setting; swap- / oom- / caps- / oomd-rollback likewise
+memory_policy.sh run0-protect[-rollback]    # live run-0 tree to -300 (or back to the recorded values)
+python3 gen_tasks.py "2026-11-04 18:44:30 UTC"   # gen-worker-media task times per type (ComfyUI unpinned trial)
+comfy_pins.sh show | quiet | rollback       # ComfyUI general pinned memory (rollback recreates it: quiet window)
+h3sol_cache.sh show                         # h3sol registry args (apply/rollback refuse: the GPU-layout session owns them)
+python3 eval_peak.py <cgroup>               # one cgroup's anon vs file over time, from memwatch.jsonl
+python3 hold_check.py 60                    # is the policy holding: kcompactd, migrations, swap, pins (last 60 min)
+python3 orphan_sweep.py --dry-run           # idle python orphans > 500 MB (read-only; the timer posts new ones to Relay)
+python3 memwatch_report.py /home/cereal/ai-serve/evidence/memory-20261104/memwatch.jsonl -10   # last 10 min
+```
+- Backups are in `/home/cereal/ai-serve/backups/memory-20261104/`: `sysctl-before.txt`, `fstab.before`,
+  `oom-live-before.tsv` and `comfy-instances.json.before-pins`.
+- Evidence and the trace logs (`pinwatch.txt`, `wakewatch.txt`, `pcache-scan-*.txt`) are in
+  `/home/cereal/ai-serve/evidence/memory-20261104/`.
+- Code: chimera-omni `claude/ai-server-memory-20261104`, `ops/ai-serve/memory/`.
+
+## 15. GPU layout 2026-11-04: Strata on GPU0 + GPU6, GPU4 media-only, K3 parked (GPU-layout side session; live since 18:13:37Z)
+
+Cyril, 2026-11-04 (verbatim): "[Cyril quote withheld]"
+
+**Cards.**
+
+| Card | Job |
+|---|---|
+| GPU0 (3090) + GPU6 (RTX 8000) | Strata: layers 0-15 on GPU0, 16-47 + output + vision projector on GPU6; experts not in VRAM in the pinned host tier |
+| GPU4 (3090) | media generation only: media-gate, ComfyUI, speech workers, gen-worker-media, media-refill. No judge, recaption or evals |
+| GPU1/2/3/5 (P40) | run 0 only |
+| K3 | parked, no GPU (`omni-k3.service` disabled, `distill/queues/k3-autopilot.HOLD`) |
+
+**Strata configuration (on top of sections 12-13).**
+- `strata-llama.service.d/z4-gpu06.conf` replaces `z4-gpu6only.conf`:
+  - `STRATA_GPUS=0,6`, `STRATA_TS=16,32`.
+  - `GGML_EXPERT_CACHE_MB=30000,33900`: GPU6's slot cache is held about 2 GiB under its cap, so the projector fits.
+  - `STRATA_MMPROJ_DEV=CUDA1`: the projector runs on GPU6, no longer `--no-mmproj-offload` on the CPU.
+  - `STRATA_NP=6`.
+- `strata-gate.service.d/z7-slots6.conf`: `--slots 6 --bg-max 5 --thermal-gpus 0,6` (foreground slot 0, background 1-5). The lead approved it for the Hermes judge front and the data lanes.
+- Unchanged: build `llamacpp-tier`, the 16 GiB RAM prompt cache (foreground only, `kvtier.conf`), 262,144 context, no output cap, MemorySwapMax=0, OOMScoreAdjust=-500, MemoryHigh 64G.
+- Not used: `llamacpp-tier-mtmd` (4e3172b). The disk tier is off, so its fix changes nothing here. The running build is the one that served for 16 h.
+- The projector's VRAM was measured before the change on the idle GPU0, with this build (`mmproj_vram_probe`): 862 MiB weights + 248 MiB compute after warmup, and a peak of +1,214 MiB over the CUDA context on 1,230-1,272-token images.
+
+**Window.**
+- Strata restart started 17:53:02Z.
+- The old process ignored SIGTERM for 90 s and was SIGKILLed.
+- Healthy at 18:13:37Z (1,235 s, of which the tier fill was 17 min).
+- The gate restarted twice (pause, then resume).
+- Background was paused 18:13-18:27Z for the greedy set.
+- Runner: `work/gpu-layout-20261104/run_layout_window.sh`. Evidence: `evidence/gpu-layout-20261104/{before,after}`.
+
+**Measured (before = GPU6 alone, projector on the CPU, 4 slots; after = this layout).**
+
+| | Before | After |
+|---|---|---|
+| Expert slots per weight | 226 (GPU6) | 345 (GPU0, 17.29 GiB) + 366 (GPU6, 33.07 GiB) |
+| Pinned host tier | 40.07 GiB | 21.51 GiB (8.35 + 13.16) |
+| Strata cgroup anon + shmem | 45.0-46.4 GiB | 23.0 GiB at start, 28.5 GiB with a 5.2 GiB prompt cache |
+| Strata cgroup total (incl. page cache: the n-gram table is file-backed) | 46.0 GiB | 29.2 / 33.5 GiB |
+| MemAvailable | 164 GiB (17:33Z) | 174 GiB (18:32Z; swap off, GPU4 judge gone) |
+| VRAM GPU0 / GPU6 / GPU4 | 0.02 / 43.9 / 19.7 GiB | 23.3 / 43.3 / 7.4 GiB |
+| Decode, 512-token write (cyril, background running) | 19.6 tok/s | 21.0 tok/s |
+| Prefill, 10.7k tokens (same) | 104.7 tok/s | 142.3 tok/s |
+| Warm 10k follow-up TTFT | 1.22 s | 0.95 s |
+| Image (1600x1000 PNG, 1,295-token prompt) TTFT | 34.8 s | 10.0 s |
+| Expert-cache hit rate | 84% (GPU6, total) | 95.7% GPU0, 97.1% GPU6 |
+
+- Greedy reference set, background paused, against the 10-28 baseline (the same set S4 passed 4/4):
+  - short-write and toolcall are byte-identical.
+  - read10k and read66k diverge but stay coherent and correct.
+  - A logprob probe (`tie_probe.py`) puts both divergences at near-ties:
+    - read10k token 16: " local" 0.213 vs the reference's " the" 0.206.
+    - read66k token 33: " To" 0.350 vs the reference's " Observ" 0.346.
+  - The cache-restored 66k run followed the reference for 33 tokens, while the cold run split at token 3.
+  - Prefill with background paused was 178.6 tok/s at 10.7k and 162.1 at 83.5k (S4: 91.8 and 91.5).
+- Limits: `/props` n_ctx 262144, 6 slots, gate n_predict -1. An image prompt and a text prompt both answer correctly. No Xid and no CUDA errors.
+- **Preemption (NOT fixed by this change).** A Sprite request against 5 running background slots got its first token in 19.0 / 17.4 / 13.4 s. The gate logged "freed upstream in > 10 s (stuck)".
+  - This was already the case before: 5 of the 8 preemptions in the previous 36 h were stuck, and S4 measured 8-13 s.
+  - Cause: llama-server frees a preempted slot that is in prompt processing only at that slot's next token (`recv_with_timeout`, section 12 / `STRATA_RAM_2026-10-28.md`).
+  - The fix, `strata-preempt.patch`, was built 10-29 and applies on `llamacpp-tier`. It has not been deployed.
+
+**Rollback** (GPU6 alone, projector on the CPU, 4 slots; tested as file operations + pre-flight both ways before the window):
+`/home/cereal/ai-serve/strata/strata_layout.sh rollback`. This removes z4-gpu06.conf and z7-slots6.conf, restores z4-gpu6only.conf from `backups/strata-layout-20261104T173326Z/` (sha-checked), restarts strata-llama in a quiet window (about 20 min tier fill) and then the gate.
+
+**GPU4 and judging.**
+- Stopped and disabled: `gpu4-judge`, `gpu4-recaption`, `media-judge.timer`, `run0-eval-watch`.
+- Generation resumed without the judge-backlog gate (`gpu4-gen-resume.timer` disabled).
+- Judging runs on Strata through `hermes-strata-front.service` (127.0.0.1:18490).
+- The paused judge clients and how to unpause them: `run0/maint/RELAUNCH.md`, section "GPU layout 11-04".
+
+Code: chimera-omni `ops/ai-serve/strata/layout/` and `ops/lanes/pause_unit.sh` on `claude/gpu-layout-20261104`.
+
+### 15.1 Strata preemption fix (live since 19:53:39Z) and GPU4 model-family batches (live since 18:44:35Z)
+
+Cyril 2026-10-22, verbatim: "[Cyril quote withheld]". Lead GO on 11-04.
+
+**Engine.** strata-llama runs `/home/cereal/omni-campaign/export/llamacpp-tier-preempt/bin`.
+- What it is: `llamacpp-tier` + `strata-preempt.patch` (tools/server only; 2026-10-29 patch, built 11-04 by `work/gpu-layout-20261104/build_tier_preempt.sh`).
+- Only `libllama-server-impl.so` differs from llamacpp-tier (0b789ef006a3c539). The mtmd fix (4e3172b) is NOT in it.
+- What the patch changes:
+  - `recv_with_timeout` keeps one deadline per wait. Before, it restarted on every result of every slot, so a preempted background request in prompt processing was freed only at its own first token. That was the gate's "stuck > 10 s".
+  - Disconnect polling: 1 s -> 100 ms.
+  - Background (cache_store none) prompt tokens never share a batch with a processing foreground task.
+- Drop-in `strata-llama.service.d/z6-preempt.conf`: `STRATA_LLAMA_BIN` and `LLAMA_BG_PROMPT_CHUNK=256` (a batch with no foreground carries at most 256 background prompt tokens).
+- CPU smoke v2 (qwen35-0.8B, no GPU): ALL OK.
+  - A cancelled background request was freed in 1.87 s new vs 38.7 s old (bound 3.32 s = one -ub 512 batch + 1 s; the 10-29 bound of 2.0 s ignored the batch in flight). With 128-token chunks: 0.64 s.
+  - A foreground request behind background prompt work answered in 1.14 s vs 12.6 s.
+  - Background output was equal to the same request run alone; greedy old == new.
+
+**Sprite TTFT with 5 background slots busy** (`sprite_ttft_probe.py`, 7 rounds each; the f06c7b short-call rule was ON for both "after" sets):
+
+| Engine | Rounds (s) | Median | Max | Stuck > 10 s |
+|---|---|---|---|---|
+| unpatched (18:47-18:53Z) | 5.1, 16.3, 14.7, 12.9, 17.7, 16.0, 15.7 | 15.7 s | 17.7 s | 5 of 7 |
+| patched, chunk 512 (19:37-19:43Z) | 3.70, 3.13, 1.38, 5.40, 2.13, 2.51, 0.93 | 2.51 s | 5.40 s | 0 |
+| patched, chunk 256 (19:56-20:01Z, LIVE) | 1.68, 3.11, 0.61, 2.11, 0.94, 1.94, 1.64 | 1.68 s | 3.11 s | 0 |
+
+- What is left of the wait is the one background batch already in flight; the server loop cannot stop a batch it has started.
+- Greedy reference set on the patched engine: 4/4 byte-identical to the unpatched 18:13Z run, so the patch changes no output.
+- Foreground speed (background running):
+  - write decode: 27.0 tok/s at both chunk sizes (unpatched 21.0);
+  - write TTFT: 1.6-2.5 s (unpatched 11.5 s);
+  - 10k prefill: 128 / 195 tok/s;
+  - warm follow-up: 0.86-0.95 s;
+  - image TTFT: 9.9 s.
+- Background prefill: about 164 tok/s per slot at 256 against about 141 at 512. No measurable cost.
+- n_ctx 262144, 6 slots, n_predict -1. No Xid and no CUDA errors. MemAvailable 181-182 GiB; Strata non-reclaimable 25.6-29.2 GiB.
+
+**Rollbacks.**
+- Back to chunk 512: `bash /home/cereal/ai-serve/work/gpu-layout-20261104/run_chunk_window.sh 512` (restarts strata-llama).
+- Back to the unpatched engine: `/home/cereal/ai-serve/strata/strata_preempt.sh rollback`.
+
+**GPU4 generation, model-family batches** (lead 11-04: "group jobs by model").
+- `gen_worker_media` 1.5.0 + `media_prompts` 1.2.0:
+  - The open batch's model family leads the lease order until 12 leases or 15 min. Families: qwen_image (t2i + edit), ace, ltx, hy3d.
+  - After that, `lease_order` picks the next family by deficit as before, so the mix shares hold. h3sol keeps its own hysteresis.
+  - Sprite preemption is unchanged.
+- Measured from the worker journal (`media_task_stats.py`):
+
+| | Before (7 days, 2,707 tasks) | After (80 min, 120 tasks) |
+|---|---|---|
+| Model-family switch rate | 0.63 | 0.08 |
+| image_t2i mean | 36.4 s | 18.1 s |
+| image_edit mean | 58.6 s | 29.5 s |
+| music_ace mean | 44.3 s | 22.6 s |
+| mesh_hy3d mean | 113.7 s | 112.7 s (two models per task either way) |
+| General-profile tasks per busy hour, at the 7-day mix | 66 | 100 (+51%) |
+
+- video_ltx had 4 tasks, too few to judge. No h3sol ran in the window.
+- Rollback: `bash /home/cereal/ai-serve/backups/media-batch-20261104T184336Z/rollback.sh`.
+
+Code: chimera-omni `claude/gpu-layout-20261104` (`ops/ai-serve/strata/preempt/`) and `claude/media-batch-20261104` (`ai-serve/media/`).
+
+### 15.2 h3sol without a RAM cache, compact LTX refine (args live since 11-05 01:26:23Z, gen_worker_media 1.5.1 since 04:49:23Z)
+
+Cyril 2026-11-05, verbatim: "[Cyril quote withheld]" Lead task the same night.
+
+**Why.** On 11-04 at 23:58:33Z `comfyui_h3_sol_gpu4` was OOM-killed at its 40 GiB memory.max, and one attempt was lost (task 15769, requeued). With `--cache-ram 4 16` its anon grew about 3.4 GiB per task, from 9.5 to 39.5 GiB, because ComfyUI kept every prompt's node outputs.
+
+**No cache.** Registry args `--cache-ram 4 16` -> `--disable-smart-memory --cache-none`. These are the documented H3 worker flags (Codex's comfyui_h3_gpu6_burst / comfyui_burst_gpu4). `--reserve-vram 12 --async-offload 2 --disable-xformers --disable-pinned-memory` are kept.
+- Script: `/home/cereal/ai-serve/media/h3sol_nocache.sh show|apply|rollback`. It is registry-only and takes effect at the gate's next h3sol start.
+- Backup: `backups/h3sol-nocache-20261105/`.
+
+**First no-cache stint** (01:26:50-02:27:52Z; bea06e's h3sol-watch plus the worker journal):
+
+| Task | Clip | anon peak | Task |
+|---|---|---|---|
+| 15771 | 5 s | 6.9 GiB | 440 s (cold start) |
+| 15772 | 5 s | 5.6 GiB | 367 s |
+| 15773 | 5 s | 6.6 GiB | 625 s |
+| 15774 | 4 s | 6.9 GiB | 652 s |
+| 15775 | 4 s | 6.9 GiB | 896 s |
+| 15776 | 3 s | 6.9 GiB | 634 s |
+
+- No OOM, 0 errors, 6/6 videos valid, plus 2 music and 1 edit.
+- **Clip length makes no RAM difference**, so clips stay at 5 s (124 frames). No earlier clip length for RAM was on record (memory, agent_memory and Codex's H3 docs searched).
+- anon + file sits at the 40 GiB cap. The file part is reclaimable cache, so every stage re-reads its weights from the root BX500.
+  - The tasks after 01:43Z slowed under a 40 MB/s download to `/`: draft 333-510 s, against 200-217 s before.
+  - Heavy writes to `/` slow h3sol.
+
+**Compact LTX refine.** The refine stage loaded the BF16 `ltx-2.3-22b-distilled.safetensors` (46 GB, 40.1 GB staged).
+- Now: the official `Lightricks/LTX-2.3-fp8` `ltx-2.3-22b-distilled-fp8.safetensors`.
+  - 29,531,884,062 B, sha256 d9646b6f2d5c42d337b23671634c43bfeece6989644f51b4a3aa088465ccd3b2.
+  - Downloaded at 10 MB/s outside the run-0 checkpoint window. 24.2 GB staged.
+- Same-seed A/B: tasks 15771-15773 with the same draft, opening frame, prompt and seed (`evidence/h3sol-ram-20261105/ab/`).
+  - 121/121 frames, 1344x768.
+  - SSIM 0.971 / 0.971 / 0.990; per-frame PSNR 34-51 dB.
+  - Visually equivalent at 12 frames per take: same composition, motion and faces. The worst frames differ only in fine texture.
+  - A BF16 rerun of 15772 was bit-identical (SSIM 1.0), so the gap is quantization alone.
+  - The refine output has no audio by design; the H3 FLAC is the audio of record and is unchanged.
+- `media_graphs.H3SOL_REFINE_CHECKPOINT`, gen_worker_media 1.5.1. First production task 15809: 3/3 stages valid, 24,203 MB staged.
+- **video_ltx on fp8 too (gen_worker_media 1.5.2, live 05:29:52Z).** `media_graphs.LTX_CHECKPOINT` is the fp8 file, and `H3SOL_REFINE_CHECKPOINT` follows it.
+  - Same-seed A/B on production tasks 15421-15423 (`evidence/h3sol-ram-20261105/ab-ltx/`): 49/49 frames at 83 ms, 768x448, silent WebP on both sides. A BF16 rerun was bit-identical.
+  - fp8 vs BF16 SSIM 0.86 / 0.92 / 0.57. Text-to-video from noise takes another path: the framing of the square, heron placement, wetsuit colour. The draft anchors the h3sol refine, so that one nearly matches.
+  - Reviewed at 12 frames per take plus the worst frame at full size: same quality, motion and prompt adherence, no new artifacts.
+  - Speed: fp8 63-85 s warm against ~138 s for BF16.
+- **The BF16 file stays on disk:** Sprite's own `backend/app/sprite_workflows.py` (foreground, general profile) still loads `ltx-2.3-22b-distilled.safetensors`. Moving it to the NAS needs the Sprite lead to switch that graph, plus the ai_pool drive replacement (`run0/maint/disk-cleanup-20261104/pending_nas_moves.txt`).
+
+**Tools.**
+- `media_queue_hold.py hold|release|wait-idle`: holds the queued media rows (not_before +40 min, lapses by itself), so the worker ends its task and idles. The A/B then gets the gate's single background slot, and restarts land between tasks.
+- `deploy_h3sol_ram.sh`.
+
+**Rollbacks.**
+- Code: `bash /home/cereal/ai-serve/backups/h3sol-ram-20261105T044350Z/rollback.sh` (held, idle, restore, restart, release).
+- Args: `/home/cereal/ai-serve/media/h3sol_nocache.sh rollback`.
+
+- Rollback of 1.5.2 alone (back to 1.5.1): `bash /home/cereal/ai-serve/backups/h3sol-ram-20261105T052911Z/rollback.sh`.
+
+Code: chimera-omni `claude/h3sol-ram-20261105` (a2915d1 + 71dfacc, `ai-serve/media/`).
+
+### 15.3 Sprite LAB key at the background tier (live since 11-05 06:31:53Z)
+
+Lead 2026-11-05 (Relay 204419). 34 Sprite-key requests from a Sprite lab node during an emulator pass pre-empted every background slot for an hour (04:35-05:55Z); a media-judge call was cut 6-7 times. Lab, dev, sweep, emulator and Hermes-test traffic now gets its own key. **`strata_key_sprite` stays family-only.**
+
+- **Key:** vault name `strata_key_sprite_lab`, from `secrets.token_urlsafe(32)`. It lives only in the credman vault and was never printed.
+  - Vault backup 2026-11-05_064455.
+  - The gate holds only sha256(key): `ai_serve.api_client` id 6, name `strata-sprite-lab`, service strata, tier **background**, vault_key named.
+  - Applied with `systemctl reload strata-gate` (SIGHUP re-reads api_client: "loaded 4 strata clients"). No gate restart, llama-server untouched.
+- **What background means for lab clients:**
+  - They queue behind the data lanes in the fair queue (213 s in the test with 5 lanes busy; `--bg-wait-s 600`).
+  - Any Sprite or cyril request pre-empts them: a streamed call ends with `{"code": "preempted"}`, so clients must retry.
+  - `/v1` calls must set `stream=true`; otherwise `400 background_must_stream`.
+  - No prompt cache (`STRATA_KV_TIERS=sprite,cyril`).
+- **Verified 06:32-06:44Z** (`verify_lab_key.py`, keys read from the vault into memory):
+  - lab non-stream -> 400 background_must_stream;
+  - lab streamed -> 200 at the background tier (request_log client 6);
+  - a Sprite-key call cut the running lab stream 0.58 s after it was sent, with Sprite TTFT 0.50 s (0.71 s earlier) and the 5 background slots freed upstream in 0.22 s;
+  - cyril answered in 0.92 s and Sprite in 0.27 s, as before.
+- **Rollback:** `/home/cereal/ai-serve/strata/lab_key.sh disable` (enabled = false + reload, so every lab call is 401). `enable` restores it; `status` shows the row.
+- **Foreground window (lab_key.sh 1.1.0, lead 11-05, for Sprite Phase 0 timings):** `lab_key.sh window-open [min<=30]` puts the lab key at the SPRITE tier and reloads the gate.
+  - It is self-lapsing: a user timer `lab-key-window-revert-*` runs `window-close` after at most 30 min.
+  - It refuses inside the chunk-128 trial and before `NOT_BEFORE` (2026-11-05T11:00Z), and while the family is active (a sprite request from another client, or any cyril request, in the last 900 s).
+  - `window-close` puts the key back at background, cancels the timer and logs how many background requests were pre-empted (`/home/cereal/ai-serve/evidence/lab-key/window.log`).
+  - `strata_key_sprite` is never touched. Post the start and end on Relay.
+- Code: chimera-omni `claude/gpu-layout-20261104` 5e6cacd + the --rotate commit (`ops/ai-serve/strata/keys/`).
+- **PENDING: rotate `strata_key_sprite_lab` at the NEXT planned strata-gate change** (lead 11-05).
+  - Why: a Sprite lane printed the key's first 6 characters in its own local transcript. That's not a real risk, but rotate anyway.
+  - Keep the same vault name. Run `python ops/ai-serve/strata/keys/mint_lab_key.py --rotate` from the workstation in the server-manager dir. It writes a new vault value, replaces key_sha256 on api_client 6 and reloads the gate.
+  - The old key fails from that reload on, so tell the Sprite lead first and have the lab nodes re-read the vault.
+  - Then delete this bullet.

@@ -1,0 +1,823 @@
+{
+ "contact_sheet": "contact_sheet.png",
+ "items": [
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "3d-01-slices.png",
+    "3d-01-cfg3-slices.png"
+   ],
+   "finite": true,
+   "id": "3d-01",
+   "kind": "generate",
+   "rows": 512,
+   "seconds": 20.756497870199382,
+   "std": 0.2954052984714508,
+   "std_by_cfg": {
+    "1": 0.2954052984714508,
+    "3": 0.3377815783023834
+   }
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|text|>"
+   ],
+   "files": [
+    "decide-describe.txt"
+   ],
+   "id": "decide-describe",
+   "kind": "decision",
+   "seconds": 1.4406364895403385,
+   "text": "<|out|><|text|><|/out|>A man holding a fris",
+   "tokens": 8
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|image|>"
+   ],
+   "files": [
+    "decide-redraw.txt"
+   ],
+   "id": "decide-redraw",
+   "kind": "decision",
+   "seconds": 1.412899661809206,
+   "text": "<|out|><|image|><|/out|>A man holding a baseball",
+   "tokens": 8
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "edit-01.png",
+    "edit-01-cfg3.png"
+   ],
+   "finite": true,
+   "id": "edit-01",
+   "kind": "edit",
+   "rows": 192,
+   "seconds": 17.026037571020424,
+   "std": 0.3483733534812927,
+   "std_by_cfg": {
+    "1": 0.3483733534812927,
+    "3": 0.36049336194992065
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "image-01.png",
+    "image-01-cfg3.png"
+   ],
+   "finite": true,
+   "id": "image-01",
+   "kind": "generate",
+   "rows": 256,
+   "seconds": 12.435488584451377,
+   "std": 0.3346984088420868,
+   "std_by_cfg": {
+    "1": 0.3346984088420868,
+    "3": 0.3982533812522888
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "image-02.png",
+    "image-02-cfg3.png"
+   ],
+   "finite": true,
+   "id": "image-02",
+   "kind": "generate",
+   "rows": 192,
+   "seconds": 9.571086236275733,
+   "std": 0.3150961697101593,
+   "std_by_cfg": {
+    "1": 0.3150961697101593,
+    "3": 0.39884909987449646
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "image-03.png",
+    "image-03-cfg3.png"
+   ],
+   "finite": true,
+   "id": "image-03",
+   "kind": "generate",
+   "rows": 192,
+   "seconds": 10.246246179565787,
+   "std": 0.3441741466522217,
+   "std_by_cfg": {
+    "1": 0.3441741466522217,
+    "3": 0.37352272868156433
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "image-04.png",
+    "image-04-cfg3.png"
+   ],
+   "finite": true,
+   "id": "image-04",
+   "kind": "generate",
+   "rows": 256,
+   "seconds": 12.341192476451397,
+   "std": 0.32428863644599915,
+   "std_by_cfg": {
+    "1": 0.32428863644599915,
+    "3": 0.3989872634410858
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "music-01.wav",
+    "music-01-cfg3.wav"
+   ],
+   "finite": true,
+   "id": "music-01",
+   "kind": "generate",
+   "rows": 125,
+   "seconds": 9.090375916101038,
+   "std": 0.1600695103406906,
+   "std_by_cfg": {
+    "1": 0.1600695103406906,
+    "3": 0.38424062728881836
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "music-02.wav",
+    "music-02-cfg3.wav"
+   ],
+   "finite": true,
+   "id": "music-02",
+   "kind": "generate",
+   "rows": 125,
+   "seconds": 9.283590256236494,
+   "std": 0.17426544427871704,
+   "std_by_cfg": {
+    "1": 0.17426544427871704,
+    "3": 0.3673233389854431
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "speech-01.wav",
+    "speech-01-cfg3.wav"
+   ],
+   "finite": true,
+   "id": "speech-01",
+   "kind": "generate",
+   "rows": 50,
+   "seconds": 6.8946069069206715,
+   "std": 0.18361349403858185,
+   "std_by_cfg": {
+    "1": 0.18361349403858185,
+    "3": 0.45164233446121216
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "speech-02.wav",
+    "speech-02-cfg3.wav"
+   ],
+   "finite": true,
+   "id": "speech-02",
+   "kind": "generate",
+   "rows": 50,
+   "seconds": 7.32386333309114,
+   "std": 0.1664842963218689,
+   "std_by_cfg": {
+    "1": 0.1664842963218689,
+    "3": 0.48689839243888855
+   }
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|image|>"
+   ],
+   "files": [
+    "text-01.txt"
+   ],
+   "id": "text-01",
+   "kind": "text",
+   "seconds": 41.06150328274816,
+   "text": "<|out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|im",
+   "tokens": 256
+  },
+  {
+   "decision": [],
+   "files": [
+    "text-02.txt"
+   ],
+   "id": "text-02",
+   "kind": "text",
+   "seconds": 39.74124868120998,
+   "text": "```\ndef def factorial def fact_base factorial factorial // n factorial n factorial(n // n n n\n    n = n // n = n // n(n n) n = n // n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n | 32 | n n n n n n n n n | n n | n | n | n n | n | n n | n | n | n | n | n | n | n | n | n | n | n | n | n | n | n | n | n",
+   "tokens": 256
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|text|>"
+   ],
+   "files": [
+    "text-03.txt"
+   ],
+   "id": "text-03",
+   "kind": "text",
+   "seconds": 1.9091353127732873,
+   "text": "<|out|><|text|><|/out|>A man is holding a tennis racket in his hand.<|im_end|>",
+   "tokens": 15
+  },
+  {
+   "decision": [
+    "<|/out|>",
+    "<|image|>"
+   ],
+   "files": [
+    "text-04.txt"
+   ],
+   "id": "text-04",
+   "kind": "text",
+   "seconds": 38.45234484784305,
+   "text": "<|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|",
+   "tokens": 256
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|image|>"
+   ],
+   "files": [
+    "text-05.txt"
+   ],
+   "id": "text-05",
+   "kind": "text",
+   "seconds": 40.04013185668737,
+   "text": "<|out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|im",
+   "tokens": 256
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|image|>"
+   ],
+   "files": [
+    "text-06.txt"
+   ],
+   "id": "text-06",
+   "kind": "text",
+   "seconds": 39.13041199930012,
+   "text": "<|out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|im",
+   "tokens": 256
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|text|>"
+   ],
+   "files": [
+    "tool-01.txt"
+   ],
+   "id": "tool-01",
+   "kind": "text",
+   "seconds": 1.9652841305360198,
+   "text": "<|out|><|text|><|/out|>A car is parked on the side of the street<|im_end|>",
+   "tokens": 14
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|text|>"
+   ],
+   "files": [
+    "tool-02.txt"
+   ],
+   "id": "tool-02",
+   "kind": "text",
+   "seconds": 47.415273304097354,
+   "text": "<|out|><|text|><|/out|><think>\n<tool_call>\n<function=calculate_distance>\n<parameter=location>\n12345678999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999",
+   "tokens": 256
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "video-01-frame000.png",
+    "video-01.mp4",
+    "video-01-cfg3-frame000.png",
+    "video-01-cfg3.mp4"
+   ],
+   "finite": true,
+   "id": "video-01",
+   "kind": "generate",
+   "rows": 1440,
+   "seconds": 50.44326978735626,
+   "std": 0.3241751492023468,
+   "std_by_cfg": {
+    "1": 0.3241751492023468,
+    "3": 0.3778741955757141
+   }
+  }
+ ],
+ "ranks": [
+  {
+   "errors": [],
+   "items": [
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|image|>"
+     ],
+     "files": [
+      "text-01.txt"
+     ],
+     "id": "text-01",
+     "kind": "text",
+     "seconds": 41.06150328274816,
+     "text": "<|out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|im",
+     "tokens": 256
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|image|>"
+     ],
+     "files": [
+      "text-05.txt"
+     ],
+     "id": "text-05",
+     "kind": "text",
+     "seconds": 40.04013185668737,
+     "text": "<|out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|im",
+     "tokens": 256
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|text|>"
+     ],
+     "files": [
+      "decide-describe.txt"
+     ],
+     "id": "decide-describe",
+     "kind": "decision",
+     "seconds": 1.4406364895403385,
+     "text": "<|out|><|text|><|/out|>A man holding a fris",
+     "tokens": 8
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "image-03.png",
+      "image-03-cfg3.png"
+     ],
+     "finite": true,
+     "id": "image-03",
+     "kind": "generate",
+     "rows": 192,
+     "seconds": 10.246246179565787,
+     "std": 0.3441741466522217,
+     "std_by_cfg": {
+      "1": 0.3441741466522217,
+      "3": 0.37352272868156433
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "speech-02.wav",
+      "speech-02-cfg3.wav"
+     ],
+     "finite": true,
+     "id": "speech-02",
+     "kind": "generate",
+     "rows": 50,
+     "seconds": 7.32386333309114,
+     "std": 0.1664842963218689,
+     "std_by_cfg": {
+      "1": 0.1664842963218689,
+      "3": 0.48689839243888855
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "3d-01-slices.png",
+      "3d-01-cfg3-slices.png"
+     ],
+     "finite": true,
+     "id": "3d-01",
+     "kind": "generate",
+     "rows": 512,
+     "seconds": 20.756497870199382,
+     "std": 0.2954052984714508,
+     "std_by_cfg": {
+      "1": 0.2954052984714508,
+      "3": 0.3377815783023834
+     }
+    }
+   ],
+   "rank": 0,
+   "seconds": 120.86896274518222,
+   "skipped": [],
+   "step": 300
+  },
+  {
+   "errors": [],
+   "items": [
+    {
+     "decision": [],
+     "files": [
+      "text-02.txt"
+     ],
+     "id": "text-02",
+     "kind": "text",
+     "seconds": 39.74124868120998,
+     "text": "```\ndef def factorial def fact_base factorial factorial // n factorial n factorial(n // n n n\n    n = n // n = n // n(n n) n = n // n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n | 32 | n n n n n n n n n | n n | n | n | n n | n | n n | n | n | n | n | n | n | n | n | n | n | n | n | n | n | n | n | n",
+     "tokens": 256
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|image|>"
+     ],
+     "files": [
+      "text-06.txt"
+     ],
+     "id": "text-06",
+     "kind": "text",
+     "seconds": 39.13041199930012,
+     "text": "<|out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|im",
+     "tokens": 256
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|image|>"
+     ],
+     "files": [
+      "decide-redraw.txt"
+     ],
+     "id": "decide-redraw",
+     "kind": "decision",
+     "seconds": 1.412899661809206,
+     "text": "<|out|><|image|><|/out|>A man holding a baseball",
+     "tokens": 8
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "image-04.png",
+      "image-04-cfg3.png"
+     ],
+     "finite": true,
+     "id": "image-04",
+     "kind": "generate",
+     "rows": 256,
+     "seconds": 12.341192476451397,
+     "std": 0.32428863644599915,
+     "std_by_cfg": {
+      "1": 0.32428863644599915,
+      "3": 0.3989872634410858
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "music-01.wav",
+      "music-01-cfg3.wav"
+     ],
+     "finite": true,
+     "id": "music-01",
+     "kind": "generate",
+     "rows": 125,
+     "seconds": 9.090375916101038,
+     "std": 0.1600695103406906,
+     "std_by_cfg": {
+      "1": 0.1600695103406906,
+      "3": 0.38424062728881836
+     }
+    }
+   ],
+   "rank": 1,
+   "seconds": 101.7161941472441,
+   "skipped": [],
+   "step": 300
+  },
+  {
+   "errors": [],
+   "items": [
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|text|>"
+     ],
+     "files": [
+      "text-03.txt"
+     ],
+     "id": "text-03",
+     "kind": "text",
+     "seconds": 1.9091353127732873,
+     "text": "<|out|><|text|><|/out|>A man is holding a tennis racket in his hand.<|im_end|>",
+     "tokens": 15
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|text|>"
+     ],
+     "files": [
+      "tool-01.txt"
+     ],
+     "id": "tool-01",
+     "kind": "text",
+     "seconds": 1.9652841305360198,
+     "text": "<|out|><|text|><|/out|>A car is parked on the side of the street<|im_end|>",
+     "tokens": 14
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "image-01.png",
+      "image-01-cfg3.png"
+     ],
+     "finite": true,
+     "id": "image-01",
+     "kind": "generate",
+     "rows": 256,
+     "seconds": 12.435488584451377,
+     "std": 0.3346984088420868,
+     "std_by_cfg": {
+      "1": 0.3346984088420868,
+      "3": 0.3982533812522888
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "edit-01.png",
+      "edit-01-cfg3.png"
+     ],
+     "finite": true,
+     "id": "edit-01",
+     "kind": "edit",
+     "rows": 192,
+     "seconds": 17.026037571020424,
+     "std": 0.3483733534812927,
+     "std_by_cfg": {
+      "1": 0.3483733534812927,
+      "3": 0.36049336194992065
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "music-02.wav",
+      "music-02-cfg3.wav"
+     ],
+     "finite": true,
+     "id": "music-02",
+     "kind": "generate",
+     "rows": 125,
+     "seconds": 9.283590256236494,
+     "std": 0.17426544427871704,
+     "std_by_cfg": {
+      "1": 0.17426544427871704,
+      "3": 0.3673233389854431
+     }
+    }
+   ],
+   "rank": 2,
+   "seconds": 42.61959472671151,
+   "skipped": [],
+   "step": 300
+  },
+  {
+   "errors": [],
+   "items": [
+    {
+     "decision": [
+      "<|/out|>",
+      "<|image|>"
+     ],
+     "files": [
+      "text-04.txt"
+     ],
+     "id": "text-04",
+     "kind": "text",
+     "seconds": 38.45234484784305,
+     "text": "<|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|/out|><|image|><|",
+     "tokens": 256
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|text|>"
+     ],
+     "files": [
+      "tool-02.txt"
+     ],
+     "id": "tool-02",
+     "kind": "text",
+     "seconds": 47.415273304097354,
+     "text": "<|out|><|text|><|/out|><think>\n<tool_call>\n<function=calculate_distance>\n<parameter=location>\n12345678999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999",
+     "tokens": 256
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "image-02.png",
+      "image-02-cfg3.png"
+     ],
+     "finite": true,
+     "id": "image-02",
+     "kind": "generate",
+     "rows": 192,
+     "seconds": 9.571086236275733,
+     "std": 0.3150961697101593,
+     "std_by_cfg": {
+      "1": 0.3150961697101593,
+      "3": 0.39884909987449646
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "speech-01.wav",
+      "speech-01-cfg3.wav"
+     ],
+     "finite": true,
+     "id": "speech-01",
+     "kind": "generate",
+     "rows": 50,
+     "seconds": 6.8946069069206715,
+     "std": 0.18361349403858185,
+     "std_by_cfg": {
+      "1": 0.18361349403858185,
+      "3": 0.45164233446121216
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "video-01-frame000.png",
+      "video-01.mp4",
+      "video-01-cfg3-frame000.png",
+      "video-01-cfg3.mp4"
+     ],
+     "finite": true,
+     "id": "video-01",
+     "kind": "generate",
+     "rows": 1440,
+     "seconds": 50.44326978735626,
+     "std": 0.3241751492023468,
+     "std_by_cfg": {
+      "1": 0.3241751492023468,
+      "3": 0.3778741955757141
+     }
+    }
+   ],
+   "rank": 3,
+   "seconds": 152.77666352223605,
+   "skipped": [],
+   "step": 300
+  }
+ ],
+ "schema": "chimera_omni.run0.dump_index.v1",
+ "step": 300
+}

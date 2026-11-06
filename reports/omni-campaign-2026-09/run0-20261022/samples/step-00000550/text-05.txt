@@ -1,0 +1,8 @@
+USER: Give me three tips for sleeping better.
+
+REPLY (21 tokens):
+<|out|><|text|><|/out|><think>
+
+</think>
+
+<|out|><|text|><|/out|>a man is sitting on a couch with a laptop<|im_end|>

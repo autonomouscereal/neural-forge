@@ -1,0 +1,19 @@
+USER: Summarise the plot of Romeo and Juliet in two sentences.
+
+REPLY (52 tokens):
+<|out|><|text|><|/out|><think>
+
+</think>
+
+<tool_call>
+<function=predict<|audio|><|/out|><think>
+<|out|><|text|><|/out|><think>
+
+</think>
+
+<tool_call>
+<function=predict<|audio|><|/out|></parameter>
+<parameter=pred>
+</parameter>
+</function>
+</tool_call><|im_end|>

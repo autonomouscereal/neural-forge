@@ -1,0 +1,4 @@
+USER: redraw it as a sketch
+
+REPLY (8 tokens):
+<|out|><|image|><|/out|>A man holding a baseball

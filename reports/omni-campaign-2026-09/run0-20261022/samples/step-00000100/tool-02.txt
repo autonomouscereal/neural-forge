@@ -1,0 +1,4 @@
+USER: Put 'dentist' on my calendar for next Tuesday at 3pm.
+
+REPLY (18 tokens):
+<|out|><|text|><|/out|>The user is asking about the current status of the customer's account.<|im_end|>

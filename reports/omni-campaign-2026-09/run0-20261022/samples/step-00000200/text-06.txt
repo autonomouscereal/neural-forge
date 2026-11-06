@@ -1,0 +1,4 @@
+USER: Translate 'where is the train station' into Spanish and French.
+
+REPLY (48 tokens):
+<|out|><|audio|><|/out|><|out|><|audio|><|/out|>A person is playing a trumpet, playing the instrument, playing instrument, or both instruments are played on the same instrument, like a banjo, banjo, or banjo, or any other instrument.<|im_end|>

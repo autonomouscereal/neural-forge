@@ -1,0 +1,523 @@
+# Folding record, May-October 2026
+
+Built 2026-10-28 from the omni_lab database (schema 7, ingest batches 272 and 273; verification corrections re-ingested as batch 274), read as `omni_lab_ro` with `omni_lab.py sql`. Every claim names its experiment keys (`fold_arm.arm_key`) and a source path, commit or agent_memory event. Numbers are quoted as stored. Negatives and closed paths are kept. Nothing was trained, folded or deleted to make this file. Claims C01-C13 were re-checked against the original sources on 2026-10-28; see **Verification** at the end.
+
+**Path short forms**
+- `NF` = `C:/Users/cereal/Documents/ai training/neural-forge`
+- `OCL` = `NF/reports/omni-campaign-2026-09`
+- `MX` = `NF/reports/matrix-campaign-20260810`
+- `MEM` = `C:/Users/cereal/.claude/projects/C--Users-cereal/memory`
+- `REV` = `C:/Users/cereal/Documents/ai training/reviews/2026-10-13-folding`
+- `ev N` = agent_memory event id; `D N` = omni_lab `directive.id`
+- Ratios: `ratio_net`/`ratio_body` are child/parent (0.25 = 4x). Where shards disagreed the DB column is NULL and the ratio is quoted from `ratio_text`.
+- "x/15" = the frozen 15-prompt review. Every x/15 count in this record was read by Claude, Codex or a machine rule; even the `scorer=cyril` rows carry no count Cyril produced (section 9).
+
+**Read this first: three facts that change how every number below reads**
+1. Only **11** behaviour rows carry `fold_behaviour.scorer='cyril'`, all matrix-campaign arms whose cited words run from 2026-07-30 (ev 447094) to 2026-08-29 (ev 607035). They come from about seven utterances (ev 575550 sits behind three rows, ev 570128 behind three). Eight of the 11 hold no score, one (`MXN4`) holds an alive call with no count, and the only two x/15 values (both 2/15) are machine counts Cyril read, not counts he produced. Of the other rows, 2,775 were read by Claude, 2,006 by a machine rule, 390 mixed and 147 by Codex; 1,167 are `none` and 104 NULL, i.e. scored by nobody. Every count on record came from an agent or a rule; Cyril's part is alive/dead rulings and reactions. Section 9 lists his rows.
+2. Every matrix-campaign child in waves 5-13 is **parent-shaped** (`NF/docs/PHASE1_FOLD_ONLY_FRONTIER_2026-08-12.md:469`): the ratio counts stored parameters, and the model on disk is 229,693,184 parameters (`PHASE1:143-144`; finding `MX14.F1`, `MX/wave14/NOTES-MX-R.md:404-409`). The best composed child, `COMP.MA.MXK14` (13/15), stores 0.994287x of the parent. It has two components, C05 at S8 (8x) on L05 and C07 at S4 (4x) on L12; its 13/15 came from moving C05 from quarter to eighth between MXK6 and MXK14 (`MX/wave7/NOTES-MX-K.md:32, 220`).
+3. Review counts are upper bounds. Re-read with three restatements per lane, the parent went 12 → 6, `ARCH.B75` 11 → 2, `ARCH.V19X13G03` 11 → 2, `ARCH.V18X13` 10 → 3, `ARCH.V16CL1792` 8 → 2, `ARCH.CL1792M` 8 → 0 (finding `MX33.F1`, `MX/wave33/human-review/CAMPAIGN_SCORECARD.md:13-36`, table at :18-27; cross-checked against `wave33/robustness-frontier.json`). A lane counts as robust when the child answers it under **any** of the three restatements. The parent's 6 is out of 10 scorable lanes, because context-retrieval and summarization-priorities cannot be scored for anyone (bank defect, scorecard :33-36). The JSON says the count "is not a grade and it retires nothing on its own".
+
+---
+
+## 1. Scale of the record
+
+**Totals** (omni_lab, 2026-10-28)
+
+| Item | Count |
+|---|--:|
+| Fold arms (`fold_arm`) | 7,895 |
+| Distinct child references (`child_ref`) | 3,393 |
+| Children that exist now / recorded deleted / unknown | 692 / 1,303 / 5,869 arms |
+| Components (`fold_component`) | 12,163 |
+| Behaviour rows / arms with one / arms with a score | 6,600 / 4,087 / 2,883 (1,236 numeric) |
+| Diagnostics | 38,600 |
+| Findings | 2,947 (proven 1,122, supported 1,301, open 197, closed_path 152, superseded 108, refuted 67) |
+| Technique rows / distinct technique names on components | 5,805 / 4,467 (3,588 used by one arm) |
+| Directives (Cyril's words) | 600 (451 added by the folding record) |
+| Training used on the arm | none 6,064; recovery after fold 651; gradient fit of the fold 101; unknown 1,079 |
+
+**Verdict classes** (all arms): fails 2,364; unmeasured 1,628; mechanics_only 1,304; partial 786; NULL (shards disagree) 494; design_only 422; closed_path 362; works 342; superseded 193. "works" includes very small compressions (for example the June Qwen3-0.6B merges at 2.64% shrink) and mechanism-only passes; it never means "4x with retained intelligence" by itself.
+
+**By program**
+
+| Program | Arms | works | partial | fails | closed | mechanics | First date |
+|---|--:|--:|--:|--:|--:|--:|---|
+| matrix-campaign (LFM2.5-230M) | 2,065 | 145 | 207 | 378 | 129 | 332 | 2026-08-10 |
+| neural-forge | 818 | 28 | 77 | 404 | 35 | 63 | 2026-06-26 |
+| chimera-omni | 811 | 18 | 57 | 106 | 24 | 319 | Sep-Oct |
+| lfm2-dynamic | 695 | 52 | 48 | 207 | 41 | 120 | 2026-07-01 |
+| media | 679 | 11 | 55 | 182 | 31 | 164 | Jun-Oct |
+| early-surgery | 489 | 15 | 65 | 329 | 2 | 6 | 2026-06-26 |
+| cross-family | 471 | 26 | 61 | 206 | 4 | 33 | 2026-06-26 |
+| k3 | 408 | 11 | 52 | 66 | 12 | 79 | Sep-Oct |
+| residual-attention | 406 | 7 | 12 | 137 | 26 | 15 | 2026-07-10 |
+| cross-width | 325 | 1 | 41 | 202 | 4 | 20 | 2026-06-26 |
+| cpcf | 144 | 0 | 1 | 24 | 2 | 24 | 2026-07-17 |
+| sparse-semantic | 107 | 2 | 35 | 24 | 5 | 17 | 2026-07-25 |
+| chimera-omni-toy | 100 | 8 | 12 | 13 | 1 | 61 | 2026-06-28 |
+| other | 99 | 5 | 2 | 6 | 35 | 10 | — |
+| density | 96 | 0 | 32 | 33 | 2 | 0 | 2026-10-07 |
+| kernel | 78 | 9 | 25 | 7 | 4 | 27 | 2026-07/08 |
+| stage1 | 68 | 0 | 1 | 37 | 2 | 4 | 2026-07-12 |
+| stage2 | 36 | 4 | 3 | 3 | 3 | 10 | 2026-08 |
+
+**By month** (from `experiment.date`)
+- 2026-05: 1 (other).
+- 2026-06: 953 — cross-family 306, neural-forge 222, cross-width 193, early-surgery 193, media 31, chimera-omni-toy 8.
+- 2026-07: 1,950 — lfm2-dynamic 482, residual-attention 365, neural-forge 328, early-surgery 281, cpcf 140, cross-family 99, sparse-semantic 81, cross-width 66, stage1 37, kernel 31, media 18, other 11, chimera-omni-toy 9, k3 1, chimera-omni 1.
+- 2026-08: 2,081 — matrix-campaign 1,496, lfm2-dynamic 154, neural-forge 112, chimera-omni-toy 54, media 41, other 36, cross-family 34, kernel 34, stage2 31, stage1 28, cross-width 18, sparse-semantic 16, chimera-omni 12, residual-attention 10, early-surgery 3, cpcf 2.
+- 2026-09: 589 — chimera-omni 216, media 207, k3 138, cross-width 8, matrix-campaign 7, other 4, kernel 4, chimera-omni-toy 3, stage2 2.
+- 2026-10: 1,494 — chimera-omni 566, media 367, k3 253, density 92, neural-forge 78, other 44, cross-width 38, lfm2-dynamic 19, cross-family 13, kernel 9, matrix-campaign 5, sparse-semantic 4, stage2 2, four programs 1 each.
+- No date: 827 (matrix-campaign 557 of them).
+
+**By owner**
+
+| Owner | Arms | works | partial | fails | closed | mechanics | design | unmeasured |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|
+| Claude | 3,399 | 203 | 327 | 649 | 173 | 799 | 302 | 358 |
+| Codex | 2,617 | 79 | 285 | 1,258 | 126 | 321 | 84 | 410 |
+| unknown | 1,753 | 50 | 149 | 431 | 61 | 161 | 31 | 833 |
+| both | 126 | 10 | 25 | 26 | 2 | 23 | 5 | 27 |
+
+Codex ran most of June-July (early-surgery, cross-width, residual-attention, LFM2 dynamic, CPCF, sparse-semantic); Claude ran the August matrix campaign and most of the Sept-Oct Chimera work. Codex also ran K3 layers 5-60 (Oct 6-7) and the Oct 7 retention studies (`K3DP.04db523ceafa` lineage; `gap2-codex-task4-oct07-fold-reviews-negatives:*`).
+
+**By scorer** (`fold_behaviour` rows / arms): Claude 2,775 / 834; machine 2,006 / 1,860; none 1,167 / 1,147; mixed 390 / 383; Codex 147 / 140; NULL 104 / 98; **Cyril 11 / 11**. 449 arms carry Cyril's words in `fold_arm.cyril` (mostly rulings and reactions, not counts).
+
+**Coverage limits of this record**
+- 5,997 paths cited by arms are not listed in any shard's declared source list (`v_fold_coverage.cited_not_declared_read`).
+- 2,067 arms have no component row; 642 findings name no experiment.
+- 1,441 arms came from several shards that disagree; the disagreeing column is NULL (verdict_class 419, ratio_net 405, axes 202). `child_exists_now` disagrees on 1,188 arms.
+
+---
+
+## 2. Technique by technique
+
+Counts below come from matching each component's technique text (and its `technique` row) against the family name. They are approximate where names are free text. "Best /15 at ≤0.26" is the best frozen-review count on an arm where that component is stored at 4x or smaller.
+
+| Technique | What it is | Code | Arms | Main kinds | Models | Best /15 any (arm) | Best /15 at ≤0.26 (arm) |
+|---|---|---|--:|---|---|---|---|
+| T1 dense prior-anchored ridge | closed-form ridge of one component against sealed write rows, anchored to the parent | `NF/src/neural_forge/matrix_technique_registry.py`; `_fit_linear` (:1138) | 488 | mlp_width 268, attn_q 71, attn_k 69, conv 58 | LFM2.5-230M; S3 27B trunk (C10) | 12 (`COMP.MA.RSTO`, `COMP.MB.RBEH`) | 11 `C07.T1.S4.L12`; 10 `C11.T1.S4.L00`, `COMP.MA.MXL4` |
+| T2 cross-width residual charts | balanced-POD encoders + cycle-anchored ridge decoders per residual boundary | `NF/src/neural_forge/hf_causal_cross_width_charts.py`; `matrix_technique_charts.py` | 48 | attn_o, mlp, conv, hidden | LFM2, SmolLM2-135M, SmolVLM2, ACE LM | 12 (`COMP.MA.RBEH`) | 11 `C07.T2.S4.L12`; 10 `C11.T2.S4.L00`, `C06.T2.S4.L12` |
+| T3 balanced basis truncation | controllability/observability truncation of writers | registry `balanced_krylov_controllability_observability_truncation` | 116 | conv 56, hidden 39, mlp 32 | LFM2 | 12 | 12 `C05.T3.S4.L05` (conv_out); 7 `C13.T3.S4.L05` (mlp_down) |
+| T4 low-rank factor writers | SVD writer factorization | `NF/src/neural_forge/matrix_technique_lowrank_writers.py` | 30 | conv, attn_o, mlp, embed | LFM2 | 12 `C05.T4.S4.L05` | 12 `C05.T4.S4.L05`; 10 `C13.T4.S4.L05`; embedding 0/15 ("the table is not low rank") |
+| T5 sparse residual-OMP routes (A9/A11 mechanism) | planted anchor basis → residual OMP → split C_in/C_out solves | `matrix_technique_body_routes.fit_body_component_routes`; `hf_lfm2_sparse_semantic_codebook.py` | 252 | attn_k 106, embed 90, mlp 67, conv 66 | LFM2 | 13 `COMP.MA.MXK14`, `C13.T5.M16.L13` | 13 `COMP.MA.MXK14`; 12 `C07.T5.S4.L12` (attn_k) |
+| T7 attention relation / M5 head merge | per-head lifted Gram, Stein solve, Procrustes gauge; joint q/k solve for merged heads | `hf_stein_relation_solve.py`; `NF/src/neural_forge/matrix_technique_head_merge.py` | 104 | heads 80, attn_q 28 | LFM2; Qwen3.5-4B (K2KV) | 8 `ARCH.KV6JQ` | 6 `M5.headmerge.L02/L12`, `COMP.MA.MXQ1/MXQ2` |
+| T8 Gram relation matching | rank-r truncation of row-normalized parent output in its own gauge, D²-weighted ridge | `NF/src/neural_forge/matrix_technique_relation_matching.py:t8_gram_relation_technique` | 120 | mlp 149, conv 37 | LFM2 | 13 `COMP.MA.MXK14` | 12 `C13.T8.S4.L05` (mlp_down), `C05.T8.S4.L05` (conv_out), `COMP.MA.MXJ1` |
+| T9 progressive multi-pass | schedule child_{t-1} → parent_t | `NF/src/neural_forge/matrix_technique_progressive.py` | 37 | mlp, conv | LFM2 | none scored /15 | — (bit-identical to one jump for ridge: `pg-aug-a:F-progressive-equals-direct`) |
+| Vocab row coreset (zero solve) | keep K token rows (specials + 256 bytes + merge closure) by corpus census; tokenizer remapped | `MX/run/mx23_vocab.py` .. `mx43_vocab.py`; Qwen: `OC/qwen-fold/qf_vocab.py` | 228 | vocab | LFM2 | 14 `ARCH.V19` (0.794570x) | 11 `ARCH.V12`; 10 `ARCH.V10` |
+| MLP channel coreset (C2 / pivoted) | keep gate/up rows by pivoted coreset, ridge-refit down_proj | `OC/qwen-fold/qf_mlp.py`; `OCL/composite/tools/qf_stream27.py:28`; `MX` `--ff` builders | 417 | mlp 842, experts_to_dense 57 | LFM2, Qwen3.5-0.8B/4B, Q38-27B, K3, media DiTs | 12 (per-site cells) | 8/15 S3 27B all layers, MLP-only 4x, whole checkpoint 0.522729 (`OC02-F-Q38-27BU-C2K4352`); 5/15 Qwen3.5-4B 4x (`OC01-F-Q35-4B-C2K2304`); 0/162 content Qwen3.5-0.8B 4x, 158 of them artifact misses (`x3-08b.c2k896`) |
+| Hidden width / reader-moment basis | global hidden_size fold onto the top eigenvectors of the pooled reader moment | matrix builders mx19-mx22 (no `code_location` row) | 88 | hidden | LFM2 | 4 `ARCH.W896` | none at ≤0.26 |
+| Block excision | delete a block, splice the parent's write, re-derive `layer_types` | `MX/run/mx18/mx18_build.py` (live-mask repair :2649-2685); Qwen `qf_excise` / `bodyq.sh --excise` | 286 | depth_excision | LFM2, Qwen3.5-4B | 15 `OC01-F-Q35-4B-X03/X08/X15/X16` (machine upper bound) | n/a |
+| Layer merge (average / fold) | `hf-merge-layers --method average|fold`; donor layer groups; period merge | `NF` `hf-merge-layers`; v2 proxy `OCL/composite/tools/c19-c23` | 178 | depth_merge | Qwen3-0.6B, Qwen3-4B, SmolLM2, T (27B line) | no /15; choice 0.75-1.00 at 2.64-2.85% shrink on plain Qwen3-0.6B; choice 0.75 at 5.28% on a Qwen3-0.6B host carrying an LFM2.5 MLP transplant | 0/9 v2 proxy at ~137x (`V2FOLD.proxy.A/B/C`) |
+| Depth codebook (p34/p35/p36) | per canonical neuron / GQA group keep k of 36 real depth medoids | Qwen codebook runner | 81 | attn_qkvo, embed | Qwen3-4B | behaviour 400/400 at p35 (1.006732x) | n/a |
+| Residual-attention QKVO / V-O | assignment-local Q/K/V/O residual factors, output-trained | `neural-forge-qwen-p35-assignment-local-qkvo-residual-run-v1`; `NF/src/neural_forge/hf_residual_attention_functional.py` | 138 | attn_qkvo, whole_model | Qwen3-4B, LFM2 | held-out top-1 64/64, 8/8 four-token (`p35-qkvo-L19G4`) | n/a |
+| Coupled attention / Q-DEIM | Q-DEIM channel selection on coupled attention | `NF` coupled-attention runner | 181 | attn_qkvo, hidden | LFM2, Qwen3-4B | no /15 | — (all 37 `coupled-attn-qdeim` arms fail) |
+| CPCF | cached-parent closed-form compile of an exact blank target | commits 2765f24d, 93e1ecc1, ccea0f7a | 27 (+117 cpcf-program arms) | attn_qkvo | LFM2 | — | — (no works) |
+| moving_gauge / exact-4x dense contraction | whole-body closed-loop per-layer boundary solve at carrier H816 | `NF/src/neural_forge/hf_lfm2_moving_gauge_residual_reclosure.py` | 174 | whole_model | LFM2 | 0/15 | 0/15 `r12-exact4x`, `r13-ceiling-armA` |
+| Terminal gain | solve the final-norm gain diagonal | `OC/qwen-fold/qf_termgain.py`; matrix builders | 85 | other | LFM2 | 11 `ARCH.V20X13G03`, `ARCH.V19X13G03` | n/a (storage-free) |
+| K3 dense pass / C14 expert union | dense replacement of routed experts by an expert-union coreset, folded prefix feeding each layer | `OCL/composite/tools/k3_dense_pass.py` 1.1.0-1.2.5; `OC/k3/c14_union_coreset.py` | 193 | experts_to_dense | Kimi K3 | never decoded | — |
+| C10 union install | K3 union FFN installed into the S3 trunk at weight w | `OCL/composite/tools/c10_union_install.py` 1.3.0-1.5.1 | ~171 chimera arms | mlp, experts_to_dense | S3 27B + K3 | R-Q top-1 vs trunk 187/210 (`C10.D4.g01`) | — |
+| C17 charts / C16 media install | ridge charts K3/media latent ↔ trunk; insert charted DiT blocks | `OCL/composite/tools/c17_chart_fit.py`, `c16_install_media.py`, `OC/media/mediafold/c16_transplant.py` | 392 | modality_unit, cross_family | K3, ACE, H3, QIMG, HY3D, QVL32 | — | MLP 4x per unit only (`gap2:s7-media-4x-is-mlp-only`) |
+| KD / OPD recovery (training, not folding) | top-64 KD, on-policy JSD | `streamed_kd_trainer` | 131 | whole_model | Qwen3-4B, Qwen3.5-0.8B, OMNI1 | 14/162 (`x3-08b.kd1m-opd-1000000`) | — |
+
+**What each technique is proven for, and not**
+- **T8 and T5 are the per-site 4x workhorses.** Single components at true 4x keep 12/15: `C13.T8.S4.L05` (mlp_down), `C05.T8.S4.L05` (conv_out), `C07.T5.S4.L12` (attn_k), against the parent's 12/15 (`MX/wave5/NOTES-MX-I.md:59-67`; `NF/docs/MATRIX_CAMPAIGN_DESIGN_2026-08-10.md:896-899`). The best component-fold children are `COMP.MA.MXK14` 13/15 (two components: C05 at S8, i.e. 8x, on L05 and C07 at S4 on L12; `MX/wave7/NOTES-MX-K.md:32, 220`), `COMP.MA.MXJ1` 12/15 (one C13 component at T8.S4; `MX/wave6/NOTES-MX-J.md:26, 259`) and `COMP.MA.MXL10` 11/15. They store 0.994287x, 0.991439x and 0.985726x of the parent, and all are parent-shaped (`NF/docs/PHASE1_FOLD_ONLY_FRONTIER_2026-08-12.md:240, 256, 257`). MXK14 is the only COMP row at 13/15 or above. T8 is dead at attn_v/attn_o and falls to 6/15 at S8 (technique row "T8 gram_relation_matching").
+- **T1** passes on attention Q/K (10-11/15 at 4x) but "stores 1.875x at M16 (storage trap)" (technique row "T1 dense prior-anchored ridge"). At the 27B scale T1 is the refit inside C10 and the K3 dense pass; neither has a behaviour score.
+- **T3** has one strong cell (`C05.T3.S4.L05`, 12/15 conv_out) and "7/15 impaired on mlp_down"; it does not generalize (technique row "T3 balanced controllability/observability truncation").
+- **T4** loses to coreset on 40 of 42 SwiGLU writes and wins on conv (REALIGNMENT §3b citing `MEM/neural-forge-matrix-campaign.md:268-269`); on the embedding it is 0/15.
+- **T7/M5 head merge** is exact (identity gate 6.7e-16 to 8.7e-15) but "costs 8–13× more drift per parameter" (`P1.head-merge-expensive`, `PHASE1_FOLD_ONLY_FRONTIER:695-700`). One merged attention block costs more behaviour than two whole SwiGLU lanes plus the token interface (`MXQ.F4`, `MX/wave13/NOTES-MX-Q.md:180-195`).
+- **T9 progressive** equals a direct fold for ridge; value comes only from re-solving against folded inputs (`pg-aug-a:F-progressive-equals-direct`).
+- **Vocab coreset** is the cheapest axis on LFM2 (14/15 at 0.794570x, `ARCH.V19`). Cyril ruled on 2026-08-13 that vocab reduction counts as folding "[Cyril quote withheld]" (ev 574258; finding `cyril-scores:F14-vocab-coreset-counts-as-folding`). The vocab axis has a cliff, not a slope: collapse sits inside the 2,048 rows below K = 8,192 (4/15) (`gap2:w25-vocab-axis-cliff`, `MX/wave25`). On Qwen, C1 failed on the mandatory token 248044 and stayed off (technique "C1 vocab coreset", `OC/qwen-fold/qf_vocab.py`).
+- **MLP channel coreset** works per site on LFM2 and fails all-site. Fourteen SwiGLU coresets, each with held-out write cosine 0.81-0.94 "inside the sealed alive fidelity band", compose to 0/15 (`MX14.F3`, `MX/wave14/NOTES-MX-R.md:238-239, 264-267, 414-415`). That ff640 negative is a global intermediate-width cut on all 14 layers, because `intermediate_size` is global. The bisection child MX14-ff1280 (2x per site) was "degraded, not degenerate — ~5/15" (`NOTES-MX-R.md:281`), so the all-site failure is a cliff between write cosine 0.93 and 0.86, not a failure at every width. Global intermediate 640 is dead under any conditioning (`MX.ffn-cliff`, `MATRIX_CAMPAIGN_DESIGN:1630-1632`). At 4B, 4x all-layer = 5/15 (B 2) and 8x = 1/15 (B 0). At 27B, the MLP-only 4x on all 64 layers (whole checkpoint 0.522729, i.e. 1.883792x, MTP removed) = 8/15 sealed, column B 1, against the parent's 15/15, B 12; the parent's B 12 is its own machine ceiling ("column A 15 / B 12, measured (E2)"), not a human read (`OC01-F-Q35-4B-C2K2304`, `-C2K1152`, `OC02-F-Q38-27BU-C2K4352`; `REV/live/SCORECARD.md:31-37`; `OCL/composite/s8/review/UPPER-BOUND-NOTICE-OC02-F-Q38-27BU-OMNI1-s8.md:5`; `C:/Users/cereal/Documents/Codex/2026-10-05/task-4/CHIMERA_OMNI_FULL_FIRST_FOLD_STATUS_2026-10-06.md:582`). At 0.8B, 4x = 0/162 content against the parent's 54/162; 158 of the 162 misses were artifact misses (empty, capped or looping output) and 4 were ungraded, so this is degenerate output rather than wrong answers (`x3-08b.c2k896`; `OCL/research/DENSITY_AND_DATA_PROGRAM_2026-10-14.md:273`).
+- **Hidden-width basis**: the pooled reader moment's own top eigenvectors are "the only choice that produces a model"; five, then six, alternative objectives lost to it (`ST.subspace-point`, `NF/docs/FOLDING_SCALING_THEORY_2026-08-12.md:1010-1019`; `nf-git-and-code:energy-law-condition`). It holds only near full width (section 4).
+- **Excision**: proven for one block on LFM2, but only at some sites (block 13 13/15; blocks 0, attention 2 and attention 12 each 0/15 alone), and for one layer of 32 on Qwen3.5-4B (section 3).
+- **Layer merges**: passed gates at 2.64-2.85% shrink on plain Qwen3-0.6B and at 5.28% on a Qwen3-0.6B host carrying an LFM2.5 MLP transplant (section 3).
+- **Residual-attention QKVO**: one site, gradient-trained, 0.08% of parameters (section 5).
+- **K3 dense pass, C10, C16/C17**: mechanics proven; no behaviour result (section 8).
+
+---
+
+## 3. Layer (depth) folding
+
+**Arms with a depth component:** 592 (depth_excision 1,035 components on 330 arms; depth_merge 269 components on 262 arms). By parent name as recorded: LFM2.5-230M/LFM2 (matrix) 215 + 44 + 27 + 7; Qwen3-4B-Base 99 + 52 + 15 + 13 (+ 5 cross-width, 3 early-surgery, 2 cross-family); Qwen3-0.6B 12 + 8 + 4; SmolLM2-135M 12 + 9 + 7; Qwen3.5-4B 6 + 6; T (27B line) 3 + 3 + 1; K3 1; Qwen3.8-27B 1.
+
+### 3a. June: Qwen3 layer merges (Codex)
+- **Qwen3-0.6B, merge-first search, 2026-06-26.** Depth average and depth fold of layers 13+14 passed at 2.64% shrink (choice 0.75, machine): `docs-june-july-early:q06-depth-average-13-14`, `docs-june-july-early:q06-depth-fold-13-14`. Width 0.995 + depth fold 13+14 passed at 2.848% (choice 1.00): `docs-june-july-early:q06-w0995-dfold-1314`; width 0.995 + depth average 13+14 also passed at 2.848% (choice 0.75). Source `NF/docs/VALIDATION_RESULTS_2026-06-26.md:405-410, 422-424, 466-467` (run `qwen3_layer_merge_20260626`): "Depth folding is layer-location sensitive. Layer group 13+14 survived; later and multi-group folds failed behavior gates."
+- Merges of 19+20 (choice 0.50) and 8-9+19-20 (5.28% shrink, choice 0.25) failed the gate (`server-matrix-runs:nf/archive/qwen3_layer_merge_20260626#average_19-20`, `#fold_19-20`, `#average_8-9_19-20`, `#fold_8-9_19-20`; `VALIDATION_RESULTS_2026-06-26.md:407-410`).
+- Cross-family host Qwen3-0.6B with an LFM2.5 MLP transplant (alpha 0.005; gated at 0.00% shrink, PPL 284.984, choice 1.00): depth fold 13+14 and 15+16 at **5.28% shrink passed** (PPL 294.424, choice 0.75), generations "remained on-topic but more repetitive than the host". It became the frozen parent of the vision graft. A recovered run of the same candidate dropped choice to 0.50 and was not promoted. `docs-june-july-early:xfc-qwen3-lfm25-dfold1314-1516`, run `xfamily_compress_qwen3_lfm25_5pct_safe_20260626_182857`, `VALIDATION_RESULTS_2026-06-26.md:349-374, 643-658`. This is the largest gated layer merge on record; it is not on plain Qwen3-0.6B.
+- SmolLM2-135M fold 13+14 at about 2.63% failed (choice 0.25, "repeated sentence/code patterns") (`VALIDATION_RESULTS_2026-06-26.md:1210-1229`).
+- **Qwen3-4B → 135M blank target ("donor layer groups", 36 donor layers → 16 child layers), 25-30x.** Fold-only children collapsed; partial behaviour came only after recovery training: `qwen4b_mathboost_answer_cleanopen_800_gpu4` (generation 200/200, behavior 161/200, choice 40/64, math 1/4); `qwen4b_mean_cached_cka_curated_xfamily_token_auto_800s_tiedhead` 29.90x behavior 3/6 ("the first strict 25x+ blank-target result that is not merely tensor compatibility"); `tied29x_dualalm240_last4` 4/6. Sources `NF/docs/VALIDATION_RESULTS_2026-06-27.md:679`, `NF/docs/FOLDING_DIAGNOSIS_AND_EXPERIMENT_CATALOG_2026-07-11.md:67`. 14 arms named "36 donor layers → 16 child layers" all fail.
+- **Closed:** "Every tested depth-sharing scheme (activation-PCA depth fold, shared depth basis, one projection set at every depth, rank-one sharing even at 8.21x) collapsed; averaging parameters is not ordered function composition" (`ra-law-depth-sharing-closed`, `FOLDING_DIAGNOSIS_AND_EXPERIMENT_CATALOG_2026-07-11.md:105-108`). Layer-location note: "Modest folds can survive, but layer location matters and later or multiple groups failed" (`docs-residual-attention:cat-coupled-small-width-depth`, same doc :80).
+
+### 3b. July: depth codebook and producer-first depth (Codex)
+- **Qwen3-4B depth codebook** (keep k of 36 real depth medoids per neuron/group): 36/36 identity; p35 keeps behaviour 400/400, generation 633/1000 at 1.006732x (`qwen3_4b_codebook_p35_20260710`); p34 generation retention 296/388 at 1.0133805894x (`qwen3_4b_codebook_p34_20260711`); 34 and below 0/1000; "MLP is much more fragile than attention" (`pg-jul-a:F07-mlp-cliff-p35-p34`). Attention p35 + MLP p36: 372/388 strict generations at 1.0067x, "far too little compression" (`pg-jul-b:qwen-attn-p35-mlp-p36-fold`, ev 274877).
+- **LFM2 producer-first, exact 50%, depth 14 → 6:** retained parent-correct tasks 0; 28/28 hit the generation limit; closed as "decisive evidence against this particular depth-six/uniform-width balance, not evidence that a 50% child is impossible" (`docs-lfm2-july:lfm2-exact50-producer-first-depth6`, `NF/docs/DYNAMIC_LFM2_RESULTS_2026-07-16.md:213-262`).
+
+### 3c. August: LFM2 excision (matrix campaign, Claude)
+- **Single-block census:** block 13 13/15 (above the parent's 12/15, `NOTES-MX-T.md:77, 81, 230`), block 7 11, block 9 10; attention block 12 0/15; "six of seven conv excisions score 6/15-13/15" (`ARCH.X13A`, `ARCH.X07`, `ARCH.X09`, `ARCH.X12`; `MX16.F3`, `MX/wave16/NOTES-MX-T.md:324-328`). `ARCH.X13A` net 0.947479x. **One block is survivable only at some sites:** removing one block "leaves a model that answers 13 of 15 prompts at one site and 0 of 15 at another"; conv 0, attention 2 and attention 12 each score 0/15 alone (`FOLDING_SCALING_THEORY:645-649`). `ARCH.X00` "removes the same 12.1M parameters as ARCH.X13A's 13/15 and scores 0/15 with all sixteen lanes charged" (`MX/wave17/NOTES-MX-U.md:56-58`). X13A's 13/15 also comes with lambada perplexity 4.4x worse (24.39 → 106.78) (`NOTES-MX-T.md:236, 342-343`).
+- **The campaign deleted the wrong block for two waves:** block 13 alone 13/15 against block 5 6/15 at identical 0.947479x; the absorbed-fraction census ranked blocks backwards (`MX16.F2`, `NOTES-MX-T.md:319-323`; `UI.census-backwards`, `NF/docs/UNBUILT_INVENTORY_2026-08-28.md:30-36`).
+- **Ladder:** 1 block 13/15 → 2 blocks 7/15 (`ARCH.P1301`) → 3 blocks 3/15 (`ARCH.T010713`) → 4 blocks 0/15 (`ARCH.Q01050913`) (`MX19.F7`, `MX/wave19/NOTES-MX-W.md:427-428`; `P1.excision-ladder`, `PHASE1_FOLD_ONLY_FRONTIER:423-430`).
+- **Pair cost is set by distance** between blocks (`ST.pair-distance`, `FOLDING_SCALING_THEORY:659-667`), not by solo scores: blocks scoring 11 and 10 alone compose to 4/15; 13 + 9 twelve blocks apart compose to 7/15 (`MX17.F4`, `MX/wave17/NOTES-MX-U.md:339-341`). The distance law "does not survive to three bodies": triples T010713 3/15, T030913 2/15 and T010913 1/15 do not order by spread (`PHASE1_FOLD_ONLY_FRONTIER:432-440`).
+- **Block choice decides which capabilities survive:** X09 and X13 at identical ratio share 0 of 16 lanes (`R3.L6-blocks-choose`, `NF/docs/ROUND3_SLATE_2026-08-28.md:159`).
+- **Local re-solve after excision is a no-op:** MX15-X05A deletes block 5 and re-solves every surviving FFN writer at unchanged width; update_scale 0.029, cos 1.0000, and it still scores 6/15 (`MX15.F7`, `MX/wave15/NOTES-MX-S.md:200-224, 240`). A trajectory objective made it worse: X05T 0/15 against X05A 6/15 on the same excision (`MX15.F3`, `NOTES-MX-S.md:344-349`).
+- **Harness defect found and fixed:** excision left `config.layer_types` unshifted, so 28.6%-48.0% of attention mass went to future tokens (`MX18.F4`, `MX/wave18/NOTES-MX-V.md:350-359`). The figure was measured with blocks 13 and 1 both excised; with block 13 alone nothing shifts and the future mass is 0.0000 (`MX/run/mx18/mx18_build.py:2668-2671`). The fix re-derives `layer_types` at `mx18_build.py:2676-2679`, inside the `if excised:` block that starts at :2649. Exported children were never affected, because export writes the child's own `layer_types`; only solves conditioned on the live stream were, and composed children moved by at most one case (`NOTES-MX-V.md:356-359`). Pure-excision maps were bit-identical after the fix (`layer-types-harness-defect`, `MEM/neural-forge-matrix-campaign.md:352-354`). Pure excision rebuilds bit-identically across nine waves (`MX26.F9`).
+- **Excision on a vocab base:** `ARCH.V20X13` 10/15 at 0.746614x; block 13 costs −3 on every shelf-or-better base (`MX26.F3`, `MX27.F2`; `MX/wave26-27/human-review/SCORECARD.md`).
+- Cyril (2026-08-13, ev 574258): "[Cyril quote withheld]".
+
+### 3d. September-October: Qwen3.5-4B and the 27B line
+- **Qwen3.5-4B single-layer excision (OC01 ladder):** X03, X08, X15, X16 15/15 (column B 13, 12, 13, 13); X31 12/15 (B 10); X00 10/15 (B 10) (`OC01-F-Q35-4B-X03` .. `-X31`; `REV/live/SCORECARD.md:27-33`). Child size depends on which parent count is used. On the builder count each child is about 97.5-97.6% of the parent (`whole_parent_over_child` 1.0255117764862227 for X00/X08/X16, child 4,426,341,696; 1.024253155852789 for X03/X15/X31, child 4,431,780,864; parent 4,539,265,536). On the safetensors-header count that `REV/live/SCORECARD.md` uses, the children are 94.99-95.11% of the parent (net_ratio 0.949886 / 0.951053, parent 4,659,865,088). The 120,599,552-parameter gap between the two parent counts is logged as "unexplained" in record-X03.json and is unresolved (`gap2-codex-task4-oct07-fold-reviews-negatives:qwen35-4b-whole-model-accounting:X03` etc., `C:/Users/cereal/Documents/Codex/2026-10-05/task-4/lfm_historical_baseline_protocol_audit_oct07/WHOLE_MODEL_BASELINE_HISTORY_AUDIT_V1.json`). The counts are machine upper bounds ("machine screening upper bounds; not owner-confirmed correctness or retained intelligence"). No reading by Cyril is recorded. The server's `oc01/human-review/OC01-F-Q35-4B-X03/UPPER-BOUND-NOTICE-OC01-F-Q35-4B-X03.md:5-8` (2026-09-03) says "Nobody has read this child", and the live ledger's 52 rows (2 clone, 16 register, 24 review, 10 status) contain no human or per-case reading (`fold_arm.cyril` on the OC01 arms). That proves no recorded reading, not that he never looked informally. Deletion: on 2026-10-16 `qwen-fold/children` held ten retained exports, nine OC01 checkpoints (C2K1152, C2K2304, G5D32, X00, X03, X08, X15, X16, X31) plus `QF-T9`, which is not an OC01 checkpoint. A 2026-10-28 read-only probe found the directory empty, last modified Oct 21 13:41, so it was emptied by about 2026-10-21. The OC01 human-review packages (JSON/MD only) still exist under `oc01/human-review/` (`gap2-codex-oct06-08-child-archive-retirement-records:F5-ten-qwen-children-retained-oct16-gone-oct28`; `C:/Users/cereal/Documents/Codex/2026-10-05/task-4/oct16_storage_review_v1/STORAGE_REMEDIATION_ASSESSMENT_V2.json:59`).
+- **v2 proxy period merge (4:1) from T, ~137x** (26.1B → 191,337,601 params; proxy count at `OCL/V2_FOLD_INIT_PLAN_2026-10-21.md:363`; the plan states no ratio): R2 0/9 in arms A, B and C, all 27 child continuations an immediate `<|im_end|>`, held NLL worse than a fit-row unigram 8.355 (`V2FOLD.proxy.A`, `.B`, `.C`, `.F-T`, `.F-T-BE`, `.F-T-BE-FND`; `OCL/V2_FOLD_INIT_PLAN_2026-10-21.md:380-394`).
+- **Not on record:** any excision ladder on the 27B or on K3; any multi-layer merge that kept behaviour above 5.28% shrink. On plain Qwen3-0.6B, none above 2.85%; the 5.28% pass is on the LFM2.5-transplant host (section 3a).
+
+---
+
+## 4. Width folding
+
+### 4a. June: blank-target width (Codex)
+- Qwen3-0.6B merged FFN folds (parent: the 50/50 merge, PPL 383.395, choice 1.00): x0.900 "Failed; collapsed" (choice 0.00, PPL 1,615,475.234; "blank-ish continuations"); x0.990 "Loaded, but degraded/repetitive" (choice 1.00, PPL 954.659); x0.995 "Loaded, but degraded" (choice 1.00, PPL 611.624) (`docs-june-july-early:q06-merged-ffnfold-0p900`, `-0p990`, `-0p995`; `VALIDATION_RESULTS_2026-06-26.md:23-39`). Only x0.900 is labelled failed in that table. The same 594,759,680-parameter x0.995 candidate is "Failed: PPL ratio 1.595 > 1.25" in `qwen3_safe_sweep_20260626` (`:128`); no gate row exists for x0.990. The DB classes all three as `fails`. Cyril, ev 164836: "[Cyril quote withheld]" Width x0.995 by combined-cosine merge passed in the merge-first search (technique "combined-cosine width merge", `neural_forge/hf_tools.py` @54230c4; `server-matrix-runs:nf/archive/qwen3_merge_first_search_20260626#width_0p9950`, machine gate only) but failed the gate in the separate width-merge run, repaired or not (`server-matrix-runs:nf/archive/qwen3_width_merge_20260626#ffn_0p9950_merge`, `#ffn_0p9950_merge_repaired`).
+- Qwen3-4B → SmolLM2-135M / Pythia-160M at 25-30x: projected mean fold "the first blank-target method here that moved some benchmark numbers" (`qwen4b_projected_smollm135m_20260627_023125`, choice 0.25). Cyril, ev 167540: "[Cyril quote withheld]" The refuted claim: "proven cross-tokenizer transfer of 4B-class donor intelligence into a 135M-160M host" (`docs-june-july-early:f-xtok-4b-transfer-unproven`, `NF/docs/REAL_MODEL_VALIDATION.md:100-112`). Recovery made held-out PPL worse while choice stayed 0.25 (`pg-may-jun:nf-0627-qwen4b-into-pythia160m-recovery`). PPL misleads: mlp-all improved PPL to 1,306.59 while behaviour fell to 0/6 (`pg-may-jun:F05-ppl-misleading`).
+- Closed: tiny-alpha MLP/vocab transplant (`pg-may-jun:F06-tiny-alpha-transplant-closed`); one-shot PCA, dual-coordinate, mean, medoid, activation-subset, dense OT, sparse-circuit 25-30x folding (`docs-june-july-early:f-settled-negatives`).
+
+### 4b. July: LFM2 FFN width (Codex)
+- FFN ladder 2559 → 2368 (0.018724% → 3.595029% removed): most rungs partial, "mechanically valid compaction and a useful failure frontier" (`docs-lfm2-july:lfm2-ladder-ffn2559` .. `-ffn2368`, `DYNAMIC_LFM2_RESULTS_2026-07-16.md:773-805`).
+- Producer-first 10% (FFN 2026, ratio 0.900013, 9.998673709% removed, teacher-forced top-1 0.953125): mechanically viable, partially coherent, then rejected by manual review 0/7 (`docs-lfm2-july:lfm2-10pct-mlp-ffn2026-producer-first-r2`, `:264-333`). Narrowing FFN width to 1492 and 1225 removed 19.9973474% and 24.9966843% of all unique learned parameters (not 20-25% of the FFN): 1492 "incoherent; reject" (2/14, weak task retention 0.3750), 1225 "collapsed; reject" (1/14, 0.1667), both reliable correct 0/18 (`docs-lfm2-july:lfm2-producer-first-ffn1492`, `-ffn1225`, `:338-353`). Closed: "Do not repeat unilateral width folding past this frontier" (`pg-jul-b:F03-unilateral-width-frontier`, ev 286896).
+- Activation weighting beat raw SVD locally but did not compose across depth (`pg-jul-b:F05-local-fit-does-not-compose`, ev 288643).
+
+### 4c. July-August: exact-4x whole-body contraction (LFM2, stage 1)
+- r12 (`a0023-exact4x-h816-mgv3-r12`, 4.000220x counted / 3.469006x body) 0 useful / 0 partial / 15 miss; r13 arm A (`r13-ceiling-armA`, same ratios) 0 / 0 / 15; 2x arm (`a0028-exact2x-h816-mgv3-ceiling`, 2.000000x / 1.558902x body) 0 / 0 / 15 (`NF/docs/STAGE1_CEILING_REPORT_2026-08-08.md:12, 116, 117, 119`; `C:/Users/cereal/Documents/Codex/2026-10-06/task-2/NF_REFERENCE_AUDIT_FOLLOWUP.md:21`). The report rounds the 4x ratio to 4.000220x; the exact 4.0002195745x is in `NF/NOTES-W13T.md:122` and `NF/NOTES-W13U.md:151`. The moving gauge (`hf_lfm2_moving_gauge_residual_reclosure.py`) was "unchanged from arm A — the ceiling is the same code" (`NF/NOTES-W13V.md:130`).
+- The cliff is a body-contraction cliff: "The governing variable is BODY contraction, not counted compaction"; 1.000x body (A11, 1.35x counted) = 10-12/16 (re-scored 8-9/15); 1.559x body = 0/15; 3.469x body = 0/15; "The open bracket is (1.0x, 1.559x] body, and it is open on the left only" (`mem-other:F-body-contraction-cliff`; `nf-git-and-code:stage1-ceiling-map`; `S1C.zero-at-1559`, `STAGE1_CEILING_REPORT:12, 14-15, 64-70`).
+- The 4x child "was already worse than emitting nothing before any body install" (terminal baseline 1.0022686933; the 2x arm's 0.7538707245) (`W13V.4x-starts-above-line`, `NF/NOTES-W13V.md:26-30`; `STAGE1_CEILING_REPORT:171-175`).
+- The layer-0 deficit is solver-side, not representational: the production solve reaches held-out write cos 0.9995, 46x better than the sealed child (`W13B.layer0-solver-side`; `F.layer0-solver-side`).
+- MLP contraction is not the cause: the 2x child with near-parent MLP widths still scored 0/15 (`S1C.MLP-closed`, `STAGE1_CEILING_REPORT:17`); wider MLP inside exact-4x is arithmetically incapable (`W13Q.wider-mlp-closed`, `NF/NOTES-W13Q.md:164-184`).
+- Cyril overruled the stage-1 ceiling claim (the report's "Stage 1's conditions ... are met" / "Stage 2 is unlocked", `NF/docs/STAGE1_CEILING_REPORT_2026-08-08.md:28-29`): "[Cyril quote withheld]" with "[Cyril quote withheld]" (ClaudeCode user_prompt, 2026-08-10T13:05:15Z, agent_memory event 67d243e0fd3723c738ac08d6b991ed0076de153ab7557dd5258273834d759533; `cyril-scores:F16-stage1-ceiling-claim-overruled`).
+
+### 4d. August: LFM2 hidden width (matrix)
+- W896 4/15 at 0.859023x; W768 3/15 at 0.722610x; "every other fold class that reached 0.72x was zero" (`MX19.F2`, `MX/wave19/NOTES-MX-W.md:410-412`). W736 1/15 (0.689220x); W720 (0.672632x), W704 (0.656116x), W640 (0.590763x), W512 (0.463481x) 0/15 (`ARCH.W512`, `PHASE1_FOLD_ONLY_FRONTIER:319-322, 511-517`). W768's 3/15 holds for the reader-PCA basis only: `ARCH.MM768` reads 0/15 (`PHASE1:328-329`) and evidence-PCA 1/15 (`FOLDING_SCALING_THEORY:910-911`) at the same width.
+- Wave 19 bracketed the cliff between 768 and 640 (128 dimensions, "sharp: 3/15 to 0/15"; "640 is deader than 512") (`MX19.F4`, `MX/wave19/NOTES-MX-W.md:165-166, 418-420`). Waves 20-22 halved the bracket three times: "The cliff is 16 dimensions wide and it is a slope", the last open interval is 736 → 720, the ladder is 4 → 3 → 1 → 0, and "the cliff is a step" was withdrawn in wave 21 (`P1.cliff-slope`, `PHASE1:519-523, 768-769`). Below roughly 0.90 of read energy every child is dead; above it the fraction stops predicting (0.9178 scores 0/15, 0.9193 scores 3/15) (`FOLDING_SCALING_THEORY:895-906`).
+- There is no low-rank structure: top 768 of 1024 directions hold 0.9389 of read energy, top 512 hold 0.8465 (`MX19.F1`, `:406-409`; `P1.flat-spectrum`).
+- The currency is read energy, not stream energy: evidence-PCA kept more raw energy (0.9636 vs 0.9522) and less read energy (0.9122 vs 0.9193) and scored 1/15 vs 3/15 (`P1.read-currency`, `PHASE1:555-559`). Read energy is a ceiling, not a predictor (`ST.ceiling`, `FOLDING_SCALING_THEORY:894-906`; `pg-aug-a:F-read-energy-ceiling`).
+- MLP intermediate beats hidden width at matched ratio: CL1792 7/15 at 0.856199x against W896 4/15 at 0.859023x (`FR3.MLP-beats-width`, `NF/docs/chimera-omni-plan-inputs-2026-09-01/2_read3_fold_record.md:64`). The ratios are close, not identical (`NF/NOTES-MX-AF.md:245-246`; `PHASE1:183`). CL1792's 7/15 is the conditioned build; a stale build at byte-identical storage read 4/15 (`NF/docs/chimera-omni-plan-inputs-2026-09-01/2_read3_fold_record.md:49`). CL1792M (reader-metric selection) 8/15 (`ARCH.CL1792M`; `NF/NOTES-MX-AF.md:305`, `NF/NOTES-MX-AH.md:366`). The interior MLP ladder 1408-1664 is closed (`MX-AG.mlp-closed`, `NF/NOTES-MX-AG.md:26-57`).
+- Width composes with nothing (a reading of these results, not one measurement): W896 + head merge (`ARCH.W896KV6JS`, 0.841047x) 2/15, W896 + best excision (`ARCH.W896X13`, 0.815064x) 1/15 (`MX19.F6`; `PHASE1:176-177, 401-402`); `W896CL1792` (0.733197x), `V12W896CL1792` (0.525484x) and `V16W896CL1792` (0.541462x) sealed 0/15 (canonical 1/0/0) (`NF/NOTES-MX-AN.md:347-349`); `X13W896CL1792` was registered but never built (`NF/NOTES-MX-AN.md:215-217`); "every composed W896+CL1792 child reads 0-1/15 (the width family kills)" (`w36.width-family-kills`, `MEM/neural-forge-matrix-campaign.md:825-831`). The best nearby width variants reach 2/15: `W896LSX13` and `V20X13W896` (`NF/docs/WAVE23_ROUND2_COMPLETENESS_CRITIQUE_2026-08-13.md:27`; `2_read3_fold_record.md:67`).
+- Head width: HD16 0/15 at 0.238 retained score energy, HD48 1/15 at 0.865; "retention does not predict survival" on this axis (`MX43.F.band-axis-resealed`, `NF/NOTES-MX-AU.md:518-523`). Head merge 16 → 12: 5/15 averaged (`ARCH.KV6`), 8/15 with the joint relation solve (`ARCH.KV6JQ`, 0.979457x); choosing one scalar out of sample took it 3/15 → 7/15 (`MX18.F2`).
+
+### 4e. Cross-width charts and cross-family (SmolLM2, SmolVLM2)
+- **SmolLM2-135M cross-width 576 → 432 (kernel stage 2):** "plan ready", attention validation endpoint RMSE 0.075903, MLP 0.665663; "Two adjacent boundaries only. Layers 1..29 of the cross-width child were not folded" (`KS2.CW.576to432`, `NF/reports/kernel-stage2-20260801/kernel-stage2-report.md:51-71`). The same-width baseline's MLP RMSE 0.379676 comes from the FFN narrowing alone (`KS2.CW.same_width_baseline_576`).
+- **Cross-family real, 2026-08-03:** L6 prefix fold 0.68 relative logit RMSE, 16% top-1: "This is the honest headline and it is a negative one" (`CF0803.L6-prefix-fold`, `NF/reports/cross-family-real-20260803/README.md:33-38`); L2 exact-subspace parent top-1 23.05% (`CF0803.L2-exact-subspace-parent`).
+- **Pretrained SmolLM2, 2026-08-04:** L3 prefix +5.24 points over a modal-token floor (top-1 25.70% vs 20.47%), random control +0.16 (`CF0804P.L3-prefix-pretrained`, `W7A.pretrained-SmolLM2-135M.L3-prefix`; `NF/reports/cross-family-real-20260804-pretrained/README.md:172-205`). L6 failed its endpoint bound; the L6 random control was "below the floor ... Every one of its fourteen branches passed its own guard and the assembled model is still worse than nothing" (`CF0804P.L6-prefix-random-control`, `:546-578`). The kernel "cannot carry ... real learned attention across three residual boundaries" (`W7A.pretrained-SmolLM2-135M.cross-width-cross-family`, `NF/NOTES-W7A.md:246-262`).
+- **SmolVLM2 L3 prefix:** mechanics complete (8/8 actions), behaviour unmeasurable because the 3-layer parent prefix is itself incoherent (`smolvlm-real-fold-L3-prefix`).
+- **Tokenizer bridges:** no SmolLM2 pair bridge can exist (235 of 256 byte atoms) (`W7A.smollm2-tokenizer.prune-and-pair-bridge-refusals`, `NOTES-W7A.md:269-362`).
+
+### 4f. Coresets at scale (Sept-Oct)
+- Qwen3.5-4B C2 4x 5/15 (B 2); 8x 1/15 (B 0); G5D32 5/15 (B 5) (`OC01-F-Q35-4B-C2K2304`, `-C2K1152`, `-G5D32`; `REV/live/SCORECARD.md:34-37`).
+- Q38-27B C2K4352 (MLP 4x, all 64 layers; "MLP component reduction is 4×; whole counted checkpoint reduction is 1.883792×", ratio 0.522729, MTP removed) 8/15 sealed, B 1; the parent's B 12 is its own machine ceiling (`OC02-F-Q38-27BU-C2K4352`, `S3-C2K4352-trunk-eval-oct`; `REV/live/SCORECARD.md:31`; `C:/Users/cereal/Documents/Codex/2026-10-05/task-4/CHIMERA_OMNI_FULL_FIRST_FOLD_STATUS_2026-10-06.md:582`).
+- Qwen3.5-0.8B C2 4x (3,584 → 896 per MLP) 0/162 content, 0/64 five-token prefixes, against the parent's 54/162. Of the 162, 158 were artifact misses and 4 ungraded ("c2k896 graded 0/162 content, with 158 artifact misses and 4 ungraded", `OCL/research/DENSITY_AND_DATA_PROGRAM_2026-10-14.md:99, 273`; `OCL/STATE_2026-10-17_D2_LAUNCH.md:39`) (`x3-08b.c2k896`, `gap3-oct13-recovery-proof-outputs-live-metadata:q35-0p8b-aggressive-fold-baseline-162`).
+- Media DiT MLP coresets: H3 L25 MLP 4x component replace holdout relL2 0.3034 vs prior_only 0.3266, whole block 1.81x (`C16.H3.L25.v2`, `C16_H3_L25_V2.replace`, `OCL/composite/media/h3_block_coreset_v2/L25/coreset_receipt.json`).
+- LFM2 4x FFN placement (Astra, Oct 7): FIT-selected FFN5 and fixed FFN7 both 78/128 vs parent 80; no placement gain (`pg-oct:astra-lfm230m-paired.FITselectedFFN5-4x`, `-fixedFFN7-4x`).
+
+### 4g. What held at 4x or more
+- One component at a time on LFM2: 10-13/15 (section 2).
+- Component-fold children stored 0.986-0.994x net (parent-shaped): 11-13/15 (`COMP.MA.MXL10` 11, `MXJ1` 12 with one 4x component, `MXK14` 13 with one 8x and one 4x component).
+- Vocab rows at K = 12,288 (0.1875 of the table): 11/15 (`ARCH.V12`).
+- Nothing whole-model at 4x kept behaviour on any model without training. With training: Qwen3.5-0.8B 4x + KD 1M + OPD = 14/162 vs parent 54 (section 8).
+
+---
+
+## 5. Residual-attention folding
+
+**Program arms:** 406 (works 7, partial 12, fails 137, closed 26); the QKVO/V-O family appears on 138 arms; coupled attention/Q-DEIM on 181.
+
+**Cyril's directives**
+- 2026-07-11 (ev 243398, D 889/890): "[Cyril quote withheld]"
+- 2026-07-12 (ev 252138, D 895): "[Cyril quote withheld]"
+- 2026-07-16 (ev 273038, D 902-904): "[Cyril quote withheld]"
+- 2026-10-22 (ev 1241896): "[Cyril quote withheld]" (quoted in `OCL/REALIGNMENT_REPORT_2026-10-22.md:104`).
+
+**Chronology (Qwen3-4B unless stated)**
+1. **Head isolation (07-11):** teacher-forced top-1 11.67% → 65.75%, top-1-in-top-5 30.55% → 85.67%, KL 10.41 → 1.20, while free-running behaviour and generation stayed at 0/1000; choice fell 146/250 → 141/250 (`docs-residual-attention:full-vocab-head-isolation`, `pg-jul-a:full-vocab-head-isolation`; `NF/docs/RESIDUAL_ATTENTION_FOLDING_2026-07-11.md:11-14`; `NF/docs/RESEARCH_PATHS_2026.md:203-218`). Setup: an unchanged 18-block body, a 384 → 2560 child-to-donor decoder, and all 151,936 Qwen3-4B (Base) head rows composed through it. `NF/docs/OVERLAP_AUDIT_2026-08-07.md:34` dates the row 2026-07-20. This is the "65% first decode ... garbage" Cyril reacted to (ev 243398, ev 273038). The doc warns the number "does not prove that the first generated token is correct on 65.75% of prompts" (`RESIDUAL_ATTENTION_FOLDING_2026-07-11.md:15-17`); it is teacher-forced agreement.
+2. **Causal oracle at p34/p35 L19G4, one prompt, horizon 4:** parent residual write helped (top-1 4/4, `p35_layer19_group4_h4_forced_cache_oracle_fp32_v2:parent-residual-write`); parent K or V alone failed at p34 (3/4); "This rejects raw-cache MSE as the sole installable objective for this site and prompt ... This is a one-prompt localization result" (`NF/docs/RESIDUAL_ATTENTION_CAUSAL_ORACLE_2026-07-11.md:69-98`).
+3. **V-only cache regression:** "raw V raised functional risk from `0.841695` to `7.153297`, lost parent top-1 behavior on every forced trace" (`p35_L19G4_to_L21G6_v_o_four_control_h4_fp32_record:v_only`).
+4. **O-only and V/O:** rank-8 O-only adapter: "O-only repair could change the final residual write, but it could not change which content the assignment addressed" (`p35_functional_residual_adapter_rank8_h4_s32_fp16_p40_gpu3`); V/O behaviour tuner rejected (`p35_L19G4_to_L21G6_behavior_vo_tuner_h4_s8_fp16_p40_gpu2`); global V/O scales "improved the small calibration set but regressed held-out behavior" (`p35_vo_role_scale_search`).
+5. **The one positive: p35 QKVO, one site L19/G4 → L21/G6** (`p35-qkvo-L19G4`; `pg-jul-b:qwen-assignment-local-qkvo-residual-correction`, ev 274877): held-out top-1 56/64 → 64/64, exact four-token rollouts 5/8 → 8/8, 3,183,488 net parameters removed (~0.08% of the model) (`ra-law-qkvo-assignment-local-works`; `NF/docs/CURRENT_RESULT_AND_NEXT_EXECUTION_2026-07-11.md:113-135`). It "Used Adam/backprop; not fold-only, no broad or standalone certification" (`training_used = gradient_fit_of_fold`). Its DB verdict is NULL because shards disagree. No standalone checkpoint exists.
+6. **MLP residual at L1, horizon 4:** exact rollouts 2/8 → 1/8; "Action-only selection produced a false positive" (`p35-mlp-residual-V1`, `p35_mlp_L1_behavior_residual_swiglu_w64_h4_s32_fp16_p40_pair`; `ra-law-action-only-selection-false-positive`). V2 unchanged; v3 DAgger closed: "Do not repeat width-64 L1 with more selection or prefix-refresh variants" (`p35_mlp_L1_behavior_residual_swiglu_w64_v3_dagger`).
+7. **Multisite ragged QKVO** (r36/r40/r50 anchors): design only — "Seven sites remain behaviorally unproven" (`p35-multisite-ragged-qkvo:anchor-*`).
+8. **Exact 1.41B (2.851667x) stage 1, 07-12/13:** first-action 12/96, exact rollouts 0/12 (`qwen_exact_target_native_stage1_fp32factors_eager_20260712`); step-16 continuation action 32/192, LCP 31/192, exact 0/24 (`..._step16_residual_attention_continuation_20260712`); guided QKVO best action 50/192 (`..._step24_guided_qkvo_continuation_schemafix_v2_20260712`); lexical attention 31/192 (`..._lexical_attention_continuation_hotpath_v2_20260712`). Guided QKVO at horizon 8: 0/24 exact 8-token (`aggressive-1p41B:guided-qkvo-continuation`). Tournament at horizon 16: rank 3172 → 1378, exact 0/24 → 0/24, "small, real residual-attention progress, no trajectory gain" (`NF-05-tournament`, `qwen_exact_target_native_guided_candidate_tournament_portable_v3_20260713:arm-step40`; `NF/docs/RESIDUAL_ATTENTION_TOURNAMENT_AND_GUIDED_GUD_2026-07-15.md:37-60`). Supported law: first-action gains did not become trajectory coherence (`ra-law-aggressive-child-first-action-not-trajectory`).
+9. **Guided GUD v4** (balanced, output-Jacobian, Procrustes-hybrid, random-control bases): design only (`guided-gud-v4:*`).
+10. **LFM2 zero-training residual-attention compiler, producer-first MLP, 10% (07-16):** ratio 0.900013; child 6/23 vs parent 10/23; manual 0/7; rejected (`docs-lfm2-july:lfm2-10pct-mlp-ffn2026-producer-first-r2`, `pg-jul-b:lfm2-10pct-producer-first-residual-attention-mlp`, ev 286896).
+11. **LFM2 long-horizon endpoint-residual repair, horizon 64:** manual task retention 0.375-0.625; every candidate rolled back; "This closes these two termination-heavy ridge settings as repair strategies. It does not close residual-attention-aware folding generally" (`docs-lfm2-july:lfm2-long-horizon-repair-serial-c0..c5`, `-parallel-c3/c4`, `pg-jul-b:lfm2-long-horizon-parallel-cand3/4`).
+12. **LFM2 real-layer attention (07-21):** "residual-attention folding can improve real layer and decode behavior; no complete child" (`pg-jul-b:lfm2-real-layer-attention-best-0721`, ev 351948).
+13. **Coupled attention Q-DEIM 4x (07-22):** all 37 `coupled-attn-qdeim` arms fail; the run directory was purged under Cyril's ev 577425 rule.
+14. **FP32 target-lattice Q/K (07-27):** six-head causal variants all 0/16 EOS, incoherent; "Q/K-only attention folding is conclusively insufficient; O folding against a stale shared model state is a flaw" (`A0020.*`, `A0022.*`, `A0023.*`; `pg-jul-b:F13-qk-only-insufficient`). Technique row: "mechanically valid, behaviorally 0/96" (commit b6332131).
+15. **CPCF v5 (07-17..20):** 144 arms, no works; "failed closed (dtype; RSS)" (technique "CPCF v5 selective blank fold").
+16. **Matrix attention cells (Aug):** T1 attn_q 10/15, attn_k 11/15 at 4x (`C06.T1.S4.L12`, `C07.T1.S4.L12`); T7 attention-relation `C06.T7.M8.L02` free-run 0.916, `C06.T7.M4.L02` 0.547 fail; V/O "won't follow q/k down"; three stacked attention folds collapse (REALIGNMENT §3c citing `MEM/neural-forge-matrix-campaign.md:17-24, 59-66, 84-86`).
+17. **Oct:** no Omni fold used residual-attention folding (`gap2:realign-k3-never-decoded`, open).
+
+**What the record supports:** residual-attention work produced one gradient-trained one-site repair (four tokens, 0.08% of parameters) and several first-action/rank gains that never became multi-token coherence. **Not found:** any zero-gradient residual-attention fold that passed a behaviour review, and any residual-attention fold at real compression.
+
+---
+
+## 6. Objectives: what each produced in behaviour
+
+**Fit-target columns across 7,895 arms:** other 4,881; activation 844; output_write 521; endpoint_residual 308; KL 104; topk 82; top1 53; multi_token 28; attention_pattern 27; energy 26. Horizon is recorded on 57 arms (4: 24; 16: 13; 64: 10; 8: 5).
+
+| Objective | Arms (examples) | Behaviour it produced | Source |
+|---|---|---|---|
+| Teacher-forced top-1 / first token | head isolation; reclosure; A0020-A0023 | TF top-1 11.67% → 65.75% with behaviour 0; TF top-1 1.86% → 33.10% across four children while free-run fell 0.44% → 0.195%, all 0/15 | `docs-residual-attention:full-vocab-head-isolation`; `STAGE1_CEILING_REPORT:22` |
+| One-step action top-1 / rank selection | `p35-mlp-residual-V1`; 1.41B tournament | false positive: actions improved while exact rollouts regressed 2/8 → 1/8 | `ra-law-action-only-selection-false-positive` |
+| Top-k as a fit target | none | **no fold was ever fitted to top-5 or top-10**; top-64 KL appears only in KD/OPD training and in the unrun X2 design | `gap2:realign-no-topk-fit-objective`; `lab#43-X2`, `X2a..X2d-endpoint-residual-4B` |
+| Top-k as a metric | A9/A11; Qwen head isolation; LFM2 35% vocab | top-10 605/648 (A9) and 639/648 (A11) with 8/15 and 8-9/15; top-5 85.67% with behaviour 0; top-16 overlap .868 with 0/11 tasks | `A9.k32-residual-omp`; `server-surgery-lab:...a11-k32-split-cout-lambda0001`; `LFM2-vocab-35pct`, `DYNAMIC_LFM2_RESULTS:617-637` |
+| Multi-token horizon 4 | `p35-qkvo-L19G4` | the only positive: 5/8 → 8/8 four-token rollouts (trained) | `CURRENT_RESULT_AND_NEXT_EXECUTION_2026-07-11.md:113-135` |
+| Horizon 8 | `aggressive-1p41B:guided-qkvo-continuation` | 0/24 exact 8-token | `OBJECTIVE_HISTORY` (REALIGNMENT §3e) |
+| Horizon 16 | `NF-05-tournament`; `AHB.A0005-A0010` | 0/24 → 0/24; A0010 "0/15 intelligence prompts were coherent" | `RESIDUAL_ATTENTION_TOURNAMENT_AND_GUIDED_GUD_2026-07-15.md:37-60` |
+| Horizon 64 endpoint residual | LFM2 long-horizon repairs | manual retention 0.375-0.625; all rolled back | `docs-lfm2-july:lfm2-long-horizon-repair-*` |
+| Trajectory objective | `ARCH.CT640`, `ARCH.X05T` | harmful twice: X05T 0/15 vs X05A 6/15 | `MX15.F3`, `MX/wave15/NOTES-MX-S.md:344-349` |
+| KL (output) | retention study 4; X3 KD | KL down 57.28%, correctness unchanged (13/36); X3 KD best 2/162 | `retention-fourth-same_init_native_teacher_output_KL`; `x3-08b-arm-kd` |
+| Activation / write fits (per component) | matrix cells | 10-13/15 per site; composition fails beyond one step; "Local fit quality does not predict composed behavior" | `ST.five-4`, `FOLDING_SCALING_THEORY:33-41`; `S1C.the-law`, `STAGE1_CEILING_REPORT:505-507` |
+| Token match as a gate | wave 4 | composed child at 0.551 token match scored 12/15 = parent; M-B's +0.041 bought zero review cases | `mem-other:F-tokenmatch-not-predictive-wave4`, `MEM/folding-behavior-first-grading.md` |
+| Consecutive 5/8/16/32 (metric) | `folding_retention.py`, commit 67b32b54 | measurement added 10-13; "not a new folding result"; "Historical top5 rank is not five consecutive correct tokens" | `topk-is-not-consecutive`, `REV/RECOVERY_STATUS_2026-10-13.md:73`; `REV/CLAUDE_RECOVERY_UPDATE_2026-10-13_1946.md:17` |
+
+**Standing rule on record:** "Never report teacher-forced top-1 without its calibration band (below ~65% it has only ever coexisted with incoherence; ~80%+ is necessary, never sufficient ...)" (`CG.overlap-closed-paths`, `NF/docs/CURRENT_FOLDING_GOAL.md:66-84`).
+
+**Cyril's directives on objectives, verbatim**
+- 07-16 (ev 273660, D 48): "[Cyril quote withheld]"
+- 07-16 (ev 273038, D 902): "[Cyril quote withheld]"
+- 08-07 (ev 534617, D 997): "[Cyril quote withheld]"
+- 08-11 (ev 563942, D 74/1010/1011): "[Cyril quote withheld]" / "[Cyril quote withheld]"
+- 10-13 (ev 887577, D 110/1085/1086): "[Cyril quote withheld]"
+- 10-22 12:15Z (ev 1241896, D 817): "[Cyril quote withheld]"
+- **10-22 14:25Z (ev 1246301, D 821):** "[Cyril quote withheld]"
+
+**What the record shows against D 821:** top-n has never been an optimizer target in any fold (above). The record holds no arm that compares top-n and top-1 as predictors of behaviour on the same children. The arms that carry both a top-k number and a behaviour score are A9/A11 (top-10 605-639/648, partial 8-9/15), Qwen head isolation (top-5 85.67%, behaviour 0) and the LFM2 35% vocab fold (top-16 .868, 0/11). The consecutive-token horizon-4 objective is the only one tied to a positive (`p35-qkvo-L19G4`).
+
+---
+
+## 7. Composition and scaling laws
+
+| Key | Status | Statement (short) | Scope | Source |
+|---|---|---|---|---|
+| `P1.additive-interference` | proven | "the first composition step is survivable and the second is fatal"; V16X13 13/15 + 9/15 on disjoint tensors → 5/15 | LFM2.5-230M | `NF/docs/PHASE1_FOLD_ONLY_FRONTIER_2026-08-12.md` |
+| `MX18.F5` | proven | every three-block, excision+width and triple+merge child 0/15 (except T010713 3/15 alone) | LFM2 | `MX/wave18/NOTES-MX-V.md:360-365` |
+| `MX19.F6` | proven | width + head merge 2/15; width + best excision 1/15 | LFM2 | `MX/wave19/NOTES-MX-W.md:424-426` |
+| `MX17.F6` | proven | 13 + merge (8) → 4/15; best pair + merge 0/15; composition not monotone in solo scores | LFM2 | `MX/wave17/NOTES-MX-U.md:351-353` |
+| `MX27.F3` | proven | head merge on a vocab base 2/15; second folds on a shelf base cost excision −3, head merge −11, width −11 | LFM2 | `MX/wave27/human-review/SCORECARD.md:122-136` |
+| `MX26.F3` / `MX27.F2` | proven | vocab + block-13 excision 10/15 at 0.746614x; excision cost belongs to the block, not to K | LFM2 | `MX/wave26-27/human-review/SCORECARD.md` |
+| `gap2:realign-interference` | closed_path | measured interference depth×vocab 4.44 cases, depth×mlp 1.39, mlp×vocab 1.17 | LFM2 | `MEM/neural-forge-matrix-campaign.md:653` |
+| `w36.width-family-kills` | closed_path | every W896+CL1792 child 0-1/15 | LFM2 | `MEM/neural-forge-matrix-campaign.md:825-831` |
+| `ST.five-3` | proven | each independently solved body component costs roughly 3 review cases | LFM2 | `FOLDING_SCALING_THEORY:29-32` |
+| `ST.five-4` | proven | local fit does not predict composed behaviour; re-solving cannot repair composition; an additive tensor can, partly | LFM2 | `FOLDING_SCALING_THEORY:33-41` |
+| `S1C.the-law` / `pg-aug-a:F-A12-law` | proven | a closed-form correction that improves local cached fit beyond its prior composes worse | LFM2, three scales | `STAGE1_CEILING_REPORT:505-507` |
+| `notes-mx-a-h:A12-confirmed-composition` | proven | seven components at isolation free-run 0.738-0.994 compose to 0.539 | LFM2 | `NF/NOTES-MX-H.md:501-505` |
+| `MX14.F3` | proven | 14 SwiGLU coresets, each inside the alive band, compose to 0/15 | LFM2 | `MX/wave14/NOTES-MX-R.md` |
+| `MX-AH.flat-one-body` | proven | the composed-flatness law holds on one body only (CL1792) | LFM2 | `NF/NOTES-MX-AH.md:14-15,138-173` |
+| `composed-flatness` | refuted | composed children read the body's number — mostly fails in wave 32 | LFM2 | `MEM/neural-forge-matrix-campaign.md:675-676` |
+| `block-conflict-rule` | refuted | conv writer + MLP fold in the same block breaks — refuted by its own controls | LFM2 | `MEM/neural-forge-matrix-campaign.md:77-81` |
+| `MX19.F7` / `P1.excision-ladder` | proven | excision 13 → 7 → 3 → 0 | LFM2 | `MX/wave19/NOTES-MX-W.md:427-428` |
+| `ST.pair-distance` | proven | pair cost set by distance between blocks; does not hold for three blocks | LFM2 | `FOLDING_SCALING_THEORY:659-667`; `PHASE1:432-440` |
+| `mem-other:F-body-contraction-cliff` | proven | cliff bracket (1.0x, 1.559x] body; counted compaction not the variable | LFM2 exact-4x | MEM `neural-forge-folding-project.md:37-41` |
+| `MX19.F1` / `P1.flat-spectrum` | proven | no low-rank residual structure | LFM2 | `MX/wave19/NOTES-MX-W.md:406-409` |
+| `ST.ceiling` / `pg-aug-a:F-read-energy-ceiling` | proven | below roughly 0.90 of read energy every child is dead; above it the fraction does not predict (0.9178 → 0/15, 0.9193 → 3/15); a ceiling, not a predictor | LFM2 hidden | `FOLDING_SCALING_THEORY:895-906` |
+| `MX33.F1` | proven | review counts are upper bounds; robust re-read (a lane answered under any of three restatements; parent 6 of 10 scorable lanes) collapses most children | LFM2 frozen-15 | `MX/wave33/human-review/CAMPAIGN_SCORECARD.md:13-36` |
+| `MX14.F1` | proven | frontier ratios are storage-format ratios; every wave 5-13 child is parent-shaped | LFM2 | `MX/wave14/NOTES-MX-R.md:404-409`; `PHASE1:469` |
+| `W10A.exact-4x-linear-in-hidden` | proven | with head_dim and intermediate pinned, every chimera block is linear in hidden_size | chimera toy | `NF/NOTES-W10A.md:49-57` |
+| `pg-sep:F-c14-law-wrong-scale` | proven | the c14 veto structurally refuses any healthy dense replacement of routed experts | K3 L1 | `OCL` (pg-sep shard) |
+| `pg-oct:F-k3-union-collapses` | proven | the naive K3 union target collapses the trunk; only small K3 weights stay coherent | S3 + K3 | agent_memory (pg-oct shard) |
+| `ra-law-depth-sharing-closed` | closed_path | every depth-sharing scheme collapsed | Qwen3-4B | `FOLDING_DIAGNOSIS_AND_EXPERIMENT_CATALOG_2026-07-11.md:105-108` |
+
+**Positive compositions on record (all LFM2, all with review upper bounds):** component-fold children 11-13/15 at 0.986-0.994x stored, parent-shaped (`COMP.MA.MXL10`; `MXJ1`, one 4x component; `MXK14`, C05 at 8x + C07 at 4x); vocab + one excision 10/15 (`ARCH.V20X13`); vocab + excision + terminal gain 11/15 at 0.7466x (`ARCH.V20X13G03`), robust re-read 2/15 for the sibling `ARCH.V19X13G03` (`MX33.F1`).
+
+---
+
+## 8. Chimera-scale folds (Sept-Oct)
+
+### OC01 ladder (Qwen3.5-4B, Sept; machine upper bounds)
+| Arm | Fold | Sealed | Column B |
+|---|---|--:|--:|
+| `OC01-F-Q35-4B-X03` / `X08` / `X15` / `X16` | single-layer excision | 15/15 | 13 / 12 / 13 / 13 |
+| `OC01-F-Q35-4B-X31` | excision L31 | 12/15 | 10 |
+| `OC01-F-Q35-4B-X00` | excision L0 | 10/15 | 10 |
+| `OC01-F-Q35-4B-G5D32` | head_dim | 5/15 | 5 |
+| `OC01-F-Q35-4B-C2K2304` | MLP coreset 4x | 5/15 | 2 |
+| `OC01-F-Q35-4B-C2K1152` | MLP coreset 8x | 1/15 | 0 |
+Source `REV/live/SCORECARD.md:27-37`. The excision children are 97.5-97.6% of the parent on the builder count or 94.99-95.11% on the safetensors-header count (section 3d); nobody has read any of them. Deletion rows `omni_lab.model_deletion` 108-131. Refused variants G5V16K8, N48, K2KV, K2FG never reached a review (`gap2-codex-oct06-08-child-archive-retirement-records`); K2KV's zero gain at layer 27 came from a q_norm coordinate with weight exactly −1.0 (`gap3-srv-omnicampaign-k3-media-qf-composite-residual-logs:k2kv-l27-zero-gain-root-cause`).
+
+### S3 (Q38-27BU C2K4352, MLP 4x all 64 layers)
+8/15 sealed, column B 1, parent 15/15 B 12 (`OC02-F-Q38-27BU-C2K4352`, `S3-C2K4352-trunk-eval-oct`; `C:/Users/cereal/Documents/Codex/2026-10-05/task-4/CHIMERA_OMNI_FULL_FIRST_FOLD_STATUS_2026-10-06.md:582`). The parent's B 12 is its own machine ceiling ("column A 15 / B 12, measured (E2)", `OCL/composite/s8/review/UPPER-BOUND-NOTICE-OC02-F-Q38-27BU-OMNI1-s8.md:5`), not a human read. The 4x is the MLP component only; the whole checkpoint is 0.522729 (stored ratio 1.883792 parent/child in the DB), with MTP removed.
+
+### K3 dense pass (all 896 routed + 2 shared experts, 92 MoE layers, folded prefix, record mode)
+- `K3DP.04db523ceafa` / `k3-run-oct09-claude`: accepted 24 / refused 68 of 92 (accepted 1, 2, 3, 4, 5, 7, 8, 12, 13, 15, 24, 25, 26, 27, 48, 49, 52, 60, 61, 82, 83, 84, 86, 87). End of stack, held: top-1 0.6920621239388164, top-5 set 0.5958671223973282, KL mean 0.999628385477173, NLL 2.1568663475531973 vs teacher 1.2609782311297162. Fit split top-1 0.755. Review rows top-1 0.304-0.421, folded NLL ~3.9-4.4 vs teacher ~1.7. Per MoE layer ratio 80.3 (`OCL/distill/DISTILL_DESIGN_2026-10-12.md:117,129,409,422`).
+- Lineage: L1-4 gate 2026-09-07, L5-35 Codex 10-06, L36-60 Codex 10-07, L61-92 Claude 10-09/10, tool `k3_dense_pass.py` 1.2.5.
+- L62-80: routed write leaves held relL2 0.7641-0.9186 against the teacher, near the zero map (`k3-folds:late-stack-routed-write-near-zero-map`). Sept L1-4: held y_lat relL2 0.5646-0.6979, folded prefix relL2 0.34-0.46 (`pg-sep:F-K3-L01-L04-thin`).
+- The c14 veto ("THE LAW", update_scale ≤ 1.0) refused healthy dense replacements by construction (`pg-sep:F-c14-law-wrong-scale`, `omni-fold-sep-oct:c14-law-veto-refuses-dense-by-construction`).
+- **Never decoded; no behaviour review** (`pg-oct:F-k3-never-decoded`, `k3-folds:k3-fold-never-decoded`, both open). Teacher-cache parity B2 failed (10-13 p99 1.249998; 10-15 top-1 0.9635 < 0.97) while fold identity passed 93/93 (`gap2-recovery-oct13-oct15-evidence:k3-b2-identity-holds-parity-fails`).
+
+### C10 (K3 union into the S3 trunk) and S5
+- Design sweep D4, R-Q top-1 vs trunk / vs parent of 210: a003 180 / 110 (picked), g01 187 / 110, a01 135 / 103, b01 128 / 98, g03 145 / 103, a03 14 / 17, b025 13 / 13, b05 10 / 8, legacy 0 / 0 (`C10.D4.*`; `OCL/composite/c10/design_sweep/RESULTS.md:7-18`). a003 "is not chosen because K3 improves the text" (`k3-folds:c10-d4-sweep-a003`).
+- Rehearsal: hybrid L00-02 117/210; L00-26 7/210, predictions collapse onto punctuation ids (`C10.M4.hybrid.L00-02`, `C10.M4.hybrid.L00-26`; `OCL/composite/c10/rehearsal-k3-1-60/REHEARSAL.md:126-128`).
+- The charted K3 term is ~18.5x the trunk MLP output (L05: 3822 vs 206) (`k3-folds:charted-k3-scale-mismatch`). The coreset keeps almost only routed channels (shared-expert channels median 4 of 12,288) (`C10.find.coreset-routed-only`, `REHEARSAL.md:102`).
+- S5 = `OC02-F-Q38-27BU-C2K4352K3U`: written child 181/210 top-1 vs the S3 trunk; "K3 adds **no measurable held-out text benefit at the fold stage**" (`OCL/composite/c10/design_sweep/VERDICT.md:17-20`; `C10-K3-additive-w0.03`).
+
+### C15 (VAE absorption), C16 (DiT block transplant), C17 (charts)
+- C15: every audio ladder arm misses the proposed line PSNR(D∘E) ≥ parent round-trip − 3 dB (`C15_AUDIO_LADDER_V3.*`, `OCL/media/receipts/c15_audio_ladder_v3/c15_ladder_receipt.json`); ACE ctx0 rows retracted for a pairing defect (`C15_AUDIO_LADDER.ace_1.5_vae_ctx0.*`, `OCL/media/receipts/retractions.json`); H3 video group4 meets the line but the parent's own round-trip is 9.91 dB, so it is uninformative (`C15_VIDEO_LADDER_V2.*`).
+- C16: H3 L25 MLP 4x component passes on relL2, whole block 1.81x (`C16.H3.L25.v2`); ACE L12 holdouts leaked by batch row (251 of 896 rows, 28.0%) and by receptive field (927 of 927) (`MEDIA.F5.batch_row_leak_flattered_v2`, `C16_L12_V3.holdout_decomposition`); eight media-lane defects retracted on 09-02 (`pg-sep:F-media-lane-retractions-0902`).
+- C17: 64 trunk charts built; "cos 0.97 with zero functional transfer is the field's warning"; deleted by the 10-21 cleanup (`C17_CHART_FIT.*`, `C17-charts-L00-L63-oct`).
+
+### S7 / OMNI1 (S5 trunk + five charted media units)
+- Units: `S7-unit-ace_dit_L12`, `-h3_dit_L25_curve6`, `-hy3d_dit_L10`, `-qimg_mmdit_L30_img`, `-qvl32_vit_L13`. "Media '>=4x' is MLP-only: of 591,437,129 installed params, 96,981,937 are 4x MLP children, 140,260,736 new chart params, ~354.2M source-block non-MLP params at ~1x; whole-block ratios 0.50-0.69" (`gap2:s7-media-4x-is-mlp-only`, `OCL/S7_READINESS_2026-10-10.md:152-156`).
+- H3 output worse than the noisy input by 3.5-4.4 dB video and 9.5-14.3 dB audio (`S7-unit-h3_dit_L25_curve6`).
+- Text: S8 column A 5/15, column B 0/15, both upper bounds (`OC02-OMNI1-NATIVE-NOTHINK-s8`); "The text intelligence is gone, and the cause is the trunk fold" (`S5-OMNI1-step1`, `OCL/CHIMERA_OMNI_STEP1_RESULTS.md` §6). D1 LoRA repair: 8 partial vs 5 (`OMNI1D1-D1-per-layer-repair`); the base weights never moved (`gap3-claude-753087a5-38b5797d-oct17-18-sessions:lora-d1-d2-base-never-moved`). Native tool roundtrip 0/1 (`OMNI1-pre-D1:native-tool-baseline`).
+- QIMG block 30 dual-stream refold: 0/60 blocks met all targets; rejected under the unchanged policy (technique "fit-centered-native-bf16-parent-output-norm-v1+owner-diagnostic-rank-fallback-v1"; `QIMG-B30-broad-dualstream-oct06-r1`).
+
+### X3 (Qwen3.5-0.8B, density program, Oct)
+- Fold only (C2 4x): 0/162 content vs parent 54/162 (158 artifact misses, 4 ungraded); 0/64 five-token prefixes (`x3-08b.c2k896`; `OCL/research/DENSITY_AND_DATA_PROGRAM_2026-10-14.md:273`).
+- KD (top-64, LoRA via `streamed_kd_trainer` research copy): 0, 0, 0, 2, 1 over 250k-2M tokens (`x3-08b.kd-*`).
+- OPD: 0, 5, 7, 12, 0; arm closed (`x3-08b.opd-*`, `x3-08b-opd-pure`).
+- KD 1M then OPD: 0, 14, 10, 14; best 14/162, McNemar p 0.000122 (`x3-08b.kd1m-opd-*`).
+- These are recovery-training results on a folded child, and they used LoRA.
+
+### Density program (Oct 7 Codex studies)
+- Retention studies 1-3: no candidate advanced (`gap1-codex-oct-workspace-a:retention-s1-*`, `-s2-*`, `-s3-*`; s3 response-aware 5/24 vs uniform 3/24).
+- Study 4: output-KL refinement cut held-out teacher KL 57.28%, correctness unchanged 13/36 (`retention-fourth-same_init_native_teacher_output_KL`).
+- Astra LFM2 4x FFN placement: 78/128 both arms (section 4f). Score/KL follow-up cancelled by Cyril's direction (`pg-oct:astra-lfm230m-score-kl-followup`, `lfm-score-kl-v1`).
+- X2 (multi-token + top-64 KL fold objective): designed, never run (`X2a..X2d-endpoint-residual-4B`, `lab#43-X2`).
+
+### v2 proxy (Oct 21-22)
+`ARCH.V2-PROXY-from-T`: about 137x (26.1B → 191,337,601 params; the proxy count is `OCL/V2_FOLD_INIT_PLAN_2026-10-21.md:363`, the ratio is this record's arithmetic, and the plan states none). Arms A, B and C R2 0/9 each; all 27 continuations (9 per arm) an immediate `<|im_end|>`; retained energy 0.799; K3 absent (`OCL/V2_FOLD_INIT_PLAN_2026-10-21.md:380-394`).
+
+### Training (not folding), for completeness
+`FULLKD-run1-student`: 3 correct / 3 partial / 2 wrong of 8 (Claude), "clearly better than OMNI1 but still well below the parent". Cyril (ev 1228464, 10-21): "[Cyril quote withheld]"
+
+---
+
+## 9. Cyril's own scores and comments, by child
+
+**Rows with `scorer = cyril` (all 11)**
+
+All 11 are matrix-campaign arms. Their cited words run from 2026-07-30 (ev 447094) to 2026-08-29 (ev 607035) and come from about seven utterances: ev 575550 sits behind three rows and ev 570128 behind three. Eight rows hold no score at all and `MXN4` holds an alive call with no count. The two 2/15 values are machine counts that Cyril read ("[Cyril quote withheld]", ev 575550); he did not produce them. No row carries a count he made himself.
+
+| Arm | Score column | His words | Source |
+|---|---|---|---|
+| `LFM2.vocab-0.48x` | 2/15 (machine count; frozen 15-prompt review) | "a dead model" | `MEM/folding-behavior-first-grading.md:127-134`; ev 575550 |
+| `V18CL896-class-2of15` (child identity ambiguous; the matrix note records `V20CL896` = 2/15 at 0.487566x) | 2/15 (machine count, "Partial-only") | "[Cyril quote withheld]" | ev 575550, 2026-08-14 |
+| `MXN4` (`COMP.MA.MXN4`, 0.7548x; its 8/15 review count sits on other rows scored claude, machine or mixed) | alive, no count | "[Cyril quote withheld]" Same message on MXN3: "[Cyril quote withheld]" | ev 570128, 2026-08-12T12:50:20Z |
+| `docs-june-july-early:cyril-ref-mxn4`, `-mxn3` | none | same ev 570128 quotes | ev 570128 |
+| `docs-june-july-early:cyril-ref-2of15-dead` | none | same ev 575550 quote | ev 575550 |
+| `docs-june-july-early:cyril-ref-70pct-at-4x` (C05.T5.M16 cells, waves 1-3) | none | "[Cyril quote withheld]" | ev 556931, 2026-08-10 |
+| `docs-june-july-early:cyril-ref-6of15-4x` | none | "[Cyril quote withheld]" | transcript a763fdb3 prompt 26, 2026-08-11T19:56:46Z |
+| `docs-june-july-early:cyril-ref-sub-half-size-folds` | none | "[Cyril quote withheld]" | transcript a763fdb3 prompt 44, 2026-08-28T12:59:22Z |
+| `docs-june-july-early:cyril-ref-0p4116x-floor-claim` (`ARCH.V10CL896X09`, 1/15 by machine) | none | "[Cyril quote withheld]" | ev 607035, 2026-08-29T00:25Z |
+| `docs-june-july-early:cyril-ref-a9-a11` | none | "[Cyril quote withheld]" (he explicitly did not score A11) | ev 447094, 2026-07-30 |
+
+**A wrong attribution in memory.** `MEM/neural-forge-matrix-campaign.md:497-500` says `ARCH.V20X13G03` is "3 cases above the 8/15 he scored there". Cyril gave no count: ev 570128 reads only "[Cyril quote withheld]". The 8/15 for the 0.7548x child is the package's machine review count, and the DB keeps it as scorer=mixed ("the count is the package's review count, the ALIVE call is Cyril's"). The memory file itself was not edited (sources are read-only for this record). The two shard check notes that repeated the attribution were corrected (see Verification).
+
+**Other reactions attached to children**
+- `ARCH.V19` (14/15): "[Cyril quote withheld]" (ev 575550).
+- `COMP.MA.MXJ3`, `MXK10`, `MXK11`: "[Cyril quote withheld]" (ev 569393, 2026-08-11T19:50:33Z).
+- `COMP.MA.MXP1`, `MXP2`: "[Cyril quote withheld]"
+- `COMP.MA.MXN1`, `MXN2`: "[Cyril quote withheld]" (no score).
+- `ARCH.V12`, `V12X13`, `V16CL896`, `V18X09` and the wave-34 re-read: "[Cyril quote withheld]" and "[Cyril quote withheld]" (ev 605159, 2026-08-28T12:59Z); "[Cyril quote withheld]" (ev 605159).
+- `ARCH.CL896`, `ARCH.V16`: "[Cyril quote withheld]" (ev 574258, 2026-08-13T13:27:02Z).
+- Qwen3-0.6B FFN folds: "[Cyril quote withheld]" (ev 164836, 2026-06-26T22:32:37Z); vision graft: "[Cyril quote withheld]" (same event).
+- Qwen3-4B → SmolLM2 blank: "[Cyril quote withheld]" (ev 167540).
+- Qwen head isolation: ev 243398 and ev 273038 (section 5).
+- K3: "[Cyril quote withheld]" (2026-09-02, transcript line 440).
+- OMNI1: "[Cyril quote withheld]" (ev 887195); "[Cyril quote withheld]" (ev 886974, asked before he saw results).
+- OC01 ladder: "[Cyril quote withheld]" — no reading or score of these children by him is recorded.
+- 27B line and v2 proxy: "[Cyril quote withheld]" (ev 1241896).
+- QIMG: "[Cyril quote withheld]" (ev 892366, 2026-10-06T11:34Z).
+- Old checkpoints: "[Cyril quote withheld]" (ev 577425; attached to 38 arms whose run directories were purged).
+- Density: "[Cyril quote withheld]" (ev 1037827).
+
+**Rulings queued for him and never answered:** the copy-back clause (Column A 0.3859919152x vs Column B 0.4116484014x) and the PROBE storage-claim ruling blocking K4, K3(c), ALIAS (`cyril-scores:F08-pending-rulings-never-given`). His package replies in waves 10, 12 and 13 were rulings against the agent's gates, not per-child scores (`cyril-scores:F13-package-reactions-are-gate-rulings-not-scores`, ev 570124).
+
+---
+
+## 10. What REALIGNMENT_REPORT and ARCH_DRIFT_FINDINGS missed or got wrong
+
+1. **The "top 10+" question was answered the same day.** REALIGNMENT §7 Q1 reads "top 10+" as possibly "10+ consecutive tokens matching" and asks whether it is a diagnostic or a fit objective. At 14:25Z Cyril answered (ev 1246301, D 821): "[Cyril quote withheld]", use it as "[Cyril quote withheld]". That is set membership (top-n), as an optimizer target, never a gate.
+2. **D 821's empirical claim is not tested in the record.** Cyril says top-n "[Cyril quote withheld]" than top-1. Neither report notes that no arm compares the two as predictors, and the three arms that carry both numbers show high top-k with dead or weak behaviour (section 6).
+3. **The composition law is mis-stated.** REALIGNMENT §1 and §3d say "one structural axis is survivable; two is fatal". The finding says "the first composition step is survivable and the second is fatal" (`P1.additive-interference`; `MX18.F5`). Vocab + excision composed at 10/15 (`ARCH.V20X13`) and 11/15 with a terminal gain (`ARCH.V20X13G03`). What is fatal is width with any second axis (`MX19.F6`, `w36.width-family-kills`), and any third structural fold.
+4. **"Per-site MLP channel coreset at 4x" mislabels the techniques.** REALIGNMENT §3b and ARCH_DRIFT §4.4 put C05.T8 (conv_out, Gram relation matching), C07.T5 (attn_k, sparse OMP routes) and C13.T8 (mlp_down, Gram relation matching) under "MLP channel coreset". Only C13 is MLP, and none of the three is the C2 channel coreset.
+5. **The 4x numbers are storage-format.** Neither report says the matrix 4x children are parent-shaped (`MX14.F1`), so the 13/15 composed child `COMP.MA.MXK14` is a 0.994287x model.
+6. **Review counts are presented as firm.** Neither report carries the robust re-read (`MX33.F1`): B75 11 → 2, V19X13G03 11 → 2, CL1792M 8 → 0, parent 12 → 6. Both cite B75 and V20X13G03 at 11/15 as the best compressed children.
+7. **Scores are attributed to Cyril's standard without saying who scored.** Eleven rows carry scorer=cyril and none holds a count he produced (section 9). The Qwen3.5-4B "15/15" excisions REALIGNMENT §3a cites are machine upper bounds on children about 97.5% of the parent's size on the builder count (about 95% on the safetensors-header count), and no reading of them by Cyril is recorded (OC01 `fold_arm.cyril`; section 3d).
+8. **The width cliff is mis-stated in ARCH_DRIFT.** §Summary 6 says hidden width dies "below roughly 0.86x of width"; §4.4 says "The cliff is a step near 896". The record: W768 is alive at 3/15 (0.722610x), the cliff is between 768 and 640 (`MX19.F4`), and "'cliff is a step' withdrawn" (`P1.cliff-slope`).
+9. **The 0.4116x "floor" scored 1/15.** REALIGNMENT §3c calls 0.4116x the "intelligence floor". The child at that ratio (`ARCH.V10CL896X09`) scored 1/15 (G10 variant 2/15); Cyril questioned it (ev 607035); the copy-back ruling on it is still pending (`cyril-scores:F08`).
+10. **The June-July record is missing from both.** Neither covers the 489 early-surgery and 325 cross-width arms: the Qwen3-0.6B merges that passed at 2.64-2.85% shrink (5.28% on the LFM2.5-transplant host), the FFN folds that degraded at 0.5-1% and collapsed at 10%, the Qwen3-4B → 135M blank-target program (29.9x, partial behaviour only after recovery training), the depth-codebook cliff at 35/34, and the closed depth-sharing law (sections 3a-3b, 4a).
+11. **p35 QKVO is real but is not compression and not fold-only.** ARCH_DRIFT Appendix B says the 5/8 → 8/8 result is not in `RESIDUAL_ATTENTION_FOLDING_2026-07-11.md`; it is in `CURRENT_RESULT_AND_NEXT_EXECUTION_2026-07-11.md:113-135` (`p35-qkvo-L19G4`). REALIGNMENT §5 lists it as a reusable "proven fold technique"; the record says it used Adam and changed 0.08% of parameters at one site.
+12. **The producer-first 14 → 6 result is over-read.** REALIGNMENT §3a and §6 use it to say producer-first span merging failed. The source closes only "this particular depth-six/uniform-width balance, not evidence that a 50% child is impossible" (`docs-lfm2-july:lfm2-exact50-producer-first-depth6`). It was a combined depth and width cut at 0.5x.
+13. **X3's recovery used LoRA.** REALIGNMENT §3g cites 14/162 without saying the KD/OPD runs used LoRA through the `streamed_kd_trainer` research copy (`x3-08b.kd1m-opd-*` objective text), which Cyril's D 121 rules out for Omni.
+14. **Kind translation is not zero.** ARCH_DRIFT §Summary 6 says no proof exists for any kind translation. The record has toy and real partial results: GQA → CSA summary three-way split works at stride 4 on a toy (`W11A.gqa-to-summary-three-way-split.stride4`); conv → attention degraded on real LFM2 with 32-41% branch energy (`mem-other:real-conv-to-attn-LFM2`); attention → ShortConv at the operator-class limit (`KS2.A.L2`, `KS2.A.L4`). None is KDA → GDN, MLA → GQA or SiTU → SiLU, which is what ARCH_DRIFT meant.
+15. **The directive gap REALIGNMENT D11 reported is now closed.** ev 243398, 252138, 273038 and 1241896 are directive rows (D 889/890, 895, 902-905, 816/817).
+16. **K3 local evidence beyond the end-of-stack numbers was left out:** the 19-layer late-stack routed write near the zero map (L62-80), the c14 veto refusing dense replacement by construction, the 18.5x K3-to-trunk scale mismatch in C10, and B2 parity failing while fold identity passed (section 8).
+17. **Media evidence was summarized as one line.** Both reports omit that S7's "4x" is MLP-only with whole-block ratios 0.50-0.69, the C15 absorption ladders that all missed the line, and the ACE L12 holdout leaks and retractions (section 8).
+
+---
+
+## 11. What the record supports for a 2B/4B dense omni trunk from the parents
+
+**Supported (with its scope)**
+- Removing one block or layer, at the right site: LFM2 block 13 (13/15; blocks 0, attention 2 and attention 12 each 0/15 alone), Qwen3.5-4B one of 32 layers (10-15/15 machine). Two blocks cost about 6 cases on LFM2; three or more are fatal (sections 3c-3d).
+- Per-component 4x folds one at a time on LFM2 (T8, T5, T1 Q/K, T3/T4 on conv): 10-13/15, and component-fold children with one or two such components at ~0.99x stored, parent-shaped (section 2).
+- Hidden-width basis choice: the pooled reader moment's eigenvectors, with retained read energy as a ceiling: below roughly 0.90 every child is dead, and above it the fraction does not predict (section 4d).
+- MLP intermediate width over hidden width at matched ratio on LFM2 (section 4d).
+- Vocab row coreset on LFM2 (section 2).
+- One trained one-site QKVO repair (section 5).
+- K3 dense pass mechanics on all 92 MoE layers with the folded prefix (section 8).
+- Full-parameter KD from the parents improved a folded child (training, `FULLKD-run1-student`).
+
+**Not supported: gaps that need new tests**
+1. **Width ratios of the planned trunk.** No fold kept behaviour at hidden-width ratios like 5120/7168 → 2048. On LFM2 the cliff sits between 0.75 and 0.625 of width, and every width child that was composed died.
+2. **Depth reduction beyond one or two blocks or layers.** No multi-layer merge kept behaviour above 5.28% shrink (the LFM2.5-transplant Qwen3-0.6B host; 2.85% on plain Qwen3-0.6B); the 4:1 period merge proxy was dead; no excision ladder was built on Q38-27B, K3 or any media parent.
+3. **K3 → dense behaviour.** The K3 dense fold has never been decoded or reviewed. 68 of 92 layers were refused under record mode, and L62-80 route near the zero map.
+4. **Kind translation from the parents' mixers.** No receipt for K3 KDA → the trunk's mixer, MLA → GQA, or SiTU → SiLU (`k3-inspired-fold-tests-untested`, open).
+5. **Residual-attention folding at compression.** No zero-gradient residual-attention fold passed review, and none ran at a real compression ratio or above one site.
+6. **Top-n as an optimizer target (D 821).** Never used in any fold fit; X2 was designed and not run. No arm compares top-n and top-1 as predictors of behaviour.
+7. **Composition at the required depth of stacking.** A parent-to-2B/4B trunk needs width, depth, attention and vocab folds together. The record has no child that survived width plus a second axis, or any three structural folds.
+8. **Media parents into a shared trunk.** No fold produced a raw-media input boundary or output head; S7 units were MLP-only 4x with whole blocks at 0.50-0.69; their outputs were worse than the noisy input. C15 absorption missed its line.
+9. **Scale transfer.** Almost every behaviour-graded fold result is on LFM2.5-230M. At 4B there are machine upper bounds; at 27B one 8/15 (column B 1, MLP-only 4x); at 0.8B one 0/162 content (mostly artifact misses).
+10. **Cyril's reading.** Eleven behaviour rows carry scorer=cyril; none holds a count he produced, and none covers a Sept-Oct child. Scanning his 2,517 user prompts since 2026-09-01 found no score of a Sept-Oct child; on 2026-10-13 he said "[Cyril quote withheld]" (ev 893504).
+11. **Fold-only vs fold-then-distill.** Whether the folded trunk must pass the review on its own (D 41, D 106) or is judged after distillation from the parents (D 116) is not settled by the record.
+
+---
+
+## Verification (2026-10-28)
+
+Thirteen claims (C01-C13) were checked by an independent verification pass against the original files, agent_memory and read-only omni_lab queries (`omni_lab_ro`), not against this record. The verification results handed to this edit were cut off partway through C13's evidence; no results past C13 were received, so nothing else in this record has been verified this way yet.
+
+| ID | Claim | Verdict | What changed here |
+|---|---|---|---|
+| C01 | Cyril scored 11 rows; scorer split; none on a Sept-Oct child | partly | Counts and the Sept-Oct statement held. Read-this-first item 1, section 9, section 10 item 7 and gap 10 now say: 11 rows carry scorer=cyril (Jul 30-Aug 29), from about seven utterances; eight hold no score and `MXN4` holds an alive call without a count; both 2/15 values are machine counts he read; 1,167 `none` + 104 NULL rows were scored by nobody. `COMP.MA.MXN3` was removed from the cyril table (its words sit on the `MXN4` row and `cyril-ref-mxn3`). The memory line "the 8/15 he scored there" (`MEM/neural-forge-matrix-campaign.md:497-500`) is flagged as wrong per ev 570128. |
+| C02 | Parent-shaped 4x children; MXK14 the best "4x-component" child | partly | MXK14 is two components, C05 at S8 (8x) on L05 + C07 at S4 on L12 (`MX/wave7/NOTES-MX-K.md:32, 220`); MXJ1 is one C13 T8.S4 component. "Most" became "every wave 5-13 child" (`PHASE1:469`). The "three 4x components" wording in sections 2, 4g, 7 and 11 was corrected. |
+| C03 | Robust re-read 12→6, 11→2, 11→2, 10→3, 8→2, 8→0 | confirmed | Added: robust = answered under any of three restatements; the parent's 6 is of 10 scorable lanes (two lanes unscorable, bank defect); table at scorecard :18-27. |
+| C04 | One block survives; ladder; pair law; no-op re-solve; trajectory harmful | partly | One block survives only at some sites: block 0 (`ARCH.X00`), attention 2 and attention 12 each 0/15 alone. Added the three-body failure of the distance law (`PHASE1:432-440`), X05A's 6/15 and X13A's lambada perplexity 24.39 → 106.78. Sections 2, 3c and 11 updated. |
+| C05 | Wrong block for two waves; census backwards; layer_types defect and fix | confirmed | Fix citation moved to `mx18_build.py:2676-2679` (inside the block at :2649). Added: 28.6-48.0% measured with blocks 13 and 1 excised (block 13 alone: future mass 0.0000); exported children unaffected. |
+| C06 | OC01 excision scores; ~97.5% of parent; never read; "all ten OC01 exports" deleted | partly | Scores and "machine upper bound" held. Size now given on both parent counts: 97.5-97.6% (builder, 4,539,265,536) and 94.99-95.11% (safetensors header, 4,659,865,088), with the gap of 120,599,552 unresolved. "Never read" restated as "no recorded reading". The ten deleted exports are nine OC01 checkpoints plus `QF-T9`; the directory was last modified Oct 21 13:41; the OC01 review packages still exist. |
+| C07 | Layer merges only at 2.64-2.85%; depth sharing closed; v2 proxy 0/9 at ~140x | partly | Added the 5.28% pass (folds 13+14 and 15+16 on a Qwen3-0.6B host with an LFM2.5 MLP transplant, choice 0.75, PPL 294.424, frozen parent of the vision graft; `VALIDATION_RESULTS_2026-06-26.md:349-374, 643-658`) and the failed SmolLM2-135M fold 13+14. "Only 2.64-2.85%" and "no multi-layer merge above 2.85%" corrected in sections 2, 3a, 3d, 10 and 11. "~140x" became about 137x (26.1B → 191,337,601), with the note that the plan states no ratio. |
+| C08 | Width ladder, flat spectrum, cliff, read-energy ceiling | confirmed | Added W720 0.672632x 0/15. The cliff history is now wave 19's 128-dim bracket, narrowed to 736 → 720 by wave 22. The ceiling is "below roughly 0.90 every child is dead" (0.9178 → 0/15, 0.9193 → 3/15). W768's 3/15 is reader-PCA only (MM768 0/15, evidence-PCA 1/15). |
+| C09 | MLP beats width at matched ratio; width composes with nothing | confirmed | Added exact ratios, the stale CL1792 build (4/15), the V12/V16/W896CL1792 0/15 rows and the best nearby width variants at 2/15. |
+| C10 | All-site coreset 0/15; 4B 4x 5/15, 8x 1/15; 27B 8/15 B 1 vs parent B 12; 0.8B 0/162 | confirmed | Five qualifiers added: 0/162 is content only (158 artifact misses, 4 ungraded); the parent's B 12 is its own machine ceiling; C2K4352's 4x is MLP-only (whole 0.522729, MTP removed); MX14-ff1280 at 2x per site was ~5/15; ff640 is a global cut. |
+| C11 | Exact-4x/2x 0/15; cliff (1.0x, 1.559x]; worse than nothing; Cyril overruled stage 1 | confirmed | Citations corrected to `STAGE1_CEILING_REPORT:12, 116, 117, 119` (0/15), `:14-15, 64-70` (bracket) and `:28-29` (the overruled claim); exact 4.0002195745x cited to `NOTES-W13T.md:122` and `NOTES-W13U.md:151`; the agent_memory event id and the "[Cyril quote withheld]" clause were added. |
+| C12 | Qwen3-0.6B FFN folds all failed; LFM2 20-25% FFN collapsed; depth 14 → 6; Cyril's quote | partly | x0.990 and x0.995 are labelled "Loaded, but degraded(/repetitive)" with choice 1.00, not failed; only x0.900 is "Failed; collapsed". This edit also found that x0.995 is "Failed: PPL ratio 1.595 > 1.25" in `qwen3_safe_sweep_20260626` (`VALIDATION_RESULTS_2026-06-26.md:128`), which the verifier did not cite. The LFM2 20-25% are shares of all unique learned parameters (19.9973474%, 24.9966843%); 1492 is "incoherent", 1225 "collapsed". The depth-6 result and the ev 164836 quote held exactly. |
+| C13 | Head isolation 11.67% → 65.75% with behaviour 0; Cyril's ev 243398 / 273038 | confirmed | Added KL 10.41 → 1.20, 0/1000 behaviour and generation, choice 146 → 141/250, the setup, the OVERLAP_AUDIT date (07-20), and the doc's warning that 65.75% is teacher-forced agreement, not first-generated-token accuracy. |
+
+**DB rows changed (foldrec shards, then `omni_lab.py ingest foldrec` re-run over `omni-lab/inventory/2026-10-22-foldrec`):**
+- `mem-matrix-1.json`, arm `ARCH.V20X13G03`: the check note said "Cyril's 8/15"; it now says the memory line misattributes the 8/15 and cites ev 570128 and the scorer=mixed `MXN4` row (C01). The verbatim memory quote in `verdict_text` and `sources` is kept as a quote.
+- `gap1-run0-lateoct-chimera-repo-misc.json`, arm `ARCH.V20X13G03`: the check note "Cyril's own score of 8/15" is now the 8/15 machine review count of `COMP.MA.MXN4`, with the same citation (C01).
+- `docs-june-july-early.json`, arms `docs-june-july-early:q06-merged-ffnfold-0p990` and `-0p995`: check notes added with the source labels and the safe-sweep PPL-gate failure for 0.995 (C12). `verdict_class` stays `fails`, so the counts in section 1 are unchanged.
+- Shard backups: `C:/Users/cereal/AppData/Local/Temp/claude/C--Users-cereal/0c189f21-3de3-4c40-b42c-db54c9d84462/scratchpad/shard-bak/`. The dry-run before the write showed the same totals (7,895 arms, 6,600 behaviour rows, 2,947 findings, unchanged verdict classes). The write ran as ingest batch 274 (status ok, ended 2026-10-29 01:52:12Z, seen 19,533, written 1,380, skipped 895). No fold_arm, fold_behaviour, fold_component or fold_diagnostic rows were inserted. 521 fold_arm and 186 fold_finding rows were updated in place, which is more than the three arms edited here, so the ingester also rewrote rows this edit did not touch. Afterwards three fold_arm rows carry the "verification 2026-10-28" notes (`ARCH.V20X13G03`, `q06-merged-ffnfold-0p990`, `-0p995`), and the totals are unchanged at 7,895 arms and 6,600 behaviour rows.
+
+**Not changed:** the memory file `MEM/neural-forge-matrix-campaign.md:497-500` (a source, read-only here); the finding `gap2-codex-oct06-08-child-archive-retirement-records:F5-ten-qwen-children-retained-oct16-gone-oct28`, which already lists `QF-T9` separately and was correct; omni_lab row ids, which this record does not quote.
+
+---
+
+## Appendix: queries behind this file
+
+Run with `python omni_lab.py sql "<query>"` in `C:/Users/cereal/Documents/ai training/omni-lab`.
+- Arms by program and verdict: `select program, verdict_class, count(*) from fold_arm group by 1,2`
+- Arms by owner: `select owner, verdict_class, count(*) from fold_arm group by 1,2`
+- Scorers: `select scorer, count(*), count(distinct experiment_id) from fold_behaviour group by 1`
+- Cyril's scores: `select a.arm_key, b.score, b.text from fold_behaviour b join fold_arm a using (experiment_id) where b.scorer='cyril'`
+- One arm in full: `select * from v_fold_arms where key = 'COMP.MA.MXK14'`
+- Findings: `select key, status, statement, first_source from v_findings where statement ~* 'excis'`
+- Technique scoreboard: `select * from v_technique_scoreboard order by arms desc`
+- Objectives: `select objective_target, count(*) from fold_arm group by 1`
+- Directives: `select id, said_at, verbatim from directive where verbatim ~* 'top ?(5|10|n)|residual attention'`

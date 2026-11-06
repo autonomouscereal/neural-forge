@@ -1,0 +1,4 @@
+USER: Summarise the plot of Romeo and Juliet in two sentences.
+
+REPLY (17 tokens):
+<|out|><|text|><|/out|><|out|><|text|><|/out|><|out|><|text|><|/out|><|out|><|text|><|/out|>The first one.<|im_end|>

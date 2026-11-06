@@ -1,0 +1,4 @@
+USER: Summarise the plot of Romeo and Juliet in two sentences.
+
+REPLY (17 tokens):
+<|out|><|audio|><|/out|>a woman is sitting on a bed with a book on it.<|im_end|>

@@ -1,0 +1,4 @@
+USER: Explain in three sentences why the sky is blue.
+
+REPLY (16 tokens):
+<|out|><|audio|><|/out|>a person is sitting on a chair in a blue shirt.<|im_end|>

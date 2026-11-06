@@ -1,0 +1,4 @@
+USER: Translate 'where is the train station' into Spanish and French.
+
+REPLY (16 tokens):
+<|out|><|audio|><|/out|>A car is being loaded with a large number of people.<|im_end|>

@@ -1,0 +1,833 @@
+{
+ "contact_sheet": "contact_sheet.png",
+ "items": [
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "3d-01-slices.png",
+    "3d-01-cfg3-slices.png"
+   ],
+   "finite": true,
+   "id": "3d-01",
+   "kind": "generate",
+   "rows": 512,
+   "seconds": 20.56534449569881,
+   "std": 0.11886420845985413,
+   "std_by_cfg": {
+    "1": 0.11886420845985413,
+    "3": 0.3012341856956482
+   }
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|text|>"
+   ],
+   "files": [
+    "decide-describe.txt"
+   ],
+   "id": "decide-describe",
+   "kind": "decision",
+   "seconds": 1.4899322856217623,
+   "text": "<|out|><|text|><|/out|>A man is standing in",
+   "tokens": 8
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|text|>"
+   ],
+   "files": [
+    "decide-redraw.txt"
+   ],
+   "id": "decide-redraw",
+   "kind": "decision",
+   "seconds": 1.4747803714126348,
+   "text": "<|out|><|text|><|/out|>A man in a white",
+   "tokens": 8
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "edit-01.png",
+    "edit-01-cfg3.png"
+   ],
+   "finite": true,
+   "id": "edit-01",
+   "kind": "edit",
+   "rows": 192,
+   "seconds": 16.872968555428088,
+   "std": 0.16957874596118927,
+   "std_by_cfg": {
+    "1": 0.16957874596118927,
+    "3": 0.33669236302375793
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "image-01.png",
+    "image-01-cfg3.png"
+   ],
+   "finite": true,
+   "id": "image-01",
+   "kind": "generate",
+   "rows": 256,
+   "seconds": 12.348057613708079,
+   "std": 0.13770417869091034,
+   "std_by_cfg": {
+    "1": 0.13770417869091034,
+    "3": 0.37025782465934753
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "image-02.png",
+    "image-02-cfg3.png"
+   ],
+   "finite": true,
+   "id": "image-02",
+   "kind": "generate",
+   "rows": 192,
+   "seconds": 9.475352778099477,
+   "std": 0.14785844087600708,
+   "std_by_cfg": {
+    "1": 0.14785844087600708,
+    "3": 0.4018535614013672
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "image-03.png",
+    "image-03-cfg3.png"
+   ],
+   "finite": true,
+   "id": "image-03",
+   "kind": "generate",
+   "rows": 192,
+   "seconds": 10.202101430855691,
+   "std": 0.15244463086128235,
+   "std_by_cfg": {
+    "1": 0.15244463086128235,
+    "3": 0.3038628399372101
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "image-04.png",
+    "image-04-cfg3.png"
+   ],
+   "finite": true,
+   "id": "image-04",
+   "kind": "generate",
+   "rows": 256,
+   "seconds": 12.303753390908241,
+   "std": 0.14646726846694946,
+   "std_by_cfg": {
+    "1": 0.14646726846694946,
+    "3": 0.3051303029060364
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "music-01.wav",
+    "music-01-cfg3.wav"
+   ],
+   "finite": true,
+   "id": "music-01",
+   "kind": "generate",
+   "rows": 125,
+   "seconds": 8.740503650158644,
+   "std": 0.15450266003608704,
+   "std_by_cfg": {
+    "1": 0.15450266003608704,
+    "3": 0.3334348797798157
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "music-02.wav",
+    "music-02-cfg3.wav"
+   ],
+   "finite": true,
+   "id": "music-02",
+   "kind": "generate",
+   "rows": 125,
+   "seconds": 9.290026747621596,
+   "std": 0.14224138855934143,
+   "std_by_cfg": {
+    "1": 0.14224138855934143,
+    "3": 0.31721997261047363
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "speech-01.wav",
+    "speech-01-cfg3.wav"
+   ],
+   "finite": true,
+   "id": "speech-01",
+   "kind": "generate",
+   "rows": 50,
+   "seconds": 6.562574031762779,
+   "std": 0.12352126091718674,
+   "std_by_cfg": {
+    "1": 0.12352126091718674,
+    "3": 0.31149405241012573
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "speech-02.wav",
+    "speech-02-cfg3.wav"
+   ],
+   "finite": true,
+   "id": "speech-02",
+   "kind": "generate",
+   "rows": 50,
+   "seconds": 6.970390617847443,
+   "std": 0.14560319483280182,
+   "std_by_cfg": {
+    "1": 0.14560319483280182,
+    "3": 0.38266173005104065
+   }
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|audio|>",
+    "<|video|>"
+   ],
+   "files": [
+    "text-01.txt"
+   ],
+   "id": "text-01",
+   "kind": "text",
+   "seconds": 39.58623070176691,
+   "text": "<|out|><|video|><|audio|><|/out|><|video|><|audio|><|/out|><|out|><|video|><|audio|><|/out|><|video|><|audio|><|/out|> 2x1256)<|video|><|audio|><|/out|>A$<|video|><|audio|><|/out|><|video|><|audio|><|/out|><|video|><|audio|><|/out|>apadelaide<|video|><|audio|><|/out|><|video|><|audio|><|/out|>\u623f ><|video|><|audio|><|/out|> /<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> /<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> /<|video|><|audio|><|/out|> /<|video|>al/master<|video|><|audio|><|/out|>@<|video|><|audio|><|/out|> /<|video|>al<|audio|><|/out|>@<|video|><|audio|><|/out|> /<|video|>al<|audio|><|/out|>@<|video|>odono ><|video|><|audio|><|/out|> / ><|video|><|audio|><|/out|> / ><|video|><|audio|><|/out|> / ><|video|><|audio|><|/out|> / ><|video|><|audio|><|/out|> / ><|video|><|audio|><|/out|> / ><|video|><|audio|><|/out|> / ><|video|><|audio|><|/out|> / ><|video|><|audio|><|/out|> / ><|video|><|audio|><|/out|> / ><|video|><|audio|><|/out|> / ><|video|><|audio|><|/out|> / ><|video|><|audio|><|/out|> / ><|video|><|audio|><|/out|> / ><|video|><|audio|>",
+   "tokens": 256
+  },
+  {
+   "decision": [],
+   "files": [
+    "text-02.txt"
+   ],
+   "id": "text-02",
+   "kind": "text",
+   "seconds": 0.757305926643312,
+   "text": "<think>\u0581 code here.<|im_end|>",
+   "tokens": 6
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|text|>"
+   ],
+   "files": [
+    "text-03.txt"
+   ],
+   "id": "text-03",
+   "kind": "text",
+   "seconds": 1.4422583412379026,
+   "text": "<|out|><|text|><|/out|>A car is driving down the street.<|im_end|>",
+   "tokens": 12
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|audio|>",
+    "<|video|>"
+   ],
+   "files": [
+    "text-04.txt"
+   ],
+   "id": "text-04",
+   "kind": "text",
+   "seconds": 37.97319449484348,
+   "text": "<|out|><|video|><|audio|><|/out|><|/out|> playing instrument,<|video|><|audio|><|/out|>,<|video|><|audio|><|/out|>,<|video|><|audio|><|/out|> )<|video|><|audio|><|/out|><|video|><|audio|><|/out|><|video|><|audio|><|/out|>570/<|video|><|audio|><|/out|> /<|video|><|audio|><|/out|> /<|video|><|audio|><|/out|> /<|video|><|audio|><|/out|> /<|video|><|audio|><|/out|> /<|video|><|audio|><|/out|> /<|video|><|audio|><|/out|> /<|video|><|audio|><|/out|> /<|video|><|audio|><|/out|> /<|video|><|audio|><|/out|> /<|video|><|audio|><|/out|> / ><|video|><|audio|><|/out|> (<|video|><|audio|><|/out|>,<|video|><|audio|><|/out|>)<|video|><|audio|><|/out|><|video|>alyn-168-867)<|video|><|audio|><|/out|><|video|><|audio|><|/out|><|endoftext|><|video|><|audio|><|/out|> /<|video|><|audio|><|/out|> /<|video|>al`<|video|>al<|video|><|audio|><|/out|>567.56<|video|><|audio|><|/out|>56`<|video|><|audio|><|/out|> /<|video|>al<|video|>al<|video|>ali_injection<|video|><|audio|><|/out|>56`<|video|><|audio|><|/out|> /<|video|><|audio|><|/out|> /<|video|>al<|video|><|audio|><|/out|>2+<|video|><|audio|><|/out|> /<|video|>al<|video|>al<|video|>ali > /<|video|><|audio|><|/out|> /<|video|>al<|video|><|audio|><|/out|>2+<|video|><|audio|><|/out|> /<|video|>al<|video|><|audio|><|/out|>2><|video|><|audio|><|/out|> ?<|video|>al<|video|><|audio|><|/out|>8+<|video|><|audio|><|/out|> /<|video|>al<|video|><|audio|><|/out|>2+<|video|><|audio|><|/out|> /<|video|>al<|video|><|audio|><|/out|>8/0/2567<|video|><|audio|><|/out|> #<|video|>al<|video|><|audio|><|/out|> /",
+   "tokens": 256
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|audio|>",
+    "<|video|>"
+   ],
+   "files": [
+    "text-05.txt"
+   ],
+   "id": "text-05",
+   "kind": "text",
+   "seconds": 38.90293477661908,
+   "text": "<|out|><|video|><|audio|><|/out|><|video|><|audio|><|/out|>\u9ea6<|video|><|audio|><|/out|>4 `<|video|><|audio|><|/out|>44z r@ + -3 -1 - -3 -10 - -3 -10 -10 -10 -10 -10 -10 -10 -10 -10 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1",
+   "tokens": 256
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|audio|>",
+    "<|video|>"
+   ],
+   "files": [
+    "text-06.txt"
+   ],
+   "id": "text-06",
+   "kind": "text",
+   "seconds": 38.48799556028098,
+   "text": "<|out|><|video|><|audio|><|/out|><|out|><|video|><|audio|><|/out|><|video|><|audio|><|/out|><|video|><|audio|><|/out|>\u5e74\u5e74 ><|video|><|audio|><|/out|><|video|><|audio|><|/out|> \u0441\u0447\u0451\u0442 &reacts<|video|><|audio|><|/out|><|video|><|audio|><|/out|>848<|video|><|audio|><|/out|>848<|video|><|audio|><|/out|>848<|video|><|audio|><|/out|>848<|video|><|audio|><|/out|>848<|video|><|audio|><|/out|>8<|video|><|audio|><|/out|>872<|video|><|audio|><|/out|>8<|video|><|audio|><|/out|>872<|video|><|audio|><|/out|>8 -<|video|><|audio|><|/out|>40 - - - - - - - - -10 - - -10 - - -10 - -10 - -10 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 -",
+   "tokens": 256
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|text|>"
+   ],
+   "files": [
+    "tool-01.txt"
+   ],
+   "id": "tool-01",
+   "kind": "text",
+   "seconds": 6.0221809493377805,
+   "text": "<|out|><|text|><|/out|><think>\n\n</think>\n\nI'll help you with your question.\n\nI'll help you with your question. Let me see if there's anything else I can help you with that?<|im_end|>",
+   "tokens": 40
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|text|>"
+   ],
+   "files": [
+    "tool-02.txt"
+   ],
+   "id": "tool-02",
+   "kind": "text",
+   "seconds": 4.4119228813797235,
+   "text": "<|out|><|text|><|/out|><think>\n<tool_call>\n<tool_call>\n<function=doctor>\n<parameter=location>\n</parameter>\n</function>\n</tool_call><|im_end|>",
+   "tokens": 31
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "video-01-frame000.png",
+    "video-01.mp4",
+    "video-01-cfg3-frame000.png",
+    "video-01-cfg3.mp4"
+   ],
+   "finite": true,
+   "id": "video-01",
+   "kind": "generate",
+   "rows": 1440,
+   "seconds": 50.27233972214162,
+   "std": 0.1910838484764099,
+   "std_by_cfg": {
+    "1": 0.1910838484764099,
+    "3": 0.2557532787322998
+   }
+  }
+ ],
+ "ranks": [
+  {
+   "errors": [],
+   "items": [
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|audio|>",
+      "<|video|>"
+     ],
+     "files": [
+      "text-01.txt"
+     ],
+     "id": "text-01",
+     "kind": "text",
+     "seconds": 39.58623070176691,
+     "text": "<|out|><|video|><|audio|><|/out|><|video|><|audio|><|/out|><|out|><|video|><|audio|><|/out|><|video|><|audio|><|/out|> 2x1256)<|video|><|audio|><|/out|>A$<|video|><|audio|><|/out|><|video|><|audio|><|/out|><|video|><|audio|><|/out|>apadelaide<|video|><|audio|><|/out|><|video|><|audio|><|/out|>\u623f ><|video|><|audio|><|/out|> /<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> /<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> ?<|video|><|audio|><|/out|> /<|video|><|audio|><|/out|> /<|video|>al/master<|video|><|audio|><|/out|>@<|video|><|audio|><|/out|> /<|video|>al<|audio|><|/out|>@<|video|><|audio|><|/out|> /<|video|>al<|audio|><|/out|>@<|video|>odono ><|video|><|audio|><|/out|> / ><|video|><|audio|><|/out|> / ><|video|><|audio|><|/out|> / ><|video|><|audio|><|/out|> / ><|video|><|audio|><|/out|> / ><|video|><|audio|><|/out|> / ><|video|><|audio|><|/out|> / ><|video|><|audio|><|/out|> / ><|video|><|audio|><|/out|> / ><|video|><|audio|><|/out|> / ><|video|><|audio|><|/out|> / ><|video|><|audio|><|/out|> / ><|video|><|audio|><|/out|> / ><|video|><|audio|><|/out|> / ><|video|><|audio|>",
+     "tokens": 256
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|audio|>",
+      "<|video|>"
+     ],
+     "files": [
+      "text-05.txt"
+     ],
+     "id": "text-05",
+     "kind": "text",
+     "seconds": 38.90293477661908,
+     "text": "<|out|><|video|><|audio|><|/out|><|video|><|audio|><|/out|>\u9ea6<|video|><|audio|><|/out|>4 `<|video|><|audio|><|/out|>44z r@ + -3 -1 - -3 -10 - -3 -10 -10 -10 -10 -10 -10 -10 -10 -10 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1",
+     "tokens": 256
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|text|>"
+     ],
+     "files": [
+      "decide-describe.txt"
+     ],
+     "id": "decide-describe",
+     "kind": "decision",
+     "seconds": 1.4899322856217623,
+     "text": "<|out|><|text|><|/out|>A man is standing in",
+     "tokens": 8
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "image-03.png",
+      "image-03-cfg3.png"
+     ],
+     "finite": true,
+     "id": "image-03",
+     "kind": "generate",
+     "rows": 192,
+     "seconds": 10.202101430855691,
+     "std": 0.15244463086128235,
+     "std_by_cfg": {
+      "1": 0.15244463086128235,
+      "3": 0.3038628399372101
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "speech-02.wav",
+      "speech-02-cfg3.wav"
+     ],
+     "finite": true,
+     "id": "speech-02",
+     "kind": "generate",
+     "rows": 50,
+     "seconds": 6.970390617847443,
+     "std": 0.14560319483280182,
+     "std_by_cfg": {
+      "1": 0.14560319483280182,
+      "3": 0.38266173005104065
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "3d-01-slices.png",
+      "3d-01-cfg3-slices.png"
+     ],
+     "finite": true,
+     "id": "3d-01",
+     "kind": "generate",
+     "rows": 512,
+     "seconds": 20.56534449569881,
+     "std": 0.11886420845985413,
+     "std_by_cfg": {
+      "1": 0.11886420845985413,
+      "3": 0.3012341856956482
+     }
+    }
+   ],
+   "rank": 0,
+   "seconds": 117.71703778859228,
+   "skipped": [],
+   "step": 250
+  },
+  {
+   "errors": [],
+   "items": [
+    {
+     "decision": [],
+     "files": [
+      "text-02.txt"
+     ],
+     "id": "text-02",
+     "kind": "text",
+     "seconds": 0.757305926643312,
+     "text": "<think>\u0581 code here.<|im_end|>",
+     "tokens": 6
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|audio|>",
+      "<|video|>"
+     ],
+     "files": [
+      "text-06.txt"
+     ],
+     "id": "text-06",
+     "kind": "text",
+     "seconds": 38.48799556028098,
+     "text": "<|out|><|video|><|audio|><|/out|><|out|><|video|><|audio|><|/out|><|video|><|audio|><|/out|><|video|><|audio|><|/out|>\u5e74\u5e74 ><|video|><|audio|><|/out|><|video|><|audio|><|/out|> \u0441\u0447\u0451\u0442 &reacts<|video|><|audio|><|/out|><|video|><|audio|><|/out|>848<|video|><|audio|><|/out|>848<|video|><|audio|><|/out|>848<|video|><|audio|><|/out|>848<|video|><|audio|><|/out|>848<|video|><|audio|><|/out|>8<|video|><|audio|><|/out|>872<|video|><|audio|><|/out|>8<|video|><|audio|><|/out|>872<|video|><|audio|><|/out|>8 -<|video|><|audio|><|/out|>40 - - - - - - - - -10 - - -10 - - -10 - -10 - -10 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 -",
+     "tokens": 256
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|text|>"
+     ],
+     "files": [
+      "decide-redraw.txt"
+     ],
+     "id": "decide-redraw",
+     "kind": "decision",
+     "seconds": 1.4747803714126348,
+     "text": "<|out|><|text|><|/out|>A man in a white",
+     "tokens": 8
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "image-04.png",
+      "image-04-cfg3.png"
+     ],
+     "finite": true,
+     "id": "image-04",
+     "kind": "generate",
+     "rows": 256,
+     "seconds": 12.303753390908241,
+     "std": 0.14646726846694946,
+     "std_by_cfg": {
+      "1": 0.14646726846694946,
+      "3": 0.3051303029060364
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "music-01.wav",
+      "music-01-cfg3.wav"
+     ],
+     "finite": true,
+     "id": "music-01",
+     "kind": "generate",
+     "rows": 125,
+     "seconds": 8.740503650158644,
+     "std": 0.15450266003608704,
+     "std_by_cfg": {
+      "1": 0.15450266003608704,
+      "3": 0.3334348797798157
+     }
+    }
+   ],
+   "rank": 1,
+   "seconds": 61.764407941140234,
+   "skipped": [],
+   "step": 250
+  },
+  {
+   "errors": [],
+   "items": [
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|text|>"
+     ],
+     "files": [
+      "text-03.txt"
+     ],
+     "id": "text-03",
+     "kind": "text",
+     "seconds": 1.4422583412379026,
+     "text": "<|out|><|text|><|/out|>A car is driving down the street.<|im_end|>",
+     "tokens": 12
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|text|>"
+     ],
+     "files": [
+      "tool-01.txt"
+     ],
+     "id": "tool-01",
+     "kind": "text",
+     "seconds": 6.0221809493377805,
+     "text": "<|out|><|text|><|/out|><think>\n\n</think>\n\nI'll help you with your question.\n\nI'll help you with your question. Let me see if there's anything else I can help you with that?<|im_end|>",
+     "tokens": 40
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "image-01.png",
+      "image-01-cfg3.png"
+     ],
+     "finite": true,
+     "id": "image-01",
+     "kind": "generate",
+     "rows": 256,
+     "seconds": 12.348057613708079,
+     "std": 0.13770417869091034,
+     "std_by_cfg": {
+      "1": 0.13770417869091034,
+      "3": 0.37025782465934753
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "edit-01.png",
+      "edit-01-cfg3.png"
+     ],
+     "finite": true,
+     "id": "edit-01",
+     "kind": "edit",
+     "rows": 192,
+     "seconds": 16.872968555428088,
+     "std": 0.16957874596118927,
+     "std_by_cfg": {
+      "1": 0.16957874596118927,
+      "3": 0.33669236302375793
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "music-02.wav",
+      "music-02-cfg3.wav"
+     ],
+     "finite": true,
+     "id": "music-02",
+     "kind": "generate",
+     "rows": 125,
+     "seconds": 9.290026747621596,
+     "std": 0.14224138855934143,
+     "std_by_cfg": {
+      "1": 0.14224138855934143,
+      "3": 0.31721997261047363
+     }
+    }
+   ],
+   "rank": 2,
+   "seconds": 45.97556398063898,
+   "skipped": [],
+   "step": 250
+  },
+  {
+   "errors": [],
+   "items": [
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|audio|>",
+      "<|video|>"
+     ],
+     "files": [
+      "text-04.txt"
+     ],
+     "id": "text-04",
+     "kind": "text",
+     "seconds": 37.97319449484348,
+     "text": "<|out|><|video|><|audio|><|/out|><|/out|> playing instrument,<|video|><|audio|><|/out|>,<|video|><|audio|><|/out|>,<|video|><|audio|><|/out|> )<|video|><|audio|><|/out|><|video|><|audio|><|/out|><|video|><|audio|><|/out|>570/<|video|><|audio|><|/out|> /<|video|><|audio|><|/out|> /<|video|><|audio|><|/out|> /<|video|><|audio|><|/out|> /<|video|><|audio|><|/out|> /<|video|><|audio|><|/out|> /<|video|><|audio|><|/out|> /<|video|><|audio|><|/out|> /<|video|><|audio|><|/out|> /<|video|><|audio|><|/out|> /<|video|><|audio|><|/out|> / ><|video|><|audio|><|/out|> (<|video|><|audio|><|/out|>,<|video|><|audio|><|/out|>)<|video|><|audio|><|/out|><|video|>alyn-168-867)<|video|><|audio|><|/out|><|video|><|audio|><|/out|><|endoftext|><|video|><|audio|><|/out|> /<|video|><|audio|><|/out|> /<|video|>al`<|video|>al<|video|><|audio|><|/out|>567.56<|video|><|audio|><|/out|>56`<|video|><|audio|><|/out|> /<|video|>al<|video|>al<|video|>ali_injection<|video|><|audio|><|/out|>56`<|video|><|audio|><|/out|> /<|video|><|audio|><|/out|> /<|video|>al<|video|><|audio|><|/out|>2+<|video|><|audio|><|/out|> /<|video|>al<|video|>al<|video|>ali > /<|video|><|audio|><|/out|> /<|video|>al<|video|><|audio|><|/out|>2+<|video|><|audio|><|/out|> /<|video|>al<|video|><|audio|><|/out|>2><|video|><|audio|><|/out|> ?<|video|>al<|video|><|audio|><|/out|>8+<|video|><|audio|><|/out|> /<|video|>al<|video|><|audio|><|/out|>2+<|video|><|audio|><|/out|> /<|video|>al<|video|><|audio|><|/out|>8/0/2567<|video|><|audio|><|/out|> #<|video|>al<|video|><|audio|><|/out|> /",
+     "tokens": 256
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|text|>"
+     ],
+     "files": [
+      "tool-02.txt"
+     ],
+     "id": "tool-02",
+     "kind": "text",
+     "seconds": 4.4119228813797235,
+     "text": "<|out|><|text|><|/out|><think>\n<tool_call>\n<tool_call>\n<function=doctor>\n<parameter=location>\n</parameter>\n</function>\n</tool_call><|im_end|>",
+     "tokens": 31
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "image-02.png",
+      "image-02-cfg3.png"
+     ],
+     "finite": true,
+     "id": "image-02",
+     "kind": "generate",
+     "rows": 192,
+     "seconds": 9.475352778099477,
+     "std": 0.14785844087600708,
+     "std_by_cfg": {
+      "1": 0.14785844087600708,
+      "3": 0.4018535614013672
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "speech-01.wav",
+      "speech-01-cfg3.wav"
+     ],
+     "finite": true,
+     "id": "speech-01",
+     "kind": "generate",
+     "rows": 50,
+     "seconds": 6.562574031762779,
+     "std": 0.12352126091718674,
+     "std_by_cfg": {
+      "1": 0.12352126091718674,
+      "3": 0.31149405241012573
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "video-01-frame000.png",
+      "video-01.mp4",
+      "video-01-cfg3-frame000.png",
+      "video-01-cfg3.mp4"
+     ],
+     "finite": true,
+     "id": "video-01",
+     "kind": "generate",
+     "rows": 1440,
+     "seconds": 50.27233972214162,
+     "std": 0.1910838484764099,
+     "std_by_cfg": {
+      "1": 0.1910838484764099,
+      "3": 0.2557532787322998
+     }
+    }
+   ],
+   "rank": 3,
+   "seconds": 108.69548436067998,
+   "skipped": [],
+   "step": 250
+  }
+ ],
+ "schema": "chimera_omni.run0.dump_index.v1",
+ "step": 250
+}

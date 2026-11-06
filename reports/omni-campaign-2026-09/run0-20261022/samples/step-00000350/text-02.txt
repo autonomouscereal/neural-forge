@@ -1,0 +1,4 @@
+USER: Write a short Python function that returns the n-th Fibonacci number.
+
+REPLY (7 tokens):
+<|out|><|audio|><|/out|>A man speaks<|im_end|>

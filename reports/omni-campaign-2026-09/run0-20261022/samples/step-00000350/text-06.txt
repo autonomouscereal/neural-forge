@@ -1,0 +1,4 @@
+USER: Translate 'where is the train station' into Spanish and French.
+
+REPLY (14 tokens):
+<|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|>goose honking<|im_end|>

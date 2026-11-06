@@ -1,0 +1,17 @@
+USER: Put 'dentist' on my calendar for next Tuesday at 3pm.
+
+REPLY (45 tokens):
+<|out|><|text|><|/out|><think>
+
+</think>
+
+<tool_call>
+<function=get_calendar_events>
+<parameter=date>
+next friday
+</parameter>
+<parameter=date>
+next
+</parameter>
+</function>
+</tool_call><|im_end|>

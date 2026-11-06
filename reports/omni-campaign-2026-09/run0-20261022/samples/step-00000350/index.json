@@ -1,0 +1,833 @@
+{
+ "contact_sheet": "contact_sheet.png",
+ "items": [
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "3d-01-slices.png",
+    "3d-01-cfg3-slices.png"
+   ],
+   "finite": true,
+   "id": "3d-01",
+   "kind": "generate",
+   "rows": 512,
+   "seconds": 20.638509761542082,
+   "std": 0.17056705057621002,
+   "std_by_cfg": {
+    "1": 0.17056705057621002,
+    "3": 0.3272663652896881
+   }
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|audio|>"
+   ],
+   "files": [
+    "decide-describe.txt"
+   ],
+   "id": "decide-describe",
+   "kind": "decision",
+   "seconds": 1.2677085427567363,
+   "text": "<|out|><|audio|><|/out|>A man speaking<|im_end|>",
+   "tokens": 7
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|image|>"
+   ],
+   "files": [
+    "decide-redraw.txt"
+   ],
+   "id": "decide-redraw",
+   "kind": "decision",
+   "seconds": 1.469363121315837,
+   "text": "<|out|><|image|><|/out|>A person sitting on a",
+   "tokens": 8
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "edit-01.png",
+    "edit-01-cfg3.png"
+   ],
+   "finite": true,
+   "id": "edit-01",
+   "kind": "edit",
+   "rows": 192,
+   "seconds": 17.05114659946412,
+   "std": 0.47242358326911926,
+   "std_by_cfg": {
+    "1": 0.47242358326911926,
+    "3": 0.4937998056411743
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "image-01.png",
+    "image-01-cfg3.png"
+   ],
+   "finite": true,
+   "id": "image-01",
+   "kind": "generate",
+   "rows": 256,
+   "seconds": 12.364496428519487,
+   "std": 0.47583210468292236,
+   "std_by_cfg": {
+    "1": 0.47583210468292236,
+    "3": 0.3863561451435089
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "image-02.png",
+    "image-02-cfg3.png"
+   ],
+   "finite": true,
+   "id": "image-02",
+   "kind": "generate",
+   "rows": 192,
+   "seconds": 9.79202562943101,
+   "std": 0.46229755878448486,
+   "std_by_cfg": {
+    "1": 0.46229755878448486,
+    "3": 0.4367614984512329
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "image-03.png",
+    "image-03-cfg3.png"
+   ],
+   "finite": true,
+   "id": "image-03",
+   "kind": "generate",
+   "rows": 192,
+   "seconds": 9.960929314605892,
+   "std": 0.44278213381767273,
+   "std_by_cfg": {
+    "1": 0.44278213381767273,
+    "3": 0.3951699435710907
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "image-04.png",
+    "image-04-cfg3.png"
+   ],
+   "finite": true,
+   "id": "image-04",
+   "kind": "generate",
+   "rows": 256,
+   "seconds": 12.34838063083589,
+   "std": 0.47892653942108154,
+   "std_by_cfg": {
+    "1": 0.47892653942108154,
+    "3": 0.5545902252197266
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "music-01.wav",
+    "music-01-cfg3.wav"
+   ],
+   "finite": true,
+   "id": "music-01",
+   "kind": "generate",
+   "rows": 125,
+   "seconds": 9.144192535430193,
+   "std": 0.186721071600914,
+   "std_by_cfg": {
+    "1": 0.186721071600914,
+    "3": 0.3496384918689728
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "music-02.wav",
+    "music-02-cfg3.wav"
+   ],
+   "finite": true,
+   "id": "music-02",
+   "kind": "generate",
+   "rows": 125,
+   "seconds": 9.230439217761159,
+   "std": 0.19557802379131317,
+   "std_by_cfg": {
+    "1": 0.19557802379131317,
+    "3": 0.37988361716270447
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "speech-01.wav",
+    "speech-01-cfg3.wav"
+   ],
+   "finite": true,
+   "id": "speech-01",
+   "kind": "generate",
+   "rows": 50,
+   "seconds": 6.82994703296572,
+   "std": 0.17706719040870667,
+   "std_by_cfg": {
+    "1": 0.17706719040870667,
+    "3": 0.4279768168926239
+   }
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "speech-02.wav",
+    "speech-02-cfg3.wav"
+   ],
+   "finite": true,
+   "id": "speech-02",
+   "kind": "generate",
+   "rows": 50,
+   "seconds": 6.882758357562125,
+   "std": 0.19574210047721863,
+   "std_by_cfg": {
+    "1": 0.19574210047721863,
+    "3": 0.3412785232067108
+   }
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|audio|>"
+   ],
+   "files": [
+    "text-01.txt"
+   ],
+   "id": "text-01",
+   "kind": "text",
+   "seconds": 1.2643597358837724,
+   "text": "<|out|><|audio|><|/out|>The sun is shining on the ground<|im_end|>",
+   "tokens": 11
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|audio|>"
+   ],
+   "files": [
+    "text-02.txt"
+   ],
+   "id": "text-02",
+   "kind": "text",
+   "seconds": 0.8990801647305489,
+   "text": "<|out|><|audio|><|/out|>A man speaks<|im_end|>",
+   "tokens": 7
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|audio|>"
+   ],
+   "files": [
+    "text-03.txt"
+   ],
+   "id": "text-03",
+   "kind": "text",
+   "seconds": 1.1770150726661086,
+   "text": "<|out|><|audio|><|/out|>A man speaks then his voice<|im_end|>",
+   "tokens": 10
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|audio|>"
+   ],
+   "files": [
+    "text-04.txt"
+   ],
+   "id": "text-04",
+   "kind": "text",
+   "seconds": 1.3628435777500272,
+   "text": "<|out|><|audio|><|/out|>The man speaks then he speaks to him<|im_end|>",
+   "tokens": 12
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|audio|>"
+   ],
+   "files": [
+    "text-05.txt"
+   ],
+   "id": "text-05",
+   "kind": "text",
+   "seconds": 0.8841928513720632,
+   "text": "<|out|><|audio|><|/out|>goose honking<|im_end|>",
+   "tokens": 8
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|audio|>"
+   ],
+   "files": [
+    "text-06.txt"
+   ],
+   "id": "text-06",
+   "kind": "text",
+   "seconds": 1.6079946346580982,
+   "text": "<|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|>goose honking<|im_end|>",
+   "tokens": 14
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|audio|>"
+   ],
+   "files": [
+    "tool-01.txt"
+   ],
+   "id": "tool-01",
+   "kind": "text",
+   "seconds": 13.171290502883494,
+   "text": "<|out|><|audio|><|/out|><think>\n\n</think>\n\nI'll check the weather forecast for your city.\n\n<tool_call>\n<function=weather>\n<parameter=location>\nLondon\n</parameter>\n<parameter=location>\nLondon\n</parameter>\n<parameter=location>\nLondon, UK\n</parameter>\n<parameter=location>\nLondon, UK\n</parameter>\n</function>\n</tool_call><|im_end|>",
+   "tokens": 84
+  },
+  {
+   "decision": [
+    "<|out|>",
+    "<|/out|>",
+    "<|audio|>"
+   ],
+   "files": [
+    "tool-02.txt"
+   ],
+   "id": "tool-02",
+   "kind": "text",
+   "seconds": 47.41098874248564,
+   "text": "<|out|><|audio|><|/out|><think>\n<tool_call>\n<function=doctor>\n<parameter=doctor>\n</parameter>\n<parameter=doctor>\nDr. Dr. John\n</parameter>\n</function>\n</tool_call>\n<tool_call>\n<function=doctor>\n<parameter=doctor>\n</parameter>\n<parameter=doctor>\nDr. Dr. John\n</parameter>\n<parameter=doctor>\nDr. Dr. John\n</parameter>\n</function>\n</tool_call>\n<tool_call>\n<function=doctor>\n<parameter=doctor>\n</parameter>\n<parameter=doctor>\n</parameter>\n<parameter=doctor>\n</parameter>\n<parameter=doctor>\n</parameter>\n<parameter=doctor>\n</parameter>\n<parameter=doctor>\n</parameter>\n<parameter=doctor>\n</parameter>\n<parameter=doctor>\n</parameter>\n<parameter=doctor>\n</parameter>\n<parameter=doctor>\n</parameter>\n<parameter=doctor>\n</parameter>\n<parameter=doctor>\n</parameter>\n<parameter=doctor>\n</parameter>\n<parameter=doctor>\n</parameter>\n<parameter=doctor>\n</",
+   "tokens": 256
+  },
+  {
+   "cfg": [
+    1.0,
+    3.0
+   ],
+   "collapsed": false,
+   "data_std": 0.5,
+   "files": [
+    "video-01-frame000.png",
+    "video-01.mp4",
+    "video-01-cfg3-frame000.png",
+    "video-01-cfg3.mp4"
+   ],
+   "finite": true,
+   "id": "video-01",
+   "kind": "generate",
+   "rows": 1440,
+   "seconds": 50.64676245395094,
+   "std": 0.23490923643112183,
+   "std_by_cfg": {
+    "1": 0.23490923643112183,
+    "3": 0.3529171943664551
+   }
+  }
+ ],
+ "ranks": [
+  {
+   "errors": [],
+   "items": [
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|audio|>"
+     ],
+     "files": [
+      "text-01.txt"
+     ],
+     "id": "text-01",
+     "kind": "text",
+     "seconds": 1.2643597358837724,
+     "text": "<|out|><|audio|><|/out|>The sun is shining on the ground<|im_end|>",
+     "tokens": 11
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|audio|>"
+     ],
+     "files": [
+      "text-05.txt"
+     ],
+     "id": "text-05",
+     "kind": "text",
+     "seconds": 0.8841928513720632,
+     "text": "<|out|><|audio|><|/out|>goose honking<|im_end|>",
+     "tokens": 8
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|audio|>"
+     ],
+     "files": [
+      "decide-describe.txt"
+     ],
+     "id": "decide-describe",
+     "kind": "decision",
+     "seconds": 1.2677085427567363,
+     "text": "<|out|><|audio|><|/out|>A man speaking<|im_end|>",
+     "tokens": 7
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "image-03.png",
+      "image-03-cfg3.png"
+     ],
+     "finite": true,
+     "id": "image-03",
+     "kind": "generate",
+     "rows": 192,
+     "seconds": 9.960929314605892,
+     "std": 0.44278213381767273,
+     "std_by_cfg": {
+      "1": 0.44278213381767273,
+      "3": 0.3951699435710907
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "speech-02.wav",
+      "speech-02-cfg3.wav"
+     ],
+     "finite": true,
+     "id": "speech-02",
+     "kind": "generate",
+     "rows": 50,
+     "seconds": 6.882758357562125,
+     "std": 0.19574210047721863,
+     "std_by_cfg": {
+      "1": 0.19574210047721863,
+      "3": 0.3412785232067108
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "3d-01-slices.png",
+      "3d-01-cfg3-slices.png"
+     ],
+     "finite": true,
+     "id": "3d-01",
+     "kind": "generate",
+     "rows": 512,
+     "seconds": 20.638509761542082,
+     "std": 0.17056705057621002,
+     "std_by_cfg": {
+      "1": 0.17056705057621002,
+      "3": 0.3272663652896881
+     }
+    }
+   ],
+   "rank": 0,
+   "seconds": 40.898537821136415,
+   "skipped": [],
+   "step": 350
+  },
+  {
+   "errors": [],
+   "items": [
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|audio|>"
+     ],
+     "files": [
+      "text-02.txt"
+     ],
+     "id": "text-02",
+     "kind": "text",
+     "seconds": 0.8990801647305489,
+     "text": "<|out|><|audio|><|/out|>A man speaks<|im_end|>",
+     "tokens": 7
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|audio|>"
+     ],
+     "files": [
+      "text-06.txt"
+     ],
+     "id": "text-06",
+     "kind": "text",
+     "seconds": 1.6079946346580982,
+     "text": "<|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|>goose honking<|im_end|>",
+     "tokens": 14
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|image|>"
+     ],
+     "files": [
+      "decide-redraw.txt"
+     ],
+     "id": "decide-redraw",
+     "kind": "decision",
+     "seconds": 1.469363121315837,
+     "text": "<|out|><|image|><|/out|>A person sitting on a",
+     "tokens": 8
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "image-04.png",
+      "image-04-cfg3.png"
+     ],
+     "finite": true,
+     "id": "image-04",
+     "kind": "generate",
+     "rows": 256,
+     "seconds": 12.34838063083589,
+     "std": 0.47892653942108154,
+     "std_by_cfg": {
+      "1": 0.47892653942108154,
+      "3": 0.5545902252197266
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "music-01.wav",
+      "music-01-cfg3.wav"
+     ],
+     "finite": true,
+     "id": "music-01",
+     "kind": "generate",
+     "rows": 125,
+     "seconds": 9.144192535430193,
+     "std": 0.186721071600914,
+     "std_by_cfg": {
+      "1": 0.186721071600914,
+      "3": 0.3496384918689728
+     }
+    }
+   ],
+   "rank": 1,
+   "seconds": 25.469073784537613,
+   "skipped": [],
+   "step": 350
+  },
+  {
+   "errors": [],
+   "items": [
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|audio|>"
+     ],
+     "files": [
+      "text-03.txt"
+     ],
+     "id": "text-03",
+     "kind": "text",
+     "seconds": 1.1770150726661086,
+     "text": "<|out|><|audio|><|/out|>A man speaks then his voice<|im_end|>",
+     "tokens": 10
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|audio|>"
+     ],
+     "files": [
+      "tool-01.txt"
+     ],
+     "id": "tool-01",
+     "kind": "text",
+     "seconds": 13.171290502883494,
+     "text": "<|out|><|audio|><|/out|><think>\n\n</think>\n\nI'll check the weather forecast for your city.\n\n<tool_call>\n<function=weather>\n<parameter=location>\nLondon\n</parameter>\n<parameter=location>\nLondon\n</parameter>\n<parameter=location>\nLondon, UK\n</parameter>\n<parameter=location>\nLondon, UK\n</parameter>\n</function>\n</tool_call><|im_end|>",
+     "tokens": 84
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "image-01.png",
+      "image-01-cfg3.png"
+     ],
+     "finite": true,
+     "id": "image-01",
+     "kind": "generate",
+     "rows": 256,
+     "seconds": 12.364496428519487,
+     "std": 0.47583210468292236,
+     "std_by_cfg": {
+      "1": 0.47583210468292236,
+      "3": 0.3863561451435089
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "edit-01.png",
+      "edit-01-cfg3.png"
+     ],
+     "finite": true,
+     "id": "edit-01",
+     "kind": "edit",
+     "rows": 192,
+     "seconds": 17.05114659946412,
+     "std": 0.47242358326911926,
+     "std_by_cfg": {
+      "1": 0.47242358326911926,
+      "3": 0.4937998056411743
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "music-02.wav",
+      "music-02-cfg3.wav"
+     ],
+     "finite": true,
+     "id": "music-02",
+     "kind": "generate",
+     "rows": 125,
+     "seconds": 9.230439217761159,
+     "std": 0.19557802379131317,
+     "std_by_cfg": {
+      "1": 0.19557802379131317,
+      "3": 0.37988361716270447
+     }
+    }
+   ],
+   "rank": 2,
+   "seconds": 52.99445478990674,
+   "skipped": [],
+   "step": 350
+  },
+  {
+   "errors": [],
+   "items": [
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|audio|>"
+     ],
+     "files": [
+      "text-04.txt"
+     ],
+     "id": "text-04",
+     "kind": "text",
+     "seconds": 1.3628435777500272,
+     "text": "<|out|><|audio|><|/out|>The man speaks then he speaks to him<|im_end|>",
+     "tokens": 12
+    },
+    {
+     "decision": [
+      "<|out|>",
+      "<|/out|>",
+      "<|audio|>"
+     ],
+     "files": [
+      "tool-02.txt"
+     ],
+     "id": "tool-02",
+     "kind": "text",
+     "seconds": 47.41098874248564,
+     "text": "<|out|><|audio|><|/out|><think>\n<tool_call>\n<function=doctor>\n<parameter=doctor>\n</parameter>\n<parameter=doctor>\nDr. Dr. John\n</parameter>\n</function>\n</tool_call>\n<tool_call>\n<function=doctor>\n<parameter=doctor>\n</parameter>\n<parameter=doctor>\nDr. Dr. John\n</parameter>\n<parameter=doctor>\nDr. Dr. John\n</parameter>\n</function>\n</tool_call>\n<tool_call>\n<function=doctor>\n<parameter=doctor>\n</parameter>\n<parameter=doctor>\n</parameter>\n<parameter=doctor>\n</parameter>\n<parameter=doctor>\n</parameter>\n<parameter=doctor>\n</parameter>\n<parameter=doctor>\n</parameter>\n<parameter=doctor>\n</parameter>\n<parameter=doctor>\n</parameter>\n<parameter=doctor>\n</parameter>\n<parameter=doctor>\n</parameter>\n<parameter=doctor>\n</parameter>\n<parameter=doctor>\n</parameter>\n<parameter=doctor>\n</parameter>\n<parameter=doctor>\n</parameter>\n<parameter=doctor>\n</",
+     "tokens": 256
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "image-02.png",
+      "image-02-cfg3.png"
+     ],
+     "finite": true,
+     "id": "image-02",
+     "kind": "generate",
+     "rows": 192,
+     "seconds": 9.79202562943101,
+     "std": 0.46229755878448486,
+     "std_by_cfg": {
+      "1": 0.46229755878448486,
+      "3": 0.4367614984512329
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "speech-01.wav",
+      "speech-01-cfg3.wav"
+     ],
+     "finite": true,
+     "id": "speech-01",
+     "kind": "generate",
+     "rows": 50,
+     "seconds": 6.82994703296572,
+     "std": 0.17706719040870667,
+     "std_by_cfg": {
+      "1": 0.17706719040870667,
+      "3": 0.4279768168926239
+     }
+    },
+    {
+     "cfg": [
+      1.0,
+      3.0
+     ],
+     "collapsed": false,
+     "data_std": 0.5,
+     "files": [
+      "video-01-frame000.png",
+      "video-01.mp4",
+      "video-01-cfg3-frame000.png",
+      "video-01-cfg3.mp4"
+     ],
+     "finite": true,
+     "id": "video-01",
+     "kind": "generate",
+     "rows": 1440,
+     "seconds": 50.64676245395094,
+     "std": 0.23490923643112183,
+     "std_by_cfg": {
+      "1": 0.23490923643112183,
+      "3": 0.3529171943664551
+     }
+    }
+   ],
+   "rank": 3,
+   "seconds": 116.04266538191587,
+   "skipped": [],
+   "step": 350
+  }
+ ],
+ "schema": "chimera_omni.run0.dump_index.v1",
+ "step": 350
+}

@@ -1,0 +1,4 @@
+USER: What is 17 times 23? Show the steps.
+
+REPLY (14 tokens):
+<|out|><|video|><|audio|><|/out|><|text|><|/out|>A man is on a bus.<|im_end|>

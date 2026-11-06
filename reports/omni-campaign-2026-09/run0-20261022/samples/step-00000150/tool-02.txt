@@ -1,0 +1,4 @@
+USER: Put 'dentist' on my calendar for next Tuesday at 3pm.
+
+REPLY (34 tokens):
+<|out|><|audio|><|/out|><|out|><|audio|><|/out|>The user is at home, waiting for the next available room. I need to book a 20 minutes after the scheduled appointment.<|im_end|>

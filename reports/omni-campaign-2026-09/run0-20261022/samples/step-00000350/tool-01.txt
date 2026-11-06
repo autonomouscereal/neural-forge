@@ -1,0 +1,25 @@
+USER: What's the weather in Lisbon?
+
+REPLY (84 tokens):
+<|out|><|audio|><|/out|><think>
+
+</think>
+
+I'll check the weather forecast for your city.
+
+<tool_call>
+<function=weather>
+<parameter=location>
+London
+</parameter>
+<parameter=location>
+London
+</parameter>
+<parameter=location>
+London, UK
+</parameter>
+<parameter=location>
+London, UK
+</parameter>
+</function>
+</tool_call><|im_end|>

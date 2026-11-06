@@ -1,0 +1,4 @@
+USER: Give me three tips for sleeping better.
+
+REPLY (18 tokens):
+<|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|audio|><|/out|><|out|><|text|><|/out|>A note on a phone<|im_end|>
