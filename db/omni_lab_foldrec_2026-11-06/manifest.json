@@ -1,0 +1,206 @@
+{
+ "taken_at": "2026-11-06 19:15:15.680319+00:00",
+ "database": "omni_lab",
+ "server": "PostgreSQL 16.13 (Debian 16.13-1.pgdg12+1) on x86_64-pc-linux-gnu",
+ "tables": {
+  "project": {
+   "rows": 7,
+   "file": "data/project.csv.gz",
+   "bytes": 380,
+   "sha256": "e6adb5c41e45958418938dd3593e610b0e79827375188ca471ac514469f7c682",
+   "query": "SELECT * FROM project ORDER BY key"
+  },
+  "schema_migration": {
+   "rows": 7,
+   "file": "data/schema_migration.csv.gz",
+   "bytes": 511,
+   "sha256": "462976a3832148e327cbab3b82e73dda0ed5a042d24303146e0e0f5f373a01e7",
+   "query": "SELECT * FROM schema_migration ORDER BY version"
+  },
+  "technique": {
+   "rows": 5805,
+   "file": "data/technique.csv.gz",
+   "bytes": 457627,
+   "sha256": "3542fd466e8670ec8a9506cc11a6cda4a333000512d3fe3865c924c38adca12f",
+   "query": "SELECT * FROM technique ORDER BY id"
+  },
+  "experiment": {
+   "rows": 7928,
+   "file": "data/experiment.csv.gz",
+   "bytes": 916842,
+   "sha256": "f61219d5aeae65005e34957dd1baaf4abd4a04d106e9603473924908e569240c",
+   "query": "SELECT * FROM experiment ORDER BY id"
+  },
+  "experiment_alias": {
+   "rows": 7886,
+   "file": "data/experiment_alias.csv.gz",
+   "bytes": 129284,
+   "sha256": "8d7c440f46cc2b87a28dab715ece7efd113c947ccca1f3a1fe0e3ec825ab77be",
+   "query": "SELECT * FROM experiment_alias ORDER BY alias"
+  },
+  "experiment_link": {
+   "rows": 2755,
+   "file": "data/experiment_link.csv.gz",
+   "bytes": 31629,
+   "sha256": "62d0a11b151d6add8c7cbe1421c1e576359293a82d225a4a57325bba31b3d5e9",
+   "query": "SELECT * FROM experiment_link ORDER BY from_id, to_id, relation"
+  },
+  "fold_arm": {
+   "rows": 7895,
+   "file": "data/fold_arm.csv.gz",
+   "bytes": 7903626,
+   "sha256": "e3d4645f41f6d8793cc93ce7a38d95aa3e43b0c9e424c026135c32d4fb75a538",
+   "query": "SELECT * FROM fold_arm ORDER BY experiment_id"
+  },
+  "fold_component": {
+   "rows": 12163,
+   "file": "data/fold_component.csv.gz",
+   "bytes": 320611,
+   "sha256": "9fcb6b3061e2c72b40afbcea6543837ddb9ce9b2a37f30d8af28c2e7eb93f617",
+   "query": "SELECT * FROM fold_component ORDER BY id"
+  },
+  "fold_behaviour": {
+   "rows": 6674,
+   "file": "data/fold_behaviour.csv.gz",
+   "bytes": 337594,
+   "sha256": "4ab5a52d6791ba5a0615941ea668266155e0229a911cc57f40291840203c8d5b",
+   "query": "SELECT * FROM fold_behaviour ORDER BY id"
+  },
+  "fold_diagnostic": {
+   "rows": 38600,
+   "file": "data/fold_diagnostic.csv.gz",
+   "bytes": 783872,
+   "sha256": "28af09c1842a22da83c57099bff65371bc605fb6f9d6e4cf9804a7729d5e7ef0",
+   "query": "SELECT * FROM fold_diagnostic ORDER BY id"
+  },
+  "fold_source": {
+   "rows": 33013,
+   "file": "data/fold_source.csv.gz",
+   "bytes": 1141547,
+   "sha256": "4c1c9d29dfa1bd19c040aedc50899177ece819112c0b6ebf05241c3447c3f096",
+   "query": "SELECT * FROM fold_source ORDER BY id"
+  },
+  "fold_finding": {
+   "rows": 2947,
+   "file": "data/fold_finding.csv.gz",
+   "bytes": 374326,
+   "sha256": "c45c01da56dc2cda4252c90af3383888fe2adbd06034b75db3efd27a471be87f",
+   "query": "SELECT * FROM fold_finding ORDER BY id"
+  },
+  "fold_finding_experiment": {
+   "rows": 5324,
+   "file": "data/fold_finding_experiment.csv.gz",
+   "bytes": 52394,
+   "sha256": "36fd8beb2b2fadfd0fb0b16b1a161ffe280893d9a71425e350a55010d246e206",
+   "query": "SELECT * FROM fold_finding_experiment ORDER BY finding_id, experiment_key"
+  },
+  "fold_finding_source": {
+   "rows": 3653,
+   "file": "data/fold_finding_source.csv.gz",
+   "bytes": 181755,
+   "sha256": "7726b968a428ea84b25b3e696712e8674a43a5320c64eaf6f0ba0d4517fa2076",
+   "query": "SELECT * FROM fold_finding_source ORDER BY id"
+  },
+  "fold_coverage": {
+   "rows": 6149,
+   "file": "data/fold_coverage.csv.gz",
+   "bytes": 221780,
+   "sha256": "86bdfb173d9d43e63a6a4eb70baf3b3490df6adcbc5cfbae46c86ef3e614344e",
+   "query": "SELECT * FROM fold_coverage ORDER BY shard, ordinal"
+  },
+  "fold_shard": {
+   "rows": 87,
+   "file": "data/fold_shard.csv.gz",
+   "bytes": 7665,
+   "sha256": "10543a9c83da4c6c87965acaa9b7ed70c94ee662392b6af1828fc64f9cc3c5fb",
+   "query": "SELECT * FROM fold_shard ORDER BY shard"
+  },
+  "ledger_event": {
+   "rows": 42,
+   "file": "data/ledger_event.csv.gz",
+   "bytes": 56275,
+   "sha256": "f2e859d0a329afeb854530cf88acb03fcf45c0dc1d2e0c316db7f26fb788e882",
+   "query": "SELECT * FROM ledger_event ORDER BY id"
+  },
+  "model": {
+   "rows": 1921,
+   "file": "data/model.csv.gz",
+   "bytes": 155405,
+   "sha256": "5ff314f75df92790f55a059723c3bf2d49beb0d3a90a939f8195da1c7992e39b",
+   "query": "SELECT * FROM model ORDER BY id"
+  },
+  "model_lineage": {
+   "rows": 53,
+   "file": "data/model_lineage.csv.gz",
+   "bytes": 2424,
+   "sha256": "6de6471e24f433583a29e9d17f197c0685920bba00a56e9443f9becc03574319",
+   "query": "SELECT * FROM model_lineage ORDER BY child_id, parent_id, ordinal"
+  },
+  "model_deletion": {
+   "rows": 242,
+   "file": "data/model_deletion.csv.gz",
+   "bytes": 2871318,
+   "sha256": "bebad1d9fd4d890b88e884bd24b51ee10f44c37e4226919fde171143eacf4f97",
+   "query": "SELECT * FROM model_deletion ORDER BY id"
+  },
+  "run": {
+   "rows": 950,
+   "file": "data/run.csv.gz",
+   "bytes": 912752,
+   "sha256": "3653c61952369d4395a6caad6bb1ec0cc406bfee7a51d5d9f6ba2dceb2a6dbb0",
+   "query": "SELECT * FROM run WHERE id IN (SELECT id FROM run WHERE project = 'neural-forge' UNION SELECT run_id FROM experiment WHERE run_id IS NOT NULL) ORDER BY id"
+  },
+  "run_model": {
+   "rows": 29,
+   "file": "data/run_model.csv.gz",
+   "bytes": 138,
+   "sha256": "93a7d86e602c20c1bf2b4114da806f32c9f5e117bf733b8ef1e519d1d597c375",
+   "query": "SELECT * FROM run_model WHERE run_id IN (SELECT id FROM run WHERE project = 'neural-forge' UNION SELECT run_id FROM experiment WHERE run_id IS NOT NULL) ORDER BY run_id, model_id"
+  },
+  "run_device": {
+   "rows": 15,
+   "file": "data/run_device.csv.gz",
+   "bytes": 480,
+   "sha256": "05985ca9326a1fc509cfe10ab6bbe137a96e2a0d0c22aa4960d5bfb7a50f2fa7",
+   "query": "SELECT * FROM run_device WHERE run_id IN (SELECT id FROM run WHERE project = 'neural-forge' UNION SELECT run_id FROM experiment WHERE run_id IS NOT NULL) ORDER BY run_id"
+  },
+  "run_event": {
+   "rows": 112,
+   "file": "data/run_event.csv.gz",
+   "bytes": 4349,
+   "sha256": "867dfefe3c11e13b9996d108c42ab77875261a21de3035225e0abb0db83c1785",
+   "query": "SELECT * FROM run_event WHERE run_id IN (SELECT id FROM run WHERE project = 'neural-forge' UNION SELECT run_id FROM experiment WHERE run_id IS NOT NULL) ORDER BY id"
+  },
+  "metric": {
+   "rows": 2562,
+   "file": "data/metric.csv.gz",
+   "bytes": 25800,
+   "sha256": "5f008d076da9ce82505b8248f545fd13e31eea553845690bdbc680185ee7d328",
+   "query": "SELECT * FROM metric WHERE run_id IN (SELECT id FROM run WHERE project = 'neural-forge' UNION SELECT run_id FROM experiment WHERE run_id IS NOT NULL) ORDER BY run_id, name, step"
+  }
+ },
+ "quotes_withheld": {
+  "placeholder": "[Cyril quote withheld]",
+  "date": "2026-11-06",
+  "cells_changed": {
+   "experiment.detail": 1,
+   "experiment.verdict": 30,
+   "fold_arm.conflicts": 85,
+   "fold_arm.cyril": 442,
+   "fold_arm.record": 618,
+   "fold_arm.title": 1,
+   "fold_arm.verdict_text": 30,
+   "fold_behaviour.column_b": 1,
+   "fold_behaviour.text": 1,
+   "fold_coverage.note": 3,
+   "fold_coverage.path": 1,
+   "fold_finding.scope": 1,
+   "fold_finding.statement": 33,
+   "fold_finding_source.quote": 251,
+   "fold_source.quote": 275,
+   "model_deletion.owner_order": 242,
+   "model_deletion.preflight": 19,
+   "technique.detail": 1
+  }
+ }
+}

@@ -1,5 +1,29 @@
 # Neural Forge
 
+## Status, 2026-11-06
+
+Neural Forge's folding program is closed out. Start with the review:
+[`docs/NEURAL_FORGE_REVIEW_2026-11-06.md`](docs/NEURAL_FORGE_REVIEW_2026-11-06.md). It covers
+what worked, what did not, the laws the campaign measured, how the work was judged, and what
+is still open.
+
+- **Short version:** single components fold 4x and keep the parent's behaviour (10-13/15 on
+  LFM2.5-230M), but folds do not compose into a whole model that is 4x smaller. No whole-model
+  fold-only child at or below 1.559x body contraction kept behaviour. Since 2026-10-21 the
+  program uses folds to initialise a small dense omni model and distils it from the parents.
+- **The work database:** every fold experiment (7,895 arms, 2,947 findings) is in
+  [`db/omni_lab_foldrec_2026-11-06/`](db/omni_lab_foldrec_2026-11-06/README.md): raw
+  PostgreSQL CSV with the schema and a `psql` load script.
+- **Other branches:** `claude/omni-campaign` (Chimera Omni campaign, Sept → Nov), `omni-lab`
+  (database code), `wip/neural-forge-uncommitted-20261106` (uncommitted August work, kept
+  as-is).
+- **No weights are published.** Rebuild recipes for deleted checkpoints are in the database's
+  `model_deletion` table.
+
+The sections below are the July 2026 architecture notes, kept as written.
+
+---
+
 The current automatic folding-compiler architecture and proof sequence are
 documented in
 [`docs/DYNAMIC_FOLDING_COMPILER_2026-07-16.md`](docs/DYNAMIC_FOLDING_COMPILER_2026-07-16.md).
