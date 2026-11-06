@@ -2,3 +2,6 @@
 .env
 __pycache__/
 *.pyc
+
+# Cyril's verbatim directive dumps: local only, never pushed (removed from GitHub history 2026-11-06)
+inventory/*/directives.json
