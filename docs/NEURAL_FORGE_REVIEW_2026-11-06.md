@@ -244,3 +244,11 @@ rebuilt from the recipes recorded in `model_deletion`.
   10 MB; `.codex-test-runs/` scratch; `proof_outputs/` (about 1 GB of generated outputs);
   media, logs, `__pycache__`; the raw folding-record extraction shards (the database export
   carries their content); and the NAS/workstation cleanup plans.
+- Six files that were dumps of Cyril's prompts and directives were removed from the history
+  of every branch that held them.
+- Cyril's own words are withheld from the reports, docs, test fixtures and database export
+  on `main`, `claude/omni-campaign`, `omni-lab` and the `wip` branch. Each quote is tested
+  against what he wrote: his directives and rulings in `omni_lab`, and his prompts in agent
+  memory. A match is replaced with `[Cyril quote withheld]`. The agents' paraphrases of his
+  rulings, and the dates and event ids that cite them, are kept, so each ruling can still be
+  followed. Text that only paraphrases him is not withheld.
