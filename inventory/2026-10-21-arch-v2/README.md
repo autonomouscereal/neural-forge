@@ -14,3 +14,10 @@ Load order:
     omni_lab.py ingest directives --inventory inventory/2026-10-21-arch-v2
     omni_lab.py ingest arch_requirements --inventory inventory/2026-10-21-arch-v2
     omni_lab.py arch-check --report <chimera_omni.conformance report> [--model KEY]
+
+## Public copy (2026-11-06)
+
+This published copy differs from the sealed snapshot the ingesters read.
+`arch_requirements.json` has Cyril's words withheld (`[Cyril quote withheld]`), and
+`directives.json` is not published. The sealed files stay in the private checkout.
+`SHA256SUMS` here covers the published files.

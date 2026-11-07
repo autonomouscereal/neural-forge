@@ -22,3 +22,10 @@ Caveats carried from the inventories:
 - `docs.json` summaries are the first sentence of each document, and `type`/`arm` come from keyword matching. 597 dates are file mtimes.
 - Dot (ChatGPT sync) directives are dated by sync time; their original times are UNVERIFIED.
 - Four architecture rulings exist only in Claude Code transcripts (queued mid-turn prompts the memory hook never filed).
+
+## Public copy (2026-11-06)
+
+This published copy differs from the sealed snapshot the ingesters read. `docs.json` has
+Cyril's words withheld (`[Cyril quote withheld]`), and `directives.json` is not published.
+The sealed files stay in the private checkout, and the table above keeps their sha256
+values. `SHA256SUMS` here covers the published `docs.json`.
