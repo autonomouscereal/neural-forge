@@ -1,16 +1,22 @@
 # Neural Forge
 
-## Status, 2026-11-06
+## Status, 2026-11-07
 
-Neural Forge's folding program is closed out. Start with the review:
+Neural Forge's folding work is active and ongoing. Start with the review:
 [`docs/NEURAL_FORGE_REVIEW_2026-11-06.md`](docs/NEURAL_FORGE_REVIEW_2026-11-06.md). It covers
-what worked, what did not, the laws the campaign measured, how the work was judged, and what
-is still open.
+what has been achieved, the laws the campaign measured, the open problems, and what comes next.
 
-- **Short version:** single components fold 4x and keep the parent's behaviour (10-13/15 on
-  LFM2.5-230M), but folds do not compose into a whole model that is 4x smaller. No whole-model
-  fold-only child at or below 1.559x body contraction kept behaviour. Since 2026-10-21 the
-  program uses folds to initialise a small dense omni model and distils it from the parents.
+- **Short version:**
+  - Folding compacts real models and keeps intelligence to a useful degree.
+  - Single components fold 4x and keep the parent's behaviour (10-13/15 against the parent's
+    12/15 on LFM2.5-230M).
+  - Whole LFM2 children below half the parent's size still answer.
+  - Kimi K3's routed experts (about 2.74T parameters over 92 layers) folded into a dense
+    stack of about 34B, 80x per layer.
+  - That K3 fold went into a 26.9B dense Chimera trunk, which kept improving under
+    distillation.
+  - The current direction folds the parents into a small dense omni model, then distils it.
+    Making folds compose across a whole model at 4x is the main open problem.
 - **The work database:** every fold experiment (7,895 arms, 2,947 findings) is in
   [`db/omni_lab_foldrec_2026-11-06/`](db/omni_lab_foldrec_2026-11-06/README.md): raw
   PostgreSQL CSV with the schema and a `psql` load script.
